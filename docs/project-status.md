@@ -3,9 +3,9 @@
 > **Last Updated:** 2026-08-01
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers).
 
-## Overall Progress: ~55%
+## Overall Progress: ~60%
 
-The core inference pipeline — camera → Isolate → TFLite → argmax → UI stream — is functional and architecturally sound. Bounding box overlay, full debug instrumentation, and **runtime model introspection** are implemented. Error reporting in the isolate is partially complete (the busy gate now recovers on isolate errors). The app is **not yet usable as an assistive tool**: no TTS audio, no NMS, no isolate restart recovery, no permission-denied UI.
+The core inference pipeline — camera → Isolate → TFLite → argmax → UI stream — is functional and architecturally sound. Bounding box overlay, full debug instrumentation, **runtime model introspection**, forensic file logging, aspect-correct preview UI, and the **device-independent orientation architecture** are implemented. The last camera-path defect (frames never rotated to device orientation — portrait detections were ~0) is fixed and on-device validated (portrait now 0.91). Error reporting in the isolate is partially complete (the busy gate now recovers on isolate errors). The app is **not yet usable as an assistive tool**: no TTS audio, no NMS, no isolate restart recovery, no permission-denied UI.
 
 ## Current Milestone
 
@@ -19,6 +19,7 @@ The core inference pipeline — camera → Isolate → TFLite → argmax → UI 
 | Permission-denied UI | ❌ Not started |
 | Remove unused dependencies or wire them | ❌ Not started |
 | Debug instrumentation & logging | ✅ Complete |
+| Orientation re-validation (back landscape + front camera) | 🟡 In progress — portrait + static verified; deferred runs pending |
 
 ## Current Blocker
 
@@ -28,7 +29,8 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Next Objective
 
-Implement **TTS audio feedback** — the app's entire purpose is to speak detected objects. Without TTS, it's a silent camera viewer. The `flutter_tts` package is already declared as a dependency.
+1. **Re-validate orientation on-device** — back-camera landscape physical hold and front-camera portrait/landscape runs (deferred from v0.1.7). See [`orientation-implementation.md`](orientation-implementation.md).
+2. Then implement **TTS audio feedback** — the app's entire purpose is to speak detected objects. Without TTS, it's a silent camera viewer. The `flutter_tts` package is already declared as a dependency.
 
 ## High-Priority Tasks
 
@@ -64,3 +66,7 @@ Implement **TTS audio feedback** — the app's entire purpose is to speak detect
 - ✅ Performance logging: 5-second summaries with camera FPS, inference FPS, and avg/min/max latency
 - ✅ Partial isolate error handling: try/catch + error propagation to main isolate
 - ✅ Forensic file-based diagnostics (`ForensicLog`): structured logs + first-frame PNG dumps + auto-diagnosis written under `<documents>/debug/run_*` (replaces console probes)
+- ✅ Camera preprocessing repair: geometry-aware YUV420→RGB (rowStride/pixelStride honored; planar I420 + semi-planar NV12/NV21)
+- ✅ Aspect-correct preview: `FittedBox` + painter share `applyBoxFit` math; no stretching/warping
+- ✅ Camera preview UI redesign: strict 3:4 portrait preview + permanent Metrics/Detections info panel
+- ✅ **Device-independent orientation** (`BoxTransform`): input tensor rotated/mirrored to upright per runtime metadata; portrait detections 0 → 0.91 on-device; static-image regression byte-identical

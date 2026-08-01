@@ -5,6 +5,38 @@
 
 ---
 
+## v0.1.7 — "Device-Independent Orientation" (2026-08-01)
+
+### Added
+- [`BoxTransform`](../lib/models/box_transform.dart) (NEW) — the single, device-independent source of truth for all orientation math:
+  - `deviceDegreesFor` — `DeviceOrientation` → degrees using the camera plugin's own counter-clockwise convention (`landscapeLeft→90`, `landscapeRight→270`), verified against `camera_android_camerax._getRotationConstantFromDeviceOrientation`
+  - `displayRotationDegrees` — `sensorOrientation` + device degrees + lens direction (back: `(s − d + 360) % 360`, front: `(s + d + 360) % 360`); no hardcoded angles
+  - `uprightDims` — display dimensions for a rotated sensor frame (swap W/H on 90°/270°)
+  - `rotateRect` / `invertRect` — pure, mutually-inverse normalized-box rotations (kept for unit tests / future sensor-space consumers)
+  - `mirrorRect` — front-camera X-flip in upright space
+- **Upright tensor inference** ([`inference_isolate.dart`](../lib/services/inference_isolate.dart)) — `processFrame` now carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`); the isolate rotates + optionally X-mirrors the square 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()` (lossless transpose). Parser/NMS untouched — boxes after NMS are already in upright space.
+- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — computes rotation per frame from the same `controller.value.deviceOrientation` that `CameraPreview` uses (painter and preview agree by construction); preview + painter sized with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`.
+- [`forensic_log.dart`](../lib/services/forensic_log.dart) — `recordOrientation` (per-frame sensor/device/rot/mirror/lens/dims) + sensor/lens fields in `recordCamera`.
+
+### Changed
+- [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) — removed all sensor-orientation/lens/mirror knowledge; now a pure normalized→pixel mapper over the upright image (`applyBoxFit` math identical to the preview `FittedBox`).
+
+### Fixed
+- **Portrait camera detection** — the last camera-path defect (`docs/camera-path-forensics.md`): frames are delivered in sensor orientation (this device: `sensorOrientation=90°`, always 320×240 landscape) and were never rotated, so portrait-hold scenes reached the model rotated 90° → ~0 detections. Rotating the input to upright makes portrait detection parity with landscape.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- Back · portrait: ✅ detections at maxConf 0.91 (was 0); `rot=90 in=320×240 out=240×320`; input rotation byte-exact (MAE 0.000).
+- Static-image regression: ✅ `rot=0`, byte-identical detections (person 0.9173, 5 objects).
+- Back · landscape: convention bug found & fixed (plugin counter-clockwise mapping); physical-hold re-validation deferred to next session.
+- Front · portrait/landscape: math implemented (verified against plugin convention); device run pending.
+
+### Notes
+- **Deliberate deviation from the design review** (`docs/orientation-design-review.md` recommended sensor-space inference + post-NMS box transform): on-device evidence proved the model sees a 90°-rotated scene in portrait → 0 detections, so there are no boxes to transform. Input rotation is the only design satisfying "portrait quality matches landscape"; parser/NMS code is unchanged. See `docs/orientation-implementation.md` §4.
+- No preprocessing, YUV conversion, parser, thresholds, NMS, model loading, or forensic-logging behavior changed (beyond the added orientation channels).
+
+---
+
 ## v0.1.3 — "Forensic File Logging" (2026-08-01)
 
 ### Added

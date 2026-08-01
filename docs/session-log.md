@@ -5,6 +5,126 @@
 
 ---
 
+## 2026-08-01 (5th session) — Orientation Architecture
+
+### Objective
+- Fix the last remaining camera-path defect: frames are delivered in sensor
+  orientation (this device `sensorOrientation = 90°`, always 320×240
+  landscape) and were never rotated, so portrait-hold scenes reached the model
+  rotated 90° → ~0 detections. Make detection orientation-independent and
+  device-independent.
+
+### Completed
+- [`BoxTransform`](../lib/models/box_transform.dart) (new) — single source of
+  truth for all orientation math: `deviceDegreesFor` (plugin counter-clockwise
+  `DeviceOrientation` convention), `displayRotationDegrees` (metadata-driven,
+  per-lens), `uprightDims`, and reversible `rotateRect`/`invertRect` +
+  `mirrorRect`. No hardcoded angles.
+- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) —
+  `processFrame` carries orientation metadata; isolate rotates + optionally
+  X-mirrors the 640×640 NHWC input to UPRIGHT before `interpreter.run()`
+  (lossless square transpose). Parser/NMS untouched; boxes after NMS are
+  already upright.
+- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — per-frame
+  rotation computed from the SAME `controller.value.deviceOrientation` that
+  `CameraPreview` uses, so painter and preview agree by construction; preview
+  + painter sized with upright dims; sensor/lens fed to `recordCamera`.
+- [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) —
+  stripped of all lens/mirror/orientation logic; now a pure normalized→pixel
+  mapper over the upright image (`applyBoxFit` identical to the preview
+  `FittedBox`).
+- [`forensic_log.dart`](../lib/services/forensic_log.dart) — `recordOrientation`
+  per frame + sensor/lens fields in `recordCamera`.
+- `flutter analyze`: 0 issues.
+
+### Decisions
+- **Input rotation, not post-NMS box transform** (deliberate deviation from
+  `docs/orientation-design-review.md`): on-device evidence proved the model
+  sees a 90°-rotated scene in portrait → 0 detections, so there are no boxes
+  to transform. Rotating the input is the only design that satisfies "portrait
+  detection quality matches landscape". Documented in
+  [`docs/orientation-implementation.md`](orientation-implementation.md) §4.
+- The plugin's counter-clockwise `DeviceOrientation` convention is used
+  (`landscapeLeft→90`, `landscapeRight→270`), not the naive clockwise mapping —
+  the convention bug found on-device in landscape and fixed.
+
+### Issues
+- Landscape physical-hold showed R=180 instead of 0 until the convention
+  mapping was corrected; physical-hold re-validation deferred to next session.
+- Front-camera portrait/landscape math implemented but device run pending.
+
+### Next Session
+- Re-validate back-camera landscape physical hold on-device; run front-camera
+  portrait/landscape validation; then begin Milestone 1 (TTS audio feedback).
+
+---
+
+## 2026-08-01 (4th session) — Camera Preview Redesign (v0.1.6)
+
+### Objective
+- Replace the floating debug overlay with a permanent bottom information panel
+  and a strictly portrait 3:4 camera preview.
+
+### Completed
+- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — strict 3:4
+  portrait preview anchored to the top (`AspectRatio(3/4)` + `BoxFit.contain`);
+  permanent bottom panel with exactly two Material tabs (Metrics, Detections).
+- [`info_panel.dart`](../lib/widgets/info_panel.dart) — Metrics tab (live FPS,
+  avg FPS, inference time, latency, confidence stats, resolutions, model info,
+  backend, quantization, threads) and Detections tab (chronological history,
+  capped 50, 1-second age timer).
+- Floating `DebugOverlay` removed from the screen (data lives in Metrics tab);
+  widget retained but unused.
+- Layout math checked for portrait and landscape; panel never squeezed below
+  minimum. `flutter analyze`: 0 issues.
+
+### Decision
+- Preview width computed from screen size while reserving a minimum panel
+  height; preview never stretched, warped, or cropped.
+
+### Next Session
+- Implement the orientation architecture (per `docs/orientation-design-review.md`).
+
+---
+
+## 2026-08-01 (3rd session) — Aspect-Correct Preview & Preprocessing Repair (v0.1.4 + v0.1.5)
+
+### Objective
+- Fix preview stretching (camera texture scaled without aspect ratio, painter
+  assumed letterbox) and repair the manual YUV420→RGB converter for the real
+  CameraX delivery.
+
+### Completed
+- [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) —
+  `_calculateImageRect` now uses `applyBoxFit` (identical math to the preview
+  `FittedBox`), so painter and preview layout always agree; normalized→screen
+  mapping `sx = offX + nx·destW`, `sy = offY + ny·destH`; boxes clamped to the
+  image rect; front-camera mirroring unchanged.
+- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — preview rendered
+  at native aspect inside `FittedBox(fit: _previewFit)` with a `SizedBox` sized
+  to the frame (`contain` = letterbox, `cover` = center-crop, single static
+  switch).
+- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) —
+  `_convertYUV420toRGB` repaired to honor real per-plane `rowStride`/
+  `bytesPerRow` and `pixelStride`/`bytesPerPixel`; supports planar I420
+  (pixelStride 1) and semi-planar NV12/NV21 (pixelStride 2, U-led per the
+  YUV_420_888 contract); resize/normalization math unchanged.
+- `camera_screen.dart` forwards per-plane geometry and handles 2-plane
+  (semi-planar) deliveries; forensic `frame_rgb.png` uses the same
+  geometry-aware sampling.
+- Converter validated against synthetic planar I420 + semi-planar NV12
+  (incl. rowStride padding) — pixel-exact vs BT.601 reference.
+  `flutter analyze`: 0 issues.
+
+### Decision
+- Single `_previewFit` switch for letterbox vs center-crop; painter and preview
+  share one `applyBoxFit` transform (no offsets or magic constants).
+
+### Next Session
+- Continue preview/UI work (v0.1.6).
+
+---
+
 ## 2026-08-01 (2nd session)
 
 ### Objective

@@ -21,12 +21,15 @@ The historical "Camera → 0 detections" is a **compound of three factors**:
 | # | Factor | Status |
 |---|--------|--------|
 | 1 | Pre-NMS confidence threshold was 0.5 (too high) | **FIXED** (now 0.25) |
-| 2 | **No image rotation to device orientation** (sensorOrientation 90° never applied) — portrait-hold scenes reach YOLO rotated 90° | **REMAINING BUG** |
+| 2 | **No image rotation to device orientation** (sensorOrientation 90° never applied) — portrait-hold scenes reach YOLO rotated 90° | **FIXED** (2026-08-01, v0.1.7 — see `docs/orientation-implementation.md`) |
 | 3 | Test scenes were sometimes dark/desk-level (frame-1 dumps black) | Not a bug — scene artifact |
 
-The remaining actionable defect is **#2 (rotation)**. Everything else in the
-camera path — plane strides, semi-planar NV12 handling, chroma order, color
-range, resize, normalization — is verified correct on-device.
+All camera-path factors are now resolved. Everything else in the camera path —
+plane strides, semi-planar NV12 handling, chroma order, color range, resize,
+normalization — is verified correct on-device. The orientation fix (input
+rotation to upright, `BoxTransform`) is on-device validated for back portrait
+(maxConf 0.91, was 0) and static-image regression; back-landscape physical-hold
+re-validation and front-camera runs are pending.
 
 ---
 
@@ -160,8 +163,11 @@ analysis target rotation if the stream API exposes it). The static-image test
 
 ## 7. Open items
 
-1. Implement + verify rotation fix: run camera in **portrait** holding clear
-   objects → expect detections at parity with landscape.
+1. ~~Implement + verify rotation fix~~ — ✅ Done (v0.1.7): portrait detections
+   0 → 0.91 maxConf on-device; static-image regression byte-identical. See
+   [`orientation-implementation.md`](orientation-implementation.md). Remaining:
+   back-landscape physical-hold re-validation and front-camera portrait/
+   landscape device runs.
 2. Optional closed-loop color probe: point at a pure-red object and confirm it
    renders red (chroma order is already strongly refuted, this is belt-and-
    braces).

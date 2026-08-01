@@ -54,6 +54,8 @@
 
 | Bug | Details |
 |-----|---------|
+| ~~Camera frames never rotated to device orientation~~ | ✅ **FIXED (2026-08-01, v0.1.7)** — `BoxTransform` rotates/mirrors the input tensor to upright; portrait detections 0 → 0.91 on-device. See [`docs/orientation-implementation.md`](orientation-implementation.md). Back-landscape re-validation + front-camera runs still pending. |
+| ~~YUV420→RGB ignored rowStride/pixelStride~~ | ✅ **FIXED (2026-08-01, v0.1.4)** — converter honors real plane geometry; planar I420 + semi-planar NV12/NV21 verified on-device. See [`docs/camera-path-forensics.md`](camera-path-forensics.md). |
 | YUV conversion uses non-standard coefficients | Slight color shift in RGB output. Does not affect detection accuracy but could impact future visual-only features. |
 | `dynamic` type for input buffer | [`inference_isolate.dart:137`](../lib/services/inference_isolate.dart:137) loses type safety. Could use sealed class. |
 | Broadcast stream with single listener | Over-provisioned but harmless. Could be simplified to a single-subscription stream. |

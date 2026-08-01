@@ -67,6 +67,39 @@
 - ✅ Label lookup by class index
 - ✅ Model load success/failure logging with tensor metadata
 
+### Orientation Architecture (100%) — NEW (2026-08-01)
+
+- ✅ [`BoxTransform`](../lib/models/box_transform.dart) — single, device-independent source of truth for orientation math (`deviceDegreesFor` using the plugin's counter-clockwise convention, `displayRotationDegrees`, `uprightDims`, reversible `rotateRect`/`invertRect`, `mirrorRect`); no hardcoded angles
+- ✅ Upright tensor inference — isolate rotates + optionally X-mirrors the 640×640 NHWC input to UPRIGHT before `interpreter.run()` (parser/NMS untouched)
+- ✅ Camera screen computes rotation from the same `controller.value.deviceOrientation` as `CameraPreview`; preview/painter sized with upright dims
+- ✅ Painter simplified to a pure normalized→pixel mapper (no lens/mirror knowledge)
+- ✅ Forensic `recordOrientation` + sensor/lens fields
+- ✅ On-device: back portrait detections 0 → 0.91 maxConf; static-image regression byte-identical
+- ⏳ Back landscape physical-hold re-validation + front-camera device runs pending
+
+### Forensic File Logging (100%) — NEW (2026-08-01)
+
+- ✅ [`ForensicLog`](../lib/services/forensic_log.dart) — structured file diagnostics under `<documents>/debug/run_*` (summary/camera/preprocess/tensor/output/parser/performance/errors.txt), synchronous flush-per-write, fully try/catch-isolated
+- ✅ First-frame PNG dumps (`frame_original/rgb/resized/model_input.png`) via pure-Dart [`PngEncoder`](../lib/models/png_encoder.dart)
+- ✅ Auto-generated `summary.txt` every 50 frames + on close (per-stage PASS/FAIL, ranked root causes)
+- ✅ Console probes (`InferenceProbe`/`InputProbe`) disabled (`enabled=false`), call sites removed
+
+### Camera Preview & UI (100%) — NEW (2026-08-01)
+
+- ✅ Strict 3:4 portrait preview anchored to the top, feed contained via `BoxFit.contain` (never stretched/warped/cropped)
+- ✅ Permanent bottom info panel ([`info_panel.dart`](../lib/widgets/info_panel.dart)) with exactly two tabs: Metrics + Detections
+- ✅ Metrics tab: FPS, avg FPS, inference time, end-to-end latency, confidence stats, camera/preview/model input resolutions, aspect ratio, model name, backend, quantization, thread count
+- ✅ Detections tab: chronological history (newest first), capped at 50, 1-second age timer
+- ✅ Painter-vs-preview alignment via shared `applyBoxFit(BoxFit.contain)` math
+- ✅ Aspect-correct preview via `FittedBox(fit: _previewFit)` + `SizedBox` sized to frame (contain/cover switch)
+
+### Camera Preprocessing Repair (100%) — NEW (2026-08-01)
+
+- ✅ `_convertYUV420toRGB` honors real per-plane `rowStride`/`bytesPerRow` + `pixelStride`/`bytesPerPixel`
+- ✅ Planar I420 (pixelStride 1) and semi-planar NV12/NV21 (pixelStride 2, U-led) support
+- ✅ Geometry-aware forensic `frame_rgb.png` sampling; 2-plane (semi-planar) deliveries handled
+- ✅ Validated pixel-exact vs BT.601 reference on synthetic planar + semi-planar data
+
 ### Bounding Box Overlay (100%)
 
 - ✅ `BoundingBoxPainter` CustomPainter with coordinate transformation
@@ -96,7 +129,7 @@
 - ✅ Message protocol extended: `{'type': 'result'/'error'/'model_loaded'}` with metadata
 - ✅ Inference latency exposed via `InferenceService.lastLatencyMs` getter
 
-### Documentation (30%)
+### Documentation (60%)
 
 - ✅ Comprehensive project audit ([`auditor.md`](../auditor.md))
 - ✅ Historical specification preserved ([`chat_spec.md`](../chat_spec.md))
@@ -109,10 +142,25 @@
 - ✅ Testing plan ([`docs/testing-plan.md`](testing-plan.md))
 - ✅ Benchmark results template ([`docs/benchmark-results.md`](benchmark-results.md))
 - ✅ Formal README ([`README.md`](../README.md)) — project overview + documentation index
-- ✅ Session log ([`docs/session-log.md`](session-log.md)) — bounding box + instrumentation sessions recorded
-- ✅ Changelog ([`docs/changelog.md`](changelog.md)) — v0.1.0 and v0.1.1 entries
+- ✅ Session log ([`docs/session-log.md`](session-log.md)) — all sessions through the orientation architecture recorded
+- ✅ Changelog ([`docs/changelog.md`](changelog.md)) — v0.1.0 through v0.1.7 entries
+- ✅ Camera-path forensics ([`docs/camera-path-forensics.md`](camera-path-forensics.md)) — input-side defect isolated & fixed (rotation)
+- ✅ Orientation design review ([`docs/orientation-design-review.md`](orientation-design-review.md)) + implementation summary ([`docs/orientation-implementation.md`](orientation-implementation.md))
+- ✅ Painter↔preview coordinate review ([`docs/painter-coordinate-review.md`](painter-coordinate-review.md))
+- ✅ Static-image test report ([`docs/static-image-test.md`](static-image-test.md))
+- ✅ Input pipeline investigation ([`docs/input-pipeline-investigation.md`](input-pipeline-investigation.md))
+- ✅ Inference tensor diagnosis ([`docs/inference-tensor-diagnosis.md`](inference-tensor-diagnosis.md))
 
 ## Current Work
+
+**Orientation re-validation** — Active
+
+| Task | Status |
+|------|--------|
+| Back · portrait on-device | ✅ Done (maxConf 0.91, was 0) |
+| Static-image regression (rot=0) | ✅ Done (byte-identical) |
+| Back · landscape physical hold | 🟡 Convention bug fixed; physical-hold re-validation deferred |
+| Front · portrait / landscape | 🟡 Math implemented; device run pending |
 
 **Milestone 1: "Audible MVP"** — Active
 
@@ -124,9 +172,15 @@
 | Permission-denied UI | ❌ Not started |
 | Remove/wire unused dependencies | ❌ Not started |
 | Debug instrumentation & logging | ✅ Complete (2026-07-22) |
+| Forensic file logging | ✅ Complete (2026-08-01, v0.1.3) |
+| Camera preprocessing repair | ✅ Complete (2026-08-01, v0.1.4) |
+| Aspect-correct preview | ✅ Complete (2026-08-01, v0.1.5) |
+| Camera preview UI redesign | ✅ Complete (2026-08-01, v0.1.6) |
+| Device-independent orientation | ✅ Complete (2026-08-01, v0.1.7) |
 
 ## Next Tasks (Priority Order)
 
+0. **Re-validate orientation on-device** — back landscape physical hold + front camera portrait/landscape (see [`docs/orientation-implementation.md`](orientation-implementation.md)).
 1. **Implement TTS audio feedback** — 2–4 hours. Wire `flutter_tts` to detection stream.
 2. ~~**Implement bounding box `CustomPainter`**~~ — ✅ Done. See [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
 3. ~~**Add debug instrumentation**~~ — ✅ Done. See [`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart), [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart), [`lib/screens/camera_screen.dart`](../lib/screens/camera_screen.dart), [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).

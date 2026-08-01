@@ -105,6 +105,24 @@ This document records important engineering decisions made during the developmen
   - `CameraImage.width` and `CameraImage.height` must be stored in UI state for the painter
   - The `_calculateImageRect()` helper encapsulates all aspect-ratio math; easy to test and adjust
 
+## Decision 9: Device-Independent Orientation (Input Rotation)
+
+- **Decision:** Rotate (and optionally X-mirror) the 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()`, driven entirely by runtime metadata — `CameraDescription.sensorOrientation`, the current `controller.value.deviceOrientation`, and lens direction — centralized in a single pure helper ([`BoxTransform`](../lib/models/box_transform.dart)). Parser/NMS are untouched; boxes after NMS are already in upright space.
+- **Date:** 2026-08-01
+- **Reason:** On-device forensics (`docs/camera-path-forensics.md`) proved the last camera defect was missing rotation-to-device-orientation: this device delivers sensor-native 320×240 landscape frames (sensorOrientation 90°) that are never rotated, so a portrait hold feeds the model a 90°-rotated scene → ~0 detections, while landscape holds detect at 0.88. The design review (`docs/orientation-design-review.md`) had recommended **sensor-space inference + post-NMS box transform**, but on-device evidence showed that cannot work: when the model sees a rotated scene there are no boxes to transform. Input rotation is the only design satisfying "portrait detection quality must match landscape" (verified: portrait now 0.91, static-image regression byte-identical).
+- **Alternatives Considered:**
+  - Post-NMS box transform (design-review option d) — rejected: no boxes exist when the model sees a rotated scene
+  - Rotate Y/U/V planes before conversion — rejected: heavy chroma/strides complexity, risk in a just-verified stage
+  - Rotate only the preview — rejected: cosmetic; YOLO still sees rotated content
+  - Fixed 90° rotation — rejected: sensorOrientation ∈ {0,90,180,270} varies by device/lens; front camera also needs X-mirror
+- **Consequences:**
+  - Device-independent: works for sensorOrientation 0/90/180/270, all four holds, front/back lenses (no hardcoded angles)
+  - The painter became a pure normalized→pixel mapper (no lens/mirror knowledge) — single canonical upright space
+  - `DeviceOrientation→degrees` uses the plugin's own counter-clockwise convention (landscapeLeft→90, landscapeRight→270), verified against `camera_android_camerax._getRotationConstantFromDeviceOrientation`; the naive clockwise mapping was the landscape convention bug found on-device
+  - Square 640×640 input makes 90°/180°/270° lossless transposes
+  - Landscape physical-hold re-validation and front-camera device runs are still pending
+  - See [`docs/orientation-implementation.md`](orientation-implementation.md) for full details
+
 ## Decision 7: Flutter over React Native
 
 - **Decision:** Rebuild EyeCue in Flutter/Dart rather than continuing with React Native.
