@@ -6,7 +6,7 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 ## Status
 
-**Early Prototype (~50% complete)** — Core inference pipeline, bounding box overlay, and debug instrumentation are functional. Error reporting in the inference isolate is partially implemented. TTS, NMS, and permission-denied UI are not yet implemented.
+**Early Prototype (~60% complete)** — Core inference pipeline, bounding box overlay, device-independent orientation, NMS, debug instrumentation, forensic file logging, and the preview/info-panel UI are functional. Error reporting in the inference isolate is partially implemented (restart recovery pending). TTS and permission-denied UI are not yet implemented.
 
 See [`docs/project-status.md`](docs/project-status.md) for current status and blockers.
 
@@ -23,6 +23,8 @@ Requires Flutter SDK >=3.12.0, Android API 24+.
 
 All project documentation is in the [`docs/`](docs/) directory:
 
+### Status & Planning
+
 | Document | Purpose |
 |----------|---------|
 | [`project-status.md`](docs/project-status.md) | Current state, blockers, next steps — **read first** |
@@ -38,6 +40,20 @@ All project documentation is in the [`docs/`](docs/) directory:
 | [`changelog.md`](docs/changelog.md) | Human-readable version history |
 | [`research-notes.md`](docs/research-notes.md) | Papers, benchmarks, ideas, defense notes |
 
+### Investigations & Diagnosis
+
+| Document | Purpose |
+|----------|---------|
+| [`camera-path-forensics.md`](docs/camera-path-forensics.md) | Live-camera path forensics — orientation defect isolated & fixed |
+| [`static-image-test.md`](docs/static-image-test.md) | Static-image ground-truth test (camera removed) |
+| [`input-pipeline-investigation.md`](docs/input-pipeline-investigation.md) | "max confidence ≈ 0.05" input-side forensics |
+| [`inference-pipeline-probe.md`](docs/inference-pipeline-probe.md) | "Objects: 0" parser-side forensics (graph-verified) |
+| [`inference-tensor-diagnosis.md`](docs/inference-tensor-diagnosis.md) | Tensor-handling crash diagnosis (reshape/ByteBuffer) |
+| [`phase1-preprocessing-diagnosis.md`](docs/phase1-preprocessing-diagnosis.md) | Preprocessing health after the converter fix |
+| [`painter-coordinate-review.md`](docs/painter-coordinate-review.md) | Painter ↔ preview coordinate-space math review |
+| [`orientation-design-review.md`](docs/orientation-design-review.md) | Orientation architecture design review |
+| [`orientation-implementation.md`](docs/orientation-implementation.md) | Orientation implementation summary & validation |
+
 ### Historical Records
 
 - [`chat_spec.md`](chat_spec.md) — Full conversation history and original specification (~3100 lines). Canonical reference. Do not modify.
@@ -49,10 +65,11 @@ All project documentation is in the [`docs/`](docs/) directory:
 |-------|-----------|
 | Framework | Flutter/Dart |
 | ML Inference | TFLite via `tflite_flutter` |
-| Model | YOLOv8n (INT8 quantized, 80 COCO classes) |
+| Model | YOLOv8n (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) |
 | Camera | `camera` plugin (YUV420, low resolution) |
 | TTS | `flutter_tts` (declared, not yet wired) |
 | State | `flutter_riverpod` (declared, not yet wired) |
+| Logging | `fl_chart` (declared, not yet wired), forensic file logging (active) |
 | Platforms | Android (primary), iOS, Linux, macOS, Windows, Web |
 
 ## Project Structure
@@ -60,12 +77,28 @@ All project documentation is in the [`docs/`](docs/) directory:
 ```
 lib/
 ├── main.dart                          # App entry point
-├── models/detection.dart              # Detection data class
-├── screens/camera_screen.dart         # Camera + orchestration + debug overlay
-├── services/inference_isolate.dart    # Isolate bridge + inference + logging
+├── models/
+│   ├── detection.dart                 # Detection data class
+│   ├── box_transform.dart             # Device-independent orientation math
+│   ├── model_metadata.dart            # Runtime model introspection snapshot
+│   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
+│   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
+├── screens/camera_screen.dart         # Camera + orchestration + preview UI
+├── services/
+│   ├── inference_isolate.dart         # Isolate bridge + inference + preprocessing
+│   ├── forensic_log.dart              # File-based structured diagnostics
+│   ├── inference_probe.dart           # Parser probe (disabled)
+│   └── input_probe.dart               # Input pipeline probe (disabled)
 └── widgets/
     ├── bounding_box_painter.dart      # Bounding box CustomPainter overlay
-    └── debug_overlay.dart             # Debug HUD (debug builds only)
+    ├── debug_overlay.dart             # Debug HUD (retained, unused)
+    └── info_panel.dart                # Metrics + Detections info panel
+
+tool/
+├── validate_flatbuffer.dart           # CLI: validates the flatbuffer scanner
+├── validate_png.dart                  # CLI: validates the PNG encoder
+├── dump_graph_tail.py                 # CLI: dumps TFLite graph tail ops
+└── dump_decode_consts.py              # CLI: dumps decode constants
 ```
 
 ## License

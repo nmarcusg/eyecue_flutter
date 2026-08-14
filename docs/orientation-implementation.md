@@ -12,11 +12,11 @@
 
 | File | Why it changed |
 |------|----------------|
-| [`lib/models/box_transform.dart`](lib/models/box_transform.dart) (NEW) | The single, device-independent source of truth for ALL orientation math: metadata→rotation, upright dims, reversible normalized-box rotation, and the plugin-convention `DeviceOrientation`→degrees mapping. |
-| [`lib/services/inference_isolate.dart`](lib/services/inference_isolate.dart) | `processFrame` now carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`). The isolate rotates + optionally mirrors the 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()` (parser/NMS untouched), and logs per-frame orientation diagnostics. |
-| [`lib/screens/camera_screen.dart`](lib/screens/camera_screen.dart) | Computes the metadata-driven rotation per frame from `controller.value.deviceOrientation` + `CameraDescription.sensorOrientation` + lens; passes it downstream; sizes the preview and the painter with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`. |
-| [`lib/widgets/bounding_box_painter.dart`](lib/widgets/bounding_box_painter.dart) | Removed all sensor-orientation knowledge (`lensDirection`/mirror). The painter is now a pure normalized→pixel mapper over the upright image; it no longer needs to know the lens or rotation. |
-| [`lib/services/forensic_log.dart`](lib/services/forensic_log.dart) | Orientation-related diagnostics only: `recordOrientation` (per-frame) and sensor/lens fields in `recordCamera`. No other logging touched. |
+| [`lib/models/box_transform.dart`](../lib/models/box_transform.dart) (NEW) | The single, device-independent source of truth for ALL orientation math: metadata→rotation, upright dims, reversible normalized-box rotation, and the plugin-convention `DeviceOrientation`→degrees mapping. |
+| [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart) | `processFrame` now carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`). The isolate rotates + optionally mirrors the 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()` (parser/NMS untouched), and logs per-frame orientation diagnostics. |
+| [`lib/screens/camera_screen.dart`](../lib/screens/camera_screen.dart) | Computes the metadata-driven rotation per frame from `controller.value.deviceOrientation` + `CameraDescription.sensorOrientation` + lens; passes it downstream; sizes the preview and the painter with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`. |
+| [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Removed all sensor-orientation knowledge (`lensDirection`/mirror). The painter is now a pure normalized→pixel mapper over the upright image; it no longer needs to know the lens or rotation. |
+| [`lib/services/forensic_log.dart`](../lib/services/forensic_log.dart) | Orientation-related diagnostics only: `recordOrientation` (per-frame) and sensor/lens fields in `recordCamera`. No other logging touched. |
 
 ## 2. Why each change
 
@@ -79,7 +79,7 @@ painter maps normalized → pixels over upright imageSize (no orientation logic)
 
 ### 3.3 Reversible box transform (kept per requirement, used at R=0)
 
-[`BoxTransform.rotateRect`](lib/models/box_transform.dart) / `invertRect` are
+[`BoxTransform.rotateRect`](../lib/models/box_transform.dart) / `invertRect` are
 the pure, mutually-inverse normalized-box rotations (90°/180°/270° formulas
 with `(x,y,w,h)→(1−y−h,x,h,w)` etc.). They are exercised at rotation 0 in the
 pipeline and are available for unit tests / any future sensor-space consumer.

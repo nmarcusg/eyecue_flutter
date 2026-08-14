@@ -1,6 +1,6 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-08-01
+> **Last Updated:** 2026-08-14
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
 ## Completed Work
@@ -39,14 +39,15 @@
 - ✅ Dtype-matched writes driven by runtime metadata (normalized float, or quantized via input scale/zeroPoint)
 - ✅ Support for FLOAT32/FLOAT64/FLOAT16/INT8/UINT8/INT16 model input types
 
-### Post-Processing (95%)
+### Post-Processing (100%)
 
 - ✅ Argmax per-box (anchors × classes from runtime metadata)
 - ✅ Dequantization driven by runtime metadata (only when the output tensor is quantized)
-- ✅ Confidence threshold filtering (0.5)
+- ✅ Confidence threshold filtering (**0.25** — standard YOLOv8; lowered from 0.5, 2026-08-01)
+- ✅ **Class-wise Non-Maximum Suppression (NMS)** — IoU 0.45; suppresses overlapping anchors per class (2026-08-01)
 - ✅ Detection list construction (classId, confidence, bounding box)
+- ✅ Pre-NMS candidate count exposed for `before NMS → after NMS` logging
 - ✅ Per-detection debug logging (label, confidence, normalised box coords)
-- ❌ NMS (Non-Maximum Suppression) — missing
 
 ### Model Introspection (100%) — NEW
 
@@ -177,6 +178,7 @@
 | Aspect-correct preview | ✅ Complete (2026-08-01, v0.1.5) |
 | Camera preview UI redesign | ✅ Complete (2026-08-01, v0.1.6) |
 | Device-independent orientation | ✅ Complete (2026-08-01, v0.1.7) |
+| NMS (class-wise, IoU 0.45) + conf threshold 0.25 | ✅ Complete (2026-08-01) |
 
 ## Next Tasks (Priority Order)
 
@@ -184,9 +186,10 @@
 1. **Implement TTS audio feedback** — 2–4 hours. Wire `flutter_tts` to detection stream.
 2. ~~**Implement bounding box `CustomPainter`**~~ — ✅ Done. See [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
 3. ~~**Add debug instrumentation**~~ — ✅ Done. See [`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart), [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart), [`lib/screens/camera_screen.dart`](../lib/screens/camera_screen.dart), [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
-4. **Complete error handling in inference isolate** — 0.5–1 hours. Extend error recovery (isolate restart on crash).
-5. **Add permission-denied UI** — 1–2 hours.
-6. **Investigate XNNPACK SIGSEGV** — 4–8 hours. Benchmark tool on test device.
+4. ~~**Implement NMS**~~ — ✅ Done (2026-08-01). Class-wise, IoU 0.45, pre-NMS conf 0.25. See [`_parseYolov8Output`](../lib/services/inference_isolate.dart).
+5. **Complete error handling in inference isolate** — 0.5–1 hours. Extend error recovery (isolate restart on crash).
+6. **Add permission-denied UI** — 1–2 hours.
+7. **Investigate XNNPACK SIGSEGV** — 4–8 hours. Benchmark tool on test device.
 
 ## Remaining Tasks
 

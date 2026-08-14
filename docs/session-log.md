@@ -5,6 +5,47 @@
 
 ---
 
+## 2026-08-14 (6th session) — Documentation Sync
+
+### Objective
+- Read all markdown documentation and sync it with the actual codebase state
+  (the docs were last updated 2026-08-01 at v0.1.7, and had drifted from the
+  implemented code).
+
+### Completed
+- **Read all markdown:** root docs (`README.md`, `chat_spec.md`, `auditor.md`)
+  plus all 21 files under [`docs/`](.) and cross-checked against the source in
+  `lib/`, `tool/`, `test/`, and `pubspec.yaml`.
+- **Verified NMS is implemented** (contradicting several status docs): the
+  isolate's [`_parseYolov8Output`](../lib/services/inference_isolate.dart)
+  applies class-wise NMS (IoU 0.45) after a pre-NMS confidence threshold of
+  0.25. Fixed the stale "NMS missing" claims across:
+  - [`README.md`](../README.md)
+  - [`project-status.md`](project-status.md)
+  - [`implementation-progress.md`](implementation-progress.md)
+  - [`known-issues.md`](known-issues.md)
+  - [`architecture.md`](architecture.md)
+  - [`implementation-plan.md`](implementation-plan.md)
+- **README refreshed:** status (~60%, NMS done), tech stack (model is
+  weight-quantized FLOAT32-I/O), full project structure (added `BoxTransform`,
+  `PngEncoder`, `ForensicLog`, probes, `InfoPanel`, `tool/` scripts), and a
+  new "Investigations & Diagnosis" docs index.
+- **Changelog:** added the retroactive `v0.1.7.1` entry documenting the
+  NMS + confidence-threshold work (2026-08-01) that had no changelog record.
+- **Dates:** updated `Last Updated` timestamps to 2026-08-14 where touched.
+
+### Decisions
+- Keep `chat_spec.md` and `auditor.md` as historical records (untouched).
+- Document the existing NMS implementation rather than re-planning it as
+  pending work (it has been on-device validated).
+
+### Next Session
+- Implement TTS audio feedback (Milestone 1) — the last missing core feature.
+- Re-validate orientation on-device (back landscape + front camera).
+- Add permission-denied UI + isolate restart recovery.
+
+---
+
 ## 2026-08-01 (5th session) — Orientation Architecture
 
 ### Objective

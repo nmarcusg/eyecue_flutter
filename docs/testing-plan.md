@@ -102,7 +102,7 @@ See [`benchmark-results.md`](benchmark-results.md) for the recording template.
 ### Feature: Bounding Box Overlay
 1. Start app → verify boxes appear over detected objects
 2. Move camera → verify boxes track objects smoothly
-3. Multiple objects → verify multiple distinct boxes (no overlap from missing NMS)
+3. Multiple objects → verify multiple distinct boxes (one per object — class-wise NMS at IoU 0.45 suppresses duplicates)
 4. Box scaling → verify boxes are correctly positioned regardless of preview size
 
 ### Feature: Error Recovery

@@ -48,18 +48,19 @@ This document records important engineering decisions made during the developmen
   - NHWC/NCHW auto-detection via `shape[1] == 3` heuristic
   - Slightly more code at initialization, but zero runtime cost
 
-## Decision 4: INT8 Model Support
+## Decision 4: Quantized-Model Support (Dynamic, Metadata-Driven)
 
-- **Decision:** Support INT8 quantized models with proper dequantization (scale/zeroPoint from `outputTensor.params`).
-- **Date:** 2026-07
-- **Reason:** The target model (`yolov8n.tflite`) is actually INT8-quantized despite its name. INT8 models are ~4× smaller and ~2–4× faster on CPU than float32. Dequantization is required to interpret the confidence scores correctly.
+- **Decision:** Support quantized models with proper dequantization (scale/zeroPoint from `outputTensor.params`), driven entirely by runtime model metadata rather than assumptions about the file.
+- **Date:** 2026-07 (updated 2026-08-14 to reflect the verified model type)
+- **Reason:** Support any YOLOv8 export — full INT8/UINT8, weight-quantized, or pure float32 — without code changes. The runtime introspection (`ModelMetadata`) classifies the actual loaded model: the bundled `yolov8n.tflite` is **FLOAT32 I/O with INT8 weights (Weight-Quantized)** — *not* full INT8 despite its filename. Dequantization is applied only when the output tensor is actually quantized.
 - **Alternatives Considered:**
-  - Float32-only model — rejected due to larger size and slower inference
-  - Require float32 output layer — rejected; INT8 outputs need dequantization
+  - Assume the model is full INT8 from the filename — rejected; would be wrong for the bundled file and fragile for future swaps
+  - Require float32 output layer — rejected; real quantized outputs need dequantization
 - **Consequences:**
   - Handles `TensorType.int8`/`uint8` with proper `scale`/`zeroPoint` math
-  - Pre-allocated Float32 output buffer for dequantized results
-  - Works with both INT8 and float32 models (detected dynamically)
+  - Pre-allocated dtype-matched output buffer for dequantized results
+  - Works with INT8, UINT8, FLOAT16, and float32 models (detected dynamically)
+  - The quantization/dequantization branches are dormant for the current Weight-Quantized model but activate automatically for full INT8 models
 
 ## Decision 5: XNNPACK Disabled
 
@@ -94,7 +95,7 @@ This document records important engineering decisions made during the developmen
 
 - **Decision:** Use a two-stage coordinate transformation: (1) map normalised model coords [0,1] linearly to camera image pixels, then (2) map image pixels to screen pixels accounting for AspectRatio letterboxing.
 - **Date:** 2026-07-22
-- **Reason:** The YOLO model outputs normalised [0,1] coordinates relative to its 320×320 input. The camera image (e.g. 640×480) is stretched (not letterboxed) to fill the square model input during YUV→RGB preprocessing. This means normalised coordinates map linearly to the original camera image: `imgX = normX × imgWidth`. The second stage accounts for the Flutter `CameraPreview` widget's `AspectRatio` behaviour — the preview fills an expanded `Stack` but the actual camera texture is letterboxed to preserve the sensor's native aspect ratio.
+- **Reason:** The YOLO model outputs normalised [0,1] coordinates relative to its 640×640 input (verified from the model graph — boxes are already normalized by `×1/640` inside the exported graph, see [`inference-pipeline-probe.md`](inference-pipeline-probe.md)). The camera image (e.g. 320×240) is stretched (not letterboxed) to fill the square model input during YUV→RGB preprocessing. This means normalised coordinates map linearly to the original camera image: `imgX = normX × imgWidth`. The second stage accounts for the Flutter `CameraPreview` widget's `AspectRatio` behaviour — the preview fills an expanded `Stack` but the actual camera texture is letterboxed to preserve the sensor's native aspect ratio.
 - **Alternatives Considered:**
   - Direct normalised-to-screen mapping (ignoring letterboxing) — rejected; boxes would be misaligned on non-matching aspect ratios
   - Using `cameraController.value.aspectRatio` for the preview — rejected; the raw image aspect ratio from the sensor is the authoritative source since the model operates on that data

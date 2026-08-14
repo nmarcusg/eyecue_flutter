@@ -1,5 +1,6 @@
 # EyeCue — Known Issues
 
+> **Last Updated:** 2026-08-14
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
 
 ## Current Blockers
@@ -33,9 +34,9 @@
 
 | Priority | Item | Location |
 |----------|------|----------|
-| 🟡 P1 | No NMS implementation — duplicate detections for same object | [`inference_isolate.dart:269`](../lib/services/inference_isolate.dart:269) |
 | 🟡 P1 | 4 unused dependencies (~57% of deps): Riverpod, fl_chart, path_provider, flutter_tts | [`pubspec.yaml:22-32`](../pubspec.yaml:22) |
 | 🟡 P1 | ~~No bounding box painter~~ — ✅ Implemented 2026-07-22 | [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) |
+| 🟡 P1 | ~~No NMS implementation~~ — ✅ Implemented 2026-08-01 (class-wise, IoU 0.45, pre-NMS conf 0.25) | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
 | 🟡 P2 | Hardcoded thresholds, model paths, labels path | Multiple locations |
 | 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` | [`camera_screen.dart:98`](../lib/screens/camera_screen.dart:98) |
 | 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear | [`inference_isolate.dart:212`](../lib/services/inference_isolate.dart:212) |

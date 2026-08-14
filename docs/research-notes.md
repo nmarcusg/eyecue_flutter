@@ -80,11 +80,13 @@ See [this discussion in chat_spec.md](../chat_spec.md) for the full analysis.
 
 ### Model Variants Available
 
-| File | Quantization | Activation | Notes |
-|------|-------------|------------|-------|
-| `yolov8n.tflite` | INT8 | SiLU | Active model (named without `_int8` suffix) |
-| `yolov8n_int8.tflite` | INT8 | SiLU | Identical quantization? Present but not in pubspec |
-| `yolov8n_int8ReLU.tflite` | INT8 | ReLU | GPU-compatible variant (from RN prototype) |
+> The "quantization" column below reflects **runtime introspection** (see [`implementation-decisions.md`](implementation-decisions.md) §4 / [`inference-tensor-diagnosis.md`](inference-tensor-diagnosis.md)) — never assumed from filenames.
+
+| File | I/O precision | Weights | Notes |
+|------|---------------|---------|-------|
+| `yolov8n.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | **Active bundled model** — classified *Weight-Quantized*. Input `[1, 640, 640, 3]`, output `[1, 84, 8400]`. Despite its name it is **not** full INT8. |
+| `yolov8n_int8.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | Same weight-quantized structure; present in `assets/` but **not declared in pubspec** (not loadable at runtime). |
+| `yolov8n_int8ReLU.tflite` | — | — | GPU-compatible variant from the React Native prototype; **no longer present** in this repository's `assets/`. |
 
 ---
 

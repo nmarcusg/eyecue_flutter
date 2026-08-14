@@ -1,11 +1,11 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-08-01
+> **Last Updated:** 2026-08-14
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers).
 
 ## Overall Progress: ~60%
 
-The core inference pipeline — camera → Isolate → TFLite → argmax → UI stream — is functional and architecturally sound. Bounding box overlay, full debug instrumentation, **runtime model introspection**, forensic file logging, aspect-correct preview UI, and the **device-independent orientation architecture** are implemented. The last camera-path defect (frames never rotated to device orientation — portrait detections were ~0) is fixed and on-device validated (portrait now 0.91). Error reporting in the isolate is partially complete (the busy gate now recovers on isolate errors). The app is **not yet usable as an assistive tool**: no TTS audio, no NMS, no isolate restart recovery, no permission-denied UI.
+The core inference pipeline — camera → Isolate → TFLite → argmax → NMS → UI stream — is functional and architecturally sound. Bounding box overlay, class-wise NMS, full debug instrumentation, **runtime model introspection**, forensic file logging, aspect-correct preview UI, and the **device-independent orientation architecture** are implemented. The last camera-path defect (frames never rotated to device orientation — portrait detections were ~0) is fixed and on-device validated (portrait now 0.91). Error reporting in the isolate is partially complete (the busy gate now recovers on isolate errors). The app is **not yet usable as an assistive tool**: no TTS audio, no isolate restart recovery, no permission-denied UI.
 
 ## Current Milestone
 
@@ -19,6 +19,7 @@ The core inference pipeline — camera → Isolate → TFLite → argmax → UI 
 | Permission-denied UI | ❌ Not started |
 | Remove unused dependencies or wire them | ❌ Not started |
 | Debug instrumentation & logging | ✅ Complete |
+| NMS (class-wise, IoU 0.45, conf 0.25) | ✅ Complete |
 | Orientation re-validation (back landscape + front camera) | 🟡 In progress — portrait + static verified; deferred runs pending |
 
 ## Current Blocker
@@ -41,7 +42,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 | 3 | ~~Add error handling to inference isolate~~ | 🟡 Partial — error reporting done; restart recovery remaining |
 | 4 | Add permission-denied and error UI states | 🔴 Critical |
 | 5 | Investigate XNNPACK SIGSEGV | 🔴 Critical |
-| 6 | Implement NMS (Non-Maximum Suppression) | 🟡 High |
+| 6 | ~~Implement NMS (Non-Maximum Suppression)~~ | ✅ Complete — class-wise, IoU 0.45, pre-NMS conf 0.25 |
 | 7 | Add pause/resume detection toggle | 🟡 High |
 | 8 | ~~Implement performance logging (FPS, latency)~~ | ✅ Complete |
 
@@ -69,4 +70,5 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 - ✅ Camera preprocessing repair: geometry-aware YUV420→RGB (rowStride/pixelStride honored; planar I420 + semi-planar NV12/NV21)
 - ✅ Aspect-correct preview: `FittedBox` + painter share `applyBoxFit` math; no stretching/warping
 - ✅ Camera preview UI redesign: strict 3:4 portrait preview + permanent Metrics/Detections info panel
+- ✅ Class-wise NMS (IoU 0.45) + pre-NMS confidence threshold lowered to 0.25 (standard YOLOv8)
 - ✅ **Device-independent orientation** (`BoxTransform`): input tensor rotated/mirrored to upright per runtime metadata; portrait detections 0 → 0.91 on-device; static-image regression byte-identical

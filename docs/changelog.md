@@ -5,6 +5,22 @@
 
 ---
 
+## v0.1.7.1 — "Post-Processing Completion: NMS + Confidence Threshold" (2026-08-01)
+
+### Added
+- **Class-wise Non-Maximum Suppression (NMS)** in [`_parseYolov8Output`](../lib/services/inference_isolate.dart) — IoU threshold `0.45`; overlapping anchors of the same class are suppressed, so each object renders as one box instead of a jumble (previously every object fired many overlapping anchors).
+- **Pre-NMS confidence threshold lowered to `0.25`** (standard YOLOv8) — was `0.5`, which dropped true detections while passing spurious full-frame boxes.
+- Pre-NMS candidate count exposed and logged as `candidates(before NMS)=N → after NMS=M`.
+
+### Fixed
+- The real post-processing gaps identified in [`docs/inference-pipeline-probe.md`](inference-pipeline-probe.md): missing NMS and an over-high pre-NMS threshold. Verified on-device by the static-image test ([`docs/static-image-test.md`](static-image-test.md)): bus + 4 people detected at 0.47–0.92 confidence (44 pre-NMS → 5 post-NMS).
+
+### Notes
+- No preprocessing, YUV conversion, model loading, or parser indexing changed — only threshold + NMS added after argmax.
+- This entry was added retroactively during the 2026-08-14 documentation sync; the implementation dates from 2026-08-01.
+
+---
+
 ## v0.1.7 — "Device-Independent Orientation" (2026-08-01)
 
 ### Added
