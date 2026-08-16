@@ -6,6 +6,8 @@
 
 EyeCue is a **real-time, on-device object detection assistive application for visually impaired users**. The app captures camera frames, runs them through a YOLOv8n TFLite model, speaks detected object names aloud via text-to-speech, and overlays bounding boxes on the camera preview.
 
+**EyeCue is Android-only** (per the thesis): it targets Android smartphones and does not support iOS, web, Windows, macOS, or Linux — their platform scaffolding has been removed.
+
 Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eliminate camera preview hitching caused by React Native's threading architecture.
 
 ## High-Level Architecture
@@ -106,8 +108,7 @@ eyecue_flutter/
 │       └── info_panel.dart                # Old developer metrics panel (unused in primary UI)
 ├── tool/                                  # CLI validation tools (unchanged)
 ├── assets/                                # Model + labels (+ test image)
-├── android/                               # Android platform (production target)
-├── ios/, linux/, macos/, windows/, web/   # Bootstrapped, out of thesis scope
+├── android/                               # Android platform (the only supported platform)
 ├── test/                                  # Unit + widget tests (navigation, services, widgets)
 ├── docs/                                  # Project documentation
 ├── pubspec.yaml                           # Dependencies & asset declarations

@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-08-16 (11th session) — Android-Only Platform Cleanup
+
+### Objective
+- Scope EyeCue to Android only (per the thesis): remove unused Flutter platform
+  scaffolding and document that iOS/desktop/web are out of scope.
+
+### Completed
+- Removed the unused generated platform directories: `ios/`, `web/`, `windows/`,
+  `macos/`, `linux/` (103 tracked files deleted, unstaged — not committed).
+- Confirmed the app is Android-self-contained: `lib/` has no platform checks
+  (`Platform.is*`/`defaultTargetPlatform`/`kIsWeb`), no explicit platform blocks
+  in `pubspec.yaml`, and every dependency (camera, tflite_flutter, flutter_tts,
+  permission_handler, path_provider, fl_chart) has an Android implementation.
+- Ran `flutter pub get` to regenerate the (gitignored) plugin metadata.
+- Docs updated: README (platform note + Platforms row), `docs/architecture.md`
+  (Android-only statement + folder structure), `docs/known-issues.md`
+  (Platform-Specific Limitations). Historical docs (implementation-decisions,
+  orientation reviews, research-notes, thesis audit) intentionally retained.
+- Android config checked against the thesis: `minSdk=24` (Flutter default) vs
+  thesis Android 10 / API 29 minimum; `applicationId=com.example.eyecue_flutter`
+  vs expected `com.eyecue`; `targetSdk=36`; release still signs with the debug
+  keystore. These are reported as follow-ups, not changed (platform-scope
+  cleanup only).
+
+### Verified
+- `flutter analyze`: 0 issues. `flutter test`: 59 passing.
+- `flutter devices`: Android device detected; Linux desktop target no longer
+  present. `flutter build apk --debug` succeeds.
+
+### Next Session
+- Release hardening: package rename (`com.eyecue`), minSdk alignment with the
+  thesis (API 29), release signing; on-device validation of gestures/TTS.
+
+---
+
 ## 2026-08-16 (10th session) — UI Layout Fixes (v0.2.2)
 
 ### Objective

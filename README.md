@@ -4,6 +4,8 @@
 
 EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and speaks detected object names aloud via text-to-speech. All inference runs entirely on-device — no internet connection required.
 
+> **Platform:** EyeCue is **Android-only** (per the thesis). It is intended for Android smartphones and does **not** support iOS, web, Windows, macOS, or Linux; their scaffolding has been removed.
+
 ## Status
 
 **Assistive application UI (v0.2.0)** — The core inference pipeline (camera → Isolate → TFLite → argmax → NMS → bounding boxes), device-independent orientation, and forensic logging are validated on-device. The app now has the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. The ML pipeline was not modified.
@@ -70,7 +72,7 @@ All project documentation is in the [`docs/`](docs/) directory:
 | TTS | `flutter_tts` (wired via `TtsService`) |
 | State | `ChangeNotifier` services + `setState` (Riverpod declared, unused) |
 | Reports | `fl_chart` (latency/FPS/frequency charts in Logs & Reports), forensic file logging (active) |
-| Platforms | Android (primary, per thesis), iOS, Linux, macOS, Windows, Web (bootstrapped) |
+| Platforms | **Android only** (per thesis). iOS, desktop (Windows/macOS/Linux), and web are out of scope — their scaffolding was removed |
 
 ## Project Structure
 

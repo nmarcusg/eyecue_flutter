@@ -47,9 +47,8 @@
 
 ## Platform-Specific Limitations
 
-- **Android:** Primary target. Snapdragon 695 testing device has XNNPACK crash. Other devices untested.
-- **iOS:** Bootstrapped but not configured. No camera permissions plist, no Podfile customization.
-- **Linux/macOS/Windows/Web:** Bootstrapped by `flutter create`. Untested, likely non-functional for camera/ML features.
+- **Android:** The **only** supported platform (per the thesis). Snapdragon 695 testing device has XNNPACK crash. Other devices untested.
+- **iOS / web / Windows / macOS / Linux:** Out of scope — EyeCue is Android-only. Their scaffolding was removed during the Android-only platform cleanup; no support is provided or planned.
 
 ## Known Bugs
 
