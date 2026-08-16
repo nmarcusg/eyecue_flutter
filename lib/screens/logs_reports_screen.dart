@@ -1,0 +1,322 @@
+import 'package:flutter/material.dart';
+
+import '../models/detection_info.dart';
+import '../services/telemetry_service.dart';
+import '../widgets/charts.dart';
+
+/// Logs & Reports — researcher/developer-facing telemetry dashboard.
+///
+/// Deliberately reached from Settings (not the main navigation) so it does not
+/// add cognitive load for visually impaired users, per the thesis. Tabs:
+/// Overview, Charts, Logs.
+///
+/// Honesty rules implemented here:
+///  * Accuracy/Precision/Recall/F1/mAP are **not** computed — they require
+///    ground-truth labels and are shown as unavailable.
+///  * Raw confidence is never labeled as accuracy.
+class LogsReportsScreen extends StatelessWidget {
+  final TelemetryService telemetry;
+
+  const LogsReportsScreen({super.key, required this.telemetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Logs & Reports'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Overview'),
+              Tab(text: 'Charts'),
+              Tab(text: 'Logs'),
+            ],
+          ),
+        ),
+        body: ListenableBuilder(
+          listenable: telemetry,
+          builder: (context, _) {
+            return const TabBarView(
+              children: [
+                _OverviewTab(),
+                _ChartsTab(),
+                _LogsTab(),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewTab extends StatelessWidget {
+  const _OverviewTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (context) {
+        final telemetry = _of(context);
+        final theme = Theme.of(context);
+        final duration = telemetry.sessionDuration;
+        final hours = duration.inHours;
+        final minutes = duration.inMinutes % 60;
+        final seconds = duration.inSeconds % 60;
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Real-Time Performance',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _MetricCard(label: 'Avg FPS', value: _fmt(telemetry.averageInferenceFps)),
+                const SizedBox(width: 12),
+                _MetricCard(label: 'Avg Latency', value: '${_fmt(telemetry.averageLatencyMs)} ms'),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Session Summary',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            _SummaryRow(label: 'Total detections', value: '${telemetry.totalDetections}'),
+            _SummaryRow(label: 'High-priority alerts', value: '${telemetry.highPriorityAlerts}'),
+            _SummaryRow(label: 'Frames processed', value: '${telemetry.framesProcessed}'),
+            _SummaryRow(
+              label: 'Session duration',
+              value: '$hours h $minutes m $seconds s',
+            ),
+            _SummaryRow(
+              label: 'Avg confidence',
+              value: telemetry.records.isEmpty
+                  ? '—'
+                  : '${(telemetry.averageConfidence * 100).toStringAsFixed(0)}%',
+            ),
+            const SizedBox(height: 24),
+            const _UnavailableNote(
+              title: 'Model Evaluation Metrics',
+              body:
+                  'Accuracy, Precision, Recall, F1, and mAP are not shown because '
+                  'they require ground-truth labels (offline evaluation), which a '
+                  'live camera feed cannot provide.',
+            ),
+            const SizedBox(height: 12),
+            const _UnavailableNote(
+              title: 'Usability (SUS)',
+              body:
+                  'SUS is collected through a post-test questionnaire with '
+                  'participants — it is not derived from runtime data.',
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ChartsTab extends StatelessWidget {
+  const _ChartsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (context) {
+        final telemetry = _of(context);
+        final theme = Theme.of(context);
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Inference Latency (300 ms benchmark)',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 180,
+              child: LatencyChart(samples: telemetry.samples),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Frames Per Second (15 FPS target)',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 180,
+              child: FpsChart(samples: telemetry.samples),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Detection Frequency',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 180,
+              child: DetectionFrequencyChart(
+                buckets: telemetry.detectionFrequencyByMinute(),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _LogsTab extends StatelessWidget {
+  const _LogsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (context) {
+        final telemetry = _of(context);
+        final records = telemetry.records;
+        if (records.isEmpty) {
+          return const Center(child: Text('No detections recorded yet.'));
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: records.length,
+          itemBuilder: (context, index) {
+            final r = records[records.length - 1 - index]; // newest first
+            final time = '${r.timestamp.hour.toString().padLeft(2, '0')}:'
+                '${r.timestamp.minute.toString().padLeft(2, '0')}:'
+                '${r.timestamp.second.toString().padLeft(2, '0')}';
+            return ListTile(
+              dense: true,
+              leading: _PriorityDot(priority: r.priority),
+              title: Text('${r.label} — ${(r.confidence * 100).toStringAsFixed(0)}%'),
+              subtitle: Text(
+                '${r.position} · ${r.latencyMs.toStringAsFixed(0)} ms',
+              ),
+              trailing: Text(time),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _PriorityDot extends StatelessWidget {
+  final ObjectPriority priority;
+
+  const _PriorityDot({required this.priority});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (priority) {
+      ObjectPriority.high => const Color(0xFFEF5350),
+      ObjectPriority.medium => const Color(0xFFFFCA28),
+      ObjectPriority.low => const Color(0xFF66BB6A),
+    };
+    return Icon(Icons.circle, color: color, size: 14);
+  }
+}
+
+class _MetricCard extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _MetricCard({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SummaryRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: theme.textTheme.bodyLarge),
+          Text(
+            value,
+            style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UnavailableNote extends StatelessWidget {
+  final String title;
+  final String body;
+
+  const _UnavailableNote({required this.title, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(body, style: theme.textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+/// Helper to reach the TelemetryService from a descendant builder without
+/// passing it through every private widget.
+TelemetryService _of(BuildContext context) =>
+    (context.findAncestorWidgetOfExactType<LogsReportsScreen>()!) .telemetry;
+
+String _fmt(double v) => v.toStringAsFixed(1);
