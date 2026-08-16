@@ -5,6 +5,89 @@
 
 ---
 
+## v0.2.2 — "UI Layout Fixes: Stable Camera Viewport + Contained Charts" (2026-08-16)
+
+### Fixed
+- **Camera viewport no longer resizes when detections appear.** The Detection
+  screen used a `Column` with the camera in `Expanded` and a content-sized
+  controls panel whose card list height was `detections × 78`, so adding
+  detections shrank the camera region. The layout now reserves a **fixed**
+  content region ([`detection_screen.dart`](../lib/screens/detection_screen.dart)):
+  a `LayoutBuilder`-derived `SizedBox` (height = `constraints.maxHeight × 0.32`,
+  clamped to 200–320) holds the warning banner + a scrollable detection list +
+  controls; the camera stays in the remaining `Expanded` space. Detection
+  content only scrolls inside its own allocated region. The warning banner
+  moved out of the camera overlay and below the camera.
+- **Logs & Reports charts now stay inside their containers.**
+  [`charts.dart`](../lib/widgets/charts.dart) previously used fixed upper clamps
+  (`latency clamp(50,500)`, `FPS clamp(1,30)`), so unusually high values were
+  drawn outside the plot, benchmark lines could sit above a shrunken scale, and
+  the bar chart had no `maxY` (fl_chart defaults it to 0). Each chart now
+  derives its Y bounds from the actual dataset with headroom
+  (`max(dataMax × 1.2 + padding, floor)`), benchmark lines are drawn only when
+  they fit the computed scale, and the bar chart sets an explicit dynamic
+  `maxY`. Empty datasets show a "No data available yet" placeholder.
+
+### Verified
+- `flutter analyze`: 0 issues. `flutter test`: 59 passing (added chart
+  regression tests for empty / very-high / constant / single-bucket data).
+- On-device (Android 13, API 33): Home → Detect renders with the fixed content
+  region; camera starts on demand and streamed 2-object detections; Settings
+  and Logs & Reports render with live telemetry (Avg FPS 2.1, Avg Latency
+  606 ms, 123 detections); Overview/Charts/Logs all render. **0 exceptions /
+  RenderFlex overflows across the whole session.**
+
+---
+
+## v0.2.1 — "Fix Startup Theme Assertion" (2026-08-16)
+
+### Fixed
+- **Startup crash during theme construction.** [`EyeCueApp._buildTheme()`](../lib/main.dart) called
+  `base.textTheme.apply(fontSizeFactor: 1.12, ...)`, which failed the Flutter
+  assertion `fontSize != null || (fontSizeFactor == 1.0 && fontSizeDelta == 0.0)`.
+  In Flutter's Material 3 typography the default `TextTheme` is **color-only**
+  (`fontSize == null` for every style; geometry is merged per-locale at render
+  time), so `TextTheme.apply(fontSizeFactor:)` asserts on every style.
+- **Fix:** the theme now supplies an explicit high-contrast `TextTheme`
+  ([`_highContrastTextTheme()`](../lib/main.dart)) with concrete font sizes (M3
+  defaults scaled ~1.12×) and white text — same accessibility intent, valid
+  theme. No camera/inference/UI behavior changed.
+
+### Verified
+- `flutter analyze`: 0 issues. `flutter test`: 53 passing (new regression test
+  pumps `EyeCueApp` and asserts the Home screen renders with a concrete
+  white text theme).
+- On-device (Android 13, API 33): app installs, launches, renders Home, and the
+  detection pipeline continues to run (live `[Detection]` frames); no FATAL, no
+  assertion, no overflow in logcat.
+
+---
+
+## v0.2.0 — "Assistive Application UI" (2026-08-16)
+
+### Added
+- **Application navigation** ([`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart)): 4-tab bottom navigation — **Home, Detect, Settings, Help** — with lazy page building and state preservation (`IndexedStack`), system-back to Home, and Logs & Reports pushed as a route from Settings.
+- **Home screen** ([`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart)): EyeCue branding/subtitle, detection status card (reflects Auto-Start), and a primary "Go to Live Camera" action.
+- **Detection screen** ([`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart)): the validated camera/inference pipeline (persistent isolate, YUV420, orientation, NMS, bounding-box painter) preserved, now wrapped in an assistive UI — live preview + boxes, status pill, audio mute toggle, detection object cards with priority badges, high-priority warning banner, and visible high-contrast controls (Start/Stop, Pause/Resume, Repeat, Scan). Developer telemetry moved off the primary screen.
+- **Text-to-speech** ([`lib/services/tts_service.dart`](../lib/services/tts_service.dart)): `flutter_tts` wired via an injectable `TtsEngine`; audio enabled/muted state, announcement cooldown, same-label de-duplication, urgent (high-priority) bypass, and repeat-last-alert.
+- **Thesis gestures** ([`lib/services/gesture_controller.dart`](../lib/services/gesture_controller.dart) + [`lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart)): two-finger double tap (start/stop), single tap (pause/resume), three-finger tap (quick scan), swipe down (repeat alert) — each with haptic + TTS confirmation.
+- **Settings screen** ([`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart)) with persisted preferences ([`lib/services/settings_service.dart`](../lib/services/settings_service.dart), file-backed JSON): Vibration Feedback, Auto-Start on Open, Low Power Mode (applies a dispatch throttle), Audio/Voice guidance, and Logs & Reports entry.
+- **Help screen** ([`lib/screens/help_screen.dart`](../lib/screens/help_screen.dart)): how it works, gesture controls, confirmation feedback, and Android usage tips.
+- **Logs & Reports** ([`lib/screens/logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) + [`lib/widgets/charts.dart`](../lib/widgets/charts.dart)): Overview (FPS, latency, detections, high-priority alerts, session duration), Charts (latency with 300 ms line, FPS with 15 FPS line, detection-frequency bars), and a chronological Logs tab. Accuracy/Precision/Recall/F1/mAP are explicitly shown as **unavailable** (require ground truth) rather than fabricated.
+- **Spatial / priority interpretation** ([`lib/services/spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart) + [`lib/models/detection_info.dart`](../lib/models/detection_info.dart)): left/center/right from box geometry, class-based priority tiers, and an *approximate* proximity band (explicitly labeled as a heuristic, not a measured distance).
+- **Runtime telemetry** ([`lib/services/telemetry_service.dart`](../lib/services/telemetry_service.dart)): session records, detection log entries, latency/FPS samples, aggregates, and per-minute frequency buckets.
+- **Haptics** ([`lib/services/haptics_service.dart`](../lib/services/haptics_service.dart)): dependency-free `HapticFeedback` wrapper respecting the Vibration Feedback setting.
+
+### Tests
+- Replaced the boilerplate counter test with meaningful tests: navigation shell (4 tabs + Home CTA), Home/Settings/Help screens, priority badge / detection card / warning banner / accessible button, TTS cooldown + de-duplication + repeat, settings persistence, spatial/priority classification, telemetry aggregation, and the gesture controller state machine. `flutter test` → **52 passing**.
+
+### Notes
+- The previous single-screen developer UI ([`camera_screen.dart`](../lib/screens/camera_screen.dart)) was retired in favor of `detection_screen.dart`; `info_panel.dart` / `debug_overlay.dart` remain in the tree but are no longer used by the primary UI.
+- Proximity bands are heuristics and are always phrased as "approximately …"; calibrated distance, movement/approach tracking, and accuracy/precision/recall/mAP remain intentionally out of scope for the live app (see the [thesis-product-status-audit](thesis-product-status-audit.md)).
+- The ML pipeline (camera, YUV, orientation, TFLite, parser, NMS, thresholds, painter, forensics) was **not** modified.
+
+---
+
 ## v0.1.7.1 — "Post-Processing Completion: NMS + Confidence Threshold" (2026-08-01)
 
 ### Added

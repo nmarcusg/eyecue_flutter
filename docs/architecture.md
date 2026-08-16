@@ -65,37 +65,50 @@ Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eli
 ```
 eyecue_flutter/
 ├── lib/
-│   ├── main.dart                          # App entry point, MaterialApp
+│   ├── main.dart                          # App entry, theme, service wiring
+│   ├── navigation/
+│   │   └── app_shell.dart                 # 4-tab bottom nav (Home/Detect/Settings/Help)
 │   ├── models/
-│   │   ├── detection.dart                 # Detection data class
+│   │   ├── detection.dart                 # Detection data class (classId, label, confidence, box)
+│   │   ├── detection_info.dart            # Spatial/priority/proximity user-facing info
+│   │   ├── app_settings.dart              # Persisted settings model
 │   │   ├── box_transform.dart             # Device-independent orientation math
 │   │   ├── model_metadata.dart            # Runtime model metadata (self-describing)
 │   │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
-│   ├── screens/camera_screen.dart         # Single screen — camera + orchestration
+│   ├── screens/
+│   │   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
+│   │   ├── detection_screen.dart          # Detection: assistive UI + camera/inference pipeline
+│   │   ├── settings_screen.dart           # Settings: haptics/performance/audio/research
+│   │   ├── help_screen.dart               # Help & Gestures manual
+│   │   └── logs_reports_screen.dart       # Logs & Reports dashboard (Overview/Charts/Logs)
 │   ├── services/
 │   │   ├── inference_isolate.dart         # Isolate bridge + inference + preprocessing
+│   │   ├── tts_service.dart               # TTS: queue, cooldown, de-duplication, mute, repeat
+│   │   ├── settings_service.dart          # File-backed persisted settings (JSON)
+│   │   ├── spatial_analysis_service.dart  # Box → position/priority/proximity (pure)
+│   │   ├── haptics_service.dart           # HapticFeedback wrapper
+│   │   ├── telemetry_service.dart         # Session telemetry + aggregates for reports
+│   │   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
 │   │   ├── forensic_log.dart              # File-based structured diagnostics
 │   │   ├── inference_probe.dart           # Parser probe (disabled, removable)
 │   │   └── input_probe.dart               # Input pipeline probe (disabled, removable)
 │   └── widgets/
 │       ├── bounding_box_painter.dart      # Detection overlay CustomPainter
+│       ├── gesture_surface.dart           # Transparent gesture capture layer
+│       ├── detection_card.dart            # Object card (class/conf/position/priority)
+│       ├── priority_badge.dart            # HIGH/MEDIUM/LOW badge
+│       ├── warning_banner.dart            # High-priority obstacle banner
+│       ├── status_pill.dart               # Detecting/Paused/Stopped indicator
+│       ├── accessible_button.dart         # Large high-contrast button (48dp+)
+│       ├── charts.dart                    # fl_chart latency/FPS/frequency charts
 │       ├── debug_overlay.dart             # Debug HUD (retained, unused)
-│       └── info_panel.dart                # Metrics + Detections info panel
-├── tool/
-│   ├── validate_flatbuffer.dart           # CLI: validates the flatbuffer scanner
-│   ├── validate_png.dart                  # CLI: validates the PNG encoder
-│   ├── dump_graph_tail.py                 # CLI: dumps TFLite graph tail ops
-│   └── dump_decode_consts.py              # CLI: dumps TFLite decode constants
-├── assets/
-│   ├── yolov8n.tflite                     # Active model (FLOAT32 I/O, INT8 weights)
-│   ├── yolov8n_int8.tflite                # Present but not in pubspec assets
-│   ├── test_image.jpg                     # Static-image test asset (test mode only)
-│   └── labels.txt                         # 80 COCO class names
-├── android/                               # Android platform (Gradle 9.1, AGP 9.0.1)
-├── ios/                                   # iOS platform (bootstrapped)
-├── linux/, macos/, windows/, web/         # Desktop/web platforms (bootstrapped)
-├── test/                                  # Test directory (boilerplate only)
+│       └── info_panel.dart                # Old developer metrics panel (unused in primary UI)
+├── tool/                                  # CLI validation tools (unchanged)
+├── assets/                                # Model + labels (+ test image)
+├── android/                               # Android platform (production target)
+├── ios/, linux/, macos/, windows/, web/   # Bootstrapped, out of thesis scope
+├── test/                                  # Unit + widget tests (navigation, services, widgets)
 ├── docs/                                  # Project documentation
 ├── pubspec.yaml                           # Dependencies & asset declarations
 ├── chat_spec.md                           # Historical specification (~3100 lines)
@@ -106,9 +119,20 @@ eyecue_flutter/
 
 | Component | File | Responsibility |
 |-----------|------|---------------|
-| App Entry | [`main.dart`](../lib/main.dart) | MaterialApp initialization, routing to CameraScreen |
-| Camera Screen | [`camera_screen.dart`](../lib/screens/camera_screen.dart) | Camera lifecycle, permission handling, frame dispatch, UI, preview/info-panel wiring |
+| App Entry | [`main.dart`](../lib/main.dart) | MaterialApp init, dark high-contrast theme, service wiring |
+| Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route |
+| Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Branding, Auto-Start status card, Go to Live Camera |
+| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority, controls) |
+| Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Vibration / Auto-Start / Low Power / Audio / Logs & Reports |
+| Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Operations + gesture manual |
+| Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | Overview / Charts / Logs dashboard (researcher-facing) |
 | Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), input rotation |
+| TTS Service | [`tts_service.dart`](../lib/services/tts_service.dart) | Speech scheduling, cooldown, de-duplication, mute, repeat-last |
+| Settings Service | [`settings_service.dart`](../lib/services/settings_service.dart) | File-backed persisted settings (JSON) |
+| Spatial Analysis | [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart) | Box → position/priority/approximate proximity (pure, outside pipeline) |
+| Haptics Service | [`haptics_service.dart`](../lib/services/haptics_service.dart) | HapticFeedback wrapper respecting Vibration setting |
+| Telemetry Service | [`telemetry_service.dart`](../lib/services/telemetry_service.dart) | Session records, samples, aggregates for reports |
+| Gesture Controller | [`gesture_controller.dart`](../lib/services/gesture_controller.dart) | Thesis gesture state machine (single/two-finger-double/three-finger/swipe-down) |
 | Model Metadata | [`model_metadata.dart`](../lib/models/model_metadata.dart) | Immutable runtime snapshot of the loaded model (types, shapes, quantization, model type) |
 | Flatbuffer Scanner | [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart) | Pure-Dart scan of internal tensor types for weight-precision detection |
 | Box Transform | [`box_transform.dart`](../lib/models/box_transform.dart) | Device-independent orientation math (metadata-driven rotation/mirror) |
@@ -116,8 +140,8 @@ eyecue_flutter/
 | Forensic Log | [`forensic_log.dart`](../lib/services/forensic_log.dart) | File-based structured diagnostics under `<documents>/debug/run_*` |
 | Detection Model | [`detection.dart`](../lib/models/detection.dart) | Detection data class (classId, confidence, bounding box) |
 | Bounding Box Painter | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Draws detection boxes, labels, and confidence on the camera preview |
-| Info Panel | [`info_panel.dart`](../lib/widgets/info_panel.dart) | Metrics + Detections tabs (permanent bottom panel) |
-| Debug Overlay | [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart) | Debug-only HUD (retained but unused; data moved to Info Panel) |
+| Info Panel | [`info_panel.dart`](../lib/widgets/info_panel.dart) | Old Metrics + Detections tabs — retained, unused in the primary UI |
+| Debug Overlay | [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart) | Debug-only HUD (retained, unused) |
 
 ## External Dependencies
 
@@ -169,11 +193,11 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 6. **XNNPACK Disabled:** Removed due to SIGSEGV on Snapdragon 695. CPU-only inference.
 7. **Stream-Based Results:** `StreamController.broadcast()` for detection results, enabling multiple listeners.
 
-## Missing Architectural Components
+## Missing Architectural Components (remaining)
 
-- **No routing:** Single screen, no navigation
-- **No dependency injection:** Services instantiated directly in widgets
-- **No state management layer:** Riverpod declared but unused; raw `setState` used
-- **No service abstraction:** `InferenceService` coupled directly to TFLite, camera format, and COCO labels
-- **Partial error handling:** try/catch + error propagation exist (2026-07-22); **no isolate restart recovery** and **no error/permission-denied UI states**
-- **No configuration:** Thresholds are constants; model path and labels path hardcoded
+- **No isolate restart recovery:** try/catch + error propagation exist; if the isolate dies the app does not restart it (camera-denied UI is implemented; full crash recovery is not).
+- **No dependency injection framework:** Services are wired in `main.dart` and passed via constructors — simple and sufficient, but not a full DI container.
+- **State management:** plain `ChangeNotifier` services + `setState`; Riverpod remains declared but unused (intentionally — the app does not need a framework).
+- **No service abstraction for `InferenceService`:** it remains coupled to TFLite, camera format, and COCO labels (acceptable for the thesis scope).
+- **Configuration:** thresholds/model path/labels remain constants; detection-sensitivity is not yet runtime-configurable (per audit, intentionally not wired to avoid changing inference behavior).
+- **Out of scope for the live app:** calibrated distance, movement/approach estimation, and accuracy/precision/recall/mAP (require ground truth — see [`thesis-product-status-audit.md`](thesis-product-status-audit.md)).

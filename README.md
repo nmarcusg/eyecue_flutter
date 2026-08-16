@@ -6,9 +6,9 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 ## Status
 
-**Early Prototype (~60% complete)** — Core inference pipeline, bounding box overlay, device-independent orientation, NMS, debug instrumentation, forensic file logging, and the preview/info-panel UI are functional. Error reporting in the inference isolate is partially implemented (restart recovery pending). TTS and permission-denied UI are not yet implemented.
+**Assistive application UI (v0.2.0)** — The core inference pipeline (camera → Isolate → TFLite → argmax → NMS → bounding boxes), device-independent orientation, and forensic logging are validated on-device. The app now has the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. The ML pipeline was not modified.
 
-See [`docs/project-status.md`](docs/project-status.md) for current status and blockers.
+For an honest thesis-product completion baseline, see [`docs/thesis-product-status-audit.md`](docs/thesis-product-status-audit.md) and [`docs/project-status.md`](docs/project-status.md).
 
 ## Quick Start
 
@@ -67,32 +67,54 @@ All project documentation is in the [`docs/`](docs/) directory:
 | ML Inference | TFLite via `tflite_flutter` |
 | Model | YOLOv8n (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) |
 | Camera | `camera` plugin (YUV420, low resolution) |
-| TTS | `flutter_tts` (declared, not yet wired) |
-| State | `flutter_riverpod` (declared, not yet wired) |
-| Logging | `fl_chart` (declared, not yet wired), forensic file logging (active) |
-| Platforms | Android (primary), iOS, Linux, macOS, Windows, Web |
+| TTS | `flutter_tts` (wired via `TtsService`) |
+| State | `ChangeNotifier` services + `setState` (Riverpod declared, unused) |
+| Reports | `fl_chart` (latency/FPS/frequency charts in Logs & Reports), forensic file logging (active) |
+| Platforms | Android (primary, per thesis), iOS, Linux, macOS, Windows, Web (bootstrapped) |
 
 ## Project Structure
 
 ```
 lib/
-├── main.dart                          # App entry point
+├── main.dart                          # App entry, theme, service wiring
+├── navigation/
+│   └── app_shell.dart                 # 4-tab bottom nav (Home/Detect/Settings/Help)
 ├── models/
 │   ├── detection.dart                 # Detection data class
+│   ├── detection_info.dart            # Spatial/priority/proximity info
+│   ├── app_settings.dart              # Persisted settings model
 │   ├── box_transform.dart             # Device-independent orientation math
 │   ├── model_metadata.dart            # Runtime model introspection snapshot
 │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
-├── screens/camera_screen.dart         # Camera + orchestration + preview UI
+├── screens/
+│   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
+│   ├── detection_screen.dart          # Detection: assistive UI + camera/inference pipeline
+│   ├── settings_screen.dart           # Settings: haptics/performance/audio/research
+│   ├── help_screen.dart               # Help & Gestures manual
+│   └── logs_reports_screen.dart       # Logs & Reports dashboard
 ├── services/
 │   ├── inference_isolate.dart         # Isolate bridge + inference + preprocessing
+│   ├── tts_service.dart               # TTS queue, cooldown, de-duplication, mute, repeat
+│   ├── settings_service.dart          # File-backed persisted settings (JSON)
+│   ├── spatial_analysis_service.dart  # Box → position/priority/proximity (pure)
+│   ├── haptics_service.dart           # HapticFeedback wrapper
+│   ├── telemetry_service.dart         # Session telemetry + aggregates
+│   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
 │   ├── forensic_log.dart              # File-based structured diagnostics
 │   ├── inference_probe.dart           # Parser probe (disabled)
 │   └── input_probe.dart               # Input pipeline probe (disabled)
 └── widgets/
     ├── bounding_box_painter.dart      # Bounding box CustomPainter overlay
+    ├── gesture_surface.dart           # Transparent gesture capture layer
+    ├── detection_card.dart            # Object card (class/conf/position/priority)
+    ├── priority_badge.dart            # HIGH/MEDIUM/LOW badge
+    ├── warning_banner.dart            # High-priority obstacle banner
+    ├── status_pill.dart               # Detecting/Paused/Stopped indicator
+    ├── accessible_button.dart         # Large high-contrast button (48dp+)
+    ├── charts.dart                    # fl_chart latency/FPS/frequency charts
     ├── debug_overlay.dart             # Debug HUD (retained, unused)
-    └── info_panel.dart                # Metrics + Detections info panel
+    └── info_panel.dart                # Old metrics panel (unused in primary UI)
 
 tool/
 ├── validate_flatbuffer.dart           # CLI: validates the flatbuffer scanner

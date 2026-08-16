@@ -1,25 +1,42 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-08-14
-> See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers).
+> **Last Updated:** 2026-08-16
+> See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
-## Overall Progress: ~60%
+## Overall Progress
 
-The core inference pipeline — camera → Isolate → TFLite → argmax → NMS → UI stream — is functional and architecturally sound. Bounding box overlay, class-wise NMS, full debug instrumentation, **runtime model introspection**, forensic file logging, aspect-correct preview UI, and the **device-independent orientation architecture** are implemented. The last camera-path defect (frames never rotated to device orientation — portrait detections were ~0) is fixed and on-device validated (portrait now 0.91). Error reporting in the isolate is partially complete (the busy gate now recovers on isolate errors). The app is **not yet usable as an assistive tool**: no TTS audio, no isolate restart recovery, no permission-denied UI.
+**ML/inference pipeline:** ~80% complete and on-device validated.
+**Thesis product (app as a whole):** ~30–35% — see the [thesis-product-status-audit](thesis-product-status-audit.md) for the weighted breakdown. The historical "~60%" figure measured only the ML/debug pipeline and is not a product-completion number.
+
+## What Changed (v0.2.0 — Assistive Application UI)
+
+The app is no longer a single developer camera screen. It now has the thesis-aligned application structure:
+
+- **Navigation:** 4-tab bottom bar — Home, Detect, Settings, Help ([`app_shell.dart`](../lib/navigation/app_shell.dart)); Logs & Reports pushed from Settings.
+- **Home:** branding, status card (Auto-Start aware), "Go to Live Camera".
+- **Detection:** the validated camera/inference pipeline preserved, now with an assistive UI — status pill, audio mute, object cards with priority badges, high-priority warning banner, visible controls, and thesis gestures (two-finger double-tap start/stop, single tap pause/resume, three-finger scan, swipe-down repeat) with haptic + TTS confirmation.
+- **TTS audio feedback:** implemented ([`tts_service.dart`](../lib/services/tts_service.dart)) — cooldown, de-duplication, urgent bypass, repeat-last, mute state. `flutter_tts` is now wired (previously declared-only).
+- **Settings:** persisted preferences — Vibration, Auto-Start, Low Power Mode (dispatch throttle), Audio guidance, Logs & Reports ([`settings_service.dart`](../lib/services/settings_service.dart)).
+- **Help:** how it works, gestures, confirmation feedback, Android usage tips.
+- **Logs & Reports:** Overview / Charts / Logs with `fl_chart`; accuracy/precision/recall/mAP explicitly shown as unavailable (require ground truth).
+- **Spatial/priority layer:** left/center/right + priority tiers + approximate proximity band ([`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart)) — kept separate from the inference pipeline.
+- `flutter analyze`: **0 issues**. `flutter test`: **52 passing**.
 
 ## Current Milestone
 
-**Milestone 1: "Audible MVP"** — Target: ~2 weeks
+**Milestone 2: "Research-Ready"** (extends the v0.1 "Audible MVP" work — audio + assistive UI now landed)
 
 | Task | Status |
 |------|--------|
-| TTS speaks detected objects | ❌ Not started |
-| Bounding boxes rendered on screen | ✅ Complete |
+| TTS audio feedback (start/stop, detections, scan, repeat) | ✅ Implemented (v0.2.0) |
+| Thesis gesture controls + haptic/TTS confirmation | ✅ Implemented (v0.2.0) |
+| Home / Settings / Help / Logs & Reports screens + navigation | ✅ Implemented (v0.2.0) |
+| Persisted settings (vibration, auto-start, low-power, audio) | ✅ Implemented (v0.2.0) |
+| Spatial position (left/center/right) + priority classification | ✅ Implemented (heuristic proximity band) (v0.2.0) |
+| Runtime telemetry + charts (latency/FPS/frequency) | ✅ Implemented (v0.2.0) |
 | Error handling in isolate | 🟡 Partial — try/catch + error propagation done; restart recovery missing |
-| Permission-denied UI | ❌ Not started |
-| Remove unused dependencies or wire them | ❌ Not started |
-| Debug instrumentation & logging | ✅ Complete |
-| NMS (class-wise, IoU 0.45, conf 0.25) | ✅ Complete |
+| Permission-denied UI | ✅ Implemented (v0.2.0 — camera-denied screen with retry/open-settings) |
+| Isolate restart recovery | ❌ Not started |
 | Orientation re-validation (back landscape + front camera) | 🟡 In progress — portrait + static verified; deferred runs pending |
 
 ## Current Blocker
@@ -30,21 +47,22 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Next Objective
 
-1. **Re-validate orientation on-device** — back-camera landscape physical hold and front-camera portrait/landscape runs (deferred from v0.1.7). See [`orientation-implementation.md`](orientation-implementation.md).
-2. Then implement **TTS audio feedback** — the app's entire purpose is to speak detected objects. Without TTS, it's a silent camera viewer. The `flutter_tts` package is already declared as a dependency.
+1. **On-device validation of the v0.2.0 UI** — run on the Snapdragon 695 device: gestures, TTS, mute toggle, settings persistence, Logs & Reports charts.
+2. **Re-validate orientation on-device** — back-camera landscape physical hold and front-camera portrait/landscape runs (deferred from v0.1.7).
+3. **Isolate restart recovery** and remaining research-evaluation work (see the audit's phases).
 
 ## High-Priority Tasks
 
 | # | Task | Priority |
 |---|------|----------|
-| 1 | Implement TTS audio feedback | 🔴 Critical |
-| 2 | ~~Implement bounding box `CustomPainter`~~ | ✅ Complete |
-| 3 | ~~Add error handling to inference isolate~~ | 🟡 Partial — error reporting done; restart recovery remaining |
-| 4 | Add permission-denied and error UI states | 🔴 Critical |
-| 5 | Investigate XNNPACK SIGSEGV | 🔴 Critical |
-| 6 | ~~Implement NMS (Non-Maximum Suppression)~~ | ✅ Complete — class-wise, IoU 0.45, pre-NMS conf 0.25 |
-| 7 | Add pause/resume detection toggle | 🟡 High |
-| 8 | ~~Implement performance logging (FPS, latency)~~ | ✅ Complete |
+| 1 | On-device validation of gestures + TTS + settings persistence | 🔴 Critical |
+| 2 | ~~Implement TTS audio feedback~~ | ✅ Complete (v0.2.0) |
+| 3 | ~~Add permission-denied and error UI states~~ | 🟡 Partial — permission UI done; isolate restart recovery remaining |
+| 4 | Investigate XNNPACK SIGSEGV | 🔴 Critical |
+| 5 | ~~Implement thesis gesture controls~~ | ✅ Complete (v0.2.0) |
+| 6 | Isolate restart recovery | 🔴 High |
+| 7 | Orientation re-validation (back landscape + front camera) | 🟡 High |
+| 8 | Formal FPS/latency benchmark + accuracy evaluation | 🟡 High |
 
 ## Recent Accomplishments
 

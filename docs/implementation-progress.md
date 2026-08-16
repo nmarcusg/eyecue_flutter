@@ -1,7 +1,64 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-08-14
+> **Last Updated:** 2026-08-16
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
+
+## v0.2.0 — Assistive Application UI (2026-08-16)
+
+### Application Navigation (100%)
+
+- ✅ 4-tab bottom navigation shell: Home, Detect, Settings, Help ([`app_shell.dart`](../lib/navigation/app_shell.dart))
+- ✅ Lazy page building + state preservation via `IndexedStack` (camera state survives tab switches)
+- ✅ System-back returns to Home; Logs & Reports pushed as a route from Settings
+- ✅ Home "Go to Live Camera" CTA switches to the Detect tab
+
+### Screens (100% of new screens)
+
+- ✅ **Home** ([`home_screen.dart`](../lib/screens/home_screen.dart)): branding, subtitle, Auto-Start-aware status card, "Go to Live Camera" CTA
+- ✅ **Detection** ([`detection_screen.dart`](../lib/screens/detection_screen.dart)): validated camera/inference pipeline preserved; assistive UI (status pill, audio mute, object cards, warning banner, visible controls, gesture surface)
+- ✅ **Settings** ([`settings_screen.dart`](../lib/screens/settings_screen.dart)): Vibration, Auto-Start, Low Power, Audio, Logs & Reports
+- ✅ **Help** ([`help_screen.dart`](../lib/screens/help_screen.dart)): how it works, gestures, confirmation, Android tips
+- ✅ **Logs & Reports** ([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart)): Overview / Charts / Logs tabs
+
+### Audio Guidance (100% of the UI-phase TTS)
+
+- ✅ [`tts_service.dart`](../lib/services/tts_service.dart): `flutter_tts` wired via injectable `TtsEngine`; mute state, cooldown, same-label de-duplication, urgent (high-priority) bypass, repeat-last
+- ✅ Detection announcements, start/stop/pause/resume/scan announcements, quick-scan summary
+- ✅ Phrasing includes relative position + approximate proximity
+
+### Accessibility / Gestures (100% of the thesis gesture set)
+
+- ✅ [`gesture_controller.dart`](../lib/services/gesture_controller.dart): two-finger double tap (start/stop), single tap (pause/resume), three-finger tap (scan), swipe down (repeat)
+- ✅ [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart): transparent capture layer over the viewport
+- ✅ Haptic + TTS confirmation per gesture; visible high-contrast fallback controls (`AccessibleButton`)
+
+### Settings Persistence (100%)
+
+- ✅ [`settings_service.dart`](../lib/services/settings_service.dart): file-backed JSON via `path_provider`, injectable `SettingsStore` for tests, defaults on corrupt/missing file
+
+### Spatial / Priority Interpretation (100% of the interface layer)
+
+- ✅ [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart) + [`detection_info.dart`](../lib/models/detection_info.dart): left/center/right (geometry), priority tiers (class-based), approximate proximity band (labeled heuristic — not a measured distance)
+- ✅ Kept fully separate from the inference pipeline
+
+### Telemetry & Reports (100% of the new dashboard)
+
+- ✅ [`telemetry_service.dart`](../lib/services/telemetry_service.dart): session records, detection logs, latency/FPS samples, aggregates, per-minute frequency buckets
+- ✅ [`charts.dart`](../lib/widgets/charts.dart): latency (300 ms line), FPS (15 FPS line), detection frequency
+- ✅ Accuracy/Precision/Recall/F1/mAP explicitly **unavailable** (require ground truth) — never fabricated
+
+### Haptics (100%)
+
+- ✅ [`haptics_service.dart`](../lib/services/haptics_service.dart): dependency-free `HapticFeedback`, respects Vibration setting
+
+### Tests (100% of the new tests)
+
+- ✅ Navigation shell, screens, widgets, TTS, settings, spatial, telemetry, gesture controller — `flutter test` 52 passing, `flutter analyze` 0 issues
+
+### Notes
+
+- The developer single-screen UI ([`camera_screen.dart`](../lib/screens/camera_screen.dart)) was retired; `info_panel.dart` / `debug_overlay.dart` remain but are unused by the primary UI.
+- The ML pipeline (camera, YUV, orientation, TFLite, parser, NMS, thresholds, painter, forensics) was **not** modified.
 
 ## Completed Work
 

@@ -1,11 +1,184 @@
 # EyeCue — Session Log
 
-> Append a new entry at the top of this file at the end of every development session.  
+> Append a new entry at the top of this file at the end of every development session.
 > See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
 ---
 
-## 2026-08-14 (6th session) — Documentation Sync
+## 2026-08-16 (10th session) — UI Layout Fixes (v0.2.2)
+
+### Objective
+- Fix two UI/layout bugs: (1) the camera viewport resized when detections
+  appeared, and (2) Logs & Reports charts could extend beyond their container.
+
+### Diagnosis
+- **Camera resizing:** [`detection_screen.dart`](../lib/screens/detection_screen.dart)
+  built a `Column` with the camera in `Expanded` and a content-sized controls
+  panel whose card list height was `detections × 78` — so detection count drove
+  the bottom panel's height and shrank the camera region.
+- **Chart overflow:** [`charts.dart`](../lib/widgets/charts.dart) capped `maxY`
+  with fixed clamps (latency `clamp(50,500)`, FPS `clamp(1,30)`), so values
+  above the clamp were drawn outside the plot; benchmark lines could sit above a
+  shrunken scale; and the bar chart set no `maxY` (fl_chart defaults it to 0).
+
+### Fix
+- Reserved a **fixed** content region: `LayoutBuilder` → `SizedBox(height:
+  constraints.maxHeight × 0.32, clamped 200–320)` holds the warning banner +
+  a scrollable detection list + controls; the camera stays in the remaining
+  `Expanded` space. Warning banner moved below the camera.
+- Charts now derive Y bounds from the data with headroom
+  (`max(dataMax × 1.2 + padding, floor)`), draw benchmark lines only when they
+  fit, and give the bar chart an explicit dynamic `maxY`. Empty data shows a
+  placeholder. No protected ML/camera/inference code touched.
+
+### Verified
+- `flutter analyze`: 0 issues. `flutter test`: 59 passing (new chart tests:
+  empty, very-high, constant, single-bucket data).
+- On-device (Android 13 / API 33): Home → Detect (idle + started + 2-object
+  detections + paused/stopped), Settings, and Logs & Reports (Overview with
+  live FPS/latency/detections, Charts with latency/FPS/frequency, Logs) all
+  render with **0 exceptions / RenderFlex overflows** in logcat.
+
+### Next Session
+- On-device validation of gestures, TTS, and settings persistence; orientation
+  re-validation; isolate restart recovery; formal FPS/latency benchmark.
+
+---
+
+## 2026-08-16 (9th session) — Fix Startup Theme Assertion (v0.2.1)
+
+### Objective
+- Fix the on-device startup crash: `Failed assertion: 'fontSize != null || (fontSizeFactor == 1.0 && fontSizeDelta == 0.0)'` thrown from `EyeCueApp._buildTheme()` during initial widget construction.
+
+### Diagnosis
+- The crash came from [`lib/main.dart`](../lib/main.dart) `_buildTheme()` calling
+  `base.textTheme.apply(fontSizeFactor: 1.12, ...)`.
+- Flutter's Material 3 default `TextTheme` is **color-only**: `Typography.material2021().white` /
+  `ThemeData.textTheme` styles all have `fontSize == null` (geometry is merged per-locale
+  from `englishLike`/`dense`/`tall` at render time). `TextStyle.apply` asserts when
+  `fontSizeFactor != 1.0` on a null-fontSize style — so the assertion fired for every style.
+- Confirmed empirically with a throwaway diagnostic test (all 15 styles report `fontSize == null`).
+
+### Fix
+- Replaced `textTheme.apply(fontSizeFactor: 1.12, ...)` with an explicit high-contrast
+  `TextTheme` (`_highContrastTextTheme()`) using concrete font sizes (M3 defaults scaled
+  ~1.12×) and white text. Only [`lib/main.dart`](../lib/main.dart) changed — camera,
+  inference, TTS, gestures, and UI behavior untouched.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: 53 passing, including a new regression test
+  ([`test/theme_test.dart`](../test/theme_test.dart)) that pumps `EyeCueApp` and asserts the
+  Home screen renders with a concrete white text theme.
+- On-device (Android 13 / API 33, `2201116SG`): debug APK built, installed, launched. Process
+  alive, `MainActivity` resumed (Home screen), detection pipeline running (live `[Detection]`
+  frames), no FATAL/assertion/overflow in logcat.
+
+### Next Session
+- Continue on-device validation of gestures, TTS, settings persistence, and Logs & Reports;
+  orientation re-validation; isolate restart recovery.
+
+---
+
+## 2026-08-16 (8th session) — Assistive Application UI (v0.2.0)
+
+### Objective
+- Turn the validated computer-vision prototype into the thesis-aligned assistive
+  application: application UI/navigation, TTS audio guidance, thesis gestures,
+  settings persistence, and Logs & Reports — without touching the ML pipeline.
+
+### Completed
+- **Navigation:** 4-tab bottom bar (Home, Detect, Settings, Help) with lazy pages
+  and state preservation ([`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart)).
+- **Screens:** [`home_screen.dart`](../lib/screens/home_screen.dart),
+  [`detection_screen.dart`](../lib/screens/detection_screen.dart),
+  [`settings_screen.dart`](../lib/screens/settings_screen.dart),
+  [`help_screen.dart`](../lib/screens/help_screen.dart),
+  [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart).
+- **TTS:** [`tts_service.dart`](../lib/services/tts_service.dart) — `flutter_tts`
+  wired; cooldown, same-label de-duplication, urgent bypass, mute, repeat-last.
+- **Gestures:** [`gesture_controller.dart`](../lib/services/gesture_controller.dart)
+  + [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) — two-finger
+  double tap (start/stop), single tap (pause/resume), three-finger tap (scan),
+  swipe down (repeat); haptic + TTS confirmation.
+- **Settings:** [`settings_service.dart`](../lib/services/settings_service.dart)
+  (file-backed JSON via `path_provider`) — Vibration, Auto-Start, Low Power
+  (dispatch throttle), Audio, Logs & Reports.
+- **Spatial/priority:** [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart)
+  + [`detection_info.dart`](../lib/models/detection_info.dart) — left/center/right,
+  class-based priority, approximate proximity band (labeled heuristic).
+- **Telemetry/reports:** [`telemetry_service.dart`](../lib/services/telemetry_service.dart)
+  + [`charts.dart`](../lib/widgets/charts.dart) — Overview/Charts/Logs; accuracy/
+  precision/recall/mAP shown as unavailable (require ground truth).
+- **Haptics:** [`haptics_service.dart`](../lib/services/haptics_service.dart).
+- Retired the old single-screen [`camera_screen.dart`](../lib/screens/camera_screen.dart)
+  in favor of `detection_screen.dart`; `info_panel.dart`/`debug_overlay.dart`
+  remain but are unused by the primary UI.
+- **Tests:** replaced the boilerplate counter test with 52 passing tests across
+  navigation, screens, widgets, TTS, settings, spatial, telemetry, and gestures.
+- `flutter analyze`: **0 issues**. `flutter test`: **52 passing**.
+
+### Decisions
+- No new dependencies: settings persistence uses `path_provider` (already used by
+  `ForensicLog`) rather than `shared_preferences`; haptics use built-in
+  `HapticFeedback`; state stays on plain `ChangeNotifier` services + `setState`.
+- The ML pipeline (camera, YUV, orientation, TFLite, parser, NMS, thresholds,
+  painter, forensics) was **not** modified.
+- Proximity is a box-size heuristic phrased as "approximately …" — calibrated
+  distance, movement tracking, and accuracy metrics remain out of scope (per the
+  thesis audit).
+
+### Next Session
+- On-device validation of gestures, TTS, mute toggle, settings persistence, and
+  Logs & Reports on the Snapdragon 695 device; orientation re-validation; isolate
+  restart recovery.
+
+---
+
+## 2026-08-16 (7th session) — Thesis-Product Status Audit (Documentation Only)
+
+### Objective
+- Produce an independent, evidence-based baseline of the current Flutter codebase
+  against the **EyeCue thesis** (thesis PDF:
+  `GRP8-P1-EyeCue_ Machine Learning-Based Real-Time Object Recognition and Audio
+  Guidance System for the Visually Impaired (1).pdf`), as an audit only. No code
+  was modified.
+
+### Completed
+- Read the thesis PDF plus the full repository (`README.md`, all `docs/`,
+  `pubspec.yaml`, the complete `lib/`, `test/`, `android/`, `assets/`) and
+  verified every claim against the actual code (not the documentation).
+- Created a full thesis-to-code feature matrix (core system, interactions,
+  screens, settings, telemetry, evaluation), screen/UI gap analysis, assistive
+  (B/C/D) and spatial-guidance gap analyses, research/evaluation and production
+  readiness gap analyses.
+- Produced a weighted completion estimate: **Vision/ML ~80%, Spatial ~5%,
+  Audio guidance ~0%, Accessibility/interaction ~0%, Application UI ~15%,
+  Research instrumentation ~45%, Research evaluation ~10%, Production readiness
+  ~10% → Overall thesis-product ≈ 30% (range 25–35%)**.
+- Identified the single biggest mismatch (the **audio guidance system is
+  entirely missing** — `flutter_tts` declared but zero usages) and the next five
+  highest-impact gaps.
+- Proposed a target Flutter architecture (5 screens, navigation, audio/spatial/
+  priority/telemetry/accessibility services) and a phased roadmap
+  (A: Vision validation → B: Assistive core → C: Accessibility → D: App UI →
+  E: Research evaluation → F: Production release).
+- New deliverable: [`docs/thesis-product-status-audit.md`](thesis-product-status-audit.md).
+
+### Findings / Decisions
+- The project's self-reported **~60%** (README / project-status) measures the
+  ML/debug pipeline only and **overstates thesis-product completion**; the audit
+  establishes ~30% for the product as a whole. Existing status numbers were
+  **not** edited (flagged in the audit report instead).
+- `docs/known-issues.md` claim that `path_provider` is unused is **stale** — it
+  is used by `forensic_log.dart`; only `flutter_tts`, `flutter_riverpod`, and
+  `fl_chart` are unused.
+- `test/widget_test.dart` is the Flutter counter boilerplate and does **not**
+  test the app (it would fail if run).
+
+### Next Session
+- Begin Phase B (Assistive core): TTS service wired to the detection stream,
+  spatial interpretation, and priority tiers. See the audit report §13.
 
 ### Objective
 - Read all markdown documentation and sync it with the actual codebase state
