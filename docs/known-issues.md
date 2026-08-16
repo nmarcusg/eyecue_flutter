@@ -1,6 +1,6 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-08-14
+> **Last Updated:** 2026-08-16
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
 
 ## Current Blockers
@@ -8,42 +8,36 @@
 ### 🔴 XNNPACK SIGSEGV (Critical)
 
 - **Description:** Enabling XNNPACK acceleration causes a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU) with the INT8 YOLOv8n model.
-- **Location:** [`inference_isolate.dart:93-94`](../lib/services/inference_isolate.dart:93)
-- **Impact:** Without hardware acceleration, inference is CPU-bound and slower than it could be. This caps maximum detection FPS.
+- **Location:** [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — interpreter creation / inference path.
+- **Impact:** Without hardware acceleration, inference is CPU-bound and slower than it could be. This caps maximum detection FPS (on-device telemetry observed ~2–3 FPS, Avg Latency ~600 ms on the low-end test device).
 - **Planned Fix:** Benchmark raw model latency with the official TFLite benchmark tool on the target device. Test NNAPI delegate and GPU delegate as alternatives. Investigate whether the crash is TFLite version-specific or device-specific.
 - **Workaround:** XNNPACK explicitly disabled; CPU-only inference is stable.
 
-### 🔴 No TTS Integration (Critical)
+### 🟠 Incomplete Error Recovery in Inference Isolate (High)
 
-- **Description:** `flutter_tts` is declared as a dependency but has zero usages in the codebase. The app's entire purpose — speaking detected objects — is not functional.
-- **Planned Fix:** Implement TTS service in Milestone 1. Wire to detection stream with priority-based cooldown.
-
-### 🟠 Incomplete Error Recovery in Inference Isolate (Critical)
-
-- **Description:** Error **reporting** is now implemented (2026-07-22): try/catch around interpreter creation and the frame loop, plus error propagation to the main isolate via `{'type': 'error'}`. What remains is error **recovery** — if the isolate dies, the app does not restart it, so the UI can still end up with stale state.
+- **Description:** Error **reporting** is implemented (2026-07-22): try/catch around interpreter creation and the frame loop, plus error propagation to the main isolate via `{'type': 'error'}`. What remains is error **recovery** — if the isolate dies, the app does not restart it, so the UI can still end up with stale state.
 - **Location:** [`_isolateEntryPoint`](../lib/services/inference_isolate.dart) (try/catch around interpreter creation + frame loop)
 - **Planned Fix:** Implement isolate restart/recovery on fatal error (part of Milestone 4 per [`implementation-plan.md`](implementation-plan.md)).
+- **Note:** The permission-denied and camera-error UI states were added in v0.2.0; only isolate self-healing remains.
 
-### 🔴 No Permission-Denied UI (Critical)
+## Resolved (previously tracked here)
 
-- **Description:** When camera permission is denied, [`_setupCamera()`](../lib/screens/camera_screen.dart) just returns. The user sees an infinite loading spinner with no feedback.
-- **Location:** [`camera_screen.dart`](../lib/screens/camera_screen.dart) — `_setupCamera()` permission check
-- **Planned Fix:** Add permission-denied UI state with explanation and "Open Settings" button.
+- ✅ **TTS integration** — RESOLVED v0.2.0. `flutter_tts` is now wired via [`tts_service.dart`](../lib/services/tts_service.dart) (cooldown, de-duplication, urgent bypass, mute, repeat-last). No longer a blocker.
+- ✅ **Permission-denied UI** — RESOLVED v0.2.0. [`detection_screen.dart`](../lib/screens/detection_screen.dart) shows a camera-denied state with retry / open-settings. No longer a blocker.
+- ✅ **Boilerplate counter-app test** — RESOLVED v0.2.0. [`test/widget_test.dart`](../test/widget_test.dart) now contains real Home/Settings/Help screen smoke tests; the full suite is 59 passing.
 
 ## Technical Debt
 
 | Priority | Item | Location |
 |----------|------|----------|
-| 🟡 P1 | 4 unused dependencies (~57% of deps): Riverpod, fl_chart, path_provider, flutter_tts | [`pubspec.yaml:22-32`](../pubspec.yaml:22) |
-| 🟡 P1 | ~~No bounding box painter~~ — ✅ Implemented 2026-07-22 | [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) |
-| 🟡 P1 | ~~No NMS implementation~~ — ✅ Implemented 2026-08-01 (class-wise, IoU 0.45, pre-NMS conf 0.25) | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
+| 🟡 P1 | `flutter_riverpod` is the only unused dependency (deliberately — state uses `ChangeNotifier` + `setState`); `fl_chart`, `path_provider`, and `flutter_tts` are now used | [`pubspec.yaml:23`](../pubspec.yaml:23) |
 | 🟡 P2 | Hardcoded thresholds, model paths, labels path | Multiple locations |
-| 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` | [`camera_screen.dart:98`](../lib/screens/camera_screen.dart:98) |
-| 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear | [`inference_isolate.dart:212`](../lib/services/inference_isolate.dart:212) |
-| 🟢 P3 | Package name is `com.example.eyecue_flutter` instead of specified `com.eyecue` | [`build.gradle.kts:17`](../android/app/build.gradle.kts:17) |
-| 🟢 P3 | `minSdkVersion` relies on Flutter default (21) — `tflite_flutter` may need 24+ | [`build.gradle.kts:18`](../android/app/build.gradle.kts:18) |
-| 🟢 P3 | Boilerplate counter-app test file — zero functional tests | [`test/widget_test.dart`](../test/widget_test.dart) |
-| 🟢 P3 | Stale `.flutter-plugins` file — references old camera version | [`.flutter-plugins`](../.flutter-plugins) |
+| 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` | [`detection_screen.dart`](../lib/screens/detection_screen.dart) (frame dispatch) |
+| 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
+| 🟢 P3 | Package name is `com.example.eyecue_flutter` instead of specified `com.eyecue` | [`build.gradle.kts:7`](../android/app/build.gradle.kts:7) |
+| 🟢 P3 | `minSdkVersion` relies on the Flutter default (24) — thesis targets Android 10 / API 29; not set explicitly | [`build.gradle.kts:18`](../android/app/build.gradle.kts:18) |
+| 🟢 P3 | Release build still signs with the debug keystore | [`build.gradle.kts`](../android/app/build.gradle.kts) |
+| 🟢 P3 | Detection-sensitivity is a hardcoded constant (0.25) — not yet user-configurable | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
 
 ## Platform-Specific Limitations
 
@@ -57,8 +51,8 @@
 | ~~Camera frames never rotated to device orientation~~ | ✅ **FIXED (2026-08-01, v0.1.7)** — `BoxTransform` rotates/mirrors the input tensor to upright; portrait detections 0 → 0.91 on-device. See [`docs/orientation-implementation.md`](orientation-implementation.md). Back-landscape re-validation + front-camera runs still pending. |
 | ~~YUV420→RGB ignored rowStride/pixelStride~~ | ✅ **FIXED (2026-08-01, v0.1.4)** — converter honors real plane geometry; planar I420 + semi-planar NV12/NV21 verified on-device. See [`docs/camera-path-forensics.md`](camera-path-forensics.md). |
 | YUV conversion uses non-standard coefficients | Slight color shift in RGB output. Does not affect detection accuracy but could impact future visual-only features. |
-| `dynamic` type for input buffer | [`inference_isolate.dart:137`](../lib/services/inference_isolate.dart:137) loses type safety. Could use sealed class. |
-| Broadcast stream with single listener | Over-provisioned but harmless. Could be simplified to a single-subscription stream. |
+| `dynamic` type for the input buffer | [`inference_isolate.dart:392`](../lib/services/inference_isolate.dart:392) loses type safety. Could use a sealed/branched type per model dtype. |
+| ~~Broadcast stream with single listener~~ | ✅ **NO LONGER AN ISSUE (v0.2.0)** — the broadcast `resultsStream` now has multiple listeners (UI + TTS + telemetry), so broadcast is justified. |
 
 ## Planned Fixes (by Milestone)
 

@@ -17,7 +17,7 @@ Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eli
 │                  Main Isolate (UI)                │
 │                                                  │
 │  ┌──────────┐    ┌─────────────────────────┐     │
-│  │  Camera   │    │   CameraScreen (State)  │     │
+│  │  Camera   │    │  DetectionScreen (State)│     │
 │  │  Plugin   │───▶│   _isInferring gate     │     │
 │  │  YUV420   │    │   _detections list      │     │
 │  │  Stream   │    │   CameraPreview widget  │     │
@@ -151,10 +151,10 @@ eyecue_flutter/
 | `camera` | ^0.12.0+1 | Camera access + YUV420 image stream |
 | `tflite_flutter` | ^0.12.1 | TFLite inference via FFI |
 | `flutter_tts` | ^4.2.0 | Text-to-speech audio feedback |
-| `flutter_riverpod` | ^3.3.2 | State management (declared, not yet used) |
+| `flutter_riverpod` | ^3.3.2 | State management (declared, deliberately unused — state uses `ChangeNotifier` + `setState`) |
 | `permission_handler` | ^12.0.3 | Camera permission requests |
-| `path_provider` | ^2.1.4 | File system paths (declared, not yet used) |
-| `fl_chart` | ^1.2.0 | Data visualization for logging dashboard (declared, not yet used) |
+| `path_provider` | ^2.1.4 | File-backed settings persistence ([`settings_service.dart`](../lib/services/settings_service.dart)) + forensic run directories ([`forensic_log.dart`](../lib/services/forensic_log.dart)) |
+| `fl_chart` | ^1.2.0 | Latency/FPS/frequency charts in Logs & Reports ([`charts.dart`](../lib/widgets/charts.dart)) |
 
 ## AI Pipeline
 

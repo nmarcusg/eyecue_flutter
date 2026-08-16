@@ -8,7 +8,9 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 ## Status
 
-**Assistive application UI (v0.2.0)** — The core inference pipeline (camera → Isolate → TFLite → argmax → NMS → bounding boxes), device-independent orientation, and forensic logging are validated on-device. The app now has the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. The ML pipeline was not modified.
+**Assistive application UI (v0.2.2)** — The core inference pipeline (camera → Isolate → TFLite → argmax → NMS → bounding boxes), device-independent orientation, and forensic logging are validated on-device. The app has the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. The ML pipeline was not modified.
+
+Follow-up fixes since the v0.2.0 UI landed: **v0.2.1** fixed a startup theme-construction assertion (explicit high-contrast `TextTheme`), and **v0.2.2** fixed the camera viewport resizing when detections appear plus chart overflow in Logs & Reports. `flutter analyze` is clean (0 issues) and the test suite is **59 passing**.
 
 For an honest thesis-product completion baseline, see [`docs/thesis-product-status-audit.md`](docs/thesis-product-status-audit.md) and [`docs/project-status.md`](docs/project-status.md).
 

@@ -26,11 +26,11 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 
 **Definition of Done:**
 - ~~NMS (Non-Maximum Suppression) for clean multi-object detection~~ — ✅ Implemented 2026-08-01 (class-wise, IoU 0.45, pre-NMS conf 0.25)
-- Performance logging: FPS, inference latency, confidence scores, timestamps — ✅ mostly done (5-second summaries + Info Panel metrics); export/dashboard remaining
-- Pause/resume detection toggle with camera deactivation
-- `fl_chart` logging dashboard for real-time metrics visualization
-- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS)
-- Adaptive throttling based on measured inference time
+- Performance logging: FPS, inference latency, confidence scores, timestamps — ✅ done (5-second summaries + Info Panel metrics + Logs & Reports telemetry)
+- Pause/resume detection toggle with camera deactivation — ✅ done (v0.2.0 — single-tap pause/resume via [`gesture_controller.dart`](../lib/services/gesture_controller.dart) + visible controls)
+- `fl_chart` logging dashboard for real-time metrics visualization — ✅ done (v0.2.0 — Logs & Reports Overview/Charts/Logs, [`charts.dart`](../lib/widgets/charts.dart))
+- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ 59 passing across navigation, screens, widgets, services, charts, theme
+- Adaptive throttling based on measured inference time — 🟡 partial (v0.2.0 Low Power Mode applies a dispatch throttle; formal measured throttling remains)
 
 **Feature Dependencies:**
 - ~~NMS~~ — ✅ done; depends on detection list (available)
@@ -41,14 +41,14 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 ### Milestone 3: "Defense-Ready" (Target: ~6 weeks)
 
 **Definition of Done:**
-- Accessibility features: TalkBack/VoiceOver semantics, gesture controls
-- Priority-based TTS queue (person > vehicle > obstacle > other)
-- Adaptive throttling fully implemented
-- GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU
-- Integration tests for end-to-end pipeline
-- Package name fixed to `com.eyecue`
-- `minSdkVersion` set to 24 explicitly
-- All documentation up to date
+- Accessibility features: TalkBack/VoiceOver semantics, gesture controls — 🟡 gestures ✅ done (v0.2.0); TalkBack/Semantics polish remaining
+- Priority-based TTS queue (person > vehicle > obstacle > other) — ✅ done (v0.2.0 — class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart))
+- Adaptive throttling fully implemented — 🟡 partial (Low Power Mode dispatch throttle)
+- GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU — ❌ (XNNPACK investigation pending)
+- Integration tests for end-to-end pipeline — ❌ (unit/widget suite in place)
+- Package name fixed to `com.eyecue` — ❌ (still `com.example.eyecue_flutter`)
+- `minSdkVersion` set explicitly to thesis-aligned API 29 — 🟡 (currently relies on Flutter default 24)
+- All documentation up to date — ✅ (this sync)
 
 **Feature Dependencies:**
 - Accessibility depends on: UI elements in place (bounding boxes, labels)
@@ -85,9 +85,12 @@ Camera Pipeline (done)
 
 ## Current Priorities
 
-1. **TTS Audio Feedback** — Makes the app functional as an assistive tool
+1. ~~**TTS Audio Feedback**~~ — ✅ Done (v0.2.0). See [`tts_service.dart`](../lib/services/tts_service.dart).
 2. ~~**Bounding Box Overlay**~~ — ✅ Done. See [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
 3. ~~**NMS**~~ — ✅ Done (class-wise, IoU 0.45, conf 0.25). See [`inference_isolate.dart`](../lib/services/inference_isolate.dart).
-4. **Error Recovery** — Isolate restart on fatal error
-5. **Permission-Denied UI** — Basic UX completeness
-6. **XNNPACK Investigation** — Unlocks faster inference
+4. **On-device validation of the v0.2.x UI** — gestures, TTS, settings persistence, Logs & Reports on the Snapdragon 695 device
+5. **Error Recovery** — Isolate restart on fatal error
+6. ~~**Permission-Denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+7. **XNNPACK Investigation** — Unlocks faster inference
+8. **Orientation re-validation** — back landscape physical hold + front camera
+9. **Formal FPS/latency benchmark + accuracy evaluation** — research metrics

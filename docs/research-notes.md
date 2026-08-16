@@ -94,11 +94,13 @@ See [this discussion in chat_spec.md](../chat_spec.md) for the full analysis.
 
 ### Short-Term (Thesis Scope)
 
-- Priority-based TTS queue: person > vehicle > obstacle > furniture > other
-- Spatial audio cues: "person on your left" using binaural panning
-- Scan mode vs. alert mode: describe full scene vs. warn only about obstacles
-- Gesture-based controls: double-tap to pause, swipe to change mode
-- Earcon audio feedback: non-verbal sound cues for detection confidence
+Status reflects the v0.2.x implementation:
+
+- ~~Priority-based TTS queue: person > vehicle > obstacle > furniture > other~~ — ✅ Implemented (v0.2.0): class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart).
+- ~~Spatial audio cues: "person on your left" using binaural panning~~ — 🟡 Partially implemented: positional phrasing ("person on your left") via [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart); binaural panning not done.
+- ~~Scan mode vs. alert mode: describe full scene vs. warn only about obstacles~~ — 🟡 Partially implemented: three-finger quick-scan summary exists; full-scene vs alert-only distinction not formalized.
+- ~~Gesture-based controls: double-tap to pause, swipe to change mode~~ — ✅ Implemented (v0.2.0): all four thesis gestures (two-finger double-tap start/stop, single-tap pause/resume, three-finger scan, swipe-down repeat) in [`gesture_controller.dart`](../lib/services/gesture_controller.dart).
+- Earcon audio feedback: non-verbal sound cues for detection confidence — ❌ Not started.
 
 ### Long-Term (Post-Thesis)
 

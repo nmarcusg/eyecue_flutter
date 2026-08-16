@@ -2,6 +2,8 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
+> **Current suite (v0.2.2):** `flutter test` → **59 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts), services (TTS, settings, spatial, telemetry, gesture controller), and the theme regression test. The tables below are the forward-looking plan (not all items are automated yet).
+
 ## Unit Testing Strategy
 
 ### Core Pipeline Tests (Critical Path)
@@ -29,12 +31,15 @@
 
 | Test | Priority | Description |
 |------|----------|-------------|
-| CameraScreen renders | 🟡 P1 | Verify camera preview widget mounts |
+| Detection screen renders | 🟡 P1 | Verify camera preview widget mounts |
 | Detection overlay renders | 🟡 P1 | Verify `CustomPainter` draws boxes correctly |
 | Permission-denied UI | 🟡 P1 | Verify fallback UI renders when permission is denied |
 | Loading state UI | 🟢 P2 | Verify loading spinner renders during camera init |
 | Error state UI | 🟡 P1 | Verify error message renders on isolate failure |
 | Pause/resume button | 🟢 P2 | Verify toggle changes detection state |
+| Screen/navigation smoke tests | ✅ | Home / Settings / Help screens + 4-tab shell (implemented) |
+| Assistive widgets | ✅ | Priority badge, detection card, warning banner, accessible button (implemented) |
+| Charts | ✅ | Latency/FPS/frequency chart bounds incl. empty/very-high/constant data (implemented) |
 
 ## Integration Testing Strategy
 
@@ -60,9 +65,9 @@
 - [ ] Detections are reasonably accurate (qualitative assessment)
 - [ ] No memory leaks during sustained use (>5 minutes)
 
-### Audio Feedback (once TTS is implemented)
-- [ ] TTS speaks detected objects clearly
-- [ ] TTS does not overlap/spam (cooldown works)
+### Audio Feedback (TTS implemented v0.2.0)
+- [x] TTS speaks detected objects clearly — ✅ implemented (`tts_service.dart`), on-device validation pending
+- [x] TTS does not overlap/spam (cooldown works) — ✅ cooldown + same-label de-duplication implemented
 - [ ] TTS latency from detection to speech is acceptable
 - [ ] TTS works with screen reader (TalkBack) active
 
@@ -111,6 +116,6 @@ See [`benchmark-results.md`](benchmark-results.md) for the recording template.
 3. Force camera disconnect → verify app handles gracefully
 
 ### Feature: Performance Logging
-1. Enable logging → verify FPS, latency, and confidence are recorded
-2. Export logs → verify data is in parseable format (JSON/CSV)
-3. Dashboard → verify `fl_chart` renders real-time metrics
+1. Enable logging → verify FPS, latency, and confidence are recorded — ✅ telemetry records these (v0.2.0)
+2. Export logs → verify data is in parseable format (JSON/CSV) — ❌ export not yet implemented
+3. Dashboard → verify `fl_chart` renders real-time metrics — ✅ Logs & Reports Overview/Charts/Logs (v0.2.0–v0.2.2)

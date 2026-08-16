@@ -3,6 +3,16 @@
 > **Last Updated:** 2026-08-16
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
+## v0.2.2 — UI Layout Fixes (2026-08-16)
+
+- ✅ **Stable camera viewport** — Detection screen now reserves a fixed content region (`LayoutBuilder`-derived `SizedBox`, 32% of height, clamped 200–320) for the warning banner + scrollable detection list + controls, so the camera no longer resizes when detections appear ([`detection_screen.dart`](../lib/screens/detection_screen.dart)).
+- ✅ **Contained charts** — [`charts.dart`](../lib/widgets/charts.dart) derives Y bounds from the actual data with headroom, draws benchmark lines only when they fit, and sets an explicit dynamic `maxY` for the bar chart; empty data shows a placeholder.
+- ✅ `flutter analyze`: 0 issues. `flutter test`: **59 passing**. On-device (API 33): 0 exceptions / RenderFlex overflows.
+
+## v0.2.1 — Fix Startup Theme Assertion (2026-08-16)
+
+- ✅ Replaced `textTheme.apply(fontSizeFactor: 1.12, ...)` (asserted on M3's color-only `TextTheme`) with an explicit high-contrast `_highContrastTextTheme()` ([`main.dart`](../lib/main.dart)). `flutter analyze`: 0 issues. `flutter test`: **53 passing** (regression test in `test/theme_test.dart`).
+
 ## v0.2.0 — Assistive Application UI (2026-08-16)
 
 ### Application Navigation (100%)
@@ -53,11 +63,11 @@
 
 ### Tests (100% of the new tests)
 
-- ✅ Navigation shell, screens, widgets, TTS, settings, spatial, telemetry, gesture controller — `flutter test` 52 passing, `flutter analyze` 0 issues
+- ✅ Navigation shell, screens, widgets, TTS, settings, spatial, telemetry, gesture controller — `flutter test` 59 passing, `flutter analyze` 0 issues (52 at v0.2.0 → 53 at v0.2.1 → 59 at v0.2.2)
 
 ### Notes
 
-- The developer single-screen UI ([`camera_screen.dart`](../lib/screens/camera_screen.dart)) was retired; `info_panel.dart` / `debug_overlay.dart` remain but are unused by the primary UI.
+- The developer single-screen UI ([`camera_screen.dart`](../lib/screens/camera_screen.dart)) was retired in v0.2.0 and **removed** during the Android-only platform cleanup; `info_panel.dart` / `debug_overlay.dart` remain but are unused by the primary UI.
 - The ML pipeline (camera, YUV, orientation, TFLite, parser, NMS, thresholds, painter, forensics) was **not** modified.
 
 ## Completed Work
@@ -220,15 +230,15 @@
 | Back · landscape physical hold | 🟡 Convention bug fixed; physical-hold re-validation deferred |
 | Front · portrait / landscape | 🟡 Math implemented; device run pending |
 
-**Milestone 1: "Audible MVP"** — Active
+**Milestone 1: "Audible MVP"** — Complete (v0.2.0)
 
 | Task | Status |
 |------|--------|
-| TTS audio feedback | ❌ Not started |
+| TTS audio feedback | ✅ Complete (v0.2.0) |
 | Bounding box `CustomPainter` | ✅ Complete (2026-07-22) |
-| Error handling in isolate | 🟡 Partial — try/catch added around interpreter creation + frame loop; error propagation to main isolate |
-| Permission-denied UI | ❌ Not started |
-| Remove/wire unused dependencies | ❌ Not started |
+| Error handling in isolate | 🟡 Partial — try/catch added around interpreter creation + frame loop; error propagation to main isolate; restart recovery still open |
+| Permission-denied UI | ✅ Complete (v0.2.0 — camera-denied state with retry/open-settings) |
+| Remove/wire unused dependencies | ✅ Mostly complete — `flutter_tts`/`path_provider`/`fl_chart` wired; `flutter_riverpod` retained (deliberately unused) |
 | Debug instrumentation & logging | ✅ Complete (2026-07-22) |
 | Forensic file logging | ✅ Complete (2026-08-01, v0.1.3) |
 | Camera preprocessing repair | ✅ Complete (2026-08-01, v0.1.4) |
@@ -240,13 +250,14 @@
 ## Next Tasks (Priority Order)
 
 0. **Re-validate orientation on-device** — back landscape physical hold + front camera portrait/landscape (see [`docs/orientation-implementation.md`](orientation-implementation.md)).
-1. **Implement TTS audio feedback** — 2–4 hours. Wire `flutter_tts` to detection stream.
+1. ~~**Implement TTS audio feedback**~~ — ✅ Done (v0.2.0). See [`lib/services/tts_service.dart`](../lib/services/tts_service.dart).
 2. ~~**Implement bounding box `CustomPainter`**~~ — ✅ Done. See [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
-3. ~~**Add debug instrumentation**~~ — ✅ Done. See [`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart), [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart), [`lib/screens/camera_screen.dart`](../lib/screens/camera_screen.dart), [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
+3. ~~**Add debug instrumentation**~~ — ✅ Done. See [`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart), [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart), [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart), [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
 4. ~~**Implement NMS**~~ — ✅ Done (2026-08-01). Class-wise, IoU 0.45, pre-NMS conf 0.25. See [`_parseYolov8Output`](../lib/services/inference_isolate.dart).
-5. **Complete error handling in inference isolate** — 0.5–1 hours. Extend error recovery (isolate restart on crash).
-6. **Add permission-denied UI** — 1–2 hours.
-7. **Investigate XNNPACK SIGSEGV** — 4–8 hours. Benchmark tool on test device.
+5. **On-device validation of the v0.2.x UI** — gestures, TTS, mute toggle, settings persistence, Logs & Reports charts on the Snapdragon 695 device.
+6. **Complete error handling in inference isolate** — extend error recovery (isolate restart on crash).
+7. ~~**Add permission-denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+8. **Investigate XNNPACK SIGSEGV** — 4–8 hours. Benchmark tool on test device.
 
 ## Remaining Tasks
 
@@ -254,12 +265,12 @@ See [`implementation-plan.md`](implementation-plan.md) for the full milestone br
 
 ### By Milestone:
 
-- **Milestone 1 (Audible MVP):** 4.5 tasks remaining (~8–15 hours)
-- **Milestone 2 (Research-Ready):** 6 tasks (~14–24 hours)
-- **Milestone 3 (Defense-Ready):** 7 tasks (~22–37 hours)
-- **Milestone 4 (Production Candidate):** 6 tasks (~16–28 hours)
+- **Milestone 1 (Audible MVP):** ✅ Complete (v0.2.0); isolate restart recovery carried to M4
+- **Milestone 2 (Research-Ready):** mostly done — on-device UI validation, formal FPS/latency benchmark, adaptive throttling polish remaining
+- **Milestone 3 (Defense-Ready):** gestures + priority TTS queue done; TalkBack semantics, adaptive throttling, XNNPACK/NNAPI delegate, package rename (`com.eyecue`), explicit minSdk remaining
+- **Milestone 4 (Production Candidate):** isolate restart recovery, model variant selection, `TransferableTypedData`, bilinear resize, full coverage, Play Store readiness
 
-**Total Estimated Effort (remaining):** ~60–104 hours
+**Total Estimated Effort (remaining):** ~40–70 hours (down from ~60–104)
 
 ## Estimated Completion
 

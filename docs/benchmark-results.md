@@ -1,7 +1,21 @@
 # EyeCue — Benchmark Results
 
-> **Template only. No benchmark data has been collected yet.**  
-> See [`testing-plan.md`](testing-plan.md) for the benchmark plan.
+> **Template only. No formal benchmark has been collected yet** (the official TFLite benchmark tool has not been run on the target device).
+> See [`testing-plan.md`](testing-plan.md) for the benchmark plan, and [`research-notes.md`](research-notes.md) for metric definitions.
+
+---
+
+## Informal On-Device Observations (not formal benchmarks)
+
+Captured live from the app's own telemetry during the v0.2.2 session on the Snapdragon 695 test device (Android 13 / API 33), CPU-only inference (XNNPACK disabled):
+
+| Metric | Observed |
+|--------|----------|
+| Avg Detection FPS | ~2.1 |
+| Avg Inference Latency | ~606 ms |
+| Detections in session | 123 |
+
+These are **informal** figures from the app's runtime telemetry (subject to the low-end CPU-only pipeline), not the formal TFLite-benchmark-tool results the thesis requires. They illustrate that CPU-only throughput is far below the ≥15 FPS hypothesis target — reinforcing the XNNPACK/NNAPI/GPU investigation priority.
 
 ---
 

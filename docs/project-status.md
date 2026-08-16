@@ -3,14 +3,16 @@
 > **Last Updated:** 2026-08-16
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
+> **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. See [`changelog.md`](changelog.md).
+
 ## Overall Progress
 
 **ML/inference pipeline:** ~80% complete and on-device validated.
-**Thesis product (app as a whole):** ~30–35% — see the [thesis-product-status-audit](thesis-product-status-audit.md) for the weighted breakdown. The historical "~60%" figure measured only the ML/debug pipeline and is not a product-completion number.
+**Thesis product (app as a whole):** ~70% (range 65–75%) — see the [thesis-product-status-audit](thesis-product-status-audit.md) for the weighted breakdown (re-scored after the v0.2.x assistive-UI phase; the earlier ~30% measured the pre-assistive-UI state, and the historical "~60%" measured only the ML/debug pipeline).
 
-## What Changed (v0.2.0 — Assistive Application UI)
+## What Changed (v0.2.x — Assistive Application UI)
 
-The app is no longer a single developer camera screen. It now has the thesis-aligned application structure:
+The app is no longer a single developer camera screen. It now has the thesis-aligned application structure (built in v0.2.0; layout/theme fixes in v0.2.1–v0.2.2):
 
 - **Navigation:** 4-tab bottom bar — Home, Detect, Settings, Help ([`app_shell.dart`](../lib/navigation/app_shell.dart)); Logs & Reports pushed from Settings.
 - **Home:** branding, status card (Auto-Start aware), "Go to Live Camera".
@@ -20,7 +22,7 @@ The app is no longer a single developer camera screen. It now has the thesis-ali
 - **Help:** how it works, gestures, confirmation feedback, Android usage tips.
 - **Logs & Reports:** Overview / Charts / Logs with `fl_chart`; accuracy/precision/recall/mAP explicitly shown as unavailable (require ground truth).
 - **Spatial/priority layer:** left/center/right + priority tiers + approximate proximity band ([`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart)) — kept separate from the inference pipeline.
-- `flutter analyze`: **0 issues**. `flutter test`: **52 passing**.
+- `flutter analyze`: **0 issues**. `flutter test`: **59 passing**.
 
 ## Current Milestone
 
@@ -47,7 +49,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Next Objective
 
-1. **On-device validation of the v0.2.0 UI** — run on the Snapdragon 695 device: gestures, TTS, mute toggle, settings persistence, Logs & Reports charts.
+1. **On-device validation of the v0.2.x UI** — run on the Snapdragon 695 device: gestures, TTS, mute toggle, settings persistence, Logs & Reports charts.
 2. **Re-validate orientation on-device** — back-camera landscape physical hold and front-camera portrait/landscape runs (deferred from v0.1.7).
 3. **Isolate restart recovery** and remaining research-evaluation work (see the audit's phases).
 
@@ -66,6 +68,9 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Recent Accomplishments
 
+- ✅ **Assistive application UI (v0.2.0):** Home / Detect / Settings / Help navigation + Logs & Reports; TTS audio guidance (cooldown, de-duplication, urgent bypass, repeat, mute); the four thesis gestures with haptic + TTS confirmation; persisted settings (vibration, auto-start, low-power, audio); spatial/priority/proximity interpretation; runtime telemetry + charts
+- ✅ **v0.2.1:** fixed startup theme-construction assertion (explicit high-contrast `TextTheme`)
+- ✅ **v0.2.2:** fixed camera viewport resizing with detections + chart overflow; 59 tests passing
 - ✅ Persistent inference isolate with runtime model introspection (`ModelMetadata`)
 - ✅ Automatic model-type detection (FP32 / Full INT8 / Full UINT8 / Weight-Quantized / Unknown) — never guessed
 - ✅ Pure-Dart flatbuffer scanner for internal tensor precision ([`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart))

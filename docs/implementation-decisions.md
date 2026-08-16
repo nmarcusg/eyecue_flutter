@@ -89,7 +89,7 @@ This document records important engineering decisions made during the developmen
 - **Consequences:**
   - Clean separation between inference service and UI
   - `StreamBuilder` or manual subscription patterns available
-  - Currently only one listener exists (CameraScreen); broadcast is slightly over-provisioned but harmless
+  - **Update (v0.2.0):** the broadcast stream now has multiple listeners — the Detection UI, TTS service, and telemetry service all subscribe, so broadcast (rather than single-subscription) is now the correct choice.
 
 ## Decision 8: Bounding Box Coordinate Transformation
 
