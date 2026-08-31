@@ -1,13 +1,13 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-08-16
+> **Last Updated:** 2026-09-01 (working-tree assessment)
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
-> **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. See [`changelog.md`](changelog.md).
+> **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The working tree contains unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
 
 ## Overall Progress
 
-**ML/inference pipeline:** ~80% complete and on-device validated.
+**ML/inference pipeline:** stable v0.2.2 baseline is ~80% complete and on-device validated; the current model/backend candidate is statically validated but not yet device validated.
 **Thesis product (app as a whole):** ~70% (range 65–75%) — see the [thesis-product-status-audit](thesis-product-status-audit.md) for the weighted breakdown (re-scored after the v0.2.x assistive-UI phase; the earlier ~30% measured the pre-assistive-UI state, and the historical "~60%" measured only the ML/debug pipeline).
 
 ## What Changed (v0.2.x — Assistive Application UI)
@@ -22,7 +22,19 @@ The app is no longer a single developer camera screen. It now has the thesis-ali
 - **Help:** how it works, gestures, confirmation feedback, Android usage tips.
 - **Logs & Reports:** Overview / Charts / Logs with `fl_chart`; accuracy/precision/recall/mAP explicitly shown as unavailable (require ground truth).
 - **Spatial/priority layer:** left/center/right + priority tiers + approximate proximity band ([`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart)) — kept separate from the inference pipeline.
-- `flutter analyze`: **0 issues**. `flutter test`: **59 passing**.
+- Stable v0.2.2 validation remains the historical **59-test** on-device baseline. The current working tree has **73 passing tests** and `flutter analyze`: **0 issues**.
+
+## Current Unreleased Worktree (2026-09-01)
+
+The following changes exist in the working tree and are not a new release yet:
+
+- **Model:** [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite) has input `[1,3,640,640]` (NCHW) and output `[1,84,8400]`; both runtime I/O tensors are FLOAT32 while the flatbuffer contains internally quantized tensors. [`ModelMetadata`](../lib/models/model_metadata.dart) classifies it as *Weight-Quantized* from inspection rather than from the filename.
+- **Preprocessing:** the inference path now chooses NHWC or NCHW from runtime input shape. [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) provides pure, unit-tested rotation/mirror logic for both layouts.
+- **Backend:** the isolate attempts explicit XNNPACK, retains the delegate for the interpreter lifetime, and retries on CPU for recoverable Dart-level setup/invocation failures. A native SIGSEGV cannot be caught by Dart, so the historical Snapdragon 695 XNNPACK crash is not considered resolved.
+- **Static verification:** `flutter analyze` passes; `flutter test` passes with 73 tests; the flatbuffer and PNG validators pass; and the generated debug APK contains the new model asset.
+- **Device boundary:** installing that APK on the API 33 test phone failed with `INSTALL_FAILED_INSUFFICIENT_STORAGE`. The previously installed application was launched afterward, so there is no new-model detection, latency, accuracy, or XNNPACK result to report.
+
+This candidate must remain labelled **unreleased and unverified on-device** until the exact APK is installed and exercised on the target device.
 
 ## Current Milestone
 
@@ -36,22 +48,24 @@ The app is no longer a single developer camera screen. It now has the thesis-ali
 | Persisted settings (vibration, auto-start, low-power, audio) | ✅ Implemented (v0.2.0) |
 | Spatial position (left/center/right) + priority classification | ✅ Implemented (heuristic proximity band) (v0.2.0) |
 | Runtime telemetry + charts (latency/FPS/frequency) | ✅ Implemented (v0.2.0) |
-| Error handling in isolate | 🟡 Partial — try/catch + error propagation done; restart recovery missing |
+| Error handling in isolate | 🟡 Partial — setup/invocation CPU fallback and error propagation exist; fatal isolate restart recovery is missing |
 | Permission-denied UI | ✅ Implemented (v0.2.0 — camera-denied screen with retry/open-settings) |
 | Isolate restart recovery | ❌ Not started |
-| Orientation re-validation (back landscape + front camera) | 🟡 In progress — portrait + static verified; deferred runs pending |
+| Orientation re-validation (back landscape + front camera) | 🟡 In progress — stable NHWC baseline portrait/static verified; candidate NCHW and deferred device runs pending |
 
 ## Current Blocker
 
-**XNNPACK SIGSEGV** — XNNPACK crashes on Snapdragon 695 with the bundled YOLOv8n model (FLOAT32 I/O, INT8 weights). Without hardware acceleration, inference is CPU-bound. Investigation with the official TFLite benchmark tool is needed.
+**XNNPACK/device validation is unresolved.** The stable v0.2.2 path is CPU-only because XNNPACK previously crashed on Snapdragon 695 with the older bundled YOLOv8n model (FLOAT32 I/O, INT8 weights). The current unreleased candidate attempts XNNPACK and has a CPU fallback for recoverable Dart-level failures, but native crashes remain uncatchable. The candidate APK could not be installed because the test phone reported insufficient storage, so no runtime result or performance improvement is established.
 
 See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Next Objective
 
-1. **On-device validation of the v0.2.x UI** — run on the Snapdragon 695 device: gestures, TTS, mute toggle, settings persistence, Logs & Reports charts.
-2. **Re-validate orientation on-device** — back-camera landscape physical hold and front-camera portrait/landscape runs (deferred from v0.1.7).
-3. **Isolate restart recovery** and remaining research-evaluation work (see the audit's phases).
+1. **Install and validate the exact candidate APK** — free device storage, then verify model metadata, XNNPACK stability/fallback behavior, detections, and latency on the Snapdragon 695 device.
+2. **Re-validate orientation on-device** — candidate NCHW portrait/landscape and front-camera runs, plus the deferred stable-baseline cases.
+3. **Run formal model/backend benchmarks** — compare the old CPU/NHWC baseline, the NCHW candidate, and any safe delegates; do not infer performance from static inspection.
+4. **Complete the v0.2.x UI validation** — gestures, TTS, mute toggle, settings persistence, and Logs & Reports charts.
+5. **Implement isolate restart recovery** and remaining research-evaluation work (see the audit's phases).
 
 ## High-Priority Tasks
 
@@ -60,7 +74,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 | 1 | On-device validation of gestures + TTS + settings persistence | 🔴 Critical |
 | 2 | ~~Implement TTS audio feedback~~ | ✅ Complete (v0.2.0) |
 | 3 | ~~Add permission-denied and error UI states~~ | 🟡 Partial — permission UI done; isolate restart recovery remaining |
-| 4 | Investigate XNNPACK SIGSEGV | 🔴 Critical |
+| 4 | Validate XNNPACK candidate safely and retain a working CPU fallback | 🔴 Critical |
 | 5 | ~~Implement thesis gesture controls~~ | ✅ Complete (v0.2.0) |
 | 6 | Isolate restart recovery | 🔴 High |
 | 7 | Orientation re-validation (back landscape + front camera) | 🟡 High |
@@ -70,7 +84,8 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 - ✅ **Assistive application UI (v0.2.0):** Home / Detect / Settings / Help navigation + Logs & Reports; TTS audio guidance (cooldown, de-duplication, urgent bypass, repeat, mute); the four thesis gestures with haptic + TTS confirmation; persisted settings (vibration, auto-start, low-power, audio); spatial/priority/proximity interpretation; runtime telemetry + charts
 - ✅ **v0.2.1:** fixed startup theme-construction assertion (explicit high-contrast `TextTheme`)
-- ✅ **v0.2.2:** fixed camera viewport resizing with detections + chart overflow; 59 tests passing
+- ✅ **v0.2.2:** fixed camera viewport resizing with detections + chart overflow; 59-test release baseline
+- 🟡 **Unreleased model/backend candidate:** bundled internally quantized FLOAT32-I/O NCHW model; layout-aware preprocessing/rotation; explicit XNNPACK attempt with recoverable CPU fallback; 73 tests and static validation passing, device validation blocked by insufficient storage
 - ✅ Persistent inference isolate with runtime model introspection (`ModelMetadata`)
 - ✅ Automatic model-type detection (FP32 / Full INT8 / Full UINT8 / Weight-Quantized / Unknown) — never guessed
 - ✅ Pure-Dart flatbuffer scanner for internal tensor precision ([`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart))

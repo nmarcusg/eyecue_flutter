@@ -10,6 +10,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 import '../models/box_transform.dart';
 import '../models/detection.dart';
 import '../models/model_metadata.dart';
+import '../models/tensor_rotation.dart';
 import '../models/tflite_flatbuffer.dart';
 import 'forensic_log.dart'; // Structured file-based forensic logging
 import 'input_probe.dart'; // TEMPORARY input-pipeline probe (test-image converter)
@@ -31,7 +32,7 @@ class InferenceService {
   /// The asset path that is bundled and loaded at startup. The *reported*
   /// model name is derived from this path at runtime (basename); the runtime
   /// interpreter remains the single source of truth for everything else.
-  static const String _modelAssetPath = 'assets/yolov8n.tflite';
+  static const String _modelAssetPath = 'assets/yolov8n_int8_new.tflite';
 
   late Isolate _isolate;
   late SendPort _sendPort;
@@ -41,7 +42,8 @@ class InferenceService {
   Stream<List<Detection>> get resultsStream => _resultsController.stream;
 
   /// Stream of human-readable isolate error messages (for busy-gate recovery).
-  final StreamController<String> _errorController = StreamController.broadcast();
+  final StreamController<String> _errorController =
+      StreamController.broadcast();
   Stream<String> get errorStream => _errorController.stream;
 
   /// Runtime model metadata, populated when the isolate reports `model_loaded`.
@@ -107,10 +109,13 @@ class InferenceService {
     final modelBytes = await _loadModel();
     final labels = await _loadLabels();
 
-    _isolate = await Isolate.spawn(
-      _isolateEntryPoint,
-      [_receivePort.sendPort, modelBytes, labels, _modelAssetPath, runDir],
-    );
+    _isolate = await Isolate.spawn(_isolateEntryPoint, [
+      _receivePort.sendPort,
+      modelBytes,
+      labels,
+      _modelAssetPath,
+      runDir,
+    ]);
 
     _receivePort.listen((dynamic message) {
       if (message is SendPort) {
@@ -121,15 +126,14 @@ class InferenceService {
         }
         debugPrint('[Service] Isolate handshake complete — sendPort received');
       } else if (message is Map<String, dynamic> &&
-                 message['type'] == 'result') {
+          message['type'] == 'result') {
         // --- Inference result with metadata ---
-        final detections =
-            (message['detections'] as List).cast<Detection>();
+        final detections = (message['detections'] as List).cast<Detection>();
         _lastLatencyMs = (message['latencyMs'] as num).toDouble();
         _lastFrameNumber = message['frameNumber'] as int;
         _resultsController.add(detections);
       } else if (message is Map<String, dynamic> &&
-                 message['type'] == 'error') {
+          message['type'] == 'error') {
         // --- Error from isolate ---
         debugPrint(
           '[Error] Isolate error: ${message['error']}\n'
@@ -137,7 +141,7 @@ class InferenceService {
         );
         _errorController.add(message['error'].toString());
       } else if (message is Map<String, dynamic> &&
-                 message['type'] == 'model_loaded') {
+          message['type'] == 'model_loaded') {
         // --- Runtime model metadata from the isolate ---
         final metadata = ModelMetadata.fromJsonMap(
           (message['metadata'] as Map).cast<String, dynamic>(),
@@ -262,7 +266,9 @@ class InferenceService {
       image.dispose();
       codec.dispose();
       final rgba = rgbaData!.buffer.asUint8List();
-      debugPrint('[Service] Test image decoded: ${w}x$h rgba=${rgba.length} bytes');
+      debugPrint(
+        '[Service] Test image decoded: ${w}x$h rgba=${rgba.length} bytes',
+      );
 
       // Expose display data for the screen (image + dims for the painter).
       _testImageWidth = w;
@@ -272,8 +278,10 @@ class InferenceService {
       // Source adapter: RGB → I420 planes (the same YUV_420_888 interface the
       // camera produces). NO preprocessing is duplicated here.
       final planes = InputProbe.rgbaToI420(rgba, w, h);
-      debugPrint('[Service] Test image → I420 planes: '
-          'y=${planes.y.length} u=${planes.u.length} v=${planes.v.length}');
+      debugPrint(
+        '[Service] Test image → I420 planes: '
+        'y=${planes.y.length} u=${planes.u.length} v=${planes.v.length}',
+      );
 
       // Same entry point as the camera — identical pipeline after this call.
       processFrame(
@@ -292,8 +300,10 @@ class InferenceService {
         vRowStride: (w + 1) ~/ 2,
         vPixelStride: 1,
       );
-      debugPrint('[Service] Test image sent via processFrame() — '
-          'pipeline identical to camera stream');
+      debugPrint(
+        '[Service] Test image sent via processFrame() — '
+        'pipeline identical to camera stream',
+      );
     } catch (e, stack) {
       debugPrint('[Error] Test image failed: $e');
       debugPrint('[Error] Stack: $stack');
@@ -318,7 +328,9 @@ class InferenceService {
     final Uint8List modelBytes = args[1] as Uint8List;
     final List<String> labels = (args[2] as List<dynamic>).cast<String>();
     final String modelName =
-        (args.length > 3 ? args[3] as String : 'unknown.tflite').split('/').last;
+        (args.length > 3 ? args[3] as String : 'unknown.tflite')
+            .split('/')
+            .last;
     if (args.length > 4 && args[4] is String) {
       ForensicLog.setRunDir(args[4] as String);
     }
@@ -326,25 +338,78 @@ class InferenceService {
     final isolateReceivePort = ReceivePort();
     mainSendPort.send(isolateReceivePort.sendPort);
 
-    // --- 1. Create interpreter ONCE (CPU with 4 threads) ---
-    // NOTE: XNNPACK delegate removed — it caused a SIGSEGV on this
-    // YOLOv8n model during TfLiteInterpreterCreate on Snapdragon 695.
+    // --- 1. Create interpreter (explicit XNNPACK first) ---
+    // Null options through the public API are ABI-safe. Do not instantiate
+    // XNNPackDelegateOptions: its generated layout is stale in version 0.12.1.
+    //
+    // The delegate is deliberately retained in this scope for the lifetime of
+    // the interpreter. The native binding documents that the caller owns the
+    // delegate and must keep it alive while the interpreter uses it.
     Interpreter? interpreter;
+    XNNPackDelegate? xnnDelegate;
     try {
+      debugPrint(
+        '[Model] Creating explicit XNNPACK delegate (native null-options)',
+      );
+      xnnDelegate = XNNPackDelegate();
+      debugPrint('[Model] Explicit XNNPACK delegate created');
       final options = InterpreterOptions()
-        ..threads = 4;
-
-      interpreter = Interpreter.fromBuffer(modelBytes, options: options);
-      debugPrint('[Model] Interpreter created successfully (threads=4, XNNPACK disabled)');
+        ..threads = 4
+        ..addDelegate(xnnDelegate);
+      try {
+        interpreter = Interpreter.fromBuffer(modelBytes, options: options);
+      } finally {
+        options.delete();
+      }
+      debugPrint(
+        '[Model] Interpreter created successfully (threads=4, explicit XNNPACK)',
+      );
     } catch (e, stack) {
-      debugPrint('[Error] Failed to create TFLite interpreter: $e');
-      debugPrint('[Error] Stack: $stack');
-      mainSendPort.send({
-        'type': 'error',
-        'error': 'Interpreter creation failed: $e',
-        'stackTrace': stack.toString(),
-      });
-      return; // Cannot proceed without interpreter
+      debugPrint('[Warn] XNNPACK interpreter setup failed: $e');
+      debugPrint('[Warn] Stack: $stack');
+
+      // A failed interpreter construction does not transfer ownership of the
+      // delegate. Delete it before retrying with the stable CPU path.
+      try {
+        interpreter?.close();
+      } catch (closeError) {
+        debugPrint(
+          '[Warn] Failed to close partial XNNPACK interpreter: $closeError',
+        );
+      }
+      try {
+        xnnDelegate?.delete();
+      } catch (deleteError) {
+        debugPrint('[Warn] Failed to delete XNNPACK delegate: $deleteError');
+      }
+      xnnDelegate = null;
+      interpreter = null;
+
+      try {
+        final fallbackOptions = InterpreterOptions()..threads = 4;
+        try {
+          interpreter = Interpreter.fromBuffer(
+            modelBytes,
+            options: fallbackOptions,
+          );
+        } finally {
+          fallbackOptions.delete();
+        }
+        debugPrint(
+          '[Model] Interpreter created successfully (threads=4, CPU fallback)',
+        );
+      } catch (fallbackError, fallbackStack) {
+        debugPrint(
+          '[Error] CPU fallback interpreter creation failed: $fallbackError',
+        );
+        debugPrint('[Error] Stack: $fallbackStack');
+        mainSendPort.send({
+          'type': 'error',
+          'error': 'Interpreter creation failed: $fallbackError',
+          'stackTrace': fallbackStack.toString(),
+        });
+        return; // Cannot proceed without an interpreter
+      }
     }
 
     // --- 2. Runtime model introspection (single source of truth) ---
@@ -359,6 +424,18 @@ class InferenceService {
     } catch (e, stack) {
       debugPrint('[Error] Failed to introspect model metadata: $e');
       debugPrint('[Error] Stack: $stack');
+      try {
+        interpreter.close();
+      } catch (closeError) {
+        debugPrint(
+          '[Warn] Failed to close interpreter after introspection error: $closeError',
+        );
+      }
+      try {
+        xnnDelegate?.delete();
+      } catch (deleteError) {
+        debugPrint('[Warn] Failed to delete XNNPACK delegate: $deleteError');
+      }
       mainSendPort.send({
         'type': 'error',
         'error': 'Model introspection failed: $e',
@@ -397,6 +474,7 @@ class InferenceService {
     var brightFrameDumped = false;
     var receivedCount = 0;
     var processedCount = 0;
+    var xnnpackFallbackAttempted = false;
     isolateReceivePort.listen((dynamic data) {
       try {
         receivedCount++;
@@ -448,10 +526,20 @@ class InferenceService {
           final int rotationDegrees = (data['rotationDegrees'] as int?) ?? 0;
           final bool mirror = (data['mirror'] as bool?) ?? false;
           if (rotationDegrees != 0 || mirror) {
-            _rotateInputBuffer(inputBuffer, rotationDegrees, mirror, modelH, modelW);
+            _rotateInputBuffer(
+              inputBuffer,
+              rotationDegrees,
+              mirror,
+              modelH,
+              modelW,
+              isNCHW,
+            );
           }
           final uprightDims = BoxTransform.uprightDims(
-              w: srcWidth, h: srcHeight, rotationDegrees: rotationDegrees);
+            w: srcWidth,
+            h: srcHeight,
+            rotationDegrees: rotationDegrees,
+          );
           _safeForensic(
             () => ForensicLog.recordOrientation(
               frame: frameNumber,
@@ -479,55 +567,52 @@ class InferenceService {
           final bool dumpNow = isFrame1 || (isBright && !brightFrameDumped);
           if (dumpNow && !isFrame1) brightFrameDumped = true;
           if (dumpNow) {
-            _safeForensic(
-              () {
-                ForensicLog.recordPreprocess(
-                  input: inputBuffer,
-                  m: metadata,
-                  isNCHW: isNCHW,
-                  frame: frameNumber,
-                  srcWidth: srcWidth,
-                  srcHeight: srcHeight,
-                  dstWidth: modelW,
-                  dstHeight: modelH,
-                );
-                ForensicLog.recordTensor(
-                  input: inputBuffer,
-                  m: metadata,
-                  frame: frameNumber,
-                );
-                ForensicLog.recordPlaneStats(
-                  y: yBytes,
-                  u: uBytes,
-                  v: vBytes,
-                  frame: frameNumber,
-                  yRowStride: yRowStride,
-                  yPixelStride: yPixelStride,
-                  uRowStride: uRowStride,
-                  uPixelStride: uPixelStride,
-                  vRowStride: vRowStride,
-                  vPixelStride: vPixelStride,
-                );
-                ForensicLog.dumpFrameImages(
-                  yPlane: yBytes,
-                  uPlane: uBytes,
-                  vPlane: vBytes,
-                  srcWidth: srcWidth,
-                  srcHeight: srcHeight,
-                  inputBuffer: inputBuffer,
-                  dstWidth: modelW,
-                  dstHeight: modelH,
-                  isNCHW: isNCHW,
-                  yRowStride: yRowStride,
-                  yPixelStride: yPixelStride,
-                  uRowStride: uRowStride,
-                  uPixelStride: uPixelStride,
-                  vRowStride: vRowStride,
-                  vPixelStride: vPixelStride,
-                );
-              },
-              'preprocess/tensor/planes/dump',
-            );
+            _safeForensic(() {
+              ForensicLog.recordPreprocess(
+                input: inputBuffer,
+                m: metadata,
+                isNCHW: isNCHW,
+                frame: frameNumber,
+                srcWidth: srcWidth,
+                srcHeight: srcHeight,
+                dstWidth: modelW,
+                dstHeight: modelH,
+              );
+              ForensicLog.recordTensor(
+                input: inputBuffer,
+                m: metadata,
+                frame: frameNumber,
+              );
+              ForensicLog.recordPlaneStats(
+                y: yBytes,
+                u: uBytes,
+                v: vBytes,
+                frame: frameNumber,
+                yRowStride: yRowStride,
+                yPixelStride: yPixelStride,
+                uRowStride: uRowStride,
+                uPixelStride: uPixelStride,
+                vRowStride: vRowStride,
+                vPixelStride: vPixelStride,
+              );
+              ForensicLog.dumpFrameImages(
+                yPlane: yBytes,
+                uPlane: uBytes,
+                vPlane: vBytes,
+                srcWidth: srcWidth,
+                srcHeight: srcHeight,
+                inputBuffer: inputBuffer,
+                dstWidth: modelW,
+                dstHeight: modelH,
+                isNCHW: isNCHW,
+                yRowStride: yRowStride,
+                yPixelStride: yPixelStride,
+                uRowStride: uRowStride,
+                uPixelStride: uPixelStride,
+                vRowStride: vRowStride,
+                vPixelStride: vPixelStride,
+              );
+            }, 'preprocess/tensor/planes/dump');
           }
 
           // -- INFERENCE (timed) --
@@ -537,11 +622,81 @@ class InferenceService {
           // exact row-major element count of the model input.
           final inputForRun = _prepareInputForRun(inputBuffer, metadata);
 
-          final stopwatch = Stopwatch()..start();
-          interpreter!.run(inputForRun, outputBuffer.buffer);
+          var backend = xnnDelegate == null ? 'CPU' : 'XNNPACK';
+          var stopwatch = Stopwatch()..start();
+          try {
+            interpreter!.run(inputForRun, outputBuffer.buffer);
+          } catch (e) {
+            // A Dart-level delegate invocation failure can be recovered by
+            // replacing the interpreter with the CPU path. A native SIGSEGV
+            // cannot be caught here; the device-specific XNNPACK crash risk
+            // remains an on-device validation concern.
+            var recoveredOnCpu = false;
+            if (xnnDelegate != null && !xnnpackFallbackAttempted) {
+              xnnpackFallbackAttempted = true;
+              stopwatch.stop();
+              debugPrint('[Warn] XNNPACK invocation failed: $e');
+              debugPrint('[Warn] Retrying this frame and subsequent frames on CPU');
+              try {
+                interpreter!.close();
+              } catch (closeError) {
+                debugPrint(
+                  '[Warn] Failed to close XNNPACK interpreter: $closeError',
+                );
+              }
+              try {
+                xnnDelegate!.delete();
+              } catch (deleteError) {
+                debugPrint(
+                  '[Warn] Failed to delete XNNPACK delegate: $deleteError',
+                );
+              }
+              xnnDelegate = null;
+              try {
+                final fallbackOptions = InterpreterOptions()..threads = 4;
+                try {
+                  interpreter = Interpreter.fromBuffer(
+                    modelBytes,
+                    options: fallbackOptions,
+                  );
+                } finally {
+                  fallbackOptions.delete();
+                }
+                debugPrint(
+                  '[Model] CPU fallback activated after XNNPACK invocation failure',
+                );
+                backend = 'CPU-fallback';
+                stopwatch = Stopwatch()..start();
+                interpreter!.run(inputForRun, outputBuffer.buffer);
+                recoveredOnCpu = true;
+              } catch (fallbackError, fallbackStack) {
+                debugPrint(
+                  '[Error] CPU fallback after XNNPACK invocation failed: '
+                  '$fallbackError',
+                );
+                debugPrint('[Error] Stack: $fallbackStack');
+                mainSendPort.send({
+                  'type': 'error',
+                  'error':
+                      'CPU fallback after XNNPACK failure failed: '
+                      '$fallbackError',
+                  'stackTrace': fallbackStack.toString(),
+                });
+                return;
+              }
+            }
+            if (!recoveredOnCpu) {
+              stopwatch.stop();
+              rethrow;
+            }
+          }
           stopwatch.stop();
-          final double latencyMs =
-              stopwatch.elapsedMicroseconds / 1000.0;
+          final double latencyMs = stopwatch.elapsedMicroseconds / 1000.0;
+          debugPrint(
+            '[Inference] Frame #$frameNumber completed | '
+            'backend=$backend | '
+            'duration=${latencyMs.toStringAsFixed(1)} ms',
+          );
 
           // -- POST-PROCESS: Argmax per box (metadata-driven dequantization) --
           final parseableOutput = _outputForParser(outputBuffer, metadata);
@@ -572,14 +727,25 @@ class InferenceService {
           final preNmsCount = parsed.preNmsCount;
 
           // --- Detection logging (classes, confidences, boxes, pre/post-NMS) ---
-          _logDetections(detections, frameNumber, latencyMs, modelH, modelW,
-              preNmsCount: preNmsCount);
+          _logDetections(
+            detections,
+            frameNumber,
+            latencyMs,
+            modelH,
+            modelW,
+            isNCHW: isNCHW,
+            preNmsCount: preNmsCount,
+          );
 
           // -- Forensic logging (every frame + parser on dumped frames) --
           // Per-frame raw-luma mean makes input brightness over time visible
           // (is the camera black the whole time, or does it recover?).
           final double yMean = _yPlaneMean(
-              yBytes, yRowStride > 0 ? yRowStride : srcWidth, srcWidth, srcHeight);
+            yBytes,
+            yRowStride > 0 ? yRowStride : srcWidth,
+            srcWidth,
+            srcHeight,
+          );
           _safeForensic(
             () => ForensicLog.recordPerformance(
               frame: frameNumber,
@@ -622,7 +788,10 @@ class InferenceService {
       } catch (e, stack) {
         debugPrint('[Error] Exception in isolate frame loop: $e');
         debugPrint('[Error] Stack: $stack');
-        _safeForensic(() => ForensicLog.recordError('frame-loop', e, stack), 'error');
+        _safeForensic(
+          () => ForensicLog.recordError('frame-loop', e, stack),
+          'error',
+        );
         try {
           mainSendPort.send({
             'type': 'error',
@@ -779,76 +948,27 @@ class InferenceService {
     return cnt == 0 ? 0 : sum / cnt;
   }
 
-  /// Rotates (and optionally X-mirrors, for the front camera) the NHWC input
-  /// tensor in place so the model sees the scene UPRIGHT. The input is always
-  /// square (640×640) for this model, so 90°/180°/270° are lossless transposes
-  /// (no resampling). Mirroring is applied in the upright space, matching the
-  /// front-camera preview. This is the ONLY code that changes what pixels the
-  /// model sees; converter/parser/NMS are untouched.
+  /// Rotates (and optionally X-mirrors, for the front camera) the input tensor
+  /// in place so the model sees the scene UPRIGHT. Layout-aware: delegates to
+  /// [rotateInputTensor], which handles both NHWC (interleaved) and NCHW
+  /// (planar) square tensors. This is the ONLY code that changes what pixels
+  /// the model sees; converter/parser/NMS are untouched.
   static void _rotateInputBuffer(
     dynamic input,
     int degrees,
     bool mirror,
     int modelH,
     int modelW,
+    bool isNCHW,
   ) {
-    if (input == null) return;
     if (modelH != modelW || modelH <= 0) {
-      debugPrint('[Orient] Input not square ($modelH×$modelW) — '
-          'orientation rotation skipped');
+      debugPrint(
+        '[Orient] Input not square ($modelH×$modelW) — '
+        'orientation rotation skipped',
+      );
       return;
     }
-    final int n = modelH * modelW * 3;
-    if (n <= 0 || _inputLen(input) != n) return;
-    final dynamic tmp = _cloneInput(input);
-    final int w = modelW;
-    final int r = ((degrees % 360) + 360) % 360;
-    for (int row = 0; row < modelH; row++) {
-      for (int col = 0; col < w; col++) {
-        int dr = row;
-        int dc = col;
-        switch (r) {
-          case 90:
-            dr = col;
-            dc = w - 1 - row;
-            break;
-          case 180:
-            dr = modelH - 1 - row;
-            dc = w - 1 - col;
-            break;
-          case 270:
-            dr = modelH - 1 - col;
-            dc = row;
-            break;
-          default:
-            break;
-        }
-        if (mirror) dc = w - 1 - dc;
-        final int si = (row * w + col) * 3;
-        final int di = (dr * w + dc) * 3;
-        input[di] = tmp[si];
-        input[di + 1] = tmp[si + 1];
-        input[di + 2] = tmp[si + 2];
-      }
-    }
-  }
-
-  static int _inputLen(dynamic input) {
-    if (input is Float32List) return input.length;
-    if (input is Float64List) return input.length;
-    if (input is Int8List) return input.length;
-    if (input is Uint8List) return input.length;
-    if (input is Int16List) return input.length;
-    return 0;
-  }
-
-  static dynamic _cloneInput(dynamic input) {
-    if (input is Float32List) return Float32List.fromList(input);
-    if (input is Float64List) return Float64List.fromList(input);
-    if (input is Int8List) return Int8List.fromList(input);
-    if (input is Uint8List) return Uint8List.fromList(input);
-    if (input is Int16List) return Int16List.fromList(input);
-    return input;
+    rotateInputTensor(input, degrees, mirror, modelH, modelW, isNCHW: isNCHW);
   }
 
   static void _logDetections(
@@ -857,6 +977,7 @@ class InferenceService {
     double latencyMs,
     int modelH,
     int modelW, {
+    required bool isNCHW,
     int preNmsCount = -1,
   }) {
     final String nmsSummary = preNmsCount >= 0
@@ -869,21 +990,26 @@ class InferenceService {
 
     final buf = StringBuffer();
     buf.writeln(
-        '[Detection] Frame #$frameNumber | Objects: ${detections.length} '
-        '($nmsSummary)');
+      '[Detection] Frame #$frameNumber | Objects: ${detections.length} '
+      '($nmsSummary)',
+    );
     for (int i = 0; i < detections.length; i++) {
       final d = detections[i];
       buf.writeln('  ${i + 1}.');
       buf.writeln('     Label     : ${d.label}');
-      buf.writeln('     Confidence: ${(d.confidence * 100).toStringAsFixed(1)}%');
+      buf.writeln(
+        '     Confidence: ${(d.confidence * 100).toStringAsFixed(1)}%',
+      );
       buf.writeln('     Box (norm):');
       buf.writeln('       left  =${d.box.left.toStringAsFixed(3)}');
       buf.writeln('       top   =${d.box.top.toStringAsFixed(3)}');
       buf.writeln('       width =${d.box.width.toStringAsFixed(3)}');
       buf.writeln('       height=${d.box.height.toStringAsFixed(3)}');
     }
-    buf.write('[Inference]  Frame #$frameNumber | Duration: ${latencyMs.toStringAsFixed(1)} ms | '
-        'Input: [1,$modelH,$modelW,3]');
+    buf.write(
+      '[Inference]  Frame #$frameNumber | Duration: ${latencyMs.toStringAsFixed(1)} ms | '
+      'Input: ${isNCHW ? '[1,3,$modelH,$modelW]' : '[1,$modelH,$modelW,3]'}',
+    );
 
     debugPrint(buf.toString());
   }
@@ -940,16 +1066,23 @@ class InferenceService {
     int pixelIndex = 0;
 
     for (int y = 0; y < dstHeight; y++) {
-      final int srcY =
-          (y * srcHeight / dstHeight).round().clamp(0, srcHeight - 1);
+      final int srcY = (y * srcHeight / dstHeight).round().clamp(
+        0,
+        srcHeight - 1,
+      );
 
       for (int x = 0; x < dstWidth; x++) {
-        final int srcX =
-            (x * srcWidth / dstWidth).round().clamp(0, srcWidth - 1);
+        final int srcX = (x * srcWidth / dstWidth).round().clamp(
+          0,
+          srcWidth - 1,
+        );
 
         // Y sample — honor the real rowStride (padding-aware).
-        final int yVal = yPlane[(srcY * yRow + srcX * yPixelStride)
-            .clamp(0, yPlane.length - 1)];
+        final int yVal =
+            yPlane[(srcY * yRow + srcX * yPixelStride).clamp(
+              0,
+              yPlane.length - 1,
+            )];
 
         // Chroma sample at (srcX/2, srcY/2).
         final int cx = srcX ~/ 2;
@@ -972,8 +1105,10 @@ class InferenceService {
         }
 
         final int r = (yVal + vVal * 1.402).round().clamp(0, 255);
-        final int g =
-            (yVal - uVal * 0.344 - vVal * 0.714).round().clamp(0, 255);
+        final int g = (yVal - uVal * 0.344 - vVal * 0.714).round().clamp(
+          0,
+          255,
+        );
         final int b = (yVal + uVal * 1.772).round().clamp(0, 255);
 
         if (isNCHW) {
@@ -982,20 +1117,68 @@ class InferenceService {
           final int gIdx = 1 * dstHeight * dstWidth + y * dstWidth + x;
           final int bIdx = 2 * dstHeight * dstWidth + y * dstWidth + x;
 
-          _writeChannel(output, rIdx, r, metadata,
-              isFloatBuffer, isInt8Buffer, isUint8Buffer, isInt16Buffer);
-          _writeChannel(output, gIdx, g, metadata,
-              isFloatBuffer, isInt8Buffer, isUint8Buffer, isInt16Buffer);
-          _writeChannel(output, bIdx, b, metadata,
-              isFloatBuffer, isInt8Buffer, isUint8Buffer, isInt16Buffer);
+          _writeChannel(
+            output,
+            rIdx,
+            r,
+            metadata,
+            isFloatBuffer,
+            isInt8Buffer,
+            isUint8Buffer,
+            isInt16Buffer,
+          );
+          _writeChannel(
+            output,
+            gIdx,
+            g,
+            metadata,
+            isFloatBuffer,
+            isInt8Buffer,
+            isUint8Buffer,
+            isInt16Buffer,
+          );
+          _writeChannel(
+            output,
+            bIdx,
+            b,
+            metadata,
+            isFloatBuffer,
+            isInt8Buffer,
+            isUint8Buffer,
+            isInt16Buffer,
+          );
         } else {
           // NHWC layout: interleaved [R, G, B, R, G, B, ...]
-          _writeChannel(output, pixelIndex++, r, metadata,
-              isFloatBuffer, isInt8Buffer, isUint8Buffer, isInt16Buffer);
-          _writeChannel(output, pixelIndex++, g, metadata,
-              isFloatBuffer, isInt8Buffer, isUint8Buffer, isInt16Buffer);
-          _writeChannel(output, pixelIndex++, b, metadata,
-              isFloatBuffer, isInt8Buffer, isUint8Buffer, isInt16Buffer);
+          _writeChannel(
+            output,
+            pixelIndex++,
+            r,
+            metadata,
+            isFloatBuffer,
+            isInt8Buffer,
+            isUint8Buffer,
+            isInt16Buffer,
+          );
+          _writeChannel(
+            output,
+            pixelIndex++,
+            g,
+            metadata,
+            isFloatBuffer,
+            isInt8Buffer,
+            isUint8Buffer,
+            isInt16Buffer,
+          );
+          _writeChannel(
+            output,
+            pixelIndex++,
+            b,
+            metadata,
+            isFloatBuffer,
+            isInt8Buffer,
+            isUint8Buffer,
+            isInt16Buffer,
+          );
         }
       }
     }
@@ -1017,14 +1200,29 @@ class InferenceService {
     if (isFloatBuffer) {
       output[index] = rgb / 255.0;
     } else if (isInt8Buffer) {
-      output[index] =
-          _quantize(rgb / 255.0, metadata.inputScale, metadata.inputZeroPoint, -128, 127);
+      output[index] = _quantize(
+        rgb / 255.0,
+        metadata.inputScale,
+        metadata.inputZeroPoint,
+        -128,
+        127,
+      );
     } else if (isUint8Buffer) {
-      output[index] =
-          _quantize(rgb / 255.0, metadata.inputScale, metadata.inputZeroPoint, 0, 255);
+      output[index] = _quantize(
+        rgb / 255.0,
+        metadata.inputScale,
+        metadata.inputZeroPoint,
+        0,
+        255,
+      );
     } else if (isInt16Buffer) {
       output[index] = _quantize(
-          rgb / 255.0, metadata.inputScale, metadata.inputZeroPoint, -32768, 32767);
+        rgb / 255.0,
+        metadata.inputScale,
+        metadata.inputZeroPoint,
+        -32768,
+        32767,
+      );
     } else {
       throw UnsupportedError(
         'Input buffer type ${output.runtimeType} is not supported',
@@ -1034,8 +1232,13 @@ class InferenceService {
 
   /// Quantizes a normalized [0,1] value using the model's input
   /// scale/zeroPoint: q = round(v / scale) + zeroPoint.
-  static int _quantize(double normalized, double scale, int zeroPoint,
-      int min, int max) {
+  static int _quantize(
+    double normalized,
+    double scale,
+    int zeroPoint,
+    int min,
+    int max,
+  ) {
     // Guard against a degenerate scale (should never happen for a quantized
     // input, but never divide by zero).
     final s = scale > 0 ? scale : 1.0 / 255.0;
@@ -1083,32 +1286,34 @@ class InferenceService {
       if (maxConf > confThreshold && maxClassId >= 0) {
         double cx = outputBuffer[0 * numBoxes + i].toDouble();
         double cy = outputBuffer[1 * numBoxes + i].toDouble();
-        double w  = outputBuffer[2 * numBoxes + i].toDouble();
-        double h  = outputBuffer[3 * numBoxes + i].toDouble();
+        double w = outputBuffer[2 * numBoxes + i].toDouble();
+        double h = outputBuffer[3 * numBoxes + i].toDouble();
 
         if (isQuantized) {
           cx = (cx - outputZeroPoint) * outputScale;
           cy = (cy - outputZeroPoint) * outputScale;
-          w  = (w  - outputZeroPoint) * outputScale;
-          h  = (h  - outputZeroPoint) * outputScale;
+          w = (w - outputZeroPoint) * outputScale;
+          h = (h - outputZeroPoint) * outputScale;
         }
 
         final double left = (cx - w / 2).clamp(0.0, 1.0);
-        final double top  = (cy - h / 2).clamp(0.0, 1.0);
-        final double rw   = w.clamp(0.0, 1.0);
-        final double rh   = h.clamp(0.0, 1.0);
+        final double top = (cy - h / 2).clamp(0.0, 1.0);
+        final double rw = w.clamp(0.0, 1.0);
+        final double rh = h.clamp(0.0, 1.0);
         if (rw <= 0 || rh <= 0) continue; // degenerate box — skip
 
         final String label = (maxClassId < labels.length)
             ? labels[maxClassId]
             : 'class_$maxClassId';
 
-        candidates.add(Detection(
-          classId: maxClassId,
-          label: label,
-          confidence: maxConf,
-          box: Rect.fromLTWH(left, top, rw, rh),
-        ));
+        candidates.add(
+          Detection(
+            classId: maxClassId,
+            label: label,
+            confidence: maxConf,
+            box: Rect.fromLTWH(left, top, rw, rh),
+          ),
+        );
       }
     }
 
@@ -1136,10 +1341,14 @@ class InferenceService {
 
   /// Intersection-over-Union of two normalized boxes.
   static double _iou(Rect a, Rect b) {
-    final ix =
-        math.max(0.0, math.min(a.right, b.right) - math.max(a.left, b.left));
-    final iy =
-        math.max(0.0, math.min(a.bottom, b.bottom) - math.max(a.top, b.top));
+    final ix = math.max(
+      0.0,
+      math.min(a.right, b.right) - math.max(a.left, b.left),
+    );
+    final iy = math.max(
+      0.0,
+      math.min(a.bottom, b.bottom) - math.max(a.top, b.top),
+    );
     final inter = ix * iy;
     final union = a.width * a.height + b.width * b.height - inter;
     return union <= 0 ? 0.0 : inter / union;
@@ -1156,15 +1365,29 @@ class InferenceService {
     debugPrint('[Model] Runtime model introspection');
     debugPrint('[Model]   Model        : ${m.modelName}');
     debugPrint('[Model]   Detected type: ${m.modelType.label}');
-    debugPrint('[Model]   Input  shape : ${m.inputShape}  type: ${m.inputType}');
-    debugPrint('[Model]   Output shape : ${m.outputShape}  type: ${m.outputType}');
-    debugPrint('[Model]   Input  scale : ${m.inputScale}  zeroPt: ${m.inputZeroPoint}');
-    debugPrint('[Model]   Output scale : ${m.outputScale}  zeroPt: ${m.outputZeroPoint}');
+    debugPrint(
+      '[Model]   Input  shape : ${m.inputShape}  type: ${m.inputType}',
+    );
+    debugPrint(
+      '[Model]   Output shape : ${m.outputShape}  type: ${m.outputType}',
+    );
+    debugPrint(
+      '[Model]   Input  scale : ${m.inputScale}  zeroPt: ${m.inputZeroPoint}',
+    );
+    debugPrint(
+      '[Model]   Output scale : ${m.outputScale}  zeroPt: ${m.outputZeroPoint}',
+    );
     debugPrint('[Model]   Classes      : ${m.classes}  Anchors: ${m.anchors}');
-    debugPrint('[Model]   In quantized : ${m.inputQuantized}  Out quantized: ${m.outputQuantized}');
+    debugPrint(
+      '[Model]   In quantized : ${m.inputQuantized}  Out quantized: ${m.outputQuantized}',
+    );
     debugPrint('[Model]   Needs in-quant : ${m.requiresInputQuantization}');
-    debugPrint('[Model]   Needs out-dequant: ${m.requiresOutputDequantization}');
-    debugPrint('[Model]   Internal tensor types: ${m.internalTensorTypeCounts}');
+    debugPrint(
+      '[Model]   Needs out-dequant: ${m.requiresOutputDequantization}',
+    );
+    debugPrint(
+      '[Model]   Internal tensor types: ${m.internalTensorTypeCounts}',
+    );
     debugPrint('═══════════════════════════════════════');
   }
 

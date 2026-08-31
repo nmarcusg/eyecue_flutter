@@ -62,7 +62,7 @@ This document records important engineering decisions made during the developmen
   - Works with INT8, UINT8, FLOAT16, and float32 models (detected dynamically)
   - The quantization/dequantization branches are dormant for the current Weight-Quantized model but activate automatically for full INT8 models
 
-## Decision 5: XNNPACK Disabled
+## Decision 5: XNNPACK Disabled in the v0.2.2 Baseline
 
 - **Decision:** Explicitly disable XNNPACK acceleration due to SIGSEGV crash on the target test device (Snapdragon 695).
 - **Date:** 2026-07
@@ -77,6 +77,7 @@ This document records important engineering decisions made during the developmen
   - Performance ceiling: no hardware acceleration
   - See [`known-issues.md`](known-issues.md) for current blocker status
   - Future: benchmark raw model latency, test NNAPI/GPU delegates
+- **Current status (2026-09-01):** This remains the v0.2.2 release decision, not proof that the crash is fixed. The unreleased worktree attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, retains the delegate for the interpreter lifetime, and retries on CPU after recoverable Dart-level setup or invocation failures. A native SIGSEGV remains uncatchable and requires exact-APK device validation.
 
 ## Decision 6: Stream-Based Results
 
@@ -108,7 +109,7 @@ This document records important engineering decisions made during the developmen
 
 ## Decision 9: Device-Independent Orientation (Input Rotation)
 
-- **Decision:** Rotate (and optionally X-mirror) the 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()`, driven entirely by runtime metadata — `CameraDescription.sensorOrientation`, the current `controller.value.deviceOrientation`, and lens direction — centralized in a single pure helper ([`BoxTransform`](../lib/models/box_transform.dart)). Parser/NMS are untouched; boxes after NMS are already in upright space.
+- **Decision:** Rotate (and optionally X-mirror) the square input tensor to UPRIGHT before `interpreter.run()`, driven entirely by runtime metadata — `CameraDescription.sensorOrientation`, the current `controller.value.deviceOrientation`, and lens direction. [`BoxTransform`](../lib/models/box_transform.dart) remains the source of orientation metadata, while [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) applies the pixel transform to either NHWC interleaved or NCHW planar buffers. Parser/NMS are untouched; boxes after NMS are already in upright space.
 - **Date:** 2026-08-01
 - **Reason:** On-device forensics (`docs/camera-path-forensics.md`) proved the last camera defect was missing rotation-to-device-orientation: this device delivers sensor-native 320×240 landscape frames (sensorOrientation 90°) that are never rotated, so a portrait hold feeds the model a 90°-rotated scene → ~0 detections, while landscape holds detect at 0.88. The design review (`docs/orientation-design-review.md`) had recommended **sensor-space inference + post-NMS box transform**, but on-device evidence showed that cannot work: when the model sees a rotated scene there are no boxes to transform. Input rotation is the only design satisfying "portrait detection quality must match landscape" (verified: portrait now 0.91, static-image regression byte-identical).
 - **Alternatives Considered:**
@@ -120,9 +121,20 @@ This document records important engineering decisions made during the developmen
   - Device-independent: works for sensorOrientation 0/90/180/270, all four holds, front/back lenses (no hardcoded angles)
   - The painter became a pure normalized→pixel mapper (no lens/mirror knowledge) — single canonical upright space
   - `DeviceOrientation→degrees` uses the plugin's own counter-clockwise convention (landscapeLeft→90, landscapeRight→270), verified against `camera_android_camerax._getRotationConstantFromDeviceOrientation`; the naive clockwise mapping was the landscape convention bug found on-device
-  - Square 640×640 input makes 90°/180°/270° lossless transposes
+  - Square 640×640 input makes 90°/180°/270° lossless transposes in both supported layouts
+  - NCHW rotation clones the input only when a non-identity rotation or mirror is required; the helper is directly unit-tested with small tensors
   - Landscape physical-hold re-validation and front-camera device runs are still pending
   - See [`docs/orientation-implementation.md`](orientation-implementation.md) for full details
+
+## Decision 10: Unreleased NCHW/XNNPACK Candidate Must Not Replace Validation Evidence
+
+- **Decision:** Keep `yolov8n_int8_new.tflite` as the current worktree model candidate, but report it separately from the validated v0.2.2 CPU/NHWC baseline until the exact APK is installed and exercised on the target device.
+- **Date:** 2026-09-01
+- **Reason:** Direct flatbuffer/runtime inspection confirms a FLOAT32-I/O NCHW model with internally quantized tensors, and static tests validate layout conversion and rotation. The candidate APK could not be installed on the API 33 phone because of insufficient storage, so there is no trustworthy candidate detection, latency, accuracy, or backend result.
+- **Consequences:**
+  - Documentation distinguishes release behavior from current uncommitted work.
+  - No XNNPACK speedup, model-quality improvement, or crash resolution is claimed.
+  - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and isolate restart recovery remain open.
 
 ## Decision 7: Flutter over React Native
 

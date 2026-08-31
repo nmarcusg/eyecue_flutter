@@ -54,13 +54,14 @@ Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eli
 1. `CameraController.startImageStream()` delivers `CameraImage` at native FPS (~30)
 2. `_processCameraImage()` checks `_isInferring` gate → drops frame if busy
 3. Extracts Y, U, V `Uint8List` planes + dimensions
-4. Sends Map via `SendPort` to inference isolate
+4. Sends a frame map via `SendPort` to the inference isolate
 5. Isolate introspects runtime tensors + model buffer → builds `ModelMetadata` (types, shapes, quantization, model type)
-6. Isolate converts YUV420 → RGB into the dtype-matched input buffer (normalized float or quantized via scale/zeroPoint)
-7. Passes raw bytes (`ByteBuffer`) to `interpreter.run()` — **no reshape**, no shape resizing
-8. Post-processes: argmax per box, dequantization only when the output tensor is quantized, confidence threshold (0.25), class-wise NMS (IoU 0.45)
-9. Returns `List<Detection>` to main isolate via `SendPort`
-10. Main isolate adds to `StreamController` → `setState()` → UI repaints
+6. Isolate converts YUV420 → RGB into the dtype-matched input buffer (normalized float or quantized via scale/zeroPoint), in NHWC or NCHW order selected from the runtime shape
+7. Isolate rotates/mirrors the square input tensor to upright when orientation metadata requires it
+8. Passes raw bytes (`ByteBuffer`) to `interpreter.run()` — **no reshape**, no shape resizing; the current candidate attempts XNNPACK and can retry on CPU after recoverable Dart-level failures
+9. Post-processes: argmax per box, dequantization only when the output tensor is quantized, confidence threshold (0.25), class-wise NMS (IoU 0.45)
+10. Returns `List<Detection>` to main isolate via `SendPort`
+11. Main isolate adds to `StreamController` → `setState()` → UI repaints
 
 ## Folder Structure
 
@@ -127,7 +128,7 @@ eyecue_flutter/
 | Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Vibration / Auto-Start / Low Power / Audio / Logs & Reports |
 | Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Operations + gesture manual |
 | Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | Overview / Charts / Logs dashboard (researcher-facing) |
-| Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), input rotation |
+| Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), backend selection, input rotation |
 | TTS Service | [`tts_service.dart`](../lib/services/tts_service.dart) | Speech scheduling, cooldown, de-duplication, mute, repeat-last |
 | Settings Service | [`settings_service.dart`](../lib/services/settings_service.dart) | File-backed persisted settings (JSON) |
 | Spatial Analysis | [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart) | Box → position/priority/approximate proximity (pure, outside pipeline) |
@@ -136,6 +137,7 @@ eyecue_flutter/
 | Gesture Controller | [`gesture_controller.dart`](../lib/services/gesture_controller.dart) | Thesis gesture state machine (single/two-finger-double/three-finger/swipe-down) |
 | Model Metadata | [`model_metadata.dart`](../lib/models/model_metadata.dart) | Immutable runtime snapshot of the loaded model (types, shapes, quantization, model type) |
 | Flatbuffer Scanner | [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart) | Pure-Dart scan of internal tensor types for weight-precision detection |
+| Tensor Rotation | [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) | Pure layout-aware square-tensor rotation/mirroring for NHWC and NCHW buffers |
 | Box Transform | [`box_transform.dart`](../lib/models/box_transform.dart) | Device-independent orientation math (metadata-driven rotation/mirror) |
 | PNG Encoder | [`png_encoder.dart`](../lib/models/png_encoder.dart) | Pure-Dart PNG encoder for forensic image dumps |
 | Forensic Log | [`forensic_log.dart`](../lib/services/forensic_log.dart) | File-based structured diagnostics under `<documents>/debug/run_*` |
@@ -158,12 +160,13 @@ eyecue_flutter/
 
 ## AI Pipeline
 
-- **Model (as loaded):** `assets/yolov8n.tflite` — **FLOAT32 I/O with INT8 weights** (classified *Weight-Quantized*), input `[1, 640, 640, 3]`, output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). `yolov8n_int8.tflite` is also float32-I/O and is not bundled.
+- **Current unreleased candidate:** `assets/yolov8n_int8_new.tflite` — **FLOAT32 runtime I/O with internally quantized tensors** (classified *Weight-Quantized*), input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). The candidate is structurally validated and bundled in the debug APK, but has not yet been successfully installed and exercised on the target phone.
+- **Stable v0.2.2 baseline:** `assets/yolov8n.tflite` — FLOAT32 I/O with INT8 weights, input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`.
 - **Model identity:** never assumed from filenames — introspected at runtime into a `ModelMetadata` snapshot.
-- **Preprocessing:** Manual YUV420 → RGB conversion, nearest-neighbor resize, writes matched to the input dtype (normalized float, or quantized via input scale/zeroPoint). The 640×640 NHWC input is rotated/mirrored to UPRIGHT per orientation metadata before inference ([`BoxTransform`](../lib/models/box_transform.dart)).
-- **Inference:** Single persistent `Interpreter` instance, run in dedicated Isolate. Raw `ByteBuffer`s are passed to `interpreter.run()` — no reshape, no input-tensor resizing.
+- **Preprocessing:** Manual YUV420 → RGB conversion, nearest-neighbor resize, writes matched to the input dtype (normalized float, or quantized via input scale/zeroPoint). Runtime shape selects NHWC interleaved or NCHW planar output order. [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) rotates/mirrors the square tensor to UPRIGHT per orientation metadata.
+- **Inference:** One persistent `Interpreter` instance in a dedicated isolate. The candidate attempts explicit XNNPACK with a retained delegate and retries on CPU after recoverable setup/invocation exceptions. A native SIGSEGV remains uncatchable. Raw `ByteBuffer`s are passed to `interpreter.run()` — no reshape, no input-tensor resizing.
 - **Post-processing:** Argmax per-box, dequantization only when the output tensor is quantized, confidence threshold (0.25), **class-wise Non-Maximum Suppression (IoU 0.45)**.
-- **Missing:** bilinear interpolation
+- **Missing:** bilinear interpolation, successful candidate device validation, formal candidate benchmark, and isolate restart recovery
 
 ## Runtime Model Introspection
 
@@ -191,12 +194,12 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 3. **Manual Preprocessing:** Custom YUV420→RGB math avoids the `image` package to prevent GC pressure from real-time video.
 4. **Runtime Model Introspection:** After interpreter creation, build a `ModelMetadata` snapshot from the runtime tensors plus an internal tensor-type scan. The interpreter is the single source of truth — nothing is hardcoded.
 5. **Dynamic Inference Path:** Preprocessing quantizes only when the input tensor is quantized; post-processing dequantizes only when the output tensor is quantized (scale/zeroPoint from runtime metadata).
-6. **XNNPACK Disabled:** Removed due to SIGSEGV on Snapdragon 695. CPU-only inference.
+6. **Backend safety:** The stable v0.2.2 baseline is CPU-only because of the historical Snapdragon 695 XNNPACK SIGSEGV. The unreleased candidate attempts XNNPACK, retains delegate ownership correctly, and falls back to CPU for recoverable Dart-level failures; native crash safety still requires device validation.
 7. **Stream-Based Results:** `StreamController.broadcast()` for detection results, enabling multiple listeners.
 
 ## Missing Architectural Components (remaining)
 
-- **No isolate restart recovery:** try/catch + error propagation exist; if the isolate dies the app does not restart it (camera-denied UI is implemented; full crash recovery is not).
+- **No isolate restart recovery:** try/catch + error propagation and a recoverable CPU fallback exist; if the isolate dies from a native crash or another fatal error the app does not restart it (camera-denied UI is implemented; full crash recovery is not).
 - **No dependency injection framework:** Services are wired in `main.dart` and passed via constructors — simple and sufficient, but not a full DI container.
 - **State management:** plain `ChangeNotifier` services + `setState`; Riverpod remains declared but unused (intentionally — the app does not need a framework).
 - **No service abstraction for `InferenceService`:** it remains coupled to TFLite, camera format, and COCO labels (acceptable for the thesis scope).

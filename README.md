@@ -8,9 +8,9 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 ## Status
 
-**Assistive application UI (v0.2.2)** — The core inference pipeline (camera → Isolate → TFLite → argmax → NMS → bounding boxes), device-independent orientation, and forensic logging are validated on-device. The app has the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. The ML pipeline was not modified.
+**Stable release: v0.2.2** — The documented release contains the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. Its CPU-only, NHWC inference baseline was validated on the Snapdragon 695 test device.
 
-Follow-up fixes since the v0.2.0 UI landed: **v0.2.1** fixed a startup theme-construction assertion (explicit high-contrast `TextTheme`), and **v0.2.2** fixed the camera viewport resizing when detections appear plus chart overflow in Logs & Reports. `flutter analyze` is clean (0 issues) and the test suite is **59 passing**.
+The current worktree also contains an **unreleased model/backend candidate**: `yolov8n_int8_new.tflite` has FLOAT32 I/O, an NCHW input (`[1,3,640,640]`), and internally quantized tensors. Preprocessing and tensor rotation now support both NHWC and NCHW layouts, and the isolate attempts XNNPACK with a CPU fallback for recoverable Dart-level failures. Static validation passes, but the candidate was not installed on the target phone because ADB reported insufficient storage; no candidate detection or performance result is claimed. `flutter analyze` is clean (0 issues) and `flutter test` reports **73 passing tests**.
 
 For an honest thesis-product completion baseline, see [`docs/thesis-product-status-audit.md`](docs/thesis-product-status-audit.md) and [`docs/project-status.md`](docs/project-status.md).
 
@@ -62,6 +62,7 @@ All project documentation is in the [`docs/`](docs/) directory:
 
 - [`chat_spec.md`](chat_spec.md) — Full conversation history and original specification (~3100 lines). Canonical reference. Do not modify.
 - [`auditor.md`](auditor.md) — Comprehensive project audit (2026-07-22).
+- [`comprehensive-project-assessment-2026-08-21.md`](docs/comprehensive-project-assessment-2026-08-21.md) — Point-in-time technical and performance assessment of revision `146c2e7`; it predates the current unreleased model/backend candidate.
 
 ## Tech Stack
 
@@ -69,7 +70,7 @@ All project documentation is in the [`docs/`](docs/) directory:
 |-------|-----------|
 | Framework | Flutter/Dart |
 | ML Inference | TFLite via `tflite_flutter` |
-| Model | YOLOv8n (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) |
+| Model | YOLOv8n candidate (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) |
 | Camera | `camera` plugin (YUV420, low resolution) |
 | TTS | `flutter_tts` (wired via `TtsService`) |
 | State | `ChangeNotifier` services + `setState` (Riverpod declared, unused) |
@@ -89,6 +90,7 @@ lib/
 │   ├── app_settings.dart              # Persisted settings model
 │   ├── box_transform.dart             # Device-independent orientation math
 │   ├── model_metadata.dart            # Runtime model introspection snapshot
+│   ├── tensor_rotation.dart           # NHWC/NCHW square tensor rotation helper
 │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
 ├── screens/

@@ -1,13 +1,13 @@
 # EyeCue — Benchmark Results
 
-> **Template only. No formal benchmark has been collected yet** (the official TFLite benchmark tool has not been run on the target device).
+> **No formal candidate benchmark has been collected yet** (the official TFLite benchmark tool has not been run on the target device). The informal values below are historical observations for the stable v0.2.2 CPU/NHWC baseline and must not be attributed to the current NCHW/XNNPACK candidate.
 > See [`testing-plan.md`](testing-plan.md) for the benchmark plan, and [`research-notes.md`](research-notes.md) for metric definitions.
 
 ---
 
 ## Informal On-Device Observations (not formal benchmarks)
 
-Captured live from the app's own telemetry during the v0.2.2 session on the Snapdragon 695 test device (Android 13 / API 33), CPU-only inference (XNNPACK disabled):
+Captured live from the app's own telemetry during the v0.2.2 session on the Snapdragon 695 test device (Android 13 / API 33), using the stable CPU-only NHWC path (XNNPACK disabled):
 
 | Metric | Observed |
 |--------|----------|
@@ -15,7 +15,7 @@ Captured live from the app's own telemetry during the v0.2.2 session on the Snap
 | Avg Inference Latency | ~606 ms |
 | Detections in session | 123 |
 
-These are **informal** figures from the app's runtime telemetry (subject to the low-end CPU-only pipeline), not the formal TFLite-benchmark-tool results the thesis requires. They illustrate that CPU-only throughput is far below the ≥15 FPS hypothesis target — reinforcing the XNNPACK/NNAPI/GPU investigation priority.
+These are **informal historical baseline** figures from the app's runtime telemetry (subject to the low-end CPU-only pipeline), not the formal TFLite-benchmark-tool results the thesis requires. They illustrate that the stable CPU-only throughput is far below the ≥15 FPS hypothesis target. No comparison with the current NCHW/XNNPACK candidate is available because the candidate APK was not installed successfully.
 
 ---
 
@@ -94,4 +94,5 @@ Copy and fill out one table per test configuration.
 
 ## Historical Results
 
-*No benchmarks have been recorded yet. Run the TFLite benchmark tool on the target device and fill out the templates above.*
+- **v0.2.2 CPU/NHWC baseline:** informal application telemetry only — approximately 2.1 detection FPS, 606 ms average inference latency, and 123 detections on Android 13/API 33 Snapdragon 695. These values are not formal benchmark results.
+- **Current NCHW/XNNPACK candidate:** no runtime result. APK installation was blocked by `INSTALL_FAILED_INSUFFICIENT_STORAGE`; run the benchmark only after the exact candidate build is installed and verified.

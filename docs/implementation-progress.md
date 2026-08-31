@@ -1,13 +1,25 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-08-16
+> **Last Updated:** 2026-09-01 (working-tree assessment)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
+
+## Current Unreleased Worktree (2026-09-01)
+
+This section describes uncommitted work after the v0.2.2 release; the versioned
+sections below remain historical release records.
+
+- ✅ Added [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite) to the asset bundle. Direct inspection found FLOAT32 runtime input/output, input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and internal INT8 tensors; runtime classification is *Weight-Quantized*, not full integer I/O.
+- ✅ Updated [`inference_isolate.dart`](../lib/services/inference_isolate.dart) to select NHWC or NCHW from runtime shape metadata, write the matching YUV→RGB layout, and use [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) for layout-aware rotation/mirroring.
+- 🟡 Added an explicit XNNPACK attempt with delegate lifetime retention, recoverable setup/invocation CPU fallback, and backend logging. The historical Snapdragon 695 native SIGSEGV remains unresolved because a native fault cannot be caught by Dart.
+- ✅ Added 14 tensor-rotation unit tests; the full suite is now **73 passing** and `flutter analyze` reports **0 issues**.
+- ✅ Extended the flatbuffer validator to cover the new model and verified the generated debug APK contains it.
+- ⚠️ The exact candidate APK was not installed on the API 33 test phone (`INSTALL_FAILED_INSUFFICIENT_STORAGE`); the previously installed app was launched afterward. No candidate detection, accuracy, latency, FPS, or XNNPACK result is available yet.
 
 ## v0.2.2 — UI Layout Fixes (2026-08-16)
 
 - ✅ **Stable camera viewport** — Detection screen now reserves a fixed content region (`LayoutBuilder`-derived `SizedBox`, 32% of height, clamped 200–320) for the warning banner + scrollable detection list + controls, so the camera no longer resizes when detections appear ([`detection_screen.dart`](../lib/screens/detection_screen.dart)).
 - ✅ **Contained charts** — [`charts.dart`](../lib/widgets/charts.dart) derives Y bounds from the actual data with headroom, draws benchmark lines only when they fit, and sets an explicit dynamic `maxY` for the bar chart; empty data shows a placeholder.
-- ✅ `flutter analyze`: 0 issues. `flutter test`: **59 passing**. On-device (API 33): 0 exceptions / RenderFlex overflows.
+- ✅ `flutter analyze`: 0 issues. `flutter test`: **59 passing** for the v0.2.2 release baseline. On-device (API 33): 0 exceptions / RenderFlex overflows.
 
 ## v0.2.1 — Fix Startup Theme Assertion (2026-08-16)
 
@@ -63,7 +75,7 @@
 
 ### Tests (100% of the new tests)
 
-- ✅ Navigation shell, screens, widgets, TTS, settings, spatial, telemetry, gesture controller — `flutter test` 59 passing, `flutter analyze` 0 issues (52 at v0.2.0 → 53 at v0.2.1 → 59 at v0.2.2)
+- ✅ Navigation shell, screens, widgets, TTS, settings, spatial, telemetry, gesture controller — release baseline `flutter test` 59 passing, `flutter analyze` 0 issues (52 at v0.2.0 → 53 at v0.2.1 → 59 at v0.2.2)
 
 ### Notes
 
@@ -88,10 +100,12 @@
 - ✅ Single `Interpreter.fromBuffer()` call (model loads once)
 - ✅ **Runtime model introspection** — builds a `ModelMetadata` snapshot from runtime tensors + internal tensor scan
 - ✅ Dynamic tensor shape querying (not hardcoded)
-- ✅ Pre-allocated, dtype-matched input/output buffers (no per-frame allocation)
+- ✅ Pre-allocated, dtype-matched input/output buffers; the orientation helper makes a temporary clone only when rotation or mirroring is required
 - ✅ Raw `ByteBuffer` I/O to `interpreter.run()` — no reshape, no input-tensor resizing
 - ✅ SendPort/ReceivePort communication protocol
 - ✅ NHWC/NCHW automatic detection from shape
+- ✅ Runtime layout-aware preprocessing and tensor rotation for both NHWC (interleaved) and NCHW (planar) inputs
+- 🟡 Explicit XNNPACK attempt with retained delegate ownership and recoverable CPU fallback; native device stability remains unverified
 - ✅ Structured debug logging: `[Model]`, `[Inference]`, `[Detection]`, `[Error]` prefixes
 - ✅ Startup `MODEL INFORMATION` diagnostic banner in the isolate
 - ✅ Inference latency timing via `Stopwatch` (reported per-frame)
@@ -101,7 +115,7 @@
 
 ### Preprocessing (100%)
 
-- ✅ Manual YUV420→RGB conversion (no `image` package dependency)
+- ✅ Manual YUV420→RGB conversion (no `image` package dependency), writing either NHWC or NCHW layout from runtime metadata
 - ✅ Nearest-neighbor resize to model input dimensions
 - ✅ Dtype-matched writes driven by runtime metadata (normalized float, or quantized via input scale/zeroPoint)
 - ✅ Support for FLOAT32/FLOAT64/FLOAT16/INT8/UINT8/INT16 model input types
@@ -130,7 +144,7 @@
 
 ### Model & Labels (100%)
 
-- ✅ Model loading from assets (`yolov8n.tflite`)
+- ✅ Model loading from the current candidate asset (`yolov8n_int8_new.tflite`); the v0.2.2 release baseline used `yolov8n.tflite`
 - ✅ COCO label loading from `labels.txt` (80 classes)
 - ✅ Label lookup by class index
 - ✅ Model load success/failure logging with tensor metadata
@@ -138,7 +152,7 @@
 ### Orientation Architecture (100%) — NEW (2026-08-01)
 
 - ✅ [`BoxTransform`](../lib/models/box_transform.dart) — single, device-independent source of truth for orientation math (`deviceDegreesFor` using the plugin's counter-clockwise convention, `displayRotationDegrees`, `uprightDims`, reversible `rotateRect`/`invertRect`, `mirrorRect`); no hardcoded angles
-- ✅ Upright tensor inference — isolate rotates + optionally X-mirrors the 640×640 NHWC input to UPRIGHT before `interpreter.run()` (parser/NMS untouched)
+- ✅ Upright tensor inference — isolate rotates + optionally X-mirrors the 640×640 input to UPRIGHT before `interpreter.run()`; [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) handles both NHWC and NCHW while parser/NMS remain untouched
 - ✅ Camera screen computes rotation from the same `controller.value.deviceOrientation` as `CameraPreview`; preview/painter sized with upright dims
 - ✅ Painter simplified to a pure normalized→pixel mapper (no lens/mirror knowledge)
 - ✅ Forensic `recordOrientation` + sensor/lens fields
@@ -197,7 +211,7 @@
 - ✅ Message protocol extended: `{'type': 'result'/'error'/'model_loaded'}` with metadata
 - ✅ Inference latency exposed via `InferenceService.lastLatencyMs` getter
 
-### Documentation (60%)
+### Documentation (current set synchronized)
 
 - ✅ Comprehensive project audit ([`auditor.md`](../auditor.md))
 - ✅ Historical specification preserved ([`chat_spec.md`](../chat_spec.md))
@@ -257,7 +271,7 @@
 5. **On-device validation of the v0.2.x UI** — gestures, TTS, mute toggle, settings persistence, Logs & Reports charts on the Snapdragon 695 device.
 6. **Complete error handling in inference isolate** — extend error recovery (isolate restart on crash).
 7. ~~**Add permission-denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
-8. **Investigate XNNPACK SIGSEGV** — 4–8 hours. Benchmark tool on test device.
+8. **Validate the unreleased XNNPACK candidate** — free device storage, install the exact APK, capture stability/fallback evidence, and run the benchmark tool on the test device.
 
 ## Remaining Tasks
 

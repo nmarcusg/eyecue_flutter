@@ -5,6 +5,27 @@
 
 ---
 
+## Unreleased — NCHW Model and Backend Candidate (2026-09-01)
+
+### Added
+- Added [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite), a structurally validated YOLOv8n candidate with FLOAT32 runtime I/O, input shape `[1,3,640,640]` (NCHW), output shape `[1,84,8400]`, and internally quantized tensors.
+- Added [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) with pure NHWC (interleaved) and NCHW (planar) square-tensor rotation/mirroring support, plus 14 focused unit tests.
+
+### Changed
+- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) now selects input layout from runtime metadata, writes NCHW or NHWC preprocessing data, and attempts explicit XNNPACK for the candidate. The delegate is retained for the interpreter lifetime; recoverable setup/invocation failures retry on a four-thread CPU interpreter.
+- [`validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart) now validates the new model's verified tensor counts: 2 FLOAT32, 90 INT32, and 356 INT8 tensors.
+
+### Verified
+- `flutter analyze`: 0 issues. `flutter test`: **73 passing**.
+- The flatbuffer and PNG validators pass, and the generated debug APK contains the new model asset.
+- The candidate APK was **not** installed on the API 33 Snapdragon 695 test phone because ADB reported `INSTALL_FAILED_INSUFFICIENT_STORAGE`; therefore no candidate detection, accuracy, latency, FPS, or XNNPACK stability result is claimed.
+
+### Notes
+- This entry is intentionally unreleased. The stable v0.2.2 CPU/NHWC baseline and its informal 2.1 FPS / 606 ms observations remain the only on-device performance evidence.
+- The historical Snapdragon 695 XNNPACK SIGSEGV remains unresolved: native faults are not catchable by Dart, even though recoverable Dart-level failures now have a CPU fallback.
+
+---
+
 ## v0.2.2 — "UI Layout Fixes: Stable Camera Viewport + Contained Charts" (2026-08-16)
 
 ### Fixed

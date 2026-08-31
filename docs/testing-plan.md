@@ -2,7 +2,7 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Current suite (v0.2.2):** `flutter test` → **59 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts), services (TTS, settings, spatial, telemetry, gesture controller), and the theme regression test. The tables below are the forward-looking plan (not all items are automated yet).
+> **Current suite:** `flutter test` → **73 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts), services (TTS, settings, spatial, telemetry, gesture controller), theme regression, and NHWC/NCHW tensor-rotation tests. The 59-test v0.2.2 suite remains the release baseline; the tables below are the forward-looking plan (not all items are automated yet).
 
 ## Unit Testing Strategy
 
@@ -16,6 +16,7 @@
 | INT8 dequantization | 🔴 P0 | Verify scale/zeroPoint math against known values |
 | Label loading | 🟢 P2 | Verify 80 COCO labels parsed correctly from `labels.txt` |
 | NHWC/NCHW detection | 🟢 P2 | Test channel-order heuristic with both layout types |
+| NHWC/NCHW tensor rotation | 🟢 P2 | Verify identity, 90°/180°/270°, mirror, buffer guards, and logical equivalence across interleaved and planar layouts — ✅ 14 unit tests |
 | Detection model serialization | 🟢 P2 | Verify `Detection` class JSON serialization/deserialization |
 
 ### Inference Isolate Tests
@@ -89,7 +90,7 @@ See [`benchmark-results.md`](benchmark-results.md) for the recording template.
 
 ### Required Benchmarks
 
-1. **Raw Model Latency:** Run `yolov8n.tflite` through TFLite benchmark tool on target device
+1. **Raw Model Latency:** Run each declared model candidate through the TFLite benchmark tool on the target device; the current NCHW/XNNPACK candidate has not yet been installed successfully
 2. **End-to-End Pipeline FPS:** Measure detection FPS on target device under sustained use
 3. **Preprocessing Latency:** Profile YUV→RGB conversion time
 4. **Memory Usage:** Monitor heap usage during 5-minute continuous detection

@@ -7,6 +7,8 @@
 //   FLOAT32: 324, INT32: 23, INT8: 62  (409 tensors)
 // Expected output for assets/yolov8n_int8.tflite:
 //   FLOAT32: 324, INT32: 25, INT8: 62  (411 tensors)
+// Expected output for assets/yolov8n_int8_new.tflite:
+//   FLOAT32: 2, INT32: 90, INT8: 356  (448 tensors)
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -26,6 +28,11 @@ void main() {
       TfliteFlatTensorType.int32: 25,
       TfliteFlatTensorType.int8: 62,
     },
+    'assets/yolov8n_int8_new.tflite': {
+      TfliteFlatTensorType.float32: 2,
+      TfliteFlatTensorType.int32: 90,
+      TfliteFlatTensorType.int8: 356,
+    },
   };
 
   for (final entry in cases.entries) {
@@ -37,7 +44,8 @@ void main() {
       failed = true;
       continue;
     }
-    final ok = counts.length == entry.value.length &&
+    final ok =
+        counts.length == entry.value.length &&
         counts.entries.every((e) => entry.value[e.key] == e.value);
     if (!ok) {
       stdout.writeln('  FAIL: expected ${entry.value}');
@@ -49,20 +57,29 @@ void main() {
 
   // float16 roundtrip sanity checks.
   final values = Float32List.fromList([
-    0.0, -0.0, 1.0, -1.0, 0.5, 65504.0, 0.00006103515625, // 2^-14 (max subnormal)
+    0.0,
+    -0.0,
+    1.0,
+    -1.0,
+    0.5,
+    65504.0,
+    0.00006103515625, // 2^-14 (max subnormal)
     0.000000059604644775390625, // 2^-24 (min subnormal)
     3.4028234663852886e38, // overflow -> inf
     double.infinity, double.nan,
   ]);
-  final roundtrip = float16BytesToFloat32List(float32ListToFloat16Bytes(values));
+  final roundtrip = float16BytesToFloat32List(
+    float32ListToFloat16Bytes(values),
+  );
   stdout.writeln('\nfloat16 roundtrip:');
   for (var i = 0; i < values.length; i++) {
     final orig = values[i];
     final back = roundtrip[i];
     // IEEE half cannot represent float32 max — overflow to ±Inf is correct.
-    final overflowToInf = (orig == 3.4028234663852886e38) &&
-        (back == double.infinity);
-    final match = (orig == back) ||
+    final overflowToInf =
+        (orig == 3.4028234663852886e38) && (back == double.infinity);
+    final match =
+        (orig == back) ||
         (orig.isNaN && back.isNaN) ||
         (orig == double.infinity && back == double.infinity) ||
         (orig == 0.0 && back == 0.0) || // handles ±0

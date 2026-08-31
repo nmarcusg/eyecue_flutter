@@ -1,17 +1,18 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-08-16
+> **Last Updated:** 2026-09-01
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
 
 ## Current Blockers
 
-### 🔴 XNNPACK SIGSEGV (Critical)
+### 🔴 XNNPACK SIGSEGV / Candidate Device Validation (Critical)
 
-- **Description:** Enabling XNNPACK acceleration causes a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU) with the INT8 YOLOv8n model.
+- **Description:** The stable v0.2.2 path keeps XNNPACK disabled because the older YOLOv8n model previously caused a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU). The current unreleased worktree attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, whose runtime I/O is FLOAT32 with an NCHW input.
 - **Location:** [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — interpreter creation / inference path.
-- **Impact:** Without hardware acceleration, inference is CPU-bound and slower than it could be. This caps maximum detection FPS (on-device telemetry observed ~2–3 FPS, Avg Latency ~600 ms on the low-end test device).
-- **Planned Fix:** Benchmark raw model latency with the official TFLite benchmark tool on the target device. Test NNAPI delegate and GPU delegate as alternatives. Investigate whether the crash is TFLite version-specific or device-specific.
-- **Workaround:** XNNPACK explicitly disabled; CPU-only inference is stable.
+- **Impact:** A native SIGSEGV cannot be caught by Dart and could still terminate the isolate/process. The candidate has not been successfully installed on the target phone, so its runtime stability, detection quality, and performance are unknown. The old stable baseline observed approximately 2–3 FPS and 600 ms latency on the low-end device.
+- **Current mitigation:** Delegate ownership is retained for the interpreter lifetime. Recoverable Dart-level setup or invocation failures close the delegate-backed interpreter and retry on a four-thread CPU interpreter. This is not protection against a native crash.
+- **Planned Fix:** Free device storage and install the exact candidate APK. Capture logcat, model metadata, detection output, and latency. Run the official TFLite benchmark tool for the old CPU baseline, the candidate, and safe NNAPI/GPU alternatives where available.
+- **Status:** **Unresolved.** No XNNPACK speedup or candidate on-device behavior may be claimed yet.
 
 ### 🟠 Incomplete Error Recovery in Inference Isolate (High)
 
@@ -24,7 +25,7 @@
 
 - ✅ **TTS integration** — RESOLVED v0.2.0. `flutter_tts` is now wired via [`tts_service.dart`](../lib/services/tts_service.dart) (cooldown, de-duplication, urgent bypass, mute, repeat-last). No longer a blocker.
 - ✅ **Permission-denied UI** — RESOLVED v0.2.0. [`detection_screen.dart`](../lib/screens/detection_screen.dart) shows a camera-denied state with retry / open-settings. No longer a blocker.
-- ✅ **Boilerplate counter-app test** — RESOLVED v0.2.0. [`test/widget_test.dart`](../test/widget_test.dart) now contains real Home/Settings/Help screen smoke tests; the full suite is 59 passing.
+- ✅ **Boilerplate counter-app test** — RESOLVED v0.2.0. [`test/widget_test.dart`](../test/widget_test.dart) now contains real Home/Settings/Help screen smoke tests; the full suite is 73 passing as of 2026-09-01.
 
 ## Technical Debt
 
@@ -41,7 +42,7 @@
 
 ## Platform-Specific Limitations
 
-- **Android:** The **only** supported platform (per the thesis). Snapdragon 695 testing device has XNNPACK crash. Other devices untested.
+- **Android:** The **only** supported platform (per the thesis). The Snapdragon 695 testing device has a historical XNNPACK crash; the current candidate is not yet validated there because APK installation failed with insufficient storage. Other devices are untested.
 - **iOS / web / Windows / macOS / Linux:** Out of scope — EyeCue is Android-only. Their scaffolding was removed during the Android-only platform cleanup; no support is provided or planned.
 
 ## Known Bugs

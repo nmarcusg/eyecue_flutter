@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-09-01 (12th session) — NCHW Candidate, XNNPACK Fallback, and Status Sync
+
+### Objective
+- Assess the post-v0.2.2 worktree, validate the new model/layout path, synchronize current documentation, and prepare one atomic commit without overstating device validation.
+
+### Completed
+- Reviewed the uncommitted model, inference, tensor-rotation, test, validator, and documentation changes.
+- Confirmed the candidate model directly: `yolov8n_int8_new.tflite` is 3,481,792 bytes with input `[1,3,640,640]` / FLOAT32, output `[1,84,8400]` / FLOAT32, and 448 tensors (2 FLOAT32, 90 INT32, 356 INT8).
+- Added runtime NCHW preprocessing and a standalone layout-aware [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) helper. The helper has 14 focused tests covering NHWC/NCHW rotations, mirroring, equivalence, and guards.
+- Hardened the experimental XNNPACK path in [`inference_isolate.dart`](../lib/services/inference_isolate.dart): delegate ownership is retained for interpreter lifetime; setup failures and recoverable invocation failures retry on a four-thread CPU interpreter. Native SIGSEGV remains uncatchable.
+- Extended [`validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart) to cover the candidate model.
+- Synchronized current status, architecture, implementation progress/decisions, known issues, research notes, benchmark notes, testing plan, changelog, and README. The 2026-08-21 comprehensive assessment remains a historical snapshot.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: 73 passing.
+- Flatbuffer and PNG validators pass; the generated debug APK contains the candidate model asset.
+- Candidate APK installation on the Android 13/API 33 test phone failed with `INSTALL_FAILED_INSUFFICIENT_STORAGE`. The old installed application was launched afterward, so no candidate runtime, detection, latency, accuracy, or XNNPACK result is available.
+
+### Decisions
+- Treat the v0.2.2 CPU/NHWC path as the stable documented baseline.
+- Treat the NCHW/XNNPACK path as unreleased and statically validated only until the exact APK is installed and tested.
+- Do not claim a performance improvement or that the historical Snapdragon 695 XNNPACK crash is resolved.
+
+### Next Session
+- Free device storage, install the exact candidate APK, verify runtime metadata and backend behavior, then collect formal model/backend and end-to-end measurements.
+- Re-validate back landscape and front-camera orientation, complete UI/gesture/TTS/settings checks, and continue isolate restart-recovery work.
+
+---
+
 ## 2026-08-16 (11th session) — Android-Only Platform Cleanup
 
 ### Objective

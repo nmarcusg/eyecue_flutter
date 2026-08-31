@@ -1,10 +1,14 @@
 # Orientation Architecture — Implementation Summary
 
-> **Status:** Implemented + on-device validated (portrait back: detections at
-> 0.91 confidence — parity with landscape/static; static-image baseline
-> byte-identical). Landscape physical-hold re-validation deferred to next
-> session (convention bug already found & fixed, see §5).
-> **Date:** 2026-08-01
+> **Status:** The stable v0.2.2 orientation path is implemented and on-device
+> validated for back-camera portrait/static input (portrait detections at 0.91
+> confidence; static-image baseline byte-identical). The current unreleased
+> candidate additionally supports NCHW tensor layout, but its exact APK was not
+> installed on the target phone; candidate device behavior remains unverified.
+> Landscape physical-hold re-validation is deferred (convention bug already
+> found & fixed, see §5).
+> **Original implementation date:** 2026-08-01
+> **Last reviewed:** 2026-09-01
 
 ---
 
@@ -13,7 +17,8 @@
 | File | Why it changed |
 |------|----------------|
 | [`lib/models/box_transform.dart`](../lib/models/box_transform.dart) (NEW) | The single, device-independent source of truth for ALL orientation math: metadata→rotation, upright dims, reversible normalized-box rotation, and the plugin-convention `DeviceOrientation`→degrees mapping. |
-| [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart) | `processFrame` now carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`). The isolate rotates + optionally mirrors the 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()` (parser/NMS untouched), and logs per-frame orientation diagnostics. |
+| [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart) | `processFrame` carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`). The isolate rotates + optionally mirrors the square input tensor to UPRIGHT before `interpreter.run()`; the current helper supports both NHWC and NCHW layouts (parser/NMS untouched), and logs per-frame orientation diagnostics. |
+| [`lib/models/tensor_rotation.dart`](../lib/models/tensor_rotation.dart) | Pure layout-aware rotation/mirroring helper for interleaved NHWC and planar NCHW buffers; unit-tested independently of the camera. |
 | [`lib/screens/camera_screen.dart`](../lib/screens/camera_screen.dart) | Computes the metadata-driven rotation per frame from `controller.value.deviceOrientation` + `CameraDescription.sensorOrientation` + lens; passes it downstream; sizes the preview and the painter with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`. |
 | [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Removed all sensor-orientation knowledge (`lensDirection`/mirror). The painter is now a pure normalized→pixel mapper over the upright image; it no longer needs to know the lens or rotation. |
 | [`lib/services/forensic_log.dart`](../lib/services/forensic_log.dart) | Orientation-related diagnostics only: `recordOrientation` (per-frame) and sensor/lens fields in `recordCamera`. No other logging touched. |
@@ -58,10 +63,10 @@ on-device and fixed.
 ### 3.2 Pipeline (single canonical space)
 
 ```
-YUV_420_888 (sensor) ──_convertYUV420toRGB──▶ 640×640 NHWC (sensor)
+YUV_420_888 (sensor) ──_convertYUV420toRGB──▶ 640×640 NHWC or NCHW (sensor)
         │
         ▼  (new, only orientation code)
-rotate/mirror the 640×640 NHWC tensor by R  ──▶  UPRIGHT input
+rotate/mirror the square tensor by R  ──▶  UPRIGHT input
         ▼
 interpreter.run() ─▶ parser ─▶ NMS        (UNCHANGED)
         ▼
@@ -70,7 +75,9 @@ boxes are already in UPRIGHT normalized [0,1] space
 painter maps normalized → pixels over upright imageSize (no orientation logic)
 ```
 
-- The square 640×640 tensor makes 90°/180°/270° rotations lossless transposes.
+- The square 640×640 tensor makes 90°/180°/270° rotations lossless transposes;
+  [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) applies the same
+  logical transform to interleaved NHWC and planar NCHW storage.
 - Mirroring (front camera) is applied in the upright space (X-flip), matching
   the plugin's mirrored front preview (verified equivalent to the plugin's
   orientation-dependent sensor-space mirror).
@@ -114,8 +121,10 @@ no duplication" intended.
   `sensorOrientation` + device orientation; iOS has no mirror for the back
   camera and the same formula applies).
 - Front camera mirroring is folded into the single tensor step.
-- Static-image path passes rotation 0 / no mirror → identity → verified
-  byte-identical on-device (person 0.9173, 5 detections, same as baseline).
+- The stable static-image path passes rotation 0 / no mirror → identity →
+  verified byte-identical on-device (person 0.9173, 5 detections, same as
+  baseline). The current NCHW candidate has only static/unit/structural
+  validation; it has no candidate on-device result yet.
 
 ## 6. Validation status
 
@@ -125,4 +134,5 @@ no duplication" intended.
 | Back · landscape | Convention bug found & fixed; physical-hold re-validation deferred to next session |
 | Front · portrait / landscape | Math implemented (verified against plugin convention); device run pending |
 | Static-image regression | ✅ `rot=0`, identical detections (person 0.9173, 5 objects) |
+| NCHW tensor rotation | ✅ Pure helper covered by unit tests; candidate device validation pending |
 | `flutter analyze` | ✅ 0 issues |
