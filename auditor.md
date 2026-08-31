@@ -5,6 +5,13 @@
 **Repository:** `/home/nico/repos/eyecue_flutter`  
 **Branch/Methodology:** Evidence-based — every conclusion cites repository artifacts.
 
+> **Historical snapshot notice (2026-09-01):** This audit records the repository
+> state observed on 2026-07-22. The former `camera_screen.dart` was subsequently
+> retired and removed, and later implementation/device-validation work is not
+> retroactively applied to this report. Use [`docs/project-status.md`](docs/project-status.md)
+> for the current status. Historical references to the removed screen are kept as
+> plain code text rather than broken links.
+
 ---
 
 ## 1. Executive Summary
@@ -149,8 +156,8 @@ eyecue_flutter/
 
 | # | Feature | Status | Evidence | Files | Remaining Work |
 |---|---------|--------|----------|-------|----------------|
-| 1 | Camera initialization (YUV420, low res) | ✅ Complete | [`camera_screen.dart:52-57`](lib/screens/camera_screen.dart:52) | `camera_screen.dart` | None |
-| 2 | Camera permission handling | ✅ Mostly Complete | [`camera_screen.dart:38-45`](lib/screens/camera_screen.dart:38) | `camera_screen.dart` | No UI for denied state |
+| 1 | Camera initialization (YUV420, low res) | ✅ Complete | `camera_screen.dart:52-57` | `camera_screen.dart` | None |
+| 2 | Camera permission handling | ✅ Mostly Complete | `camera_screen.dart:38-45` | `camera_screen.dart` | No UI for denied state |
 | 3 | Persistent inference isolate | ✅ Complete | [`inference_isolate.dart:31-34`](lib/services/inference_isolate.dart:31) | `inference_isolate.dart` | None |
 | 4 | TFLite model loading (once) | ✅ Complete | [`inference_isolate.dart:98`](lib/services/inference_isolate.dart:98) | `inference_isolate.dart` | None |
 | 5 | Dynamic tensor shape querying | ✅ Complete | [`inference_isolate.dart:101-107`](lib/services/inference_isolate.dart:101) | `inference_isolate.dart` | None |
@@ -158,15 +165,15 @@ eyecue_flutter/
 | 7 | INT8 dequantization | ✅ Complete | [`inference_isolate.dart:280-309`](lib/services/inference_isolate.dart:280) | `inference_isolate.dart` | None |
 | 8 | Argmax per-box post-processing | ✅ Complete | [`inference_isolate.dart:269-330`](lib/services/inference_isolate.dart:269) | `inference_isolate.dart` | None |
 | 9 | COCO label loading | ✅ Complete | [`inference_isolate.dart:50-58`](lib/services/inference_isolate.dart:50) | `inference_isolate.dart` | None |
-| 10 | Frame-dropping gate | ✅ Complete | [`camera_screen.dart:87`](lib/screens/camera_screen.dart:87) | `camera_screen.dart` | None |
-| 11 | Stream-based results to UI | ✅ Complete | [`camera_screen.dart:73-81`](lib/screens/camera_screen.dart:73) | `camera_screen.dart` | None |
-| 12 | Camera preview rendering | ✅ Complete | [`camera_screen.dart:128`](lib/screens/camera_screen.dart:128) | `camera_screen.dart` | None |
+| 10 | Frame-dropping gate | ✅ Complete | `camera_screen.dart:87` | `camera_screen.dart` | None |
+| 11 | Stream-based results to UI | ✅ Complete | `camera_screen.dart:73-81` | `camera_screen.dart` | None |
+| 12 | Camera preview rendering | ✅ Complete | `camera_screen.dart:128` | `camera_screen.dart` | None |
 
 ### 4.2 Partially Implemented Features
 
 | # | Feature | Status | Evidence | Files | Remaining Work |
 |---|---------|--------|----------|-------|----------------|
-| 13 | Bounding box overlay | 🔶 Stubbed | [`camera_screen.dart:130-131`](lib/screens/camera_screen.dart:130) — TODO comment | `camera_screen.dart` | Implement `CustomPainter`, wire to `_detections` |
+| 13 | Bounding box overlay | 🔶 Stubbed | `camera_screen.dart:130-131` — TODO comment | `camera_screen.dart` | Implement `CustomPainter`, wire to `_detections` |
 | 14 | Object label display | 🔶 Data available | `_detections` list populated but not rendered | `camera_screen.dart` | Add text overlay |
 
 ### 4.3 Missing Features (Declared but Not Implemented)
@@ -265,22 +272,22 @@ Documentation           ████░░░░░░░░░░░░░░�
 | **INT8 dequantization** | Handles `TensorType.int8`/`uint8` with proper `scale`/`zeroPoint` — [`inference_isolate.dart:280-309`](lib/services/inference_isolate.dart:280). This is technically correct and non-trivial. |
 | **NHWC/NCHW detection** | Auto-detects channel ordering from shape — [`inference_isolate.dart:126-128`](lib/services/inference_isolate.dart:126). Good defensive programming. |
 | **Manual YUV conversion** | Avoiding the `image` package for real-time video is the right call. The direct byte manipulation in [`_convertYUV420toRGB`](lib/services/inference_isolate.dart:195) avoids GC pressure. |
-| **Frame dropping** | The `_isInferring` boolean gate in [`camera_screen.dart:87`](lib/screens/camera_screen.dart:87) is simple and correct. |
+| **Frame dropping** | The `_isInferring` boolean gate in `camera_screen.dart:87` is simple and correct. |
 | **Diagnostic logging** | Tensor metadata logging in [`inference_isolate.dart:113-121`](lib/services/inference_isolate.dart:113) is useful for debugging. |
-| **Resource cleanup** | [`camera_screen.dart:108-113`](lib/screens/camera_screen.dart:108) properly disposes camera and isolate. |
+| **Resource cleanup** | `camera_screen.dart:108-113` properly disposes camera and isolate. |
 
 ### 7.2 Weaknesses
 
 | Area | Observation | Severity |
 |------|------------|----------|
-| **No error handling in isolate** | The inference pipeline in [`_isolateEntryPoint`](lib/services/inference_isolate.dart:84) has zero try/catch blocks. If TFLite crashes, the isolate dies silently and the app freezes. | 🔴 High |
-| **No permission-denied UI** | [`camera_screen.dart:43-44`](lib/screens/camera_screen.dart:43) just returns. User sees infinite spinner. | 🔴 High |
+| **No error handling in isolate** | The historical inference pipeline in [`_isolateEntryPoint`](lib/services/inference_isolate.dart:84) had zero try/catch blocks. If TFLite crashed, the isolate died silently and the app froze. | 🔴 High |
+| **No permission-denied UI** | `camera_screen.dart:43-44` just returns. User sees infinite spinner. | 🔴 High |
 | **Hardcoded labels path** | Labels loaded from hardcoded `'assets/labels.txt'` — [`inference_isolate.dart:51`](lib/services/inference_isolate.dart:51). Not configurable. | 🟡 Medium |
 | **Hardcoded model path** | Model loaded from hardcoded `'assets/yolov8n.tflite'` — [`inference_isolate.dart:46`](lib/services/inference_isolate.dart:46). No runtime model selection. | 🟡 Medium |
 | **Hardcoded confidence threshold** | `0.5` in [`inference_isolate.dart:179`](lib/services/inference_isolate.dart:179). Not tunable. | 🟡 Medium |
 | **Nearest-neighbor resize** | YUV→RGB uses `round().clamp()` for resize — [`inference_isolate.dart:212-217`](lib/services/inference_isolate.dart:212). No bilinear interpolation. May reduce detection quality. | 🟡 Medium |
 | **YUV conversion constants** | The conversion uses non-standard coefficients (1.402, 0.344, 1.772 with unsigned u/v minus 128). The standard ITU-R BT.601 uses (u-128) and (v-128) with slightly different coefficients. The current implementation uses `uVal = uPlane[...] - 128` and `vVal = vPlane[...] - 128` which is correct, but the coefficients differ from the typical SDTV formula. This may cause subtle color shifts but likely doesn't affect detection accuracy significantly. | 🟢 Low |
-| **Full plane bytes sent over SendPort** | [`camera_screen.dart:98-104`](lib/screens/camera_screen.dart:98) sends entire Y, U, V planes across the isolate boundary every frame. At 640×480 YUV420, that's ~460KB per frame. This is a memory copy that could be optimized with `TransferableTypedData`. | 🟡 Medium |
+| **Full plane bytes sent over SendPort** | `camera_screen.dart:98-104` sends entire Y, U, V planes across the isolate boundary every frame. At 640×480 YUV420, that's ~460KB per frame. This is a memory copy that could be optimized with `TransferableTypedData`. | 🟡 Medium |
 | **No NMS** | Multiple boxes for the same object are all returned. The UI would show overlapping rectangles. | 🟡 Medium |
 | **Broadcast stream** | Using `StreamController.broadcast()` is fine but unnecessary — only one listener exists. | 🟢 Low |
 | **`dynamic` type for input buffer** | [`inference_isolate.dart:137`](lib/services/inference_isolate.dart:137) uses `dynamic` for the input buffer. Loses type safety. Could use a sealed class or union type. | 🟢 Low |
@@ -289,7 +296,7 @@ Documentation           ████░░░░░░░░░░░░░░�
 
 ### 7.3 Code Organization
 
-- **Good:** Separation of model ([`detection.dart`](lib/models/detection.dart)), service ([`inference_isolate.dart`](lib/services/inference_isolate.dart)), and screen ([`camera_screen.dart`](lib/screens/camera_screen.dart)).
+- **Good:** Separation of model ([`detection.dart`](lib/models/detection.dart)), service ([`inference_isolate.dart`](lib/services/inference_isolate.dart)), and screen (`camera_screen.dart`).
 - **Needs improvement:** All business logic is in static methods on `InferenceService`. As the project grows, preprocessing, post-processing, and label management should be extracted into separate classes.
 - **Needs improvement:** Configuration is scattered as hardcoded values. A central config file or class is needed.
 
@@ -302,14 +309,14 @@ Documentation           ████░░░░░░░░░░░░░░�
 | Priority | Item | Location | Impact |
 |----------|------|----------|--------|
 | 🔴 P0 | No error handling in inference isolate | [`inference_isolate.dart:151-187`](lib/services/inference_isolate.dart:151) | Silent crashes, app freeze |
-| 🔴 P0 | No permission-denied UI | [`camera_screen.dart:43`](lib/screens/camera_screen.dart:43) | Broken UX |
+| 🔴 P0 | No permission-denied UI | `camera_screen.dart:43` | Broken UX |
 | 🔴 P0 | XNNPACK SIGSEGV — no fallback or investigation | [`inference_isolate.dart:93`](lib/services/inference_isolate.dart:93) | Performance ceiling |
 | 🟡 P1 | No NMS implementation | [`inference_isolate.dart:269`](lib/services/inference_isolate.dart:269) | Duplicate detections |
 | 🟡 P1 | Unused dependencies (4 packages) | [`pubspec.yaml:22-32`](pubspec.yaml:22) | Bloat, confusion |
-| 🟡 P1 | No bounding box painter | [`camera_screen.dart:130`](lib/screens/camera_screen.dart:130) | Core feature missing |
+| 🟡 P1 | No bounding box painter | `camera_screen.dart:130` | Core feature missing |
 | 🟡 P1 | No TTS integration | — | Core feature missing |
 | 🟡 P2 | Hardcoded thresholds/paths | Multiple locations | Inflexibility |
-| 🟡 P2 | Large memory copies per frame | [`camera_screen.dart:98`](lib/screens/camera_screen.dart:98) | Memory pressure |
+| 🟡 P2 | Large memory copies per frame | `camera_screen.dart:98` | Memory pressure |
 | 🟡 P2 | Nearest-neighbor resize only | [`inference_isolate.dart:212`](lib/services/inference_isolate.dart:212) | Quality degradation |
 | 🟢 P3 | Stale `.flutter-plugins` file | [`.flutter-plugins`](.flutter-plugins) | Confusion during debugging |
 | 🟢 P3 | Package name `com.example` | [`build.gradle.kts:17`](android/app/build.gradle.kts:17) | Not production-ready |
@@ -320,7 +327,7 @@ Documentation           ████░░░░░░░░░░░░░░�
 
 Only one TODO exists in the codebase:
 
-- [`camera_screen.dart:130-131`](lib/screens/camera_screen.dart:130): `// TODO: We will add the CustomPainter overlay here later`
+- `camera_screen.dart:130-131`: `// TODO: We will add the CustomPainter overlay here later`
 
 No FIXMEs, HACKs, or XXX markers found.
 

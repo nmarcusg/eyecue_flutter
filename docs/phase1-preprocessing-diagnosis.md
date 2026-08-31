@@ -1,9 +1,16 @@
 # Phase 1 — Preprocessing Diagnosis After the Converter Fix
 
-> **Status:** Diagnosis only. No code was changed.
+> **Status:** Historical diagnosis record. No code was changed as part of this
+> report.
 > **Evidence base:** raw frame-by-frame `performance.txt`, frame-1 `tensor.txt`,
 > `preprocess.txt`, `output.txt`, `parser.txt`, `camera.txt`, and the summary.
 > **Date:** 2026-08-01
+
+> **Historical snapshot notice (2026-09-01):** This report describes the
+> instrumentation-era camera path and its CPU-only context. Subsequent work
+> implemented runtime layout selection and a committed-but-unreleased
+> NCHW/XNNPACK candidate; see [`project-status.md`](project-status.md) for the
+> current candidate evidence and remaining validation.
 
 ---
 

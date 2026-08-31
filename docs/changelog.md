@@ -103,7 +103,7 @@
 - Replaced the boilerplate counter test with meaningful tests: navigation shell (4 tabs + Home CTA), Home/Settings/Help screens, priority badge / detection card / warning banner / accessible button, TTS cooldown + de-duplication + repeat, settings persistence, spatial/priority classification, telemetry aggregation, and the gesture controller state machine. `flutter test` → **52 passing**.
 
 ### Notes
-- The previous single-screen developer UI ([`camera_screen.dart`](../lib/screens/camera_screen.dart)) was retired in favor of `detection_screen.dart`; `info_panel.dart` / `debug_overlay.dart` remain in the tree but are no longer used by the primary UI.
+- The previous single-screen developer UI (`camera_screen.dart`) was retired in favor of `detection_screen.dart`; `info_panel.dart` / `debug_overlay.dart` remain in the tree but are no longer used by the primary UI.
 - Proximity bands are heuristics and are always phrased as "approximately …"; calibrated distance, movement/approach tracking, and accuracy/precision/recall/mAP remain intentionally out of scope for the live app (see the [thesis-product-status-audit](thesis-product-status-audit.md)).
 - The ML pipeline (camera, YUV, orientation, TFLite, parser, NMS, thresholds, painter, forensics) was **not** modified.
 
@@ -135,7 +135,7 @@
   - `rotateRect` / `invertRect` — pure, mutually-inverse normalized-box rotations (kept for unit tests / future sensor-space consumers)
   - `mirrorRect` — front-camera X-flip in upright space
 - **Upright tensor inference** ([`inference_isolate.dart`](../lib/services/inference_isolate.dart)) — `processFrame` now carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`); the isolate rotates + optionally X-mirrors the square 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()` (lossless transpose). Parser/NMS untouched — boxes after NMS are already in upright space.
-- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — computes rotation per frame from the same `controller.value.deviceOrientation` that `CameraPreview` uses (painter and preview agree by construction); preview + painter sized with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`.
+- [`detection_screen.dart`](../lib/screens/detection_screen.dart) — computes rotation per frame from the same `controller.value.deviceOrientation` that `CameraPreview` uses (painter and preview agree by construction); preview + painter sized with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`.
 - [`forensic_log.dart`](../lib/services/forensic_log.dart) — `recordOrientation` (per-frame sensor/device/rot/mirror/lens/dims) + sensor/lens fields in `recordCamera`.
 
 ### Changed
@@ -176,7 +176,7 @@
 
 ### Changed
 - [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — run directory created at startup and passed to the isolate; forensic channels wired into the frame loop via `_safeForensic`; `processFrame` now forwards `cameraFps`/`droppedFrames` (logging only)
-- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — records `camera.txt` on the first frame
+- [`detection_screen.dart`](../lib/screens/detection_screen.dart) — records `camera.txt` on the first frame
 
 ### Notes
 - All instrumentation is removable: delete the forensic files/call sites and flip the `enabled` switches.
@@ -187,7 +187,7 @@
 ## v0.1.6 — "Camera Preview UI Redesign" (2026-08-01)
 
 ### Added
-- **Redesigned main screen** ([`camera_screen.dart`](../lib/screens/camera_screen.dart)):
+- **Redesigned main screen** (`camera_screen.dart`):
   - Strict **3:4 portrait camera preview anchored to the top** (`AspectRatio(3/4)` box), feed contained via `BoxFit.contain` — never stretched, warped, or cropped; full frame always visible.
   - Permanent **bottom information panel** with Material Tabs — exactly two tabs: **Metrics** and **Detections** (the panel never floats over the preview).
   - Preview width is computed from screen size while reserving a minimum panel height, so the layout adapts to different screens without ever squeezing the panel or distorting the feed.
@@ -211,7 +211,7 @@
 
 ### Fixed
 - **Preview stretching:** `CameraPreview` was placed directly in a `Stack(fit: StackFit.expand)`, so the camera texture was scaled to fill the screen without preserving aspect ratio, while the painter assumed a letterboxed preview — the two disagreed, misaligning boxes.
-- **Preview layout** ([`camera_screen.dart`](../lib/screens/camera_screen.dart)): the preview is now rendered at the camera's native aspect ratio inside `FittedBox(fit: _previewFit)` with a `SizedBox` sized to the frame (`BoxFit.contain` = letterbox, `BoxFit.cover` = center-crop; single `static const` switch).
+- **Preview layout** (`camera_screen.dart`): the preview is now rendered at the camera's native aspect ratio inside `FittedBox(fit: _previewFit)` with a `SizedBox` sized to the frame (`BoxFit.contain` = letterbox, `BoxFit.cover` = center-crop; single `static const` switch).
 - **Overlay transform** ([`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart)): `_calculateImageRect` now uses `applyBoxFit` — the exact same math as `FittedBox` — so the painter and the preview layout always agree (no offsets or magic constants).
 - Normalized → screen mapping (per-axis): `sx = offX + nx·destW`, `sy = offY + ny·destH`, where `(destW, destH, offX, offY)` come from `applyBoxFit`; front-camera horizontal mirroring unchanged; boxes are clamped to the image rect (edges correctly fall off-screen under `cover`).
 
@@ -231,7 +231,7 @@
   - Honors real per-plane `rowStride`/`bytesPerRow` and `pixelStride`/`bytesPerPixel` (previously assumed tightly-packed rows — the Y rowStride 512 vs width caused row smearing).
   - Supports **planar I420** (pixelStride 1) and **semi-planar NV12/NV21** (pixelStride 2, interleaved chroma read from the U-led plane per the YUV_420_888 contract).
   - Resize (nearest-neighbor) and normalization math unchanged.
-- [`camera_screen.dart`](../lib/screens/camera_screen.dart) now forwards each plane's geometry to the isolate and handles 2-plane (semi-planar) deliveries.
+- `camera_screen.dart` now forwards each plane's geometry to the isolate and handles 2-plane (semi-planar) deliveries.
 - Forensic image dumps (`frame_rgb.png`) use the same geometry-aware sampling.
 
 ### Verified
@@ -264,7 +264,7 @@
   - raw `ByteBuffer` I/O to `interpreter.run()` — **no reshape**, no input-tensor resizing
   - `model_loaded` message now carries the full metadata JSON map
 - [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart) — sections for MODEL / PERFORMANCE / CAMERA
-- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — overlay wired to `metadataNotifier`; `_isInferring` reset on isolate error
+- `camera_screen.dart` — overlay wired to `metadataNotifier`; `_isInferring` reset on isolate error
 
 ### Fixed
 - **Inference-isolate crash** `NoSuchMethodError: Class 'Float32List' has no instance method 'reshape'` — `reshape()` was a `List` extension method invoked on a `dynamic` receiver; replaced with raw `ByteBuffer` I/O

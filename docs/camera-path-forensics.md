@@ -5,6 +5,11 @@
 > **Date:** 2026-08-01
 > **Ground truth:** static-image test (see `docs/static-image-test.md`) —
 > model/parser/NMS/thresholds/labels/painter proven correct.
+> **Historical snapshot notice (2026-09-01):** This report records the
+> 2026-08-01 camera-path investigation and the stable v0.2.2-era model path.
+> The later NCHW/XNNPACK candidate has separate initial device evidence in
+> [`project-status.md`](project-status.md); its longer stability and orientation
+> validation remain open.
 
 ---
 
@@ -24,7 +29,7 @@ The historical "Camera → 0 detections" is a **compound of three factors**:
 | 2 | **No image rotation to device orientation** (sensorOrientation 90° never applied) — portrait-hold scenes reach YOLO rotated 90° | **FIXED** (2026-08-01, v0.1.7 — see `docs/orientation-implementation.md`) |
 | 3 | Test scenes were sometimes dark/desk-level (frame-1 dumps black) | Not a bug — scene artifact |
 
-All camera-path factors are now resolved. Everything else in the camera path —
+All camera-path factors identified by this investigation are resolved. Everything else in the camera path —
 plane strides, semi-planar NV12 handling, chroma order, color range, resize,
 normalization — is verified correct on-device. The orientation fix (input
 rotation to upright, `BoxTransform`) is on-device validated for back portrait

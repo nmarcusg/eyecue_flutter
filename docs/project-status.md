@@ -3,7 +3,7 @@
 > **Last Updated:** 2026-09-01 (candidate device retry)
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
-> **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The working tree contains unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
+> **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The repository contains committed but unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
 
 ## Overall Progress
 
@@ -22,7 +22,7 @@ The app is no longer a single developer camera screen. It now has the thesis-ali
 - **Help:** how it works, gestures, confirmation feedback, Android usage tips.
 - **Logs & Reports:** Overview / Charts / Logs with `fl_chart`; accuracy/precision/recall/mAP explicitly shown as unavailable (require ground truth).
 - **Spatial/priority layer:** left/center/right + priority tiers + approximate proximity band ([`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart)) — kept separate from the inference pipeline.
-- Stable v0.2.2 validation remains the historical **59-test** on-device baseline. The current working tree has **73 passing tests** and `flutter analyze`: **0 issues**.
+- Stable v0.2.2 validation remains the historical **59-test** on-device baseline. The current repository has **73 passing tests** and `flutter analyze`: **0 issues**.
 
 ## Current Unreleased Candidate (2026-09-01)
 
@@ -51,7 +51,7 @@ This candidate must remain labelled **unreleased and initially device-observed**
 | Error handling in isolate | 🟡 Partial — setup/invocation CPU fallback and error propagation exist; fatal isolate restart recovery is missing |
 | Permission-denied UI | ✅ Implemented (v0.2.0 — camera-denied screen with retry/open-settings) |
 | Isolate restart recovery | ❌ Not started |
-| Orientation re-validation (back landscape + front camera) | 🟡 In progress — stable NHWC baseline portrait/static verified; candidate NCHW and deferred device runs pending |
+| Orientation re-validation (back landscape + front camera) | 🟡 In progress — stable NHWC baseline portrait/static verified; candidate NCHW has an initial short portrait run, while landscape/front-camera device runs remain pending |
 
 ## Current Blocker
 
@@ -74,7 +74,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 | 1 | On-device validation of gestures + TTS + settings persistence | 🔴 Critical |
 | 2 | ~~Implement TTS audio feedback~~ | ✅ Complete (v0.2.0) |
 | 3 | ~~Add permission-denied and error UI states~~ | 🟡 Partial — permission UI done; isolate restart recovery remaining |
-| 4 | Validate XNNPACK candidate safely and retain a working CPU fallback | 🔴 Critical |
+| 4 | Extend XNNPACK candidate validation safely and retain a working CPU fallback | 🔴 Critical |
 | 5 | ~~Implement thesis gesture controls~~ | ✅ Complete (v0.2.0) |
 | 6 | Isolate restart recovery | 🔴 High |
 | 7 | Orientation re-validation (back landscape + front camera) | 🟡 High |

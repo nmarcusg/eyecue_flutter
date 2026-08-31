@@ -77,7 +77,7 @@ This document records important engineering decisions made during the developmen
   - Performance ceiling: no hardware acceleration
   - See [`known-issues.md`](known-issues.md) for current blocker status
   - Future: benchmark raw model latency, test NNAPI/GPU delegates
-- **Current status (2026-09-01):** This remains the v0.2.2 release decision, not proof that the crash is fixed. The unreleased worktree attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, retains the delegate for the interpreter lifetime, and retries on CPU after recoverable Dart-level setup or invocation failures. A native SIGSEGV remains uncatchable and requires exact-APK device validation.
+- **Current status (2026-09-01):** This remains the v0.2.2 release decision, not proof that the crash is fixed. The committed but unreleased candidate attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, retains the delegate for the interpreter lifetime, and retries on CPU after recoverable Dart-level setup or invocation failures. The exact APK has now installed and completed an initial short live run on the target phone; a native SIGSEGV remains uncatchable, so longer controlled stability validation is still required.
 
 ## Decision 6: Stream-Based Results
 
@@ -132,7 +132,7 @@ This document records important engineering decisions made during the developmen
 - **Date:** 2026-09-01
 - **Reason:** Direct flatbuffer/runtime inspection confirms a FLOAT32-I/O NCHW model with internally quantized tensors, and static tests validate layout conversion and rotation. The exact candidate APK now installs on the API 33 phone and a short run confirms startup metadata, explicit XNNPACK setup, and live frame completion. That observation is not sufficient for trustworthy comparative performance, accuracy, long-duration stability, or full-delegation conclusions.
 - **Consequences:**
-  - Documentation distinguishes release behavior from current uncommitted work.
+  - Documentation distinguishes release behavior from the current committed but unreleased candidate.
   - No XNNPACK speedup, model-quality improvement, full graph delegation, or crash resolution is claimed.
   - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and isolate restart recovery remain open.
 

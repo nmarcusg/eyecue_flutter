@@ -1,6 +1,7 @@
 # Orientation Architecture Review & Implementation Plan
 
-> **Status:** Design review only — NO code changes.
+> **Status:** Historical design review — no code changes were made as part of
+> this report.
 > **Date:** 2026-08-01
 > **Context:** `docs/camera-path-forensics.md` identified the remaining camera
 > defect as **missing rotation-to-device-orientation** (this device:
@@ -10,6 +11,12 @@
 > (CameraX — confirmed by `GeneratedPluginRegistrant.java` and the
 > `androidx.camera.camera2.pipe`/CXCP logcat), `camera_avfoundation 0.10.1`
 > (iOS), `tflite_flutter 0.12.1`.
+
+> **Historical snapshot notice (2026-09-01):** The implementation proposed by
+> this review was subsequently applied, with the deliberate input-rotation
+> deviation documented in [`orientation-implementation.md`](orientation-implementation.md).
+> The current candidate has initial short-run device evidence; landscape and
+> front-camera validation remain open.
 
 ---
 

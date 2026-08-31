@@ -38,7 +38,7 @@
 - Assess the post-v0.2.2 worktree, validate the new model/layout path, synchronize current documentation, and prepare one atomic commit without overstating device validation.
 
 ### Completed
-- Reviewed the uncommitted model, inference, tensor-rotation, test, validator, and documentation changes.
+- Reviewed the then-uncommitted model, inference, tensor-rotation, test, validator, and documentation changes before they were committed.
 - Confirmed the candidate model directly: `yolov8n_int8_new.tflite` is 3,481,792 bytes with input `[1,3,640,640]` / FLOAT32, output `[1,84,8400]` / FLOAT32, and 448 tensors (2 FLOAT32, 90 INT32, 356 INT8).
 - Added runtime NCHW preprocessing and a standalone layout-aware [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) helper. The helper has 14 focused tests covering NHWC/NCHW rotations, mirroring, equivalence, and guards.
 - Hardened the experimental XNNPACK path in [`inference_isolate.dart`](../lib/services/inference_isolate.dart): delegate ownership is retained for interpreter lifetime; setup failures and recoverable invocation failures retry on a four-thread CPU interpreter. Native SIGSEGV remains uncatchable.
@@ -53,7 +53,7 @@
 
 ### Decisions
 - Treat the v0.2.2 CPU/NHWC path as the stable documented baseline.
-- Treat the NCHW/XNNPACK path as unreleased and statically validated only until the exact APK is installed and tested.
+- Treat the NCHW/XNNPACK path as unreleased and initially device-observed; the exact APK install and short live run are now recorded in the 13th-session entry above.
 - Do not claim a performance improvement or that the historical Snapdragon 695 XNNPACK crash is resolved.
 
 ### Next Session
@@ -203,7 +203,7 @@
   + [`charts.dart`](../lib/widgets/charts.dart) — Overview/Charts/Logs; accuracy/
   precision/recall/mAP shown as unavailable (require ground truth).
 - **Haptics:** [`haptics_service.dart`](../lib/services/haptics_service.dart).
-- Retired the old single-screen [`camera_screen.dart`](../lib/screens/camera_screen.dart)
+- Retired the old single-screen `camera_screen.dart`
   in favor of `detection_screen.dart`; `info_panel.dart`/`debug_overlay.dart`
   remain but are unused by the primary UI.
 - **Tests:** replaced the boilerplate counter test with 52 passing tests across
@@ -331,7 +331,7 @@
   X-mirrors the 640×640 NHWC input to UPRIGHT before `interpreter.run()`
   (lossless square transpose). Parser/NMS untouched; boxes after NMS are
   already upright.
-- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — per-frame
+- `camera_screen.dart` — per-frame
   rotation computed from the SAME `controller.value.deviceOrientation` that
   `CameraPreview` uses, so painter and preview agree by construction; preview
   + painter sized with upright dims; sensor/lens fed to `recordCamera`.
@@ -372,7 +372,7 @@
   and a strictly portrait 3:4 camera preview.
 
 ### Completed
-- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — strict 3:4
+- `camera_screen.dart` — strict 3:4
   portrait preview anchored to the top (`AspectRatio(3/4)` + `BoxFit.contain`);
   permanent bottom panel with exactly two Material tabs (Metrics, Detections).
 - [`info_panel.dart`](../lib/widgets/info_panel.dart) — Metrics tab (live FPS,
@@ -406,7 +406,7 @@
   `FittedBox`), so painter and preview layout always agree; normalized→screen
   mapping `sx = offX + nx·destW`, `sy = offY + ny·destH`; boxes clamped to the
   image rect; front-camera mirroring unchanged.
-- [`camera_screen.dart`](../lib/screens/camera_screen.dart) — preview rendered
+- `camera_screen.dart` — preview rendered
   at native aspect inside `FittedBox(fit: _previewFit)` with a `SizedBox` sized
   to the frame (`contain` = letterbox, `cover` = center-crop, single static
   switch).
@@ -468,7 +468,7 @@
 - **Implemented [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart)** — pure-Dart FlatBuffers walker counting internal tensor types; validated 1:1 against the Python reference (324/23/62 and 324/25/62), plus IEEE-754 float16 helpers.
 - **Rewrote [`inference_isolate.dart`](../lib/services/inference_isolate.dart)** around metadata: dtype-matched buffers, raw `ByteBuffer` I/O (fixes the reshape crash + latent output/input bugs), quantize-only-if-quantized preprocessing, dequantize-only-if-quantized post-processing, `MODEL INFORMATION` startup banner.
 - **Extended [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart)** with a live MODEL section (name, type, I/O types, shapes, classes, anchors, quantization, scale/zeroPoint) that adapts automatically to any model.
-- **Wired [`camera_screen.dart`](../lib/screens/camera_screen.dart)**: overlay reacts to `metadataNotifier`; busy gate releases on isolate errors via `errorStream`.
+- **Wired `camera_screen.dart`**: overlay reacts to `metadataNotifier`; busy gate releases on isolate errors via `errorStream`.
 - **Added [`tool/validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart)** — `dart run tool/validate_flatbuffer.dart` → all validations pass.
 - `flutter analyze`: 0 issues.
 

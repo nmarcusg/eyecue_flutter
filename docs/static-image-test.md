@@ -6,6 +6,10 @@
 > **Test image:** `assets/test_image.jpg` — the canonical YOLO validation photo
 > (`bus.jpg` from ultralytics, 810×1080, contains **1 bus + 4 people + 1 dog**).
 
+> **Historical snapshot notice (2026-09-01):** This test report predates the
+> current candidate-device retry. Its static-image conclusions remain valid;
+> current model/backend status is tracked in [`project-status.md`](project-status.md).
+
 ---
 
 ## 1. Goal
@@ -51,7 +55,7 @@ Files touched (all temporary/diagnostic):
 |------|--------|
 | `lib/services/input_probe.dart` | removed duplicated `testImageToInputBuffer`; added `rgbaToI420()` source adapter |
 | `lib/services/inference_isolate.dart` | `useTestImage=true`; `runTestImage()` builds I420 planes → `processFrame()`; removed the old Float32List `test_image` branch; parser now also reports pre-NMS candidate count |
-| `lib/screens/camera_screen.dart` | test mode renders the asset image + painter instead of a spinner |
+| `lib/screens/detection_screen.dart` | test mode renders the asset image + painter instead of a spinner |
 | `pubspec.yaml` | added `assets/test_image.jpg` |
 
 To disable: set `InferenceService.useTestImage = false`.

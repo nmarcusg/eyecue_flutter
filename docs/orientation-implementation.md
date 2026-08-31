@@ -3,10 +3,11 @@
 > **Status:** The stable v0.2.2 orientation path is implemented and on-device
 > validated for back-camera portrait/static input (portrait detections at 0.91
 > confidence; static-image baseline byte-identical). The current unreleased
-> candidate additionally supports NCHW tensor layout, but its exact APK was not
-> installed on the target phone; candidate device behavior remains unverified.
-> Landscape physical-hold re-validation is deferred (convention bug already
-> found & fixed, see §5).
+> candidate additionally supports NCHW tensor layout; its exact APK installed on
+> the target phone and a short portrait live run completed 65 XNNPACK-labelled
+> frames. This is initial candidate evidence, not formal orientation validation:
+> landscape physical-hold and front-camera runs remain deferred (the convention
+> bug was already found and fixed, see §5).
 > **Original implementation date:** 2026-08-01
 > **Last reviewed:** 2026-09-01
 
@@ -19,7 +20,7 @@
 | [`lib/models/box_transform.dart`](../lib/models/box_transform.dart) (NEW) | The single, device-independent source of truth for ALL orientation math: metadata→rotation, upright dims, reversible normalized-box rotation, and the plugin-convention `DeviceOrientation`→degrees mapping. |
 | [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart) | `processFrame` carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`). The isolate rotates + optionally mirrors the square input tensor to UPRIGHT before `interpreter.run()`; the current helper supports both NHWC and NCHW layouts (parser/NMS untouched), and logs per-frame orientation diagnostics. |
 | [`lib/models/tensor_rotation.dart`](../lib/models/tensor_rotation.dart) | Pure layout-aware rotation/mirroring helper for interleaved NHWC and planar NCHW buffers; unit-tested independently of the camera. |
-| [`lib/screens/camera_screen.dart`](../lib/screens/camera_screen.dart) | Computes the metadata-driven rotation per frame from `controller.value.deviceOrientation` + `CameraDescription.sensorOrientation` + lens; passes it downstream; sizes the preview and the painter with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`. |
+| [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart) | Computes the metadata-driven rotation per frame from `controller.value.deviceOrientation` + `CameraDescription.sensorOrientation` + lens; passes it downstream; sizes the preview and the painter with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`. |
 | [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Removed all sensor-orientation knowledge (`lensDirection`/mirror). The painter is now a pure normalized→pixel mapper over the upright image; it no longer needs to know the lens or rotation. |
 | [`lib/services/forensic_log.dart`](../lib/services/forensic_log.dart) | Orientation-related diagnostics only: `recordOrientation` (per-frame) and sensor/lens fields in `recordCamera`. No other logging touched. |
 

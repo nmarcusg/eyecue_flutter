@@ -6,6 +6,13 @@
 > **Implementation source of truth:** the actual code in `lib/`, `test/`, `pubspec.yaml`, and `android/` — **not** the documentation.
 > **Update note:** The original audit (also 2026-08-16) captured the **pre-v0.2.0** state — a single developer camera screen with no audio, spatial, gesture, or settings layers. Since then the v0.2.x phase landed the thesis-aligned assistive application (v0.2.0), fixed the startup theme assertion (v0.2.1), and fixed the camera viewport + chart overflow (v0.2.2). This revision re-runs the audit against the current v0.2.2 codebase; the original findings are preserved in the project's git history and session log.
 > **This is an audit only.** No code was modified.
+> **Historical snapshot notice (2026-09-01):** This audit's dated v0.2.2
+> conclusions predate the committed-but-unreleased NCHW/XNNPACK candidate and
+> its initial Snapdragon 695 device observation. Do not read its CPU-only,
+> XNNPACK-blocked, or pending-device-validation statements as the current
+> candidate status; [`project-status.md`](project-status.md) is authoritative
+> for the current state. The audit's product-scope gaps and release-readiness
+> conclusions remain applicable unless explicitly superseded there.
 
 ---
 
@@ -287,7 +294,7 @@ The app now exposes all five thesis screens via 4-tab bottom navigation + a Logs
 The v0.2.x phase converted domains B/C/D from 0% to functional implementations layered on top of the untouched ML pipeline.
 
 ### Domain A — Vision / ML engine ✅ (~80%)
-Complete: camera acquisition, YUV preprocessing, orientation, TFLite, YOLO parsing, NMS, confidence handling, detection stream, bounding boxes. Open: throughput/hardware acceleration (XNNPACK blocked), formal FPS/latency validation.
+Complete: camera acquisition, YUV preprocessing, orientation, TFLite, YOLO parsing, NMS, confidence handling, detection stream, bounding boxes. Open: throughput/hardware acceleration validation, formal FPS/latency validation, and candidate stability. At the audit date, the v0.2.2 release path was CPU-only; the later candidate status is recorded in [`project-status.md`](project-status.md).
 
 ### Domain B — Spatial interpretation 🟡 (~65%)
 Implemented as a pure layer over `Detection.box`: left/center/right classification, class-based priority tiers, and an approximate proximity band (labeled heuristic, not a calibrated distance). Missing: calibrated distance, movement/approach tracking, context-aware multi-object scene descriptions.
@@ -530,8 +537,8 @@ Verified in code:
 - **Detection-sensitivity setting** (thesis §2.4 — runtime-configurable confidence threshold).
 - **Accessibility polish:** comprehensive TalkBack/Semantics labels, in-app correction interface.
 - **Production hardening:** isolate restart recovery, release signing, package rename (`com.eyecue`), minSdk alignment (API 29), Play Store artifacts (privacy policy, content rating), device-matrix testing.
-- **Hardware acceleration:** XNNPACK/NNAPI/GPU resolution (currently CPU-only).
-- **On-device validation:** gestures, TTS, settings persistence, Logs & Reports on the Snapdragon 695 device; orientation re-validation (back landscape + front camera).
+- **Hardware acceleration:** comparative XNNPACK/NNAPI/GPU validation. The committed candidate has initial XNNPACK device evidence, but selection of a release backend remains open.
+- **On-device validation:** gestures, TTS, settings persistence, Logs & Reports on the Snapdragon 695 device; candidate back-landscape and front-camera orientation re-validation.
 
 ---
 

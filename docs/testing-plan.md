@@ -67,7 +67,7 @@
 - [ ] No memory leaks during sustained use (>5 minutes)
 
 ### Audio Feedback (TTS implemented v0.2.0)
-- [x] TTS speaks detected objects clearly — ✅ implemented (`tts_service.dart`), on-device validation pending
+- [x] TTS speaks detected objects clearly — ✅ implemented (`tts_service.dart`), dedicated on-device audio validation pending
 - [x] TTS does not overlap/spam (cooldown works) — ✅ cooldown + same-label de-duplication implemented
 - [ ] TTS latency from detection to speech is acceptable
 - [ ] TTS works with screen reader (TalkBack) active
@@ -90,7 +90,7 @@ See [`benchmark-results.md`](benchmark-results.md) for the recording template.
 
 ### Required Benchmarks
 
-1. **Raw Model Latency:** Run each declared model candidate through the TFLite benchmark tool on the target device; the current NCHW/XNNPACK candidate has not yet been installed successfully
+1. **Raw Model Latency:** Run each declared model candidate through the TFLite benchmark tool on the target device; the current NCHW/XNNPACK candidate has initial short-run device evidence, but has not yet received a formal benchmark
 2. **End-to-End Pipeline FPS:** Measure detection FPS on target device under sustained use
 3. **Preprocessing Latency:** Profile YUV→RGB conversion time
 4. **Memory Usage:** Monitor heap usage during 5-minute continuous detection

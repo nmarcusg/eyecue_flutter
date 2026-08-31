@@ -79,7 +79,7 @@ sections below remain historical release records.
 
 ### Notes
 
-- The developer single-screen UI ([`camera_screen.dart`](../lib/screens/camera_screen.dart)) was retired in v0.2.0 and **removed** during the Android-only platform cleanup; `info_panel.dart` / `debug_overlay.dart` remain but are unused by the primary UI.
+- The former developer single-screen UI (`camera_screen.dart`) was retired in v0.2.0 and **removed** during the Android-only platform cleanup; the current primary screen is [`detection_screen.dart`](../lib/screens/detection_screen.dart), while `info_panel.dart` / `debug_overlay.dart` remain but are unused by that UI.
 - The ML pipeline (camera, YUV, orientation, TFLite, parser, NMS, thresholds, painter, forensics) was **not** modified.
 
 ## Completed Work
@@ -105,7 +105,7 @@ sections below remain historical release records.
 - ✅ SendPort/ReceivePort communication protocol
 - ✅ NHWC/NCHW automatic detection from shape
 - ✅ Runtime layout-aware preprocessing and tensor rotation for both NHWC (interleaved) and NCHW (planar) inputs
-- 🟡 Explicit XNNPACK attempt with retained delegate ownership and recoverable CPU fallback; native device stability remains unverified
+- 🟡 Explicit XNNPACK attempt with retained delegate ownership and recoverable CPU fallback; initial short target-device evidence exists, while longer native stability remains unverified
 - ✅ Structured debug logging: `[Model]`, `[Inference]`, `[Detection]`, `[Error]` prefixes
 - ✅ Startup `MODEL INFORMATION` diagnostic banner in the isolate
 - ✅ Inference latency timing via `Stopwatch` (reported per-frame)
@@ -211,7 +211,7 @@ sections below remain historical release records.
 - ✅ Message protocol extended: `{'type': 'result'/'error'/'model_loaded'}` with metadata
 - ✅ Inference latency exposed via `InferenceService.lastLatencyMs` getter
 
-### Documentation (current set synchronized)
+### Documentation (current set synchronized through 2026-09-01)
 
 - ✅ Comprehensive project audit ([`auditor.md`](../auditor.md))
 - ✅ Historical specification preserved ([`chat_spec.md`](../chat_spec.md))
@@ -290,7 +290,7 @@ See [`implementation-plan.md`](implementation-plan.md) for the full milestone br
 
 - **Milestone 1 (Audible MVP):** ✅ Complete (v0.2.0); isolate restart recovery carried to M4
 - **Milestone 2 (Research-Ready):** mostly done — on-device UI validation, formal FPS/latency benchmark, adaptive throttling polish remaining
-- **Milestone 3 (Defense-Ready):** gestures + priority TTS queue done; TalkBack semantics, adaptive throttling, XNNPACK/NNAPI delegate, package rename (`com.eyecue`), explicit minSdk remaining
+- **Milestone 3 (Defense-Ready):** gestures + priority TTS queue done; TalkBack semantics, adaptive throttling, extended XNNPACK/NNAPI delegate validation, package rename (`com.eyecue`), explicit minSdk remaining
 - **Milestone 4 (Production Candidate):** isolate restart recovery, model variant selection, `TransferableTypedData`, bilinear resize, full coverage, Play Store readiness
 
 **Total Estimated Effort (remaining):** ~40–70 hours (down from ~60–104)
@@ -305,6 +305,11 @@ See [`implementation-plan.md`](implementation-plan.md) for the full milestone br
 | M4: Production Candidate | ~8 weeks |
 
 ## Verification Log (2026-07-22)
+
+> **Historical note:** This log records the static/code-review verification state from
+> 2026-07-22. It predates the later v0.2.x UI work and the 2026-09-01 candidate
+> device retry. The current candidate status is recorded in the sections above;
+> the checklist below is retained as a dated audit trail.
 
 ### Debug Instrumentation Verification
 

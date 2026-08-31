@@ -29,7 +29,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 - Performance logging: FPS, inference latency, confidence scores, timestamps — ✅ done (5-second summaries + Info Panel metrics + Logs & Reports telemetry)
 - Pause/resume detection toggle with camera deactivation — ✅ done (v0.2.0 — single-tap pause/resume via [`gesture_controller.dart`](../lib/services/gesture_controller.dart) + visible controls)
 - `fl_chart` logging dashboard for real-time metrics visualization — ✅ done (v0.2.0 — Logs & Reports Overview/Charts/Logs, [`charts.dart`](../lib/widgets/charts.dart))
-- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ release baseline had 59 passing across navigation, screens, widgets, services, charts, theme; current worktree has 73 including NHWC/NCHW tensor-rotation coverage
+- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ release baseline had 59 passing across navigation, screens, widgets, services, charts, theme; the current repository has 73 including NHWC/NCHW tensor-rotation coverage
 - Adaptive throttling based on measured inference time — 🟡 partial (v0.2.0 Low Power Mode applies a dispatch throttle; formal measured throttling remains)
 
 **Feature Dependencies:**
@@ -44,7 +44,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 - Accessibility features: TalkBack/VoiceOver semantics, gesture controls — 🟡 gestures ✅ done (v0.2.0); TalkBack/Semantics polish remaining
 - Priority-based TTS queue (person > vehicle > obstacle > other) — ✅ done (v0.2.0 — class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart))
 - Adaptive throttling fully implemented — 🟡 partial (Low Power Mode dispatch throttle)
-- GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU — 🟡 explicit XNNPACK candidate and recoverable CPU fallback are present; native crash/device validation and NNAPI/GPU alternatives remain pending
+- GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU — 🟡 explicit XNNPACK candidate, initial target-device evidence, and recoverable CPU fallback are present; extended native stability validation and NNAPI/GPU alternatives remain pending
 - Integration tests for end-to-end pipeline — ❌ (unit/widget suite in place)
 - Package name fixed to `com.eyecue` — ❌ (still `com.example.eyecue_flutter`)
 - `minSdkVersion` set explicitly to thesis-aligned API 29 — 🟡 (currently relies on Flutter default 24)
@@ -91,6 +91,6 @@ Camera Pipeline (done)
 4. **On-device validation of the v0.2.x UI** — gestures, TTS, settings persistence, Logs & Reports on the Snapdragon 695 device
 5. **Error Recovery** — Isolate restart on fatal error
 6. ~~**Permission-Denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
-7. **Validate the unreleased XNNPACK candidate** — install the exact APK, confirm native stability/fallback behavior, then benchmark only verified results
+7. **Extend validation of the unreleased XNNPACK candidate** — collect longer stability/fallback evidence, then benchmark only verified results; exact APK installation and an initial short live run are complete
 8. **Orientation re-validation** — back landscape physical hold + front camera
 9. **Formal FPS/latency benchmark + accuracy evaluation** — research metrics

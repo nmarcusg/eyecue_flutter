@@ -160,13 +160,13 @@ eyecue_flutter/
 
 ## AI Pipeline
 
-- **Current unreleased candidate:** `assets/yolov8n_int8_new.tflite` — **FLOAT32 runtime I/O with internally quantized tensors** (classified *Weight-Quantized*), input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). The candidate is structurally validated and bundled in the debug APK, but has not yet been successfully installed and exercised on the target phone.
+- **Current unreleased candidate:** `assets/yolov8n_int8_new.tflite` — **FLOAT32 runtime I/O with internally quantized tensors** (classified *Weight-Quantized*), input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). The candidate is structurally validated, committed, bundled in the debug APK, and has initial target-device evidence: the exact APK installed successfully and a short live run completed 65 XNNPACK-labelled frames on the Snapdragon 695 phone. The calculated latency mean was 164.8 ms (median 157.7 ms; range 150.2–377.3 ms).
 - **Stable v0.2.2 baseline:** `assets/yolov8n.tflite` — FLOAT32 I/O with INT8 weights, input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`.
 - **Model identity:** never assumed from filenames — introspected at runtime into a `ModelMetadata` snapshot.
 - **Preprocessing:** Manual YUV420 → RGB conversion, nearest-neighbor resize, writes matched to the input dtype (normalized float, or quantized via input scale/zeroPoint). Runtime shape selects NHWC interleaved or NCHW planar output order. [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) rotates/mirrors the square tensor to UPRIGHT per orientation metadata.
 - **Inference:** One persistent `Interpreter` instance in a dedicated isolate. The candidate attempts explicit XNNPACK with a retained delegate and retries on CPU after recoverable setup/invocation exceptions. A native SIGSEGV remains uncatchable. Raw `ByteBuffer`s are passed to `interpreter.run()` — no reshape, no input-tensor resizing.
 - **Post-processing:** Argmax per-box, dequantization only when the output tensor is quantized, confidence threshold (0.25), **class-wise Non-Maximum Suppression (IoU 0.45)**.
-- **Missing:** bilinear interpolation, successful candidate device validation, formal candidate benchmark, and isolate restart recovery
+- **Missing:** bilinear interpolation, extended candidate stability/fallback validation, formal candidate benchmark, and isolate restart recovery
 
 ## Runtime Model Introspection
 
@@ -194,7 +194,7 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 3. **Manual Preprocessing:** Custom YUV420→RGB math avoids the `image` package to prevent GC pressure from real-time video.
 4. **Runtime Model Introspection:** After interpreter creation, build a `ModelMetadata` snapshot from the runtime tensors plus an internal tensor-type scan. The interpreter is the single source of truth — nothing is hardcoded.
 5. **Dynamic Inference Path:** Preprocessing quantizes only when the input tensor is quantized; post-processing dequantizes only when the output tensor is quantized (scale/zeroPoint from runtime metadata).
-6. **Backend safety:** The stable v0.2.2 baseline is CPU-only because of the historical Snapdragon 695 XNNPACK SIGSEGV. The unreleased candidate attempts XNNPACK, retains delegate ownership correctly, and falls back to CPU for recoverable Dart-level failures; native crash safety still requires device validation.
+6. **Backend safety:** The stable v0.2.2 baseline is CPU-only because of the historical Snapdragon 695 XNNPACK SIGSEGV. The unreleased candidate attempts XNNPACK, retains delegate ownership correctly, and falls back to CPU for recoverable Dart-level failures; the initial short device run completed, but native crash safety still requires longer controlled validation.
 7. **Stream-Based Results:** `StreamController.broadcast()` for detection results, enabling multiple listeners.
 
 ## Missing Architectural Components (remaining)

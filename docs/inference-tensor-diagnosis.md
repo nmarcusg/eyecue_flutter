@@ -1,9 +1,19 @@
 # Inference Tensor-Handling Diagnosis
 
-> **Status:** Investigation only — no code was modified.
+> **Status:** Historical investigation record — no code was modified as part of
+> this report.
 > **Scope:** Output/input tensor handling in the inference isolate.
 > **Date:** 2026-08-01
 > **Companion docs:** [`known-issues.md`](known-issues.md), [`implementation-decisions.md`](implementation-decisions.md)
+>
+> **Historical snapshot notice (2026-09-01):** This report describes the
+> pre-ByteBuffer implementation and the model state observed on 2026-08-01.
+> The ByteBuffer fix recommended below is now implemented in
+> [`inference_isolate.dart`](../lib/services/inference_isolate.dart), and the
+> current committed-but-unreleased NCHW/XNNPACK candidate has initial device
+> evidence. The old line references and `camera_screen.dart` references below
+> are retained as historical evidence; use [`project-status.md`](project-status.md)
+> for current status.
 
 ---
 
@@ -97,7 +107,7 @@ extension ListShape on List {
 It is an **extension** applied statically to any `List`. `Float32List` implements
 `List<double>`, so the extension *does* apply **when the receiver's static type is
 `List`**. The package itself relies on this — e.g.
-[`tensor.dart:196`](../.pub-cache/…/tensor.dart:196) calls `list.reshape<double>(shape)`
+`tensor.dart:196` calls `list.reshape<double>(shape)`
 on a plain `List<dynamic>`.
 
 ### Why was it called, and where did the assumption come from?
@@ -139,13 +149,12 @@ bug has not been observed yet — but it is deterministic and fires on the first
 frame after the input crash is fixed.
 
 `Interpreter.run(output)` →
-[`runForMultipleInputs`](../.pub-cache/…/interpreter.dart:176) →
-`outputTensors[i].copyTo(dst)` ([`tensor.dart:178`](../.pub-cache/…/tensor.dart:178)):
+`runForMultipleInputs` → `outputTensors[i].copyTo(dst)` (`tensor.dart:178`):
 
 1. `copyTo` reads the raw tensor bytes and, for FLOAT32, materializes a **nested
    `List` shaped `[1][84][8400]`** via `convertBytesToObject(...)`.
 2. Because `dst` is a `List`, it calls `_duplicateList(obj, dst)`
-   ([`tensor.dart:219`](../.pub-cache/…/tensor.dart:219)).
+   (`tensor.dart:219`).
 3. `_duplicateList` compares `obj.shape` (`[1, 84, 8400]`, 3-D) with `dst.shape`
    (`[705600]`, 1-D) → mismatch →
    `ArgumentError('Output object shape mismatch, interpreter returned output of shape: [1, 84, 8400] while shape of output provided as argument in run is: [705600]')`.
@@ -181,13 +190,13 @@ changed.)*
 Even with line 257 removed, passing the flat `Float32List` directly to `run()`
 would misbehave:
 
-- [`getInputShapeIfDifferent`](../.pub-cache/…/tensor.dart:242) computes the
+- `getInputShapeIfDifferent` (`tensor.dart:242`) computes the
   input's shape via `computeShapeOf` → a 1-D `[1228800]` for a flat `Float32List`.
 - `[1228800]` ≠ `[1, 640, 640, 3]` → `resizeInputTensor(0, [1228800])` is called →
   the model's input tensor is **resized to 1-D**, breaking the fixed 640×640 conv
   graph (invoke would fail or emit garbage).
 - Only `Uint8List` and `ByteBuffer` inputs short-circuit this check (return `null`,
-  no resize) — [`tensor.dart:246`](../.pub-cache/…/tensor.dart:246).
+  no resize) — `tensor.dart:246`.
 
 **Fix:** pass the raw **`ByteBuffer`** (`.buffer` of the typed list) to `run()`.
 This bypasses resize entirely, and `setTo()` copies the raw bytes straight into the
@@ -198,12 +207,12 @@ path, and the fastest option available.
 
 ## 7. The "Isolate Dies / Busy Flag Never Clears" Symptom
 
-Mechanics, verified in [`camera_screen.dart`](../lib/screens/camera_screen.dart):
+Mechanics, verified in the historical `camera_screen.dart` implementation:
 
 1. `_isInferring` is set `true` before each frame is sent
-   ([`camera_screen.dart:202`](../lib/screens/camera_screen.dart:202)).
+   (`camera_screen.dart:202`, historical line reference).
 2. It is reset **only** when a `result` message arrives
-   ([`camera_screen.dart:170`](../lib/screens/camera_screen.dart:170)).
+   (`camera_screen.dart:170`, historical line reference).
 3. The isolate's try/catch **does** catch the `NoSuchMethodError` and reports it as
    `{'type': 'error'}` ([`inference_isolate.dart:288-299`](../lib/services/inference_isolate.dart:288)),
    so the isolate process technically survives.
@@ -258,9 +267,9 @@ interpreter!.run(inputBuffer.buffer, outputBuffer.buffer);
      tflite_flutter fast path, or
    - add `tflite_flutter_helper` and use `TensorBuffer`/`TensorBufferFloat`
      (`createFrom(tensor, shape)`) for shape-safe, typed buffer management.
-2. **Error recovery:** on `{'type': 'error'}`, reset `_isInferring` in
-   [`camera_screen.dart`](../lib/screens/camera_screen.dart) and implement isolate
-   restart (already Milestone 4 in [`implementation-plan.md`](implementation-plan.md)).
+2. **Error recovery:** on `{'type': 'error'}`, reset `_isInferring` in the
+   then-current camera screen and implement isolate restart (already Milestone 4
+   in [`implementation-plan.md`](implementation-plan.md)).
 3. **Type safety:** replace the `dynamic inputBuffer` with an explicit branch or
    sealed type so extension/dynamic-dispatch traps cannot recur.
 4. **Cleanup:** correct the stale "INT8 model" comments; either bundle and load
@@ -282,7 +291,7 @@ interpreter!.run(inputBuffer.buffer, outputBuffer.buffer);
 | Scope | Effort |
 |---|---|
 | Immediate fix | ~2–5 lines in one file; ~10–20 min; no other files touched |
-| + error recovery / busy-flag reset | ~15 lines across [`inference_isolate.dart`](../lib/services/inference_isolate.dart) + [`camera_screen.dart`](../lib/screens/camera_screen.dart) |
+| + error recovery / busy-flag reset | ~15 lines across [`inference_isolate.dart`](../lib/services/inference_isolate.dart) and the then-current camera screen |
 | + long-term (`TensorBuffer`, type safety, docs, stale comments) | small–medium; 1–2 files + docs |
 
 ---
@@ -295,9 +304,11 @@ interpreter!.run(inputBuffer.buffer, outputBuffer.buffer);
 | Output flat `List` is invalid (shape mismatch) | **High** | `copyTo`/`_duplicateList` source traced line-by-line |
 | Input auto-resize to 1-D is a real hazard | **High** | `getInputShapeIfDifferent` source |
 | Models are float32 I/O, weight-quantized | **High** | Direct flatbuffer parse of both files |
-| Busy-flag wedge explains "isolate dies" | **High** | [`camera_screen.dart`](../lib/screens/camera_screen.dart) gate logic |
+| Busy-flag wedge explains "isolate dies" | **High** | Historical camera-screen gate logic |
 | ByteBuffer path fixes all three issues | **High** | `convertObjectToBytes`/`copyTo` both short-circuit on `ByteBuffer` |
 
 ---
 
-*Report complete. Implementation should proceed only after review of this document.*
+*Historical report complete. The implementation recommendations were subsequently
+reviewed and the ByteBuffer path was implemented; current work and validation are
+tracked in [`project-status.md`](project-status.md).*

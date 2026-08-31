@@ -1,8 +1,15 @@
 # Inference Pipeline Probe — "Objects: 0" Forensic Investigation
 
-> **Status:** Investigation only. No pipeline behavior was changed.
+> **Status:** Historical investigation record. No pipeline behavior was changed
+> as part of this report.
 > **Temporary diagnostics:** [`lib/services/inference_probe.dart`](../lib/services/inference_probe.dart) (phases 1–8, removable).
 > **Date:** 2026-08-01
+
+> **Historical snapshot notice (2026-09-01):** This report records the
+> pre-candidate camera/parser investigation. The later ByteBuffer, NMS, and
+> orientation changes are reflected in the current implementation; the
+> committed-but-unreleased NCHW/XNNPACK candidate is tracked in
+> [`project-status.md`](project-status.md).
 
 ---
 

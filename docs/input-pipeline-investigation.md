@@ -1,10 +1,16 @@
 # Input Pipeline Investigation — Why max confidence ≈ 0.05
 
-> **Status:** Forensic investigation only. No pipeline behavior was changed.
+> **Status:** Historical forensic investigation record. No pipeline behavior was
+> changed as part of this report.
 > **Temporary instrumentation:** [`lib/services/input_probe.dart`](../lib/services/input_probe.dart)
 > (`[InputProbe]` prefix) + a test-image debug mode behind one boolean flag.
 > **Date:** 2026-08-01
 > **Related:** [`inference-pipeline-probe.md`](inference-pipeline-probe.md) (parser-side forensics).
+
+> **Historical snapshot notice (2026-09-01):** This report captures the
+> pre-candidate input investigation. The current pipeline includes the later
+> geometry, orientation, and ByteBuffer fixes; current candidate status is
+> tracked in [`project-status.md`](project-status.md).
 
 ---
 
@@ -219,7 +225,7 @@ each item are the ones that confirm it.
 
 1. Delete [`lib/services/input_probe.dart`](../lib/services/input_probe.dart).
 2. In [`inference_isolate.dart`](../lib/services/inference_isolate.dart) and
-   [`camera_screen.dart`](../lib/screens/camera_screen.dart): remove the
+   `camera_screen.dart` (the historical screen name): remove the
    `input_probe.dart` import, all `InputProbe.*` calls, the `useTestImage` /
    `testImageAsset` fields, `runTestImage()` / `_loadTestImageInput()`, the
    `test_image` handler, and the `_ready` completer.

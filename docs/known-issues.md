@@ -7,7 +7,7 @@
 
 ### 🔴 XNNPACK SIGSEGV / Candidate Device Validation (Critical)
 
-- **Description:** The stable v0.2.2 path keeps XNNPACK disabled because the older YOLOv8n model previously caused a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU). The current unreleased worktree attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, whose runtime I/O is FLOAT32 with an NCHW input.
+- **Description:** The stable v0.2.2 path keeps XNNPACK disabled because the older YOLOv8n model previously caused a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU). The current committed but unreleased candidate attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, whose runtime I/O is FLOAT32 with an NCHW input.
 - **Location:** [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — interpreter creation / inference path.
 - **Impact:** A native SIGSEGV cannot be caught by Dart and could still terminate the isolate/process. The candidate now installs and runs on the target phone, but only a short observation exists: 65 completed frames were labelled `XNNPACK`, with approximately 5.7–6.2 inference FPS in app summaries and no fatal signal observed in the captured process-filtered logs. Detection quality, long-duration stability, and comparative performance remain unestablished. The old stable baseline observed approximately 2–3 FPS and 600 ms latency on the low-end device.
 - **Current mitigation:** Delegate ownership is retained for the interpreter lifetime. Recoverable Dart-level setup or invocation failures close the delegate-backed interpreter and retry on a four-thread CPU interpreter. This is not protection against a native crash.

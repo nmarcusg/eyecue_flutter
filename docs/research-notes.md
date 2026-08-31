@@ -54,7 +54,7 @@ See [this discussion in chat_spec.md](../chat_spec.md) for the full analysis.
 
 ### TFLite on Android
 
-- **XNNPACK:** CPU acceleration delegate. Crashed on Snapdragon 695 with INT8 YOLOv8n. Root cause unknown.
+- **XNNPACK:** CPU acceleration delegate. The older stable YOLOv8n path crashed on the Snapdragon 695; root cause remains unknown. The replacement NCHW candidate has initial short-run XNNPACK evidence on that device, but longer stability and comparative performance are not established.
 - **NNAPI:** Android Neural Networks API. Uses device-specific drivers (DSP, GPU, NPU). Compatibility varies by manufacturer.
 - **GPU Delegate:** OpenGL ES / OpenCL backend. SiLU support depends on TFLite version and driver.
 - **Benchmark tool:** `android_aarch64_benchmark_model` from TFLite tools. Should be used to measure raw model latency.
@@ -143,7 +143,7 @@ Status reflects the v0.2.x implementation:
 - "How can 300ms latency correspond to 15 FPS?" → Redefine metrics clearly
 - "Why Flutter instead of native Android?" → Cross-platform, faster UI development, GPU rendering
 - "Why not use a cloud API?" → Privacy, offline use, latency
-- "How did you validate accuracy?" → COCO pre-trained, qualitative testing with target users
+- "How did you validate accuracy?" → The model is COCO-pre-trained and has passed controlled engineering checks, but application-level accuracy metrics and the target-user study have not yet been collected; do not present pre-training as an accuracy result.
 - "What about false positives?" → Confidence threshold, priority-based TTS reduces noise
 
 ### Metric Definitions (To Finalize)

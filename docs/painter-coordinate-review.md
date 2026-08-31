@@ -5,8 +5,13 @@
 > **Evidence sources:** live camera run `run_20260801_194628` (painter logs,
 > PID 24472), static-test run `run_20260801_185906` (PID 5415), Flutter
 > `camera 0.12.0+1` + `camera_android_camerax 0.7.3` plugin sources (from the
-> pub cache), and `camera_screen.dart` / `bounding_box_painter.dart` as
-> currently written.
+> pub cache), and the then-current `camera_screen.dart` /
+> `bounding_box_painter.dart` implementation.
+>
+> **Historical snapshot notice (2026-09-01):** The former `camera_screen.dart`
+> was later retired and removed in favor of [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+> The measurements and conclusions below remain a record of the implementation
+> examined at the time.
 
 ---
 
