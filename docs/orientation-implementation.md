@@ -123,8 +123,9 @@ no duplication" intended.
 - Front camera mirroring is folded into the single tensor step.
 - The stable static-image path passes rotation 0 / no mirror → identity →
   verified byte-identical on-device (person 0.9173, 5 detections, same as
-  baseline). The current NCHW candidate has only static/unit/structural
-  validation; it has no candidate on-device result yet.
+  baseline). The current NCHW candidate has initial short live on-device
+  evidence, but no formal orientation, accuracy, or comparative performance
+  validation yet.
 
 ## 6. Validation status
 
@@ -134,5 +135,5 @@ no duplication" intended.
 | Back · landscape | Convention bug found & fixed; physical-hold re-validation deferred to next session |
 | Front · portrait / landscape | Math implemented (verified against plugin convention); device run pending |
 | Static-image regression | ✅ `rot=0`, identical detections (person 0.9173, 5 objects) |
-| NCHW tensor rotation | ✅ Pure helper covered by unit tests; candidate device validation pending |
+| NCHW tensor rotation | ✅ Pure helper covered by unit tests; candidate exercised in a short portrait live run; landscape/front-camera device validation pending |
 | `flutter analyze` | ✅ 0 issues |

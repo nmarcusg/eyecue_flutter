@@ -1,19 +1,19 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-09-01 (working-tree assessment)
+> **Last Updated:** 2026-09-01 (candidate device retry)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
-## Current Unreleased Worktree (2026-09-01)
+## Current Unreleased Candidate (2026-09-01)
 
-This section describes uncommitted work after the v0.2.2 release; the versioned
+This section describes unreleased work after the v0.2.2 release; the versioned
 sections below remain historical release records.
 
 - ✅ Added [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite) to the asset bundle. Direct inspection found FLOAT32 runtime input/output, input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and internal INT8 tensors; runtime classification is *Weight-Quantized*, not full integer I/O.
 - ✅ Updated [`inference_isolate.dart`](../lib/services/inference_isolate.dart) to select NHWC or NCHW from runtime shape metadata, write the matching YUV→RGB layout, and use [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) for layout-aware rotation/mirroring.
-- 🟡 Added an explicit XNNPACK attempt with delegate lifetime retention, recoverable setup/invocation CPU fallback, and backend logging. The historical Snapdragon 695 native SIGSEGV remains unresolved because a native fault cannot be caught by Dart.
+- 🟡 Added an explicit XNNPACK attempt with delegate lifetime retention, recoverable setup/invocation CPU fallback, and backend logging. The exact debug APK now installs on the Snapdragon 695 target and has initial short-run evidence: 65 completed live frames were labelled `XNNPACK`; the calculated latency mean was 164.8 ms (median 157.7 ms, range 150.2–377.3 ms), and app summaries reported approximately 5.7–6.2 inference FPS. The historical native SIGSEGV remains unresolved because a native fault cannot be caught by Dart.
 - ✅ Added 14 tensor-rotation unit tests; the full suite is now **73 passing** and `flutter analyze` reports **0 issues**.
 - ✅ Extended the flatbuffer validator to cover the new model and verified the generated debug APK contains it.
-- ⚠️ The exact candidate APK was not installed on the API 33 test phone (`INSTALL_FAILED_INSUFFICIENT_STORAGE`); the previously installed app was launched afterward. No candidate detection, accuracy, latency, FPS, or XNNPACK result is available yet.
+- ⚠️ The exact candidate APK installed after storage was cleared. Startup logs confirmed the NCHW/FLOAT32 model metadata and successful explicit XNNPACK interpreter creation. The controlled short run produced no detections across its 65 logged frames, while a separate earlier observation returned one `tv` at 67.9% confidence and 113.7 ms. These are observational results only; formal benchmark, accuracy, thermal, memory, and long-duration stability evidence remains pending.
 
 ## v0.2.2 — UI Layout Fixes (2026-08-16)
 
@@ -235,6 +235,15 @@ sections below remain historical release records.
 
 ## Current Work
 
+**Unreleased NCHW/XNNPACK candidate validation** — Active
+
+| Task | Status |
+|------|--------|
+| Exact debug APK installation after storage cleanup | ✅ Successful on `2201116SG` (Android 13/API 33, arm64) |
+| Runtime startup metadata and explicit delegate setup | ✅ Candidate metadata confirmed; XNNPACK interpreter created with four threads |
+| Short live inference run | ✅ 65 completed frames, all logged `backend=XNNPACK`; no fatal marker observed |
+| Formal performance, accuracy, thermal, memory, and long-duration stability validation | ⏳ Pending |
+
 **Orientation re-validation** — Active
 
 | Task | Status |
@@ -271,7 +280,7 @@ sections below remain historical release records.
 5. **On-device validation of the v0.2.x UI** — gestures, TTS, mute toggle, settings persistence, Logs & Reports charts on the Snapdragon 695 device.
 6. **Complete error handling in inference isolate** — extend error recovery (isolate restart on crash).
 7. ~~**Add permission-denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
-8. **Validate the unreleased XNNPACK candidate** — free device storage, install the exact APK, capture stability/fallback evidence, and run the benchmark tool on the test device.
+8. **Extend validation of the unreleased XNNPACK candidate** — capture longer stability/fallback evidence and run the benchmark tool on the test device; the exact APK has already installed and completed an initial short live run.
 
 ## Remaining Tasks
 

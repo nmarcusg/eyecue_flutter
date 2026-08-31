@@ -15,7 +15,35 @@ Captured live from the app's own telemetry during the v0.2.2 session on the Snap
 | Avg Inference Latency | ~606 ms |
 | Detections in session | 123 |
 
-These are **informal historical baseline** figures from the app's runtime telemetry (subject to the low-end CPU-only pipeline), not the formal TFLite-benchmark-tool results the thesis requires. They illustrate that the stable CPU-only throughput is far below the ≥15 FPS hypothesis target. No comparison with the current NCHW/XNNPACK candidate is available because the candidate APK was not installed successfully.
+These are **informal historical baseline** figures from the app's runtime telemetry (subject to the low-end CPU-only pipeline), not the formal TFLite-benchmark-tool results the thesis requires. They illustrate that the stable CPU-only throughput is far below the ≥15 FPS hypothesis target. An initial, non-formal observation of the current NCHW/XNNPACK candidate is recorded below; it is not a like-for-like benchmark or an accuracy comparison.
+
+---
+
+## Initial Candidate Device Observation (not a formal benchmark)
+
+Captured after device storage was cleared and the exact debug APK was installed on
+the target `2201116SG` (Snapdragon 695, Android 13/API 33, `android-arm64`). The
+Detection screen loaded `yolov8n_int8_new.tflite`, reported the expected NCHW
+FLOAT32 I/O, and created an explicit four-thread XNNPACK interpreter.
+
+| Observation | Result |
+|-------------|--------|
+| Logged live inference completions | 65 (frames #1–#65) |
+| Backend label on completed frames | XNNPACK on all 65 logged completions |
+| Per-frame latency, calculated mean | 164.8 ms |
+| Per-frame latency, median | 157.7 ms |
+| Per-frame latency, range | 150.2–377.3 ms |
+| 5-second summary inference FPS | ~5.7–6.2 |
+| 5-second summary camera FPS | ~13.9–14.9 |
+| Detections in this controlled short run | 0 across the 65 logged frames |
+| Separate earlier live observation | 1 `tv` at 67.9% confidence, 113.7 ms |
+| Candidate-process fatal signal in captured logs | None observed; process remained alive at capture end |
+
+The run was short and used the app's debug telemetry rather than the official
+TFLite benchmark tool. It does not establish model accuracy, thermal or memory
+behavior, long-duration XNNPACK stability, a CPU-vs-XNNPACK speedup, or complete
+graph delegation. The `tv` observation is evidence that the parser and detection
+delivery path can return a live result, not a ground-truth accuracy result.
 
 ---
 
@@ -95,4 +123,4 @@ Copy and fill out one table per test configuration.
 ## Historical Results
 
 - **v0.2.2 CPU/NHWC baseline:** informal application telemetry only — approximately 2.1 detection FPS, 606 ms average inference latency, and 123 detections on Android 13/API 33 Snapdragon 695. These values are not formal benchmark results.
-- **Current NCHW/XNNPACK candidate:** no runtime result. APK installation was blocked by `INSTALL_FAILED_INSUFFICIENT_STORAGE`; run the benchmark only after the exact candidate build is installed and verified.
+- **Current NCHW/XNNPACK candidate:** initial short device observation recorded above after successful installation — 65 XNNPACK-labelled completions, calculated mean latency 164.8 ms, and one separate live `tv` result at 67.9%/113.7 ms. No formal benchmark or accuracy/stability claim is attached to these observations.

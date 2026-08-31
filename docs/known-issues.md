@@ -9,10 +9,10 @@
 
 - **Description:** The stable v0.2.2 path keeps XNNPACK disabled because the older YOLOv8n model previously caused a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU). The current unreleased worktree attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, whose runtime I/O is FLOAT32 with an NCHW input.
 - **Location:** [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — interpreter creation / inference path.
-- **Impact:** A native SIGSEGV cannot be caught by Dart and could still terminate the isolate/process. The candidate has not been successfully installed on the target phone, so its runtime stability, detection quality, and performance are unknown. The old stable baseline observed approximately 2–3 FPS and 600 ms latency on the low-end device.
+- **Impact:** A native SIGSEGV cannot be caught by Dart and could still terminate the isolate/process. The candidate now installs and runs on the target phone, but only a short observation exists: 65 completed frames were labelled `XNNPACK`, with approximately 5.7–6.2 inference FPS in app summaries and no fatal signal observed in the captured process-filtered logs. Detection quality, long-duration stability, and comparative performance remain unestablished. The old stable baseline observed approximately 2–3 FPS and 600 ms latency on the low-end device.
 - **Current mitigation:** Delegate ownership is retained for the interpreter lifetime. Recoverable Dart-level setup or invocation failures close the delegate-backed interpreter and retry on a four-thread CPU interpreter. This is not protection against a native crash.
-- **Planned Fix:** Free device storage and install the exact candidate APK. Capture logcat, model metadata, detection output, and latency. Run the official TFLite benchmark tool for the old CPU baseline, the candidate, and safe NNAPI/GPU alternatives where available.
-- **Status:** **Unresolved.** No XNNPACK speedup or candidate on-device behavior may be claimed yet.
+- **Planned Fix:** Extend the controlled target-device run, capture fallback/native-crash evidence, and run the official TFLite benchmark tool for the old CPU baseline, the candidate, and safe NNAPI/GPU alternatives where available. Add ground-truth accuracy, thermal, and memory measurements before selecting a release backend.
+- **Status:** **Partially device-observed but unresolved.** The candidate's short XNNPACK run is evidence of initial compatibility, not proof of speedup, long-term stability, full graph delegation, or crash resolution.
 
 ### 🟠 Incomplete Error Recovery in Inference Isolate (High)
 
@@ -42,7 +42,7 @@
 
 ## Platform-Specific Limitations
 
-- **Android:** The **only** supported platform (per the thesis). The Snapdragon 695 testing device has a historical XNNPACK crash; the current candidate is not yet validated there because APK installation failed with insufficient storage. Other devices are untested.
+- **Android:** The **only** supported platform (per the thesis). The Snapdragon 695 testing device has a historical XNNPACK crash; the current candidate has only initial short-run validation there after storage was cleared. Other devices are untested.
 - **iOS / web / Windows / macOS / Linux:** Out of scope — EyeCue is Android-only. Their scaffolding was removed during the Android-only platform cleanup; no support is provided or planned.
 
 ## Known Bugs

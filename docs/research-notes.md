@@ -84,7 +84,7 @@ See [this discussion in chat_spec.md](../chat_spec.md) for the full analysis.
 
 | File | I/O precision | Weights / internal types | Notes |
 |------|---------------|--------------------------|-------|
-| `yolov8n_int8_new.tflite` | FLOAT32 (in/out) | INT8 (356), INT32 (90), FLOAT32 (2) | **Current unreleased candidate** — classified *Weight-Quantized*. Input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]`. Declared in `pubspec.yaml`; structurally validated, but not yet exercised on-device. |
+| `yolov8n_int8_new.tflite` | FLOAT32 (in/out) | INT8 (356), INT32 (90), FLOAT32 (2) | **Current unreleased candidate** — classified *Weight-Quantized*. Input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]`. Declared in `pubspec.yaml`; structurally validated and initially exercised on-device, but not formally benchmarked or accuracy-validated. |
 | `yolov8n.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | **Stable v0.2.2 baseline** — classified *Weight-Quantized*. Input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`. Despite its name it is **not** full INT8. |
 | `yolov8n_int8.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | Same weight-quantized structure; present in `assets/` but **not declared in pubspec** (not loadable at runtime). |
 | `yolov8n_int8ReLU.tflite` | — | — | GPU-compatible variant from the React Native prototype; **no longer present** in this repository's `assets/`. |
@@ -95,10 +95,14 @@ The candidate's flatbuffer structure was inspected independently and is covered
 by [`tool/validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart). Runtime
 I/O is FLOAT32/FLOAT32, so the candidate does not require input quantization or
 output dequantization; its NCHW shape requires layout-aware preprocessing and
-rotation. The candidate is bundled in the generated debug APK, but the APK
-installation failed on the API 33 test phone with
-`INSTALL_FAILED_INSUFFICIENT_STORAGE`. Consequently, no candidate accuracy,
-latency, FPS, thermal, or XNNPACK stability result exists yet.
+rotation. The candidate is bundled in the generated debug APK and has now been
+installed on the API 33 test phone after storage cleanup. A short live run
+completed 65 XNNPACK-labelled frames with 164.8 ms calculated mean latency and
+approximately 5.7–6.2 app-reported inference FPS; a separate observation
+returned one `tv` at 67.9% confidence and 113.7 ms. These are initial runtime
+observations only: candidate accuracy, formal benchmark performance, thermal/
+memory behavior, long-duration stability, and complete graph delegation remain
+unverified.
 
 ---
 

@@ -128,12 +128,12 @@ This document records important engineering decisions made during the developmen
 
 ## Decision 10: Unreleased NCHW/XNNPACK Candidate Must Not Replace Validation Evidence
 
-- **Decision:** Keep `yolov8n_int8_new.tflite` as the current worktree model candidate, but report it separately from the validated v0.2.2 CPU/NHWC baseline until the exact APK is installed and exercised on the target device.
+- **Decision:** Keep `yolov8n_int8_new.tflite` as the current unreleased model candidate and report it separately from the validated v0.2.2 CPU/NHWC baseline until controlled comparative, accuracy, and stability validation is complete.
 - **Date:** 2026-09-01
-- **Reason:** Direct flatbuffer/runtime inspection confirms a FLOAT32-I/O NCHW model with internally quantized tensors, and static tests validate layout conversion and rotation. The candidate APK could not be installed on the API 33 phone because of insufficient storage, so there is no trustworthy candidate detection, latency, accuracy, or backend result.
+- **Reason:** Direct flatbuffer/runtime inspection confirms a FLOAT32-I/O NCHW model with internally quantized tensors, and static tests validate layout conversion and rotation. The exact candidate APK now installs on the API 33 phone and a short run confirms startup metadata, explicit XNNPACK setup, and live frame completion. That observation is not sufficient for trustworthy comparative performance, accuracy, long-duration stability, or full-delegation conclusions.
 - **Consequences:**
   - Documentation distinguishes release behavior from current uncommitted work.
-  - No XNNPACK speedup, model-quality improvement, or crash resolution is claimed.
+  - No XNNPACK speedup, model-quality improvement, full graph delegation, or crash resolution is claimed.
   - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and isolate restart recovery remain open.
 
 ## Decision 7: Flutter over React Native

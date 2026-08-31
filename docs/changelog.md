@@ -18,10 +18,10 @@
 ### Verified
 - `flutter analyze`: 0 issues. `flutter test`: **73 passing**.
 - The flatbuffer and PNG validators pass, and the generated debug APK contains the new model asset.
-- The candidate APK was **not** installed on the API 33 Snapdragon 695 test phone because ADB reported `INSTALL_FAILED_INSUFFICIENT_STORAGE`; therefore no candidate detection, accuracy, latency, FPS, or XNNPACK stability result is claimed.
+- After device storage was cleared, the exact debug APK installed on the API 33 Snapdragon 695 test phone (`2201116SG`). Startup confirmed the NCHW/FLOAT32 candidate and successful explicit XNNPACK interpreter creation. A short live run completed 65 XNNPACK-labelled frames with calculated mean latency 164.8 ms (median 157.7 ms; range 150.2–377.3 ms); app summaries reported approximately 5.7–6.2 inference FPS. A separate earlier observation returned one `tv` detection at 67.9% confidence and 113.7 ms. No candidate-process fatal signal was observed in the captured logs.
 
 ### Notes
-- This entry is intentionally unreleased. The stable v0.2.2 CPU/NHWC baseline and its informal 2.1 FPS / 606 ms observations remain the only on-device performance evidence.
+- This entry is intentionally unreleased. The stable v0.2.2 CPU/NHWC baseline and its informal 2.1 FPS / 606 ms observations remain the only release-baseline evidence; the candidate values are short app-telemetry observations, not formal benchmark results.
 - The historical Snapdragon 695 XNNPACK SIGSEGV remains unresolved: native faults are not catchable by Dart, even though recoverable Dart-level failures now have a CPU fallback.
 
 ---

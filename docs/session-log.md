@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-09-01 (13th session) — Target Device Candidate Retry
+
+### Objective
+- Retry the unreleased NCHW/XNNPACK candidate on the Snapdragon 695 phone after device storage was cleared, then capture startup and live inference evidence without treating a short run as a formal benchmark.
+
+### Completed
+- Installed the exact generated debug APK successfully on `2201116SG` (`android-arm64`, Android 13/API 33); the old package installation was replaced as part of the install flow.
+- Navigated to the Detection screen, which initialized the camera and inference isolate.
+- Confirmed startup metadata for `yolov8n_int8_new.tflite`: 3,481,792 bytes, *Weight-Quantized*, FLOAT32 input `[1,3,640,640]` (NCHW), FLOAT32 output `[1,84,8400]`, and internally quantized tensor counts matching the static validator.
+- Confirmed explicit XNNPACK delegate creation and interpreter setup with four threads.
+
+### Verified
+- A controlled short live run completed 65 logged frames (`#1`–`#65`), all with `backend=XNNPACK`.
+- Calculated per-frame latency was 164.8 ms mean, 157.7 ms median, and 150.2–377.3 ms range. App 5-second summaries reported approximately 5.7–6.2 inference FPS and 13.9–14.9 camera FPS.
+- The controlled run returned zero detections across its 65 logged frames. A separate earlier short observation returned one `tv` detection at 67.9% confidence and 113.7 ms, confirming a live result can reach the parser/UI path.
+- The application process remained alive at capture end; no candidate-process `SIGSEGV` or fatal marker appeared in the captured process-filtered log.
+
+### Decisions / Limitations
+- Record this as **initial device evidence**, not a formal benchmark, accuracy result, full-delegation proof, long-duration stability result, or resolution of the historical native XNNPACK crash.
+- Keep v0.2.2 CPU/NHWC as the stable documented baseline and keep the NCHW/XNNPACK candidate unreleased until controlled comparison, accuracy, thermal, memory, orientation, and longer stability validation are complete.
+
+### Next Session
+- Run longer controlled candidate and CPU comparison sessions, collect fallback/native-crash evidence, run the official TFLite benchmark tool, and perform ground-truth accuracy evaluation.
+- Re-validate back-camera landscape and front-camera portrait/landscape orientation, then complete UI/gesture/TTS/settings checks and isolate restart recovery.
+
+---
+
 ## 2026-09-01 (12th session) — NCHW Candidate, XNNPACK Fallback, and Status Sync
 
 ### Objective
@@ -22,7 +49,7 @@
 - `flutter analyze`: 0 issues.
 - `flutter test`: 73 passing.
 - Flatbuffer and PNG validators pass; the generated debug APK contains the candidate model asset.
-- Candidate APK installation on the Android 13/API 33 test phone failed with `INSTALL_FAILED_INSUFFICIENT_STORAGE`. The old installed application was launched afterward, so no candidate runtime, detection, latency, accuracy, or XNNPACK result is available.
+- Candidate APK installation was blocked at that time by `INSTALL_FAILED_INSUFFICIENT_STORAGE`; this was later resolved in the 13th-session retry recorded above. The earlier session therefore produced no candidate runtime result.
 
 ### Decisions
 - Treat the v0.2.2 CPU/NHWC path as the stable documented baseline.
