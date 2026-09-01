@@ -11,6 +11,7 @@ void main() {
       expect(service.autoStartDetection, isTrue);
       expect(service.lowPowerMode, isFalse);
       expect(service.audioEnabled, isTrue);
+      expect(service.inferenceEngine, InferenceEngine.custom);
     });
 
     test('setters update values and notify listeners', () async {
@@ -30,11 +31,13 @@ void main() {
       await service.load();
       await service.setVibrationFeedback(false);
       await service.setAutoStartDetection(false);
+      await service.setInferenceEngine(InferenceEngine.ultralytics);
 
       final reloaded = SettingsService(store: store);
       await reloaded.load();
       expect(reloaded.vibrationFeedback, isFalse);
       expect(reloaded.autoStartDetection, isFalse);
+      expect(reloaded.inferenceEngine, InferenceEngine.ultralytics);
     });
 
     test('corrupt persisted JSON falls back to defaults', () async {
@@ -55,9 +58,20 @@ void main() {
     });
 
     test('toJson / fromJson round-trip', () {
-      const a = AppSettings(vibrationFeedback: false, autoStartDetection: false);
+      const a = AppSettings(
+        vibrationFeedback: false,
+        autoStartDetection: false,
+        inferenceEngine: InferenceEngine.ultralytics,
+      );
       final b = AppSettings.fromJson(a.toJson());
       expect(b, a);
+    });
+
+    test('unknown persisted engine falls back to custom', () {
+      final settings = AppSettings.fromJson({
+        'inferenceEngine': 'missing-engine',
+      });
+      expect(settings.inferenceEngine, InferenceEngine.custom);
     });
   });
 }

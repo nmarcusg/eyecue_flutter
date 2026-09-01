@@ -13,7 +13,7 @@ dependencies:
   # 1. Camera (Bumped to 0.12.0+1)
   camera: ^0.12.0+1
   
-  # 2. Machine Learning (Bumped to 0.12.1 - bundles newest TFLite)
+  # 2. Machine Learning (classic Interpreter API)
   tflite_flutter: ^0.12.1
   
   # 3. Audio Feedback
@@ -30,6 +30,9 @@ dependencies:
 
   # 7. Data Visualization (For your Logs/Reports dashboard)
   fl_chart: ^1.2.0
+
+  # 8. Alternative native YOLO pipeline (runtime-comparable with custom mode)
+  ultralytics_yolo: 0.6.13
 
 dev_dependencies:
   flutter_test:

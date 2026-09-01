@@ -3,6 +3,36 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Ultralytics uses LiteRT Next 2.x while tflite_flutter's Dart FFI still
+// opens the classic 1.4.x native library. Keep LiteRT Next on the Java
+// classpath, remove the obsolete Java/GPU artifacts that duplicate its
+// classes, and extract only the classic FFI .so under its original name.
+configurations.configureEach {
+    exclude(group = "com.google.ai.edge.litert", module = "litert-api")
+    exclude(group = "com.google.ai.edge.litert", module = "litert-gpu")
+}
+
+val classicLiteRtAar by configurations.creating
+
+dependencies {
+    add(classicLiteRtAar.name, "com.google.ai.edge.litert:litert:1.4.0@aar") {
+        isTransitive = false
+    }
+}
+
+val classicLiteRtJniDir = layout.buildDirectory
+    .dir("generated/classicLiteRtJni")
+    .get()
+    .asFile
+val extractClassicLiteRtJni by tasks.registering(Sync::class) {
+    from(classicLiteRtAar.map(::zipTree)) {
+        include("jni/**/libtensorflowlite_jni.so")
+        eachFile { path = path.removePrefix("jni/") }
+        includeEmptyDirs = false
+    }
+    into(classicLiteRtJniDir)
+}
+
 android {
     namespace = "com.example.eyecue_flutter"
     compileSdk = flutter.compileSdkVersion
@@ -26,6 +56,12 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    sourceSets.getByName("main").jniLibs.srcDir(classicLiteRtJniDir)
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(extractClassicLiteRtJni)
 }
 
 flutter {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../screens/detection_screen.dart';
+import '../screens/engine_detection_screen.dart';
 import '../screens/help_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/logs_reports_screen.dart';
@@ -24,7 +24,7 @@ class AppShell extends StatefulWidget {
 
   /// Test hook — supply your own page widgets instead of the real screens.
   final List<Widget> Function(BuildContext context, AppShellState shell)?
-      pagesOverride;
+  pagesOverride;
 
   const AppShell({
     super.key,
@@ -90,7 +90,7 @@ class AppShellState extends State<AppShell> {
           onGoToDetection: () => goToTab(1),
         );
       case 1:
-        return DetectionScreen(
+        return EngineDetectionScreen(
           settings: widget.settings,
           tts: widget.tts,
           telemetry: widget.telemetry,
@@ -125,9 +125,7 @@ class AppShellState extends State<AppShell> {
       child: Scaffold(
         body: IndexedStack(
           index: _index,
-          children: [
-            for (var i = 0; i < 4; i++) _ensurePage(i),
-          ],
+          children: [for (var i = 0; i < 4; i++) _ensurePage(i)],
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _index,

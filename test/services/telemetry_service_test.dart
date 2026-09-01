@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
+import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,12 +17,14 @@ void main() {
   });
 
   DetectionInfo detInfo(String label, int classId) {
-    return SpatialAnalysisService.analyze(Detection(
-      classId: classId,
-      label: label,
-      confidence: 0.8,
-      box: const Rect.fromLTWH(0.1, 0.1, 0.2, 0.3),
-    ));
+    return SpatialAnalysisService.analyze(
+      Detection(
+        classId: classId,
+        label: label,
+        confidence: 0.8,
+        box: const Rect.fromLTWH(0.1, 0.1, 0.2, 0.3),
+      ),
+    );
   }
 
   test('session start and duration are tracked', () {
@@ -31,27 +34,61 @@ void main() {
   });
 
   test('records detections and counts high-priority alerts', () {
-    telemetry.recordDetection(detInfo('person', 0), 30);
-    telemetry.recordDetection(detInfo('car', 2), 32);
-    telemetry.recordDetection(detInfo('toothbrush', 79), 31);
+    telemetry.recordDetection(
+      detInfo('person', 0),
+      30,
+      engine: InferenceEngine.custom,
+    );
+    telemetry.recordDetection(
+      detInfo('car', 2),
+      32,
+      engine: InferenceEngine.custom,
+    );
+    telemetry.recordDetection(
+      detInfo('toothbrush', 79),
+      31,
+      engine: InferenceEngine.custom,
+    );
     expect(telemetry.totalDetections, 3);
     expect(telemetry.highPriorityAlerts, 2);
   });
 
   test('computes average latency and FPS from samples', () {
-    telemetry.recordSample(latencyMs: 100, inferenceFps: 10, objectCount: 1);
-    telemetry.recordSample(latencyMs: 200, inferenceFps: 5, objectCount: 2);
+    telemetry.recordSample(
+      latencyMs: 100,
+      inferenceFps: 10,
+      objectCount: 1,
+      engine: InferenceEngine.custom,
+    );
+    telemetry.recordSample(
+      latencyMs: 200,
+      inferenceFps: 5,
+      objectCount: 2,
+      engine: InferenceEngine.custom,
+    );
     expect(telemetry.framesProcessed, 2);
     expect(telemetry.averageLatencyMs, 150);
     expect(telemetry.averageInferenceFps, 7.5);
   });
 
   test('detection frequency buckets per minute', () {
-    telemetry.recordDetection(detInfo('person', 0), 30);
+    telemetry.recordDetection(
+      detInfo('person', 0),
+      30,
+      engine: InferenceEngine.custom,
+    );
     now = now.add(const Duration(seconds: 30));
-    telemetry.recordDetection(detInfo('car', 2), 30);
+    telemetry.recordDetection(
+      detInfo('car', 2),
+      30,
+      engine: InferenceEngine.custom,
+    );
     now = now.add(const Duration(minutes: 1, seconds: 5));
-    telemetry.recordDetection(detInfo('bus', 5), 30);
+    telemetry.recordDetection(
+      detInfo('bus', 5),
+      30,
+      engine: InferenceEngine.custom,
+    );
 
     final buckets = telemetry.detectionFrequencyByMinute();
     expect(buckets, [2, 1]);
@@ -61,5 +98,27 @@ void main() {
     expect(telemetry.totalDetections, 0);
     expect(telemetry.averageLatencyMs, 0);
     expect(telemetry.detectionFrequencyByMinute(), isEmpty);
+  });
+
+  test('keeps engine summaries separate', () {
+    telemetry.recordSample(
+      latencyMs: 150,
+      inferenceFps: 6,
+      objectCount: 0,
+      engine: InferenceEngine.custom,
+    );
+    telemetry.recordSample(
+      latencyMs: 30,
+      inferenceFps: 15,
+      objectCount: 1,
+      engine: InferenceEngine.ultralytics,
+    );
+
+    final custom = telemetry.summaryFor(InferenceEngine.custom);
+    final ultralytics = telemetry.summaryFor(InferenceEngine.ultralytics);
+    expect(custom.averageLatencyMs, 150);
+    expect(custom.averageInferenceFps, 6);
+    expect(ultralytics.averageLatencyMs, 30);
+    expect(ultralytics.averageInferenceFps, 15);
   });
 }

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show DeviceOrientation;
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/box_transform.dart';
+import '../models/app_settings.dart';
 import '../models/detection.dart';
 import '../models/detection_info.dart';
 import '../services/forensic_log.dart';
@@ -279,8 +280,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
     final parts = infos
         .take(4)
-        .map((d) =>
-            '${d.label} on your ${d.positionLabel}, approximately ${d.proximityLabel}')
+        .map(
+          (d) =>
+              '${d.label} on your ${d.positionLabel}, approximately ${d.proximityLabel}',
+        )
         .join('. ');
     await _tts.speak('Quick scan. $parts.', urgent: true);
   }
@@ -334,9 +337,14 @@ class _DetectionScreenState extends State<DetectionScreen> {
         latencyMs: _lastLatencyMs,
         inferenceFps: _averageFps(),
         objectCount: detections.length,
+        engine: InferenceEngine.custom,
       );
       for (final info in _detectionInfo) {
-        _telemetry.recordDetection(info, _lastLatencyMs);
+        _telemetry.recordDetection(
+          info,
+          _lastLatencyMs,
+          engine: InferenceEngine.custom,
+        );
       }
 
       // Audio announcement (cooldown + de-duplication handled inside TtsService).
@@ -363,16 +371,17 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
     if (_frameCount == 1) {
       final planes = image.planes
-          .map((p) => (
-                len: p.bytes.length,
-                rowStride: p.bytesPerRow,
-                pixelStride: p.bytesPerPixel,
-                planeWidth: p.width ?? 0,
-                planeHeight: p.height ?? 0,
-                firstByte: p.bytes.isEmpty ? -1 : p.bytes[0],
-                lastByte:
-                    p.bytes.isEmpty ? -1 : p.bytes[p.bytes.length - 1],
-              ))
+          .map(
+            (p) => (
+              len: p.bytes.length,
+              rowStride: p.bytesPerRow,
+              pixelStride: p.bytesPerPixel,
+              planeWidth: p.width ?? 0,
+              planeHeight: p.height ?? 0,
+              firstByte: p.bytes.isEmpty ? -1 : p.bytes[0],
+              lastByte: p.bytes.isEmpty ? -1 : p.bytes[p.bytes.length - 1],
+            ),
+          )
           .toList();
       ForensicLog.recordCamera(
         formatRaw: (image.format.raw is int) ? image.format.raw as int : -1,
@@ -445,7 +454,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     final uPlane = planes[1].bytes;
     final vPlane = planes.length >= 3 ? planes[2].bytes : planes[1].bytes;
 
-    _inferenceService.processFrame(
+    final dispatched = _inferenceService.processFrame(
       yPlane: yPlane,
       uPlane: uPlane,
       vPlane: vPlane,
@@ -469,6 +478,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
       deviceDegrees: deviceDegrees,
       lensFacing: isFront ? 'front' : 'back',
     );
+    if (!dispatched) {
+      _isInferring = false;
+      _droppedFrameCount++;
+    }
   }
 
   String _inferCameraFormat(CameraImage image) {
@@ -492,13 +505,19 @@ class _DetectionScreenState extends State<DetectionScreen> {
   void _startPerformanceLogger() {
     _perfTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (_recentLatencies.isEmpty) return;
-      final avg = _recentLatencies.reduce((a, b) => a + b) /
-          _recentLatencies.length;
+      final avg =
+          _recentLatencies.reduce((a, b) => a + b) / _recentLatencies.length;
       debugPrint('─────────────────────────────────────────');
       debugPrint('[Performance] 5-second Summary');
-      debugPrint('[Performance]   Camera FPS      : ${_cameraFps.toStringAsFixed(1)}');
-      debugPrint('[Performance]   Inference FPS   : ${(1000.0 / avg).toStringAsFixed(1)}');
-      debugPrint('[Performance]   Avg Latency     : ${avg.toStringAsFixed(1)} ms');
+      debugPrint(
+        '[Performance]   Camera FPS      : ${_cameraFps.toStringAsFixed(1)}',
+      );
+      debugPrint(
+        '[Performance]   Inference FPS   : ${(1000.0 / avg).toStringAsFixed(1)}',
+      );
+      debugPrint(
+        '[Performance]   Avg Latency     : ${avg.toStringAsFixed(1)} ms',
+      );
       debugPrint('[Performance]   Frames Processed: $_processedFrameCount');
       debugPrint('[Performance]   Detection Count : ${_detections.length}');
       debugPrint('─────────────────────────────────────────');
@@ -542,8 +561,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
             // height — never from the detection count — so the camera
             // viewport above stays exactly the same size whether there are
             // 0, 1, or many detections. The content region scrolls internally.
-            final double contentHeight = (constraints.maxHeight * 0.32)
-                .clamp(200.0, 320.0);
+            final double contentHeight = (constraints.maxHeight * 0.32).clamp(
+              200.0,
+              320.0,
+            );
             return Column(
               children: [
                 _buildTopBar(context),
@@ -565,8 +586,8 @@ class _DetectionScreenState extends State<DetectionScreen> {
     final (String label, Color color) = !_detectionActive
         ? ('Stopped', const Color(0xFF455A64))
         : _paused
-            ? ('Paused', const Color(0xFFF57F17))
-            : ('Detecting', const Color(0xFF1B5E20));
+        ? ('Paused', const Color(0xFFF57F17))
+        : ('Detecting', const Color(0xFF1B5E20));
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
@@ -630,7 +651,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
             const SizedBox(height: 16),
             Text(
               'Camera permission is required.',
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
@@ -671,7 +694,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
           children: [
             Text(
               'Detection is off.',
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
             Text(

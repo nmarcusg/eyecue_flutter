@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/app_settings.dart';
 import '../models/detection_info.dart';
 import '../services/telemetry_service.dart';
 import '../widgets/charts.dart';
@@ -38,11 +39,7 @@ class LogsReportsScreen extends StatelessWidget {
           listenable: telemetry,
           builder: (context, _) {
             return const TabBarView(
-              children: [
-                _OverviewTab(),
-                _ChartsTab(),
-                _LogsTab(),
-              ],
+              children: [_OverviewTab(), _ChartsTab(), _LogsTab()],
             );
           },
         ),
@@ -69,25 +66,54 @@ class _OverviewTab extends StatelessWidget {
           children: [
             Text(
               'Real-Time Performance',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                _MetricCard(label: 'Avg FPS', value: _fmt(telemetry.averageInferenceFps)),
+                _MetricCard(
+                  label: 'Avg FPS',
+                  value: _fmt(telemetry.averageInferenceFps),
+                ),
                 const SizedBox(width: 12),
-                _MetricCard(label: 'Avg Latency', value: '${_fmt(telemetry.averageLatencyMs)} ms'),
+                _MetricCard(
+                  label: 'Avg Latency',
+                  value: '${_fmt(telemetry.averageLatencyMs)} ms',
+                ),
               ],
             ),
             const SizedBox(height: 24),
             Text(
-              'Session Summary',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              'Engine Comparison',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
-            _SummaryRow(label: 'Total detections', value: '${telemetry.totalDetections}'),
-            _SummaryRow(label: 'High-priority alerts', value: '${telemetry.highPriorityAlerts}'),
-            _SummaryRow(label: 'Frames processed', value: '${telemetry.framesProcessed}'),
+            for (final engine in InferenceEngine.values)
+              _EngineSummaryCard(summary: telemetry.summaryFor(engine)),
+            const SizedBox(height: 24),
+            Text(
+              'Session Summary',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _SummaryRow(
+              label: 'Total detections',
+              value: '${telemetry.totalDetections}',
+            ),
+            _SummaryRow(
+              label: 'High-priority alerts',
+              value: '${telemetry.highPriorityAlerts}',
+            ),
+            _SummaryRow(
+              label: 'Frames processed',
+              value: '${telemetry.framesProcessed}',
+            ),
             _SummaryRow(
               label: 'Session duration',
               value: '$hours h $minutes m $seconds s',
@@ -134,7 +160,9 @@ class _ChartsTab extends StatelessWidget {
           children: [
             Text(
               'Inference Latency (300 ms benchmark)',
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -144,17 +172,18 @@ class _ChartsTab extends StatelessWidget {
             const SizedBox(height: 24),
             Text(
               'Frames Per Second (15 FPS target)',
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 180,
-              child: FpsChart(samples: telemetry.samples),
-            ),
+            SizedBox(height: 180, child: FpsChart(samples: telemetry.samples)),
             const SizedBox(height: 24),
             Text(
               'Detection Frequency',
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -188,21 +217,63 @@ class _LogsTab extends StatelessWidget {
           itemCount: records.length,
           itemBuilder: (context, index) {
             final r = records[records.length - 1 - index]; // newest first
-            final time = '${r.timestamp.hour.toString().padLeft(2, '0')}:'
+            final time =
+                '${r.timestamp.hour.toString().padLeft(2, '0')}:'
                 '${r.timestamp.minute.toString().padLeft(2, '0')}:'
                 '${r.timestamp.second.toString().padLeft(2, '0')}';
             return ListTile(
               dense: true,
               leading: _PriorityDot(priority: r.priority),
-              title: Text('${r.label} — ${(r.confidence * 100).toStringAsFixed(0)}%'),
+              title: Text(
+                '${r.label} — ${(r.confidence * 100).toStringAsFixed(0)}%',
+              ),
               subtitle: Text(
-                '${r.position} · ${r.latencyMs.toStringAsFixed(0)} ms',
+                '${r.engine.label} · ${r.position} · '
+                '${r.latencyMs.toStringAsFixed(0)} ms',
               ),
               trailing: Text(time),
             );
           },
         );
       },
+    );
+  }
+}
+
+class _EngineSummaryCard extends StatelessWidget {
+  final EngineTelemetrySummary summary;
+
+  const _EngineSummaryCard({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasData = summary.sampleCount > 0;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                summary.engine.label,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Text(
+              hasData
+                  ? '${summary.averageInferenceFps.toStringAsFixed(1)} FPS · '
+                        '${summary.averageLatencyMs.toStringAsFixed(1)} ms · '
+                        '${summary.sampleCount} frames'
+                  : 'No samples',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -243,7 +314,9 @@ class _MetricCard extends StatelessWidget {
           children: [
             Text(
               value,
-              style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
+              style: theme.textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -276,7 +349,9 @@ class _SummaryRow extends StatelessWidget {
           Text(label, style: theme.textTheme.bodyLarge),
           Text(
             value,
-            style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -304,7 +379,9 @@ class _UnavailableNote extends StatelessWidget {
         children: [
           Text(
             title,
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 4),
           Text(body, style: theme.textTheme.bodyMedium),
@@ -317,6 +394,6 @@ class _UnavailableNote extends StatelessWidget {
 /// Helper to reach the TelemetryService from a descendant builder without
 /// passing it through every private widget.
 TelemetryService _of(BuildContext context) =>
-    (context.findAncestorWidgetOfExactType<LogsReportsScreen>()!) .telemetry;
+    (context.findAncestorWidgetOfExactType<LogsReportsScreen>()!).telemetry;
 
 String _fmt(double v) => v.toStringAsFixed(1);

@@ -58,7 +58,8 @@ class InMemorySettingsStore implements SettingsStore {
 ///
 /// A plain `ChangeNotifier` — deliberately no state-management framework.
 class SettingsService extends ChangeNotifier {
-  SettingsService({SettingsStore? store}) : _store = store ?? FileSettingsStore();
+  SettingsService({SettingsStore? store})
+    : _store = store ?? FileSettingsStore();
 
   final SettingsStore _store;
   AppSettings _settings = const AppSettings();
@@ -68,6 +69,7 @@ class SettingsService extends ChangeNotifier {
   bool get autoStartDetection => _settings.autoStartDetection;
   bool get lowPowerMode => _settings.lowPowerMode;
   bool get audioEnabled => _settings.audioEnabled;
+  InferenceEngine get inferenceEngine => _settings.inferenceEngine;
 
   /// Loads persisted settings. Safe to call once at startup; on any failure
   /// (missing/corrupt file) the defaults are kept.
@@ -94,6 +96,9 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setAudioEnabled(bool value) =>
       _update(_settings.copyWith(audioEnabled: value));
+
+  Future<void> setInferenceEngine(InferenceEngine value) =>
+      _update(_settings.copyWith(inferenceEngine: value));
 
   Future<void> _update(AppSettings next) async {
     if (next == _settings) return;

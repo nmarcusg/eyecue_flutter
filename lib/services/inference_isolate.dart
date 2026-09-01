@@ -10,6 +10,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 import '../models/box_transform.dart';
 import '../models/detection.dart';
 import '../models/model_metadata.dart';
+import '../models/model_config.dart';
 import '../models/tensor_rotation.dart';
 import '../models/tflite_flatbuffer.dart';
 import 'forensic_log.dart'; // Structured file-based forensic logging
@@ -32,11 +33,13 @@ class InferenceService {
   /// The asset path that is bundled and loaded at startup. The *reported*
   /// model name is derived from this path at runtime (basename); the runtime
   /// interpreter remains the single source of truth for everything else.
-  static const String _modelAssetPath = 'assets/yolov8n_int8_new.tflite';
+  static const String _modelAssetPath = EyeCueModelConfig.modelAssetPath;
 
-  late Isolate _isolate;
-  late SendPort _sendPort;
-  late ReceivePort _receivePort;
+  Isolate? _isolate;
+  SendPort? _sendPort;
+  ReceivePort? _receivePort;
+  StreamSubscription<dynamic>? _receiveSubscription;
+  bool _disposed = false;
 
   late StreamController<List<Detection>> _resultsController;
   Stream<List<Detection>> get resultsStream => _resultsController.stream;
@@ -90,10 +93,10 @@ class InferenceService {
   /// Confidence threshold applied BEFORE Non-Maximum Suppression. Standard
   /// YOLOv8 inference uses conf 0.25 + NMS IoU 0.45 (the graph already
   /// sigmoids class scores to [0,1]).
-  static const double kConfThreshold = 0.25;
+  static const double kConfThreshold = EyeCueModelConfig.confidenceThreshold;
 
   /// IoU threshold for class-wise Non-Maximum Suppression.
-  static const double kNmsIouThreshold = 0.45;
+  static const double kNmsIouThreshold = EyeCueModelConfig.nmsIouThreshold;
 
   final Completer<void> _ready = Completer<void>();
   Future<void> get _whenReady => _ready.future;
@@ -101,23 +104,38 @@ class InferenceService {
   Future<void> initIsolate() async {
     debugPrint('[Service] InferenceService.initIsolate() — spawning isolate…');
     _resultsController = StreamController.broadcast();
-    _receivePort = ReceivePort();
+    final receivePort = ReceivePort();
+    _receivePort = receivePort;
 
     // Create the forensic run directory (file-based diagnostics).
     final String? runDir = await ForensicLog.init();
+    if (_disposed) {
+      ForensicLog.finalize();
+      receivePort.close();
+      return;
+    }
 
     final modelBytes = await _loadModel();
+    if (_disposed) return;
     final labels = await _loadLabels();
+    if (_disposed) return;
 
-    _isolate = await Isolate.spawn(_isolateEntryPoint, [
-      _receivePort.sendPort,
+    final isolate = await Isolate.spawn(_isolateEntryPoint, [
+      receivePort.sendPort,
       modelBytes,
       labels,
       _modelAssetPath,
       runDir,
     ]);
+    if (_disposed) {
+      isolate.kill(priority: Isolate.immediate);
+      receivePort.close();
+      return;
+    }
+    _isolate = isolate;
 
-    _receivePort.listen((dynamic message) {
+    _receiveSubscription = receivePort.listen((dynamic message) {
+      if (_disposed) return;
       if (message is SendPort) {
         // --- Handshake: isolate is ready ---
         _sendPort = message;
@@ -131,7 +149,9 @@ class InferenceService {
         final detections = (message['detections'] as List).cast<Detection>();
         _lastLatencyMs = (message['latencyMs'] as num).toDouble();
         _lastFrameNumber = message['frameNumber'] as int;
-        _resultsController.add(detections);
+        if (!_resultsController.isClosed) {
+          _resultsController.add(detections);
+        }
       } else if (message is Map<String, dynamic> &&
           message['type'] == 'error') {
         // --- Error from isolate ---
@@ -139,7 +159,9 @@ class InferenceService {
           '[Error] Isolate error: ${message['error']}\n'
           '${message['stackTrace']}',
         );
-        _errorController.add(message['error'].toString());
+        if (!_errorController.isClosed) {
+          _errorController.add(message['error'].toString());
+        }
       } else if (message is Map<String, dynamic> &&
           message['type'] == 'model_loaded') {
         // --- Runtime model metadata from the isolate ---
@@ -171,7 +193,7 @@ class InferenceService {
   Future<List<String>> _loadLabels() async {
     debugPrint('[Model] Loading labels from assets/labels.txt…');
     try {
-      final byteData = await rootBundle.load('assets/labels.txt');
+      final byteData = await rootBundle.load(EyeCueModelConfig.labelsAssetPath);
       final text = String.fromCharCodes(byteData.buffer.asUint8List());
       final labels = text
           .split('\n')
@@ -187,7 +209,7 @@ class InferenceService {
     }
   }
 
-  void processFrame({
+  bool processFrame({
     required Uint8List yPlane,
     required Uint8List uPlane,
     required Uint8List vPlane,
@@ -213,8 +235,10 @@ class InferenceService {
     int deviceDegrees = 0,
     String lensFacing = 'back',
   }) {
+    final sendPort = _sendPort;
+    if (_disposed || sendPort == null) return false;
     _sentFrameCount++;
-    _sendPort.send({
+    sendPort.send({
       'y': yPlane,
       'u': uPlane,
       'v': vPlane,
@@ -238,6 +262,7 @@ class InferenceService {
       'deviceDegrees': deviceDegrees,
       'lensFacing': lensFacing,
     });
+    return true;
   }
 
   /// TEMPORARY (Phase F): decode a known-good RGB asset image, convert it to
@@ -311,11 +336,15 @@ class InferenceService {
   }
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     debugPrint('[Service] InferenceService.dispose() — killing isolate');
     ForensicLog.finalize();
-    _isolate.kill(priority: Isolate.immediate);
-    _resultsController.close();
-    _errorController.close();
+    _receiveSubscription?.cancel();
+    _receivePort?.close();
+    _isolate?.kill(priority: Isolate.immediate);
+    if (!_resultsController.isClosed) _resultsController.close();
+    if (!_errorController.isClosed) _errorController.close();
     _metadataNotifier.dispose();
     debugPrint('[Service] InferenceService disposed');
   }
@@ -636,7 +665,9 @@ class InferenceService {
               xnnpackFallbackAttempted = true;
               stopwatch.stop();
               debugPrint('[Warn] XNNPACK invocation failed: $e');
-              debugPrint('[Warn] Retrying this frame and subsequent frames on CPU');
+              debugPrint(
+                '[Warn] Retrying this frame and subsequent frames on CPU',
+              );
               try {
                 interpreter!.close();
               } catch (closeError) {

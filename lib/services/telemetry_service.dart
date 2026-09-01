@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/app_settings.dart';
 import '../models/detection_info.dart';
 
 /// One recorded detection event (used by the Logs tab and aggregates).
@@ -10,6 +11,7 @@ class TelemetryRecord {
   final double latencyMs;
   final ObjectPriority priority;
   final String position;
+  final InferenceEngine engine;
 
   const TelemetryRecord({
     required this.timestamp,
@@ -18,6 +20,7 @@ class TelemetryRecord {
     required this.latencyMs,
     required this.priority,
     required this.position,
+    required this.engine,
   });
 }
 
@@ -27,12 +30,28 @@ class RuntimeSample {
   final double latencyMs;
   final double inferenceFps;
   final int objectCount;
+  final InferenceEngine engine;
 
   const RuntimeSample({
     required this.timestamp,
     required this.latencyMs,
     required this.inferenceFps,
     required this.objectCount,
+    required this.engine,
+  });
+}
+
+class EngineTelemetrySummary {
+  final InferenceEngine engine;
+  final int sampleCount;
+  final double averageLatencyMs;
+  final double averageInferenceFps;
+
+  const EngineTelemetrySummary({
+    required this.engine,
+    required this.sampleCount,
+    required this.averageLatencyMs,
+    required this.averageInferenceFps,
   });
 }
 
@@ -43,7 +62,8 @@ class RuntimeSample {
 /// compute model accuracy (accuracy/precision/recall/mAP) — that requires
 /// ground-truth labels and is out of scope for a live camera feed.
 class TelemetryService extends ChangeNotifier {
-  TelemetryService({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  TelemetryService({DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
 
   final DateTime Function() _clock;
   final List<TelemetryRecord> _records = [];
@@ -58,8 +78,9 @@ class TelemetryService extends ChangeNotifier {
 
   DateTime? get sessionStart => _sessionStart;
 
-  Duration get sessionDuration =>
-      _sessionStart == null ? Duration.zero : _clock().difference(_sessionStart!);
+  Duration get sessionDuration => _sessionStart == null
+      ? Duration.zero
+      : _clock().difference(_sessionStart!);
 
   List<TelemetryRecord> get records => List.unmodifiable(_records);
   List<RuntimeSample> get samples => List.unmodifiable(_samples);
@@ -73,15 +94,22 @@ class TelemetryService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void recordDetection(DetectionInfo info, double latencyMs) {
-    _records.add(TelemetryRecord(
-      timestamp: _clock(),
-      label: info.label,
-      confidence: info.confidence,
-      latencyMs: latencyMs,
-      priority: info.priority,
-      position: info.positionLabel,
-    ));
+  void recordDetection(
+    DetectionInfo info,
+    double latencyMs, {
+    required InferenceEngine engine,
+  }) {
+    _records.add(
+      TelemetryRecord(
+        timestamp: _clock(),
+        label: info.label,
+        confidence: info.confidence,
+        latencyMs: latencyMs,
+        priority: info.priority,
+        position: info.positionLabel,
+        engine: engine,
+      ),
+    );
     if (_records.length > _maxRecords) {
       _records.removeRange(0, _records.length - _maxRecords);
     }
@@ -95,14 +123,18 @@ class TelemetryService extends ChangeNotifier {
     required double latencyMs,
     required double inferenceFps,
     required int objectCount,
+    required InferenceEngine engine,
   }) {
     _framesProcessed++;
-    _samples.add(RuntimeSample(
-      timestamp: _clock(),
-      latencyMs: latencyMs,
-      inferenceFps: inferenceFps,
-      objectCount: objectCount,
-    ));
+    _samples.add(
+      RuntimeSample(
+        timestamp: _clock(),
+        latencyMs: latencyMs,
+        inferenceFps: inferenceFps,
+        objectCount: objectCount,
+        engine: engine,
+      ),
+    );
     if (_samples.length > _maxSamples) {
       _samples.removeRange(0, _samples.length - _maxSamples);
     }
@@ -125,6 +157,32 @@ class TelemetryService extends ChangeNotifier {
     if (_records.isEmpty) return 0;
     return _records.map((r) => r.confidence).reduce((a, b) => a + b) /
         _records.length;
+  }
+
+  EngineTelemetrySummary summaryFor(InferenceEngine engine) {
+    final engineSamples = _samples.where((sample) => sample.engine == engine);
+    if (engineSamples.isEmpty) {
+      return EngineTelemetrySummary(
+        engine: engine,
+        sampleCount: 0,
+        averageLatencyMs: 0,
+        averageInferenceFps: 0,
+      );
+    }
+    var count = 0;
+    var latencyTotal = 0.0;
+    var fpsTotal = 0.0;
+    for (final sample in engineSamples) {
+      count++;
+      latencyTotal += sample.latencyMs;
+      fpsTotal += sample.inferenceFps;
+    }
+    return EngineTelemetrySummary(
+      engine: engine,
+      sampleCount: count,
+      averageLatencyMs: latencyTotal / count,
+      averageInferenceFps: fpsTotal / count,
+    );
   }
 
   /// Detection counts bucketed per whole minute from the first record —

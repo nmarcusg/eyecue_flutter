@@ -10,8 +10,9 @@ void main() {
   SettingsService settings() => SettingsService(store: InMemorySettingsStore());
 
   group('HomeScreen', () {
-    testWidgets('renders branding, status card, and Go to Live Camera CTA',
-        (tester) async {
+    testWidgets('renders branding, status card, and Go to Live Camera CTA', (
+      tester,
+    ) async {
       var wentToDetection = false;
       await tester.pumpWidget(
         MaterialApp(
@@ -28,7 +29,10 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Go to Live Camera'), findsOneWidget);
-      expect(find.textContaining('Detection is already running'), findsOneWidget);
+      expect(
+        find.textContaining('Detection is already running'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Go to Live Camera'));
       expect(wentToDetection, isTrue);
@@ -38,15 +42,18 @@ void main() {
       final s = settings();
       await s.setAutoStartDetection(false);
       await tester.pumpWidget(
-        MaterialApp(home: HomeScreen(settings: s, onGoToDetection: () {})),
+        MaterialApp(
+          home: HomeScreen(settings: s, onGoToDetection: () {}),
+        ),
       );
       expect(find.textContaining('Auto-Start is off'), findsOneWidget);
     });
   });
 
   group('SettingsScreen', () {
-    testWidgets('shows all thesis settings and the Logs & Reports entry',
-        (tester) async {
+    testWidgets('shows all thesis settings and the Logs & Reports entry', (
+      tester,
+    ) async {
       var openedLogs = false;
       await tester.pumpWidget(
         MaterialApp(
@@ -60,7 +67,11 @@ void main() {
       expect(find.text('Vibration Feedback'), findsOneWidget);
       expect(find.text('Auto-Start on Open'), findsOneWidget);
       expect(find.text('Low Power Mode'), findsOneWidget);
+      expect(find.text('Custom EyeCue'), findsOneWidget);
+      expect(find.text('Ultralytics'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Audio / Voice Guidance'), 300);
       expect(find.text('Audio / Voice Guidance'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('View Logs & Reports'), 300);
       expect(find.text('View Logs & Reports'), findsOneWidget);
 
       await tester.tap(find.text('View Logs & Reports'));
@@ -70,7 +81,9 @@ void main() {
     testWidgets('toggling a setting updates the service', (tester) async {
       final s = settings();
       await tester.pumpWidget(
-        MaterialApp(home: SettingsScreen(settings: s, onOpenLogsReports: () {})),
+        MaterialApp(
+          home: SettingsScreen(settings: s, onOpenLogsReports: () {}),
+        ),
       );
 
       expect(s.lowPowerMode, isFalse);

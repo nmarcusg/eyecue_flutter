@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/app_settings.dart';
 import '../services/settings_service.dart';
 
 /// Settings — runtime configuration for users and facilitators.
@@ -38,16 +39,42 @@ class SettingsScreen extends StatelessWidget {
               SwitchListTile(
                 secondary: const Icon(Icons.autorenew),
                 title: const Text('Auto-Start on Open'),
-                subtitle: const Text('Begin detection automatically when EyeCue opens'),
+                subtitle: const Text(
+                  'Begin detection automatically when EyeCue opens',
+                ),
                 value: settings.autoStartDetection,
                 onChanged: settings.setAutoStartDetection,
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.battery_saver),
                 title: const Text('Low Power Mode'),
-                subtitle: const Text('Reduce inference rate to conserve battery'),
+                subtitle: const Text(
+                  'Reduce inference rate to conserve battery',
+                ),
                 value: settings.lowPowerMode,
                 onChanged: settings.setLowPowerMode,
+              ),
+              const _SectionHeader('Inference Engine'),
+              RadioGroup<InferenceEngine>(
+                groupValue: settings.inferenceEngine,
+                onChanged: (value) {
+                  if (value != null) settings.setInferenceEngine(value);
+                },
+                child: Column(
+                  children: [
+                    for (final engine in InferenceEngine.values)
+                      RadioListTile<InferenceEngine>(
+                        secondary: Icon(
+                          engine == InferenceEngine.custom
+                              ? Icons.code_rounded
+                              : Icons.memory_rounded,
+                        ),
+                        title: Text(engine.label),
+                        subtitle: Text(engine.description),
+                        value: engine,
+                      ),
+                  ],
+                ),
               ),
               const _SectionHeader('Audio'),
               SwitchListTile(
