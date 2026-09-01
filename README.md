@@ -10,7 +10,7 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 **Stable release: v0.2.2** — The documented release contains the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. Its CPU-only, NHWC inference baseline was validated on the Snapdragon 695 test device.
 
-The current repository also contains a **committed but unreleased model/backend candidate**: `yolov8n_int8_new.tflite` has FLOAT32 I/O, an NCHW input (`[1,3,640,640]`), and internally quantized tensors. Preprocessing and tensor rotation now support both NHWC and NCHW layouts, and the isolate attempts XNNPACK with a CPU fallback for recoverable Dart-level failures. After storage was cleared, the exact debug APK installed on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Startup logs confirmed the candidate metadata and an explicit XNNPACK interpreter; a short live run completed 65 logged frames with XNNPACK at a calculated mean of 164.8 ms (median 157.7 ms, range 150.2–377.3 ms), while 5-second summaries reported approximately 5.7–6.2 inference FPS. An earlier short observation returned one `tv` detection at 67.9% confidence and 113.7 ms. These are initial observations, not a formal benchmark, accuracy evaluation, proof of full graph delegation, or proof that the native XNNPACK crash risk is resolved. `flutter analyze` is clean (0 issues) and `flutter test` reports **73 passing tests**.
+The current repository also contains a **committed but unreleased dual-engine candidate**. Settings can select the existing Custom EyeCue pipeline or an `ultralytics_yolo` native path; both use the same `yolov8n_int8_new.tflite`, labels, and thresholds, then feed EyeCue's assistive layer. The debug APK builds, installs, and has processed live camera frames in both modes on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Bidirectional switching also passed after a late-isolate-result lifecycle race was fixed. Short unmatched readings suggest that Ultralytics may be faster, but delegate selection and sustained comparative performance are not yet proven; no winner is claimed before controlled paired runs. `flutter analyze` is clean (0 issues) and `flutter test` reports **77 passing tests**.
 
 For an honest thesis-product completion baseline, see [`docs/thesis-product-status-audit.md`](docs/thesis-product-status-audit.md) and [`docs/project-status.md`](docs/project-status.md).
 
@@ -69,7 +69,7 @@ All project documentation is in the [`docs/`](docs/) directory:
 | Layer | Technology |
 |-------|-----------|
 | Framework | Flutter/Dart |
-| ML Inference | TFLite via `tflite_flutter` |
+| ML Inference | Custom LiteRT via `tflite_flutter`; optional native path via `ultralytics_yolo` |
 | Model | YOLOv8n candidate (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) |
 | Camera | `camera` plugin (YUV420, low resolution) |
 | TTS | `flutter_tts` (wired via `TtsService`) |

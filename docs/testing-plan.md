@@ -2,7 +2,7 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Current suite:** `flutter test` → **73 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts), services (TTS, settings, spatial, telemetry, gesture controller), theme regression, and NHWC/NCHW tensor-rotation tests. The 59-test v0.2.2 suite remains the release baseline; the tables below are the forward-looking plan (not all items are automated yet).
+> **Current suite:** `flutter test` → **77 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts), services (TTS, settings, spatial, telemetry, gesture controller), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the release baseline; the tables below are the forward-looking plan (not all items are automated yet).
 
 ## Unit Testing Strategy
 
@@ -51,6 +51,8 @@
 | Camera permission flow | 🟡 P1 | Full flow: request → grant → initialize; request → deny → fallback UI |
 | Isolate lifecycle | 🟡 P1 | Spawn at startup, survive multiple inferences, dispose on app exit |
 | Model swap | 🟢 P2 | Dynamic tensor shape query handles different model shapes |
+| Engine switch | 🟡 P0 | One-device bidirectional smoke pass completed after fixing a late-result disposal race; repeated/rotated/background lifecycle coverage remains |
+| Ultralytics native path | 🟡 P0 | On-device camera → native preprocessing/inference/NMS → EyeCue adapter/cards ran on Snapdragon 695; controlled TTS/telemetry/delegate validation remains |
 
 ## Manual Testing Checklist
 
@@ -61,6 +63,8 @@
 - [ ] Preview fills screen correctly on different aspect ratios
 
 ### Inference
+- [x] Both engine modes load the same model and thresholds — shared configuration plus APK/device smoke verification
+- [ ] Switching engines does not leave the camera occupied or duplicate speech
 - [ ] Detection FPS meets or exceeds target on test device
 - [ ] Inference does not cause camera preview hitching
 - [ ] Detections are reasonably accurate (qualitative assessment)
@@ -87,6 +91,7 @@
 ## Benchmark Plan
 
 See [`benchmark-results.md`](benchmark-results.md) for the recording template.
+For the two selectable runtime modes, follow the paired protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md).
 
 ### Required Benchmarks
 

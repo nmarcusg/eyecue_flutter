@@ -1,6 +1,6 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-09-01 (candidate device retry)
+> **Last Updated:** 2026-09-01 (dual-engine device smoke test)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
 ## Current Unreleased Candidate (2026-09-01)
@@ -11,9 +11,12 @@ sections below remain historical release records.
 - ✅ Added [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite) to the asset bundle. Direct inspection found FLOAT32 runtime input/output, input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and internal INT8 tensors; runtime classification is *Weight-Quantized*, not full integer I/O.
 - ✅ Updated [`inference_isolate.dart`](../lib/services/inference_isolate.dart) to select NHWC or NCHW from runtime shape metadata, write the matching YUV→RGB layout, and use [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) for layout-aware rotation/mirroring.
 - 🟡 Added an explicit XNNPACK attempt with delegate lifetime retention, recoverable setup/invocation CPU fallback, and backend logging. The exact debug APK now installs on the Snapdragon 695 target and has initial short-run evidence: 65 completed live frames were labelled `XNNPACK`; the calculated latency mean was 164.8 ms (median 157.7 ms, range 150.2–377.3 ms), and app summaries reported approximately 5.7–6.2 inference FPS. The historical native SIGSEGV remains unresolved because a native fault cannot be caught by Dart.
-- ✅ Added 14 tensor-rotation unit tests; the full suite is now **73 passing** and `flutter analyze` reports **0 issues**.
+- ✅ Added 14 tensor-rotation unit tests plus engine-setting, per-engine telemetry, and Ultralytics-adapter coverage; the full suite is now **77 passing** and `flutter analyze` reports **0 issues**.
 - ✅ Extended the flatbuffer validator to cover the new model and verified the generated debug APK contains it.
 - ⚠️ The exact candidate APK installed after storage was cleared. Startup logs confirmed the NCHW/FLOAT32 model metadata and successful explicit XNNPACK interpreter creation. The controlled short run produced no detections across its 65 logged frames, while a separate earlier observation returned one `tv` at 67.9% confidence and 113.7 ms. These are observational results only; formal benchmark, accuracy, thermal, memory, and long-duration stability evidence remains pending.
+- ✅ Added persisted **Custom EyeCue** and **Ultralytics** modes using one model/labels/threshold configuration, with native results adapted into EyeCue's existing spatial, priority, TTS, gesture, and telemetry layers. Logs & Reports separates the two engines.
+- ✅ Resolved the Android classic LiteRT/LiteRT Next native-runtime packaging conflict. The debug APK builds with both runtime families and installed on the arm64 Snapdragon 695 target.
+- 🟡 Both engines processed live camera frames on that device. Post-fix switching passed in both directions after correcting a late Custom-isolate result that could write to a closed stream during Custom→Ultralytics disposal. Controlled paired benchmarking, wide-device coverage, actual delegate confirmation, and the Ultralytics licence decision remain open.
 
 ## v0.2.2 — UI Layout Fixes (2026-08-16)
 

@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-09-01 (14th session) — Dual Inference Modes and Device Smoke Test
+
+### Objective
+- Add two selectable test modes—Custom EyeCue and Ultralytics—without removing EyeCue's existing pipeline, then verify both with controlled inputs and document how to compare them fairly.
+
+### Completed
+- Added a persisted engine selector with Custom as the compatibility default and centralized the shared model, labels, confidence threshold, and IoU threshold.
+- Added the Ultralytics native detection screen and a result adapter so native detections continue through EyeCue's spatial/priority, object-card, warning, TTS, haptic, gesture, and telemetry layers.
+- Added separate per-engine telemetry summaries and focused tests for setting persistence, telemetry partitioning, and result adaptation.
+- Added an Android packaging bridge that keeps LiteRT Next for Ultralytics and extracts the classic LiteRT FFI library needed by the existing Custom interpreter.
+- During the first live Custom→Ultralytics switch, found a late-isolate-result race that attempted to add to a closed stream. Hardened isolate disposal and frame acceptance so late messages are ignored and the UI busy gate is released safely.
+
+### Verified
+- `flutter analyze`: 0 issues. `flutter test`: 77 passing. Flatbuffer and PNG validators: passing.
+- `flutter build apk --debug`: passing. APK inspection found the shared model/labels plus both native runtime families for arm64-v8a, armeabi-v7a, and x86_64.
+- Installed the fixed build on `2201116SG` (Snapdragon 695, Android 13/API 33, arm64). Both engines processed live camera frames; Custom rendered labelled detections and Ultralytics fed native results into EyeCue's labelled assistive UI.
+- Post-fix Custom→Ultralytics and Ultralytics→Custom switches completed without recurrence of the closed-stream failure in captured Flutter logs. Custom remained the persisted default after testing.
+- Short unmatched observations placed Ultralytics around 6.1–9.6 FPS with 86.1–148.1 ms momentary inference readings; the final thermally warm Custom run reported about 3.5–3.8 FPS and 261.0–289.4 ms average latency. These are smoke-test readings, not comparative benchmark results.
+
+### Decisions / Limitations
+- Keep Custom as the default until repeated controlled runs and a representative device matrix establish sustained performance and compatibility.
+- Do not claim GPU execution: Ultralytics requested GPU with CPU fallback, but the actual selected delegate was not confirmed.
+- Resolve the AGPL-3.0/commercial-licence choice before Play distribution. Also resolve the native overlay's numeric fallback label for this metadata-light model; EyeCue's own card/TTS label mapping is correct.
+
+### Next Session
+- Run the paired three-run, five-minute protocol with alternating order, controlled thermal state, battery/temperature/memory capture, qualitative detection checks, and lifecycle/rotation tests.
+- Expand to representative low-, mid-, and high-tier Android devices before changing the default engine.
+
+---
+
 ## 2026-09-01 (13th session) — Target Device Candidate Retry
 
 ### Objective

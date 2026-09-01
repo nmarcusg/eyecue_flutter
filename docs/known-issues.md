@@ -5,6 +5,13 @@
 
 ## Current Blockers
 
+### 🔴 Dual-Engine Benchmark, Compatibility, and Licence Validation (Critical)
+
+- **Description:** The selector, adapter, per-engine telemetry, Android packaging bridge, and basic device runtime are implemented. The fixed debug APK now installs and both engines process live camera frames on the Snapdragon 695/API 33 target; switching in both directions passed after correcting a lifecycle race. A controlled benchmark and broad device matrix have not been run.
+- **Impact:** The smoke test is enough to establish initial functionality on one phone, but not comparative sustained FPS, detection quality, orientation coverage, thermal/battery behavior, memory use, or wide compatibility. `ultralytics_yolo` 0.6.13 is also AGPL-3.0, so public Play distribution requires compliance with that licence or a suitable commercial licence.
+- **Planned Fix:** Complete the paired protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md), cover representative Android/API/chipset classes, resolve the native numeric-label presentation issue, confirm delegate selection, and resolve the distribution-licence choice before release.
+- **Status:** **Build and one-device smoke test passed; controlled performance, compatibility, and distribution validation pending.**
+
 ### 🔴 XNNPACK SIGSEGV / Candidate Device Validation (Critical)
 
 - **Description:** The stable v0.2.2 path keeps XNNPACK disabled because the older YOLOv8n model previously caused a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU). The current committed but unreleased candidate attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, whose runtime I/O is FLOAT32 with an NCHW input.
@@ -23,22 +30,26 @@
 
 ## Resolved (previously tracked here)
 
+- ✅ **Engine-switch closed-stream race** — RESOLVED in the unreleased candidate. A late Custom-isolate result could arrive after switching to Ultralytics and attempt to write to a closed result stream. Disposal now marks the service inactive before cancelling/closing resources, ignores late messages, and releases the UI busy gate when a frame is rejected. Both switch directions passed a post-fix device smoke test.
 - ✅ **TTS integration** — RESOLVED v0.2.0. `flutter_tts` is now wired via [`tts_service.dart`](../lib/services/tts_service.dart) (cooldown, de-duplication, urgent bypass, mute, repeat-last). No longer a blocker.
 - ✅ **Permission-denied UI** — RESOLVED v0.2.0. [`detection_screen.dart`](../lib/screens/detection_screen.dart) shows a camera-denied state with retry / open-settings. No longer a blocker.
-- ✅ **Boilerplate counter-app test** — RESOLVED v0.2.0. [`test/widget_test.dart`](../test/widget_test.dart) now contains real Home/Settings/Help screen smoke tests; the full suite is 73 passing as of 2026-09-01.
+- ✅ **Boilerplate counter-app test** — RESOLVED v0.2.0. [`test/widget_test.dart`](../test/widget_test.dart) now contains real Home/Settings/Help screen smoke tests; the full suite is 77 passing as of 2026-09-01.
 
 ## Technical Debt
 
 | Priority | Item | Location |
 |----------|------|----------|
 | 🟡 P1 | `flutter_riverpod` is the only unused dependency (deliberately — state uses `ChangeNotifier` + `setState`); `fl_chart`, `path_provider`, and `flutter_tts` are now used | [`pubspec.yaml:23`](../pubspec.yaml:23) |
-| 🟡 P2 | Hardcoded thresholds, model paths, labels path | Multiple locations |
+| ✅ | Model path, labels path, confidence threshold, and IoU threshold duplicated across engines | Resolved by [`model_config.dart`](../lib/models/model_config.dart) |
+| 🟡 P1 | `flutter_tts` and `ultralytics_yolo` still apply the legacy Kotlin Gradle plugin mechanism; current builds pass, but a future Flutter toolchain will reject it | Upstream plugins / Android build |
+| 🟡 P1 | Dual LiteRT packaging bridge must be revalidated whenever either inference package or the Android toolchain changes | [`build.gradle.kts`](../android/app/build.gradle.kts) |
+| 🟡 P1 | Ultralytics' native overlay shows numeric fallback labels for the current metadata-light model; EyeCue's own adapted cards/TTS resolve labels correctly from `labels.txt` | Model metadata / Ultralytics overlay |
 | 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` | [`detection_screen.dart`](../lib/screens/detection_screen.dart) (frame dispatch) |
 | 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
 | 🟢 P3 | Package name is `com.example.eyecue_flutter` instead of specified `com.eyecue` | [`build.gradle.kts:7`](../android/app/build.gradle.kts:7) |
 | 🟢 P3 | `minSdkVersion` relies on the Flutter default (24) — thesis targets Android 10 / API 29; not set explicitly | [`build.gradle.kts:18`](../android/app/build.gradle.kts:18) |
 | 🟢 P3 | Release build still signs with the debug keystore | [`build.gradle.kts`](../android/app/build.gradle.kts) |
-| 🟢 P3 | Detection-sensitivity is a hardcoded constant (0.25) — not yet user-configurable | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
+| 🟢 P3 | Detection sensitivity remains fixed at 0.25 (now centralized for both engines) — not yet user-configurable | [`model_config.dart`](../lib/models/model_config.dart) |
 
 ## Platform-Specific Limitations
 

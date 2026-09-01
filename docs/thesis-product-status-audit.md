@@ -178,7 +178,7 @@ Verified directly from the code (not from docs).
 
 ### 3.7 Dependencies ([`pubspec.yaml`](../pubspec.yaml))
 
-Used: `camera`, `tflite_flutter`, `permission_handler`, `path_provider` (settings + forensic log), `flutter_tts` (TTS service), `fl_chart` (charts). **Declared but unused:** `flutter_riverpod` only (deliberately — state uses `ChangeNotifier` + `setState`).
+Used: `camera`, `tflite_flutter`, `ultralytics_yolo`, `permission_handler`, `path_provider` (settings + forensic log), `flutter_tts` (TTS service), `fl_chart` (charts). **Declared but unused:** `flutter_riverpod` only (deliberately — state uses `ChangeNotifier` + `setState`).
 
 ### 3.8 Tests
 
@@ -199,7 +199,7 @@ Legend: ✅ COMPLETE · 🟡 PARTIAL · ❌ MISSING · ⚪ OUTSIDE APP / RESEARC
 | Thesis requirement | Current Flutter equivalent | Relevant file(s) | Status | Evidence | Remaining work | Priority |
 |---|---|---|---|---|---|---|
 | Real-time object detection (YOLOv8) | Persistent-isolate inference, argmax + class-wise NMS | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ✅ COMPLETE | `_parseYolov8Output` (argmax, conf 0.25, NMS IoU 0.45); on-device portrait detections 0.91 | None functional | — |
-| TensorFlow Lite on-device | `tflite_flutter` 0.12.1, `Interpreter.fromBuffer`, raw `ByteBuffer` I/O | [`pubspec.yaml`](../pubspec.yaml), [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ✅ COMPLETE | Verified usage in isolate entry point | None | — |
+| LiteRT on-device | `tflite_flutter` 0.12.1 classic `Interpreter.fromBuffer` with raw `ByteBuffer` I/O for Custom; `ultralytics_yolo` 0.6.13 LiteRT Next path for Ultralytics | [`pubspec.yaml`](../pubspec.yaml), [`inference_isolate.dart`](../lib/services/inference_isolate.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | 🟡 IMPLEMENTED / DEVICE COMPARISON PENDING | Static/test/build checks plus controlled device protocol | Complete paired device runs | [`dual-inference-engine-test.md`](dual-inference-engine-test.md) |
 | Smartphone camera | `camera` 0.12, `ResolutionPreset.low`, YUV420, `startImageStream` | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | ✅ COMPLETE | `_setupCamera`, frame dispatch | None | — |
 | On-device inference (no network) | Whole pipeline is local | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ✅ COMPLETE | No network deps | None | — |
 | Real-time processing | Busy-gate frame dropping; CPU-only (XNNPACK disabled — SIGSEGV) | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | 🟡 PARTIAL | Frame-dropping works; throughput capped by CPU inference; informal on-device telemetry (Avg FPS ~2–3, Avg Latency ~600 ms on low-end device) but no formal report | XNNPACK/NNAPI/GPU investigation; formal FPS benchmark; metric redefinition | 🔴 High |

@@ -151,7 +151,7 @@ eyecue_flutter/
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `camera` | ^0.12.0+1 | Camera access + YUV420 image stream |
-| `tflite_flutter` | ^0.12.1 | TFLite inference via FFI |
+| `tflite_flutter` | ^0.12.1 | Classic Interpreter FFI used only by Custom EyeCue; Android packaging extracts its 1.4.0 native library beside Ultralytics' LiteRT Next runtime without placing duplicate legacy Java APIs on the classpath |
 | `flutter_tts` | ^4.2.0 | Text-to-speech audio feedback |
 | `flutter_riverpod` | ^3.3.2 | State management (declared, deliberately unused — state uses `ChangeNotifier` + `setState`) |
 | `permission_handler` | ^12.0.3 | Camera permission requests |

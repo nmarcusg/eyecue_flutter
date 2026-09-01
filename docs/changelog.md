@@ -10,19 +10,28 @@
 ### Added
 - Added [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite), a structurally validated YOLOv8n candidate with FLOAT32 runtime I/O, input shape `[1,3,640,640]` (NCHW), output shape `[1,84,8400]`, and internally quantized tensors.
 - Added [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) with pure NHWC (interleaved) and NCHW (planar) square-tensor rotation/mirroring support, plus 14 focused unit tests.
+- Added a persisted **Custom EyeCue / Ultralytics** selector in Settings. Custom retains the existing isolate/YUV/orientation/parser/NMS pipeline; Ultralytics uses `ultralytics_yolo` 0.6.13 for the native camera/inference path and maps results back into EyeCue's spatial, TTS, gesture, and telemetry layers.
+- Added per-engine summaries to Logs & Reports and the controlled comparison protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md).
 
 ### Changed
 - [`inference_isolate.dart`](../lib/services/inference_isolate.dart) now selects input layout from runtime metadata, writes NCHW or NHWC preprocessing data, and attempts explicit XNNPACK for the candidate. The delegate is retained for the interpreter lifetime; recoverable setup/invocation failures retry on a four-thread CPU interpreter.
 - [`validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart) now validates the new model's verified tensor counts: 2 FLOAT32, 90 INT32, and 356 INT8 tensors.
+- Model asset path, label asset path, confidence threshold, and IoU threshold now come from one shared configuration so the two modes use controlled inputs.
+- Added a narrow Android packaging bridge for the two LiteRT generations: Ultralytics retains the LiteRT Next Java/runtime artifact, duplicate legacy Java/GPU artifacts are excluded, and only `tflite_flutter`'s classic 1.4.0 FFI library is extracted beside it. EyeCue's existing Custom `Interpreter` code is unchanged.
 
 ### Verified
-- `flutter analyze`: 0 issues. `flutter test`: **73 passing**.
-- The flatbuffer and PNG validators pass, and the generated debug APK contains the new model asset.
+- `flutter analyze`: 0 issues. `flutter test`: **77 passing**.
+- The flatbuffer and PNG validators pass. `flutter build apk --debug` succeeds; APK inspection confirms the shared model/labels plus classic `libtensorflowlite_jni.so` and LiteRT Next `libLiteRt.so` for the packaged Android ABIs.
 - After device storage was cleared, the exact debug APK installed on the API 33 Snapdragon 695 test phone (`2201116SG`). Startup confirmed the NCHW/FLOAT32 candidate and successful explicit XNNPACK interpreter creation. A short live run completed 65 XNNPACK-labelled frames with calculated mean latency 164.8 ms (median 157.7 ms; range 150.2–377.3 ms); app summaries reported approximately 5.7–6.2 inference FPS. A separate earlier observation returned one `tv` detection at 67.9% confidence and 113.7 ms. No candidate-process fatal signal was observed in the captured logs.
+- After the first dual-engine replacement install was cancelled by Android with `INSTALL_FAILED_USER_RESTRICTED`, a retry installed the fixed build successfully. Both Custom and Ultralytics processed live camera frames on the target; Custom rendered labelled boxes and Ultralytics fed native results into EyeCue's labelled card/assistive layer.
+- The first Custom→Ultralytics switch exposed a late-isolate-result race (`Cannot add new events after calling close`). Isolate disposal is now guarded and frame dispatch reports whether work was accepted, allowing the UI busy gate to release safely. Post-fix switches in both directions completed without recurrence in the captured Flutter logs.
+- Short interactive readings suggested that Ultralytics may be faster on this device, but they were not controlled: momentary Ultralytics readings were about 6.1–9.6 FPS and 86.1–148.1 ms inference, while the final warm Custom run reported about 3.5–3.8 FPS and 261.0–289.4 ms average latency. No winner is claimed until the paired protocol is run.
 
 ### Notes
 - This entry is intentionally unreleased. The stable v0.2.2 CPU/NHWC baseline and its informal 2.1 FPS / 606 ms observations remain the only release-baseline evidence; the candidate values are short app-telemetry observations, not formal benchmark results.
 - The historical Snapdragon 695 XNNPACK SIGSEGV remains unresolved: native faults are not catchable by Dart, even though recoverable Dart-level failures now have a CPU fallback.
+- The Ultralytics smoke test requested GPU with CPU fallback, but did not confirm the delegate actually used. Its native overlay also fell back to a numeric class label for the current model; EyeCue's adapted card resolved the correct COCO label from `labels.txt`.
+- `ultralytics_yolo` 0.6.13 is AGPL-3.0; Play distribution requires compliance with its open-source terms or a suitable commercial licence. Flutter also emits a forward-compatibility warning for the legacy Kotlin plugin application used by `flutter_tts` and `ultralytics_yolo`.
 
 ---
 
