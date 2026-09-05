@@ -77,7 +77,7 @@ This document records important engineering decisions made during the developmen
   - Performance ceiling: no hardware acceleration
   - See [`known-issues.md`](known-issues.md) for current blocker status
   - Future: benchmark raw model latency, test NNAPI/GPU delegates
-- **Current status (2026-09-01):** This remains the v0.2.2 release decision, not proof that the crash is fixed. The committed but unreleased candidate attempts explicit XNNPACK for `yolov8n_int8_new.tflite`, retains the delegate for the interpreter lifetime, and retries on CPU after recoverable Dart-level setup or invocation failures. The exact APK has now installed and completed an initial short live run on the target phone; a native SIGSEGV remains uncatchable, so longer controlled stability validation is still required.
+- **Current status (2026-09-05):** This remains the v0.2.2 release decision, not proof that the historical crash is fixed. The committed but unreleased runtime artifact `yolov8n_int8_new_metadata.tflite` is generated from `yolov8n_int8_new.tflite`; it attempts explicit XNNPACK, retains the delegate for the interpreter lifetime, and retries on CPU after recoverable Dart-level setup or invocation failures. The exact APK installed and completed an initial short live run on the target phone; a native SIGSEGV remains uncatchable, so longer controlled stability validation is still required.
 
 ## Decision 6: Stream-Based Results
 
@@ -128,13 +128,13 @@ This document records important engineering decisions made during the developmen
 
 ## Decision 10: Unreleased NCHW/XNNPACK Candidate Must Not Replace Validation Evidence
 
-- **Decision:** Keep `yolov8n_int8_new.tflite` as the current unreleased model candidate and report it separately from the validated v0.2.2 CPU/NHWC baseline until controlled comparative, accuracy, and stability validation is complete.
+- **Decision:** Keep the metadata-enriched runtime artifact `yolov8n_int8_new_metadata.tflite`, generated from the byte-identical base graph `yolov8n_int8_new.tflite`, as the current unreleased model candidate and report it separately from the validated v0.2.2 CPU/NHWC baseline until controlled comparative, accuracy, and stability validation is complete.
 - **Date:** 2026-09-01
 - **Reason:** Direct flatbuffer/runtime inspection confirms a FLOAT32-I/O NCHW model with internally quantized tensors, and static tests validate layout conversion and rotation. The exact candidate APK now installs on the API 33 phone and a short run confirms startup metadata, explicit XNNPACK setup, and live frame completion. That observation is not sufficient for trustworthy comparative performance, accuracy, long-duration stability, or full-delegation conclusions.
 - **Consequences:**
   - Documentation distinguishes release behavior from the current committed but unreleased candidate.
   - No XNNPACK speedup, model-quality improvement, full graph delegation, or crash resolution is claimed.
-  - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and isolate restart recovery remain open.
+  - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and long-duration device validation remain open. Bounded Custom-worker restart recovery is implemented and covered by deterministic lifecycle tests.
 
 ## Decision 7: Flutter over React Native
 

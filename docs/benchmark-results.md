@@ -23,8 +23,10 @@ These are **informal historical baseline** figures from the app's runtime teleme
 
 Captured after device storage was cleared and the exact debug APK was installed on
 the target `2201116SG` (Snapdragon 695, Android 13/API 33, `android-arm64`). The
-Detection screen loaded `yolov8n_int8_new.tflite`, reported the expected NCHW
-FLOAT32 I/O, and created an explicit four-thread XNNPACK interpreter.
+Detection screen loaded the metadata-enriched runtime artifact
+`yolov8n_int8_new_metadata.tflite`, generated from the byte-identical
+`yolov8n_int8_new.tflite` base graph, reported the expected NCHW FLOAT32 I/O, and
+created an explicit four-thread XNNPACK interpreter.
 
 | Observation | Result |
 |-------------|--------|

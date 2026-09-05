@@ -1,7 +1,7 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-09-01 (dual-engine test candidate)
-> See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
+> **Last Updated:** 2026-09-05 (app-only lifecycle validation)
+> See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned app task areas and their acceptance criteria), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
 > **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The repository contains committed but unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
 
@@ -22,20 +22,20 @@ The app is no longer a single developer camera screen. It now has the thesis-ali
 - **Help:** how it works, gestures, confirmation feedback, Android usage tips.
 - **Logs & Reports:** Overview / Charts / Logs with `fl_chart`; accuracy/precision/recall/mAP explicitly shown as unavailable (require ground truth).
 - **Spatial/priority layer:** left/center/right + priority tiers + approximate proximity band ([`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart)) — kept separate from the inference pipeline.
-- Stable v0.2.2 validation remains the historical **59-test** on-device baseline. The current repository has **77 passing tests** and `flutter analyze`: **0 issues**.
+- Stable v0.2.2 validation remains the historical **59-test** on-device baseline. The current repository has **127 passing tests** and `flutter analyze`: **0 issues**. The app-only lifecycle, accessibility, metadata-safety, and export additions are covered by deterministic tests.
 
-## Current Unreleased Candidate (2026-09-01)
+## Current Unreleased Candidate (2026-09-05)
 
 The following changes are present in the repository but are not a new release yet:
 
 - **Two selectable inference modes:** Settings now persists either **Custom EyeCue** (the existing Dart/isolate camera, conversion, resize, orientation, parser, and class-wise NMS path) or **Ultralytics** (`ultralytics_yolo` 0.6.13, native camera/inference/post-processing path). [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) switches implementations while keeping the surrounding application unchanged.
-- **Controlled inputs:** both modes load the same [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite), COCO label file, confidence threshold `0.25`, and IoU threshold `0.45`. [`model_config.dart`](../lib/models/model_config.dart) is the shared source of those values.
+- **Controlled inputs:** both modes load the same metadata-enriched runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite), generated from the byte-identical base graph [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite), plus the authoritative COCO label file. The active confidence threshold defaults to `0.25`, is persisted through settings, and is applied by both engines; IoU remains fixed at `0.45`. [`model_config.dart`](../lib/models/model_config.dart) is the shared source of the artifact paths and bounds.
 - **Comparable app outputs:** [`ultralytics_detection_adapter.dart`](../lib/services/ultralytics_detection_adapter.dart) maps native results into EyeCue's existing `Detection` model. Spatial descriptions, priorities, warnings, TTS, gestures, and telemetry therefore remain available in both modes. Logs & Reports now shows separate Custom and Ultralytics summaries instead of mixing their samples.
-- **Model:** [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite) has input `[1,3,640,640]` (NCHW) and output `[1,84,8400]`; both runtime I/O tensors are FLOAT32 while the flatbuffer contains internally quantized tensors. [`ModelMetadata`](../lib/models/model_metadata.dart) classifies it as *Weight-Quantized* from inspection rather than from the filename.
+- **Model:** the runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite) preserves the base graph [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite): input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and FLOAT32 runtime I/O with internally quantized tensors. [`ModelMetadata`](../lib/models/model_metadata.dart) classifies it as *Weight-Quantized* from inspection rather than from the filename.
 - **Preprocessing:** the inference path now chooses NHWC or NCHW from runtime input shape. [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) provides pure, unit-tested rotation/mirror logic for both layouts.
 - **Backend:** the isolate attempts explicit XNNPACK, retains the delegate for the interpreter lifetime, and retries on CPU for recoverable Dart-level setup/invocation failures. A native SIGSEGV cannot be caught by Dart, so the historical Snapdragon 695 XNNPACK crash is not considered resolved.
-- **Static/build verification:** `flutter analyze` passes; `flutter test` passes with 77 tests; the flatbuffer and PNG validators pass; and the debug APK builds with both native runtime families plus the shared model/labels. APK inspection confirmed both runtime families for the packaged ABIs. See [`dual-inference-engine-test.md`](dual-inference-engine-test.md).
-- **Device validation:** the fixed dual-engine debug APK installed successfully on the API 33 Snapdragon 695 target (`2201116SG`, arm64). Both modes processed live camera frames and rendered EyeCue outputs. The first Custom→Ultralytics switch revealed a late-result/closed-stream race; lifecycle guards and frame-acceptance handling were added, and post-fix switching succeeded in both directions without recurrence in captured Flutter logs. The app was left with Custom persisted as the default.
+- **Static/build verification:** `flutter analyze` passes; `flutter test` passes with 127 tests; the flatbuffer and PNG validators pass; the metadata packaging check passes; and the debug APK builds with both native runtime families plus the shared model/labels. APK inspection confirmed both runtime families for the packaged ABIs. See [`dual-inference-engine-test.md`](dual-inference-engine-test.md).
+- **Device validation:** the fixed dual-engine debug APK installed successfully on the API 33 Snapdragon 695 target (`2201116SG`, arm64). Both modes processed live camera frames and rendered EyeCue outputs. The first Custom→Ultralytics switch revealed a late-result/closed-stream race; lifecycle guards and frame-acceptance handling were added, and post-fix switching succeeded in both directions without recurrence in captured Flutter logs. Fresh settings now default to Ultralytics; an explicitly persisted Custom preference remains Custom, and temporary fallback does not rewrite that preference.
 - **Short performance observations:** momentary Ultralytics screen readings were approximately 6.1–9.6 FPS and 86.1–148.1 ms inference (111.4–175.9 ms native total). The final thermally warm Custom reverse-switch run reported approximately 3.5–3.8 FPS and 261.0–289.4 ms average latency, while an earlier cooler Custom candidate run reported 5.7–6.2 FPS and a calculated 164.8 ms mean. These unmatched observations are diagnostic only. Ultralytics' GPU request was not confirmed as the delegate actually used.
 
 This candidate must remain labelled **unreleased and initially device-observed**. The smoke tests are not a formal benchmark, accuracy evaluation, thermal/memory test, long-duration stability test, broad compatibility result, or proof of delegate selection. The controlled paired comparison is still required, and the native SIGSEGV risk remains unresolved.
@@ -53,9 +53,9 @@ This candidate must remain labelled **unreleased and initially device-observed**
 | Spatial position (left/center/right) + priority classification | ✅ Implemented (heuristic proximity band) (v0.2.0) |
 | Runtime telemetry + charts (latency/FPS/frequency) | ✅ Implemented (v0.2.0) |
 | Persisted Custom/Ultralytics test selector + per-engine reports | ✅ Implemented (unreleased candidate) |
-| Error handling in isolate | 🟡 Partial — setup/invocation CPU fallback and error propagation exist; fatal isolate restart recovery is missing |
+| Error handling in isolate | ✅ Implemented — typed errors, generation filtering, bounded worker recovery, and terminal failure state |
 | Permission-denied UI | ✅ Implemented (v0.2.0 — camera-denied screen with retry/open-settings) |
-| Isolate restart recovery | ❌ Not started |
+| Isolate restart recovery | ✅ Implemented — injectable coordinator, immediate/delayed bounded retries, stale-event guards, healthy-budget reset, and disposal safety |
 | Orientation re-validation (back landscape + front camera) | 🟡 In progress — stable NHWC baseline portrait/static verified; candidate NCHW has an initial short portrait run, while landscape/front-camera device runs remain pending |
 
 ## Current Blocker
@@ -70,7 +70,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 2. **Re-validate orientation on-device** — candidate NCHW portrait/landscape and front-camera runs, plus the deferred stable-baseline cases.
 3. **Run the controlled dual-engine benchmark** — compare Custom EyeCue and Ultralytics on the same device, model, scene, settings, duration, and thermal starting state using [`dual-inference-engine-test.md`](dual-inference-engine-test.md); do not infer performance from static inspection or a short observational run.
 4. **Complete the v0.2.x UI validation** — gestures, TTS, mute toggle, settings persistence, and Logs & Reports charts.
-5. **Implement isolate restart recovery** and remaining research-evaluation work (see the audit's phases).
+5. **Complete repository-owned release preparation** — confirm Android identity/signing decisions, then validate release artifacts; research evaluation remains intentionally outside this app-only implementation.
 
 ## High-Priority Tasks
 
@@ -78,10 +78,10 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 |---|------|----------|
 | 1 | On-device validation of gestures + TTS + settings persistence | 🔴 Critical |
 | 2 | ~~Implement TTS audio feedback~~ | ✅ Complete (v0.2.0) |
-| 3 | ~~Add permission-denied and error UI states~~ | 🟡 Partial — permission UI done; isolate restart recovery remaining |
+| 3 | ~~Add permission-denied and error UI states~~ | ✅ Complete — permission UI plus typed runtime/recovery states |
 | 4 | Extend XNNPACK candidate validation safely and retain a working CPU fallback | 🔴 Critical |
 | 5 | ~~Implement thesis gesture controls~~ | ✅ Complete (v0.2.0) |
-| 6 | Isolate restart recovery | 🔴 High |
+| 6 | ~~Isolate restart recovery~~ | ✅ Complete — bounded, generation-safe Custom-worker lifecycle |
 | 7 | Orientation re-validation (back landscape + front camera) | 🟡 High |
 | 8 | Formal FPS/latency benchmark + accuracy evaluation | 🟡 High |
 | 9 | Controlled Custom EyeCue vs Ultralytics device comparison | 🔴 Critical |
@@ -91,7 +91,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 - ✅ **Assistive application UI (v0.2.0):** Home / Detect / Settings / Help navigation + Logs & Reports; TTS audio guidance (cooldown, de-duplication, urgent bypass, repeat, mute); the four thesis gestures with haptic + TTS confirmation; persisted settings (vibration, auto-start, low-power, audio); spatial/priority/proximity interpretation; runtime telemetry + charts
 - ✅ **v0.2.1:** fixed startup theme-construction assertion (explicit high-contrast `TextTheme`)
 - ✅ **v0.2.2:** fixed camera viewport resizing with detections + chart overflow; 59-test release baseline
-- 🟡 **Unreleased dual-engine candidate:** persisted Custom EyeCue / Ultralytics selector; one shared model/labels/threshold configuration; native-result adapter into the existing assistive stack; per-engine telemetry summaries; bundled internally quantized FLOAT32-I/O NCHW model; layout-aware custom preprocessing/rotation; explicit XNNPACK attempt with recoverable CPU fallback; 77 tests and static validation passing. Both modes and both switch directions now have a one-device smoke pass, but controlled comparison, broad compatibility, long-duration, and accuracy validation remain open.
+- ✅ **Unreleased app-only candidate:** persisted Custom EyeCue / Ultralytics selector; one shared model/labels/threshold configuration; native-result adapter into the existing assistive stack; per-engine telemetry summaries; bounded, generation-safe Custom-worker recovery with deterministic lifecycle tests; typed runtime/error states; accessibility semantics and 200% text-scale coverage; image-free JSON/CSV export; metadata-packaging safety; bundled internally quantized FLOAT32-I/O NCHW model; layout-aware custom preprocessing/rotation; explicit XNNPACK attempt with recoverable CPU fallback; **127 tests** and static validation passing. Both modes and both switch directions have a one-device smoke pass, but controlled comparison, broad compatibility, long-duration, and accuracy validation remain open.
 - ✅ Persistent inference isolate with runtime model introspection (`ModelMetadata`)
 - ✅ Automatic model-type detection (FP32 / Full INT8 / Full UINT8 / Weight-Quantized / Unknown) — never guessed
 - ✅ Pure-Dart flatbuffer scanner for internal tensor precision ([`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart))

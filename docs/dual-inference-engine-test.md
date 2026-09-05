@@ -9,7 +9,7 @@
 | **Custom EyeCue** | EyeCue camera stream, YUV420 conversion, resize, tensor layout/orientation, and mirroring | EyeCue isolate, TFLite interpreter, YOLO parser, confidence filtering, and class-wise NMS | Spatial/priority analysis, warnings, object cards, TTS, haptics, gestures, and telemetry |
 | **Ultralytics** | `ultralytics_yolo` native camera and preprocessing pipeline | Plugin-managed LiteRT inference, output parsing, filtering, and NMS | The native results are mapped back into the same EyeCue spatial/priority, warnings, object cards, TTS, haptics, gestures, and telemetry layers |
 
-Both modes use the same `assets/yolov8n_int8_new.tflite`, `assets/labels.txt`, confidence threshold `0.25`, and IoU threshold `0.45`. The selector changes the runtime engine, not the recognition model or EyeCue's assistive interpretation.
+Both modes use the same runtime artifact `assets/yolov8n_int8_new_metadata.tflite`, authoritative `assets/labels.txt`, active confidence threshold (default `0.25`), and IoU threshold `0.45`. The metadata-enriched artifact is generated from the byte-identical base graph `assets/yolov8n_int8_new.tflite`; the selector changes the runtime engine, not the recognition model or EyeCue's assistive interpretation.
 
 Android needs both the classic `libtensorflowlite_jni.so` used by the Custom FFI path and LiteRT Next's `libLiteRt.so` used by Ultralytics. [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) packages those native runtimes side by side while removing the duplicate legacy Java API artifact. The built debug APK was inspected and contains both libraries for arm64-v8a, armeabi-v7a, and x86_64, plus the model and labels. Both paths subsequently loaded and processed camera frames on the arm64 test device.
 
@@ -20,7 +20,7 @@ Android needs both the classic `libtensorflowlite_jni.so` used by the Custom FFI
 3. Open **Detect**. If detection was already open, the engine screen is replaced automatically.
 4. After a run, open **Settings → Logs & Reports**. The Overview tab shows separate engine summaries.
 
-The selected engine is persisted across app restarts. **Custom EyeCue is the default** so an upgrade does not silently replace the previously validated pipeline.
+The selected engine is persisted across app restarts. **Ultralytics is the default for fresh settings files**; an explicit persisted Custom EyeCue selection is preserved so an upgrade does not silently replace a user's chosen pipeline. Custom remains the Advanced/compatibility fallback.
 
 ## Controlled comparison protocol
 
@@ -46,9 +46,9 @@ Use the same object script in every run—for example: empty scene for 30 second
 - **Stability** includes crashes, frozen previews, model-load failures, camera failures, and sustained thermal slowdown. A fast engine that fails on a supported device is not the better default.
 - Custom retains synchronous forensic diagnostics that Ultralytics does not reproduce. The test therefore compares the two complete app modes as implemented, not isolated native kernels under laboratory conditions.
 
-## Decision rule for wide device support
+## Decision rule for wide device support and fallback retention
 
-Keep **Custom EyeCue** as the compatibility default until Ultralytics completes the device matrix. Prefer Ultralytics by default only if it:
+Ultralytics is already the recommended fresh-install default, while Custom remains available as a bounded fallback and compatibility option. Do not remove the fallback or claim broad support until the preferred path:
 
 1. loads and runs reliably on every minimum-supported Android/API and representative chipset class;
 2. produces equal or acceptable qualitative detections and orientation behavior;
@@ -56,7 +56,7 @@ Keep **Custom EyeCue** as the compatibility default until Ultralytics completes 
 4. preserves permission, pause/resume, TTS, TalkBack, and lifecycle behavior; and
 5. has acceptable APK-size, licensing, memory, battery, and thermal costs.
 
-A practical release design is to keep both engines, select the proven default per compatibility policy, and retain the other as an advanced/fallback option until the evidence supports removing it.
+A practical release design is to keep both engines, retain the current Ultralytics-first policy, and keep Custom as an advanced/fallback option until the evidence supports changing or removing it.
 
 ## Release and maintenance constraints
 
@@ -68,8 +68,10 @@ A practical release design is to keep both engines, select the proven default pe
 ## Verification completed before controlled benchmarking
 
 - `flutter analyze`: 0 issues.
-- `flutter test`: 77 passing.
+- `flutter test`: **127 passing**.
+- Deterministic Custom-worker lifecycle suite: **7 passing**, including bounded retries, stale-generation rejection, busy-gate release, and disposal during backoff.
 - Flatbuffer and PNG validators: passing.
+- Deterministic metadata packaging check: passing; already-packaged input is rejected.
 - `flutter build apk --debug`: passing.
 - APK inspection: shared model/labels and both native runtime families present.
 - Target-phone installation: passing after the initial Android-cancelled attempt was retried; the fixed dual-engine build was installed on `2201116SG` (Snapdragon 695, Android 13/API 33, arm64).
@@ -86,7 +88,7 @@ These readings were taken while interactively verifying the build. They used dif
 | Custom | In the final warm reverse-switch run, 5-second summaries showed about 3.5–3.8 inference FPS and 261.0–289.4 ms average model latency. An earlier cooler candidate run reported about 5.7–6.2 FPS and 164.8 ms calculated mean latency. | XNNPACK-labelled frames completed; `tv`, `laptop`, `keyboard`, `cup`, and other detections rendered. | Different thermal/scene conditions; no proof of full graph delegation or long-duration stability. |
 | Ultralytics | Momentary on-screen readings ranged from about 6.1–9.6 FPS, 86.1–148.1 ms inference, and 111.4–175.9 ms native total. | Native preview and results ran; a `cup` result was mapped into EyeCue's labelled object card and assistive stack. | Not a timed average; actual GPU-versus-CPU delegate selection was not confirmed. |
 
-The native Ultralytics overlay displayed a numeric fallback such as `class 41` for this metadata-light model, while EyeCue's adapted card used `labels.txt` and displayed `cup`. This is a presentation inconsistency to resolve before making Ultralytics the default; it did not prevent EyeCue's own label/TTS mapping.
+The earlier native Ultralytics overlay observation displayed a numeric fallback such as `class 41` for the metadata-light runtime tested at that time, while EyeCue's adapted card used `labels.txt` and displayed `cup`. The current runtime artifact includes deterministic indexed metadata, but native overlay label rendering still requires device-level revalidation before it is treated as a broad-release guarantee; EyeCue's own normalized adapter/card/TTS mapping remains authoritative.
 
 ## Results table
 

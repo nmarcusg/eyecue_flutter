@@ -5,6 +5,21 @@
 **Assessed revision:** `146c2e7` (`main`, matching `origin/main` at the time of assessment)
 **Scope:** Repository contents, documentation, application code, tests, Android configuration, assets, inference pipeline, research-readiness claims, performance opportunities, and multi-device deployment strategy.
 
+> **Historical assessment notice (2026-08-21):** This document is a point-in-time
+> assessment of revision `146c2e7` and preserves the evidence and conclusions
+> observed at that revision, including its 59-test baseline and then-current
+> model/runtime inventory. It is not the current implementation status.
+> **Superseding status (2026-09-05):** The app-only candidate now includes
+> bounded generation-safe Custom-worker recovery, persisted sensitivity,
+> Custom/Ultralytics engine coordination, correction capture, image-free
+> JSON/CSV export, tracking/scene summaries, expanded accessibility coverage,
+> and metadata-safe runtime packaging. Current implementation and release gates
+> are tracked in [`project-status.md`](project-status.md) and
+> [`implementation-progress.md`](implementation-progress.md). The historical
+> assessment's research, broad-device, native-crash, licensing, Android
+> identity/signing, and Play-release risks remain relevant unless those current
+> documents explicitly mark them resolved.
+
 ## Executive Summary
 
 EyeCue is a credible, compiling thesis prototype with a valid YOLOv8n TensorFlow Lite model, a modular Flutter application, an offline inference architecture, assistive interaction features, and unusually extensive development documentation.

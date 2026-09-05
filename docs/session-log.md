@@ -5,6 +5,59 @@
 
 ---
 
+## 2026-09-05 (16th session) — App-Only Runtime Hardening and Validation
+
+### Objective
+- Complete the repository-owned implementation described in [`app-only-implementation-plan.md`](app-only-implementation-plan.md), finish deterministic Custom-worker lifecycle coverage, and synchronize current project documentation without guessing Android release identity or credentials.
+
+### Completed
+- Extracted Custom-worker lifecycle orchestration into [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart), including monotonic generations, stale-message rejection, bounded immediate/delayed retries, explicit retry, terminal failure, healthy-operation budget reset, and disposal-safe backoff.
+- Added the explicit `reportWorkerExit` contract to [`inference_isolate.dart`](../lib/services/inference_isolate.dart) and added seven deterministic lifecycle tests for respawn, stale callbacks, busy-gate release, delayed retry, terminal failure, disposal during backoff, and successful recovery.
+- Completed the shared runtime/error state, engine fallback coordination, persisted sensitivity, correction capture, movement tracking, scene summaries, recovery telemetry, image-free JSON/CSV export, accessibility semantics, and 200% text-scale coverage across the two independent inference engines.
+- Added deterministic metadata-packaging input safety and synchronized the model, telemetry CSV, testing, architecture, roadmap, status, known-issues, README, and changelog documentation.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test test/services/inference_lifecycle_test.dart`: 7 passing.
+- `flutter test`: **127 passing**.
+- `git diff --check`: passing.
+- [`validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart) and [`package_ultralytics_metadata.dart`](../tool/package_ultralytics_metadata.dart) checks: passing.
+- `flutter build apk --debug`: passing; APK contains both model artifacts, `labels.txt`, classic `libtensorflowlite_jni.so`, and LiteRT Next `libLiteRt.so` for the packaged ABIs.
+- `flutter devices`: only Linux desktop is connected; no Android device/emulator is available for a new smoke run.
+
+### Decisions / Limitations
+- Android package identity, production signing, release AAB generation, formal performance/accuracy evaluation, broad device compatibility, Ultralytics licence approval, and Play submission remain separate gated work. No release identity or secret was inferred.
+- Native faults such as the historical XNNPACK SIGSEGV cannot be recovered by Dart; the bounded coordinator covers typed worker exits and Dart-level failures, while device stability requires device-level evidence.
+- Historical 77-test and release-baseline counts remain in dated records; current status documents report 127 passing tests.
+
+### Next Session
+- Confirm the final Android application ID and signing ownership, then implement fail-closed release configuration and validate a signed AAB when credentials and a target Android device are available.
+
+---
+
+## 2026-09-01 (15th session) — App-Only Implementation Planning
+
+### Objective
+- Create implementation plans for the remaining application-owned tasks that do not require model training/evaluation, labelled datasets, external test devices, or research respondents.
+
+### Completed
+- Added [`app-only-implementation-plan.md`](app-only-implementation-plan.md) covering isolate restart recovery, engine fallback/default policy, TalkBack semantics, correction input, sensitivity, telemetry export, Ultralytics labels, Android identity/configuration/signing/AAB, unified error/loading UI, scene summaries, and movement tracking.
+- Defined shared runtime/failure and assistive-output contracts so the features can serve both engines without merging or duplicating their camera/inference internals.
+- Added task dependencies, relative size, likely integration points, automated test expectations, acceptance criteria, delivery phases, commit slices, and a plan-wide definition of done.
+- Kept model metrics, the multi-device performance matrix, participant studies, licence approval, and Play submission outside this app-only scope.
+- Linked the detailed plan from the main roadmap, project status, and README; corrected the roadmap's current automated-test count to 77.
+
+### Decisions / Limitations
+- Plan Ultralytics as the recommended new-install default only after bounded engine fallback and visible recovery states exist; preserve explicit existing Custom preferences.
+- Treat a temporary runtime fallback separately from the persisted user preference.
+- Reuse one shared post-detection assistive layer while retaining separate Custom and Ultralytics camera/inference implementations.
+- This session produced documentation only; none of the fifteen application tasks was implemented or marked complete.
+
+### Next Session
+- Begin Phase A with typed runtime/failure state and the shared error/loading panel, then implement bounded Custom isolate restart before automatic engine fallback.
+
+---
+
 ## 2026-09-01 (14th session) — Dual Inference Modes and Device Smoke Test
 
 ### Objective

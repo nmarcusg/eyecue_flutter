@@ -5,6 +5,28 @@
 
 ---
 
+## Unreleased — App-Only Runtime Hardening (2026-09-05)
+
+### Added
+- Added [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart), a pure injectable coordinator for Custom-worker generations, bounded recovery, explicit retry, terminal failure, healthy-budget reset, and disposal-safe backoff.
+- Added explicit `reportWorkerExit` integration in [`inference_isolate.dart`](../lib/services/inference_isolate.dart), typed recovery telemetry/export records, metadata-packaging input safety, and accessibility coverage for runtime states, controls, detections, charts, warnings, and correction flows.
+- Added seven deterministic lifecycle-orchestration tests covering respawn, stale-generation rejection, busy-gate release, delayed retry, terminal failure, disposal during backoff, and successful healthy recovery.
+
+### Changed
+- Custom worker recovery now performs one immediate retry, one delayed retry, then terminates cleanly; stale callbacks cannot restart a replaced or disposed worker, and the retry budget resets only after sustained healthy operation.
+- Current repository validation is now **127 passing Flutter tests** with `flutter analyze` reporting 0 issues. The previous 77-test count remains in the historical 2026-09-01 entry below.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test test/services/inference_lifecycle_test.dart`: 7 passing.
+- `flutter test`: **127 passing**.
+- `git diff --check`, FlatBuffer validation, and deterministic metadata packaging checks pass.
+
+### Notes
+- Android package identity, production signing, release AAB generation, and device smoke validation remain pending project-owner decisions, credentials, and device availability. No release identity or credential values were guessed.
+
+---
+
 ## Unreleased — NCHW Model and Backend Candidate (2026-09-01)
 
 ### Added

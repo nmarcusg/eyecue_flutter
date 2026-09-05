@@ -1,6 +1,13 @@
 # EyeCue — Implementation Plan
 
-> See also: [`architecture.md`](architecture.md) (system design), [`project-status.md`](project-status.md) (current state), [`implementation-progress.md`](implementation-progress.md) (tracking).
+> See also: [`architecture.md`](architecture.md) (system design), [`project-status.md`](project-status.md) (current state), [`implementation-progress.md`](implementation-progress.md) (tracking), and [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned application task areas and their acceptance criteria).
+
+> **Current app-only status (2026-09-05):** Shared runtime/error handling,
+> dual-engine coordination, bounded Custom-worker recovery, accessibility,
+> corrections, sensitivity, telemetry/export, metadata packaging, tracking, and
+> scene summaries are implemented and covered by **127 passing tests**. Android
+> identity, production signing, release AAB generation, device validation, formal
+> benchmarking, and external licence/Play-release decisions remain gated items.
 
 ## Long-Term Roadmap
 
@@ -13,7 +20,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 **Definition of Done:**
 - TTS speaks detected object names aloud with priority-based cooldown
 - Bounding boxes rendered on camera preview via `CustomPainter`
-- Error handling in inference isolate (try/catch + error state propagation)
+- Error handling in inference isolate (try/catch + typed error state propagation)
 - Permission-denied UI with explanation and settings redirect
 - Unused dependencies either wired or removed from `pubspec.yaml`
 
@@ -29,7 +36,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 - Performance logging: FPS, inference latency, confidence scores, timestamps — ✅ done (5-second summaries + Info Panel metrics + Logs & Reports telemetry)
 - Pause/resume detection toggle with camera deactivation — ✅ done (v0.2.0 — single-tap pause/resume via [`gesture_controller.dart`](../lib/services/gesture_controller.dart) + visible controls)
 - `fl_chart` logging dashboard for real-time metrics visualization — ✅ done (v0.2.0 — Logs & Reports Overview/Charts/Logs, [`charts.dart`](../lib/widgets/charts.dart))
-- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ release baseline had 59 passing across navigation, screens, widgets, services, charts, theme; the current repository has 73 including NHWC/NCHW tensor-rotation coverage
+- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ release baseline had 59 passing across navigation, screens, widgets, services, charts, theme; the current repository has **127** including NHWC/NCHW tensor rotation, engine settings, per-engine telemetry, Ultralytics-result adaptation, lifecycle recovery, exports, tracking, summaries, and accessibility
 - Adaptive throttling based on measured inference time — 🟡 partial (v0.2.0 Low Power Mode applies a dispatch throttle; formal measured throttling remains)
 
 **Feature Dependencies:**
@@ -41,14 +48,14 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 ### Milestone 3: "Defense-Ready" (Target: ~6 weeks)
 
 **Definition of Done:**
-- Accessibility features: TalkBack/VoiceOver semantics, gesture controls — 🟡 gestures ✅ done (v0.2.0); TalkBack/Semantics polish remaining
+- Accessibility features: TalkBack/VoiceOver semantics, gesture controls — ✅ gesture controls and tested TalkBack/Semantics coverage implemented; device TalkBack validation remains manual
 - Priority-based TTS queue (person > vehicle > obstacle > other) — ✅ done (v0.2.0 — class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart))
 - Adaptive throttling fully implemented — 🟡 partial (Low Power Mode dispatch throttle)
 - GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU — 🟡 explicit XNNPACK candidate, initial target-device evidence, and recoverable CPU fallback are present; extended native stability validation and NNAPI/GPU alternatives remain pending
-- Integration tests for end-to-end pipeline — ❌ (unit/widget suite in place)
+- Integration tests for end-to-end pipeline — 🟡 deterministic unit/widget/orchestration coverage is in place; physical-device and full camera-to-runtime integration remain manual
 - Package name fixed to `com.eyecue` — ❌ (still `com.example.eyecue_flutter`)
 - `minSdkVersion` set explicitly to thesis-aligned API 29 — 🟡 (currently relies on Flutter default 24)
-- All documentation up to date — ✅ (this sync)
+- All documentation up to date — ✅ (2026-09-05 synchronization; historical records remain dated)
 
 **Feature Dependencies:**
 - Accessibility depends on: UI elements in place (bounding boxes, labels)
@@ -77,19 +84,24 @@ Camera Pipeline (done)
         ├── NMS (done — M2)
         │   └── Performance Logging (done — M2)
         │       └── Logging Dashboard (M2)
-        ├── Error Handling (partial — M1)
-        │   └── Error Recovery (M4)
+        ├── Error Handling (typed and bounded — M1)
+        │   └── Error Recovery (implemented app-only; native/device validation remains)
         └── Pause/Resume (M2)
             └── Adaptive Throttling (M3)
 ```
 
 ## Current Priorities
 
+The implementation sequence and acceptance criteria for isolate recovery, engine
+fallback/default policy, accessibility, corrections, sensitivity, export, labels,
+Android release work, error UI, scene summaries, and movement tracking are defined
+in [`app-only-implementation-plan.md`](app-only-implementation-plan.md).
+
 1. ~~**TTS Audio Feedback**~~ — ✅ Done (v0.2.0). See [`tts_service.dart`](../lib/services/tts_service.dart).
 2. ~~**Bounding Box Overlay**~~ — ✅ Done. See [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
 3. ~~**NMS**~~ — ✅ Done (class-wise, IoU 0.45, conf 0.25). See [`inference_isolate.dart`](../lib/services/inference_isolate.dart).
 4. **On-device validation of the v0.2.x UI** — gestures, TTS, settings persistence, Logs & Reports on the Snapdragon 695 device
-5. **Error Recovery** — Isolate restart on fatal error
+5. ~~**Error Recovery**~~ — ✅ Bounded, generation-safe Custom-worker restart and terminal recovery state implemented; native crash/device validation remains
 6. ~~**Permission-Denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
 7. **Extend validation of the unreleased XNNPACK candidate** — collect longer stability/fallback evidence, then benchmark only verified results; exact APK installation and an initial short live run are complete
 8. **Orientation re-validation** — back landscape physical hold + front camera

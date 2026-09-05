@@ -1,6 +1,7 @@
 # EyeCue — Architecture
 
-> See also: [`chat_spec.md`](../chat_spec.md) (historical specification), [`implementation-decisions.md`](implementation-decisions.md) (key decisions).
+> **Current status:** The app-only candidate has two independent inference engines: Custom EyeCue and Ultralytics. They share only normalized detections and the assistive application layer; release identity/signing, broad device validation, formal benchmarking, and native-crash validation remain open.
+> See also: [`chat_spec.md`](../chat_spec.md) (historical specification), [`implementation-decisions.md`](implementation-decisions.md) (key decisions), and [`model-assets.md`](model-assets.md) (artifact record).
 
 ## Project Purpose
 
@@ -27,7 +28,7 @@ Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eli
 │                             ▼  │                  │
 │                  ┌────────────────────┐          │
 │                  │ InferenceService   │          │
-│                  │ (Bridge Manager)   │          │
+│                  │ (Custom bridge)    │          │
 │                  └────────┬───────────┘          │
 └───────────────────────────┼──────────────────────┘
                              │ SendPort/ReceivePort
@@ -49,7 +50,29 @@ Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eli
 └──────────────────────────────────────────────────┘
 ```
 
-## Data Flow
+### Dual-engine boundary
+
+EyeCue deliberately retains two independent inference pipelines:
+
+- **Custom EyeCue:** `CameraController` delivers YUV420 frames to the Dart
+  isolate, which performs preprocessing, classic TFLite/LiteRT inference,
+  parsing, and class-wise NMS.
+- **Ultralytics:** `YOLOView` owns the native CameraX/LiteRT pipeline and its
+  native preprocessing, inference, and post-processing.
+- **Shared boundary:** both paths normalize their results into the immutable
+  [`Detection`](../lib/models/detection.dart) contract. The shared
+  [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart)
+  then performs spatial interpretation, priority/proximity wording, tracking,
+  scene summaries, TTS, haptics, corrections, telemetry/export, and
+  accessibility-facing state. Engine-specific camera objects never cross that
+  boundary.
+
+The [`EngineCoordinator`](../lib/services/engine_coordinator.dart) owns the
+preferred-versus-active engine state, one-shot fallback, generation filtering,
+and recovery actions. A temporary fallback does not rewrite the persisted
+preference and cannot cause automatic engine oscillation.
+
+## Custom EyeCue Data Flow
 
 1. `CameraController.startImageStream()` delivers `CameraImage` at native FPS (~30)
 2. `_processCameraImage()` checks `_isInferring` gate → drops frame if busy
@@ -59,9 +82,23 @@ Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eli
 6. Isolate converts YUV420 → RGB into the dtype-matched input buffer (normalized float or quantized via scale/zeroPoint), in NHWC or NCHW order selected from the runtime shape
 7. Isolate rotates/mirrors the square input tensor to upright when orientation metadata requires it
 8. Passes raw bytes (`ByteBuffer`) to `interpreter.run()` — **no reshape**, no shape resizing; the current candidate attempts XNNPACK and can retry on CPU after recoverable Dart-level failures
-9. Post-processes: argmax per box, dequantization only when the output tensor is quantized, confidence threshold (0.25), class-wise NMS (IoU 0.45)
+9. Post-processes: argmax per box, dequantization only when the output tensor is quantized, the active configured confidence threshold (default `0.25`), and class-wise NMS (IoU `0.45`)
 10. Returns `List<Detection>` to main isolate via `SendPort`
 11. Main isolate adds to `StreamController` → `setState()` → UI repaints
+
+## Ultralytics Data Flow
+
+1. `YOLOView` starts the native camera/inference pipeline for the selected
+   engine.
+2. The native result callback is mapped by
+   [`UltralyticsDetectionAdapter`](../lib/services/ultralytics_detection_adapter.dart)
+   into the shared [`Detection`](../lib/models/detection.dart) model.
+3. The shared assistive controller applies the same spatial, priority,
+   approximate-proximity, tracking, TTS, haptic, correction, telemetry, and
+   accessibility behavior as the Custom path.
+4. Engine-specific lifecycle and failure events are reported to the
+   coordinator; a recoverable Ultralytics startup failure can trigger the
+   bounded one-shot Custom fallback without changing the saved preference.
 
 ## Folder Structure
 
@@ -75,23 +112,41 @@ eyecue_flutter/
 │   │   ├── detection.dart                 # Detection data class (classId, label, confidence, box)
 │   │   ├── detection_info.dart            # Spatial/priority/proximity user-facing info
 │   │   ├── app_settings.dart              # Persisted settings model
+│   │   ├── detection_failure.dart         # Typed inference failure DTO
+│   │   ├── detection_runtime_state.dart   # Shared runtime states and failures
+│   │   ├── inference_lifecycle_event.dart # Worker/engine lifecycle event DTO
+│   │   ├── inference_recovery_policy.dart # Bounded Custom-worker recovery policy
 │   │   ├── box_transform.dart             # Device-independent orientation math
+│   │   ├── model_config.dart              # Shared model paths and thresholds
 │   │   ├── model_metadata.dart            # Runtime model metadata (self-describing)
+│   │   ├── detection_correction.dart      # Correction-record DTO
+│   │   ├── tracked_detection.dart          # Movement-tracking DTO
+│   │   ├── telemetry_export.dart          # Image-free export DTOs
 │   │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
 │   ├── screens/
 │   │   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
-│   │   ├── detection_screen.dart          # Detection: assistive UI + camera/inference pipeline
+│   │   ├── detection_screen.dart          # Detection: assistive UI + Custom pipeline
+│   │   ├── engine_detection_screen.dart   # Engine-selected detection wrapper
+│   │   ├── ultralytics_detection_screen.dart # Native Ultralytics detection screen
 │   │   ├── settings_screen.dart           # Settings: haptics/performance/audio/research
 │   │   ├── help_screen.dart               # Help & Gestures manual
 │   │   └── logs_reports_screen.dart       # Logs & Reports dashboard (Overview/Charts/Logs)
 │   ├── services/
-│   │   ├── inference_isolate.dart         # Isolate bridge + inference + preprocessing
+│   │   ├── inference_isolate.dart         # Custom isolate bridge + inference + preprocessing
+│   │   ├── inference_worker_lifecycle.dart # Generation-safe bounded worker recovery
+│   │   ├── engine_coordinator.dart         # Preferred/active engine and fallback state
+│   │   ├── assistive_detection_controller.dart # Shared post-detection behavior
+│   │   ├── ultralytics_detection_adapter.dart # Native result → Detection adapter
 │   │   ├── tts_service.dart               # TTS: queue, cooldown, de-duplication, mute, repeat
 │   │   ├── settings_service.dart          # File-backed persisted settings (JSON)
 │   │   ├── spatial_analysis_service.dart  # Box → position/priority/proximity (pure)
 │   │   ├── haptics_service.dart           # HapticFeedback wrapper
 │   │   ├── telemetry_service.dart         # Session telemetry + aggregates for reports
+│   │   ├── telemetry_export_service.dart  # JSON/CSV export
+│   │   ├── correction_service.dart        # Detection correction capture
+│   │   ├── object_tracker.dart             # Temporal movement tracking
+│   │   ├── scene_summary_service.dart     # Deterministic scene summaries
 │   │   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
 │   │   ├── forensic_log.dart              # File-based structured diagnostics
 │   │   ├── inference_probe.dart           # Parser probe (disabled, removable)
@@ -104,6 +159,8 @@ eyecue_flutter/
 │       ├── warning_banner.dart            # High-priority obstacle banner
 │       ├── status_pill.dart               # Detecting/Paused/Stopped indicator
 │       ├── accessible_button.dart         # Large high-contrast button (48dp+)
+│       ├── detection_state_panel.dart     # Runtime/loading/recovery/error panel
+│       ├── detection_correction_sheet.dart # Correction capture sheet
 │       ├── charts.dart                    # fl_chart latency/FPS/frequency charts
 │       ├── debug_overlay.dart             # Debug HUD (retained, unused)
 │       └── info_panel.dart                # Old developer metrics panel (unused in primary UI)
@@ -128,14 +185,23 @@ eyecue_flutter/
 | Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Vibration / Auto-Start / Low Power / Audio / Logs & Reports |
 | Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Operations + gesture manual |
 | Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | Overview / Charts / Logs dashboard (researcher-facing) |
-| Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), backend selection, input rotation |
+| Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Custom-isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), backend selection, input rotation |
+| Worker Lifecycle | [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart) | Generation-safe Custom-worker start, bounded restart/backoff, healthy-budget reset, terminal failure, and disposal guards |
+| Engine Coordinator | [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart) | Preferred/active engine state, one-shot fallback, stale-generation filtering, and retry actions |
+| Ultralytics Adapter | [`ultralytics_detection_adapter.dart`](../lib/services/ultralytics_detection_adapter.dart) | Maps native YOLO results into the shared `Detection` contract |
+| Shared Assistive Controller | [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart) | Common spatial interpretation, tracking, summaries, TTS, haptics, corrections, telemetry, export, and accessibility state |
 | TTS Service | [`tts_service.dart`](../lib/services/tts_service.dart) | Speech scheduling, cooldown, de-duplication, mute, repeat-last |
 | Settings Service | [`settings_service.dart`](../lib/services/settings_service.dart) | File-backed persisted settings (JSON) |
 | Spatial Analysis | [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart) | Box → position/priority/approximate proximity (pure, outside pipeline) |
 | Haptics Service | [`haptics_service.dart`](../lib/services/haptics_service.dart) | HapticFeedback wrapper respecting Vibration setting |
 | Telemetry Service | [`telemetry_service.dart`](../lib/services/telemetry_service.dart) | Session records, samples, aggregates for reports |
+| Telemetry Export | [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart) | Image-free JSON/CSV export |
+| Correction Service | [`correction_service.dart`](../lib/services/correction_service.dart) | Detection correction capture and persistence |
+| Object Tracker | [`object_tracker.dart`](../lib/services/object_tracker.dart) | Temporal movement tracking from normalized detections |
+| Scene Summary | [`scene_summary_service.dart`](../lib/services/scene_summary_service.dart) | Deterministic scene summaries for quick scan/reporting |
 | Gesture Controller | [`gesture_controller.dart`](../lib/services/gesture_controller.dart) | Thesis gesture state machine (single/two-finger-double/three-finger/swipe-down) |
 | Model Metadata | [`model_metadata.dart`](../lib/models/model_metadata.dart) | Immutable runtime snapshot of the loaded model (types, shapes, quantization, model type) |
+| Model Configuration | [`model_config.dart`](../lib/models/model_config.dart) | Shared runtime artifact, base graph, labels, confidence range/default, and NMS configuration |
 | Flatbuffer Scanner | [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart) | Pure-Dart scan of internal tensor types for weight-precision detection |
 | Tensor Rotation | [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) | Pure layout-aware square-tensor rotation/mirroring for NHWC and NCHW buffers |
 | Box Transform | [`box_transform.dart`](../lib/models/box_transform.dart) | Device-independent orientation math (metadata-driven rotation/mirror) |
@@ -160,13 +226,14 @@ eyecue_flutter/
 
 ## AI Pipeline
 
-- **Current unreleased candidate:** `assets/yolov8n_int8_new.tflite` — **FLOAT32 runtime I/O with internally quantized tensors** (classified *Weight-Quantized*), input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). The candidate is structurally validated, committed, bundled in the debug APK, and has initial target-device evidence: the exact APK installed successfully and a short live run completed 65 XNNPACK-labelled frames on the Snapdragon 695 phone. The calculated latency mean was 164.8 ms (median 157.7 ms; range 150.2–377.3 ms).
+- **Current unreleased candidate:** `assets/yolov8n_int8_new_metadata.tflite` — the deterministic metadata-enriched runtime artifact generated from the byte-identical base graph `assets/yolov8n_int8_new.tflite`. It has **FLOAT32 runtime I/O with internally quantized tensors** (classified *Weight-Quantized*), input `[1, 3, 640, 640]` (NCHW), and output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). The artifact is structurally validated, committed, bundled in the debug APK, and has initial target-device evidence: the exact APK installed successfully and a short live run completed 65 XNNPACK-labelled frames on the Snapdragon 695 phone. The calculated latency mean was 164.8 ms (median 157.7 ms; range 150.2–377.3 ms).
 - **Stable v0.2.2 baseline:** `assets/yolov8n.tflite` — FLOAT32 I/O with INT8 weights, input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`.
 - **Model identity:** never assumed from filenames — introspected at runtime into a `ModelMetadata` snapshot.
 - **Preprocessing:** Manual YUV420 → RGB conversion, nearest-neighbor resize, writes matched to the input dtype (normalized float, or quantized via input scale/zeroPoint). Runtime shape selects NHWC interleaved or NCHW planar output order. [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) rotates/mirrors the square tensor to UPRIGHT per orientation metadata.
 - **Inference:** One persistent `Interpreter` instance in a dedicated isolate. The candidate attempts explicit XNNPACK with a retained delegate and retries on CPU after recoverable setup/invocation exceptions. A native SIGSEGV remains uncatchable. Raw `ByteBuffer`s are passed to `interpreter.run()` — no reshape, no input-tensor resizing.
-- **Post-processing:** Argmax per-box, dequantization only when the output tensor is quantized, confidence threshold (0.25), **class-wise Non-Maximum Suppression (IoU 0.45)**.
-- **Missing:** bilinear interpolation, extended candidate stability/fallback validation, formal candidate benchmark, and isolate restart recovery
+- **Post-processing:** Argmax per-box, dequantization only when the output tensor is quantized, the active persisted confidence threshold (default `0.25`), and **class-wise Non-Maximum Suppression (IoU `0.45`)**.
+- **Remaining validation:** bilinear interpolation, extended candidate stability/fallback validation, and formal candidate benchmarking remain open. Bounded Custom-worker restart recovery is implemented and deterministically tested; native crash recovery and device stability validation remain outside Dart guarantees.
+- **Ultralytics path:** `YOLOView` uses the same metadata-enriched runtime artifact and authoritative COCO labels through the native CameraX/LiteRT pipeline. Its native callbacks are normalized by the adapter before entering the shared assistive layer. Delegate selection and long-duration native stability still require device evidence.
 
 ## Runtime Model Introspection
 
@@ -189,7 +256,7 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 
 ## Important Architectural Principles
 
-1. **Persistent Inference Isolate:** One `Isolate.spawn()` at startup, one `Interpreter` instance for the app lifetime. Never create/destroy per frame.
+1. **Persistent Custom Inference Isolate:** The Custom engine uses one `Isolate.spawn()` at startup and one `Interpreter` instance for the active service lifetime. It never creates/destroys an interpreter per frame; the Ultralytics engine retains its independent native runtime.
 2. **Frame Dropping:** Boolean `_isInferring` gate drops frames when the inference worker is busy. No queueing — deterministic latency. The gate is released on isolate errors so the pipeline can recover.
 3. **Manual Preprocessing:** Custom YUV420→RGB math avoids the `image` package to prevent GC pressure from real-time video.
 4. **Runtime Model Introspection:** After interpreter creation, build a `ModelMetadata` snapshot from the runtime tensors plus an internal tensor-type scan. The interpreter is the single source of truth — nothing is hardcoded.
@@ -197,11 +264,12 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 6. **Backend safety:** The stable v0.2.2 baseline is CPU-only because of the historical Snapdragon 695 XNNPACK SIGSEGV. The unreleased candidate attempts XNNPACK, retains delegate ownership correctly, and falls back to CPU for recoverable Dart-level failures; the initial short device run completed, but native crash safety still requires longer controlled validation.
 7. **Stream-Based Results:** `StreamController.broadcast()` for detection results, enabling multiple listeners.
 
-## Missing Architectural Components (remaining)
+## Remaining Architectural Boundaries
 
-- **No isolate restart recovery:** try/catch + error propagation and a recoverable CPU fallback exist; if the isolate dies from a native crash or another fatal error the app does not restart it (camera-denied UI is implemented; full crash recovery is not).
+- **Bounded Custom-worker recovery:** implemented through [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart), with one immediate retry, one delayed retry, terminal failure, healthy-budget reset, stale-generation guards, and disposal/backoff safety. Native crashes such as SIGSEGV remain uncatchable by Dart and require device-level validation.
 - **No dependency injection framework:** Services are wired in `main.dart` and passed via constructors — simple and sufficient, but not a full DI container.
 - **State management:** plain `ChangeNotifier` services + `setState`; Riverpod remains declared but unused (intentionally — the app does not need a framework).
-- **No service abstraction for `InferenceService`:** it remains coupled to TFLite, camera format, and COCO labels (acceptable for the thesis scope).
-- **Configuration:** thresholds/model path/labels remain constants; detection-sensitivity is not yet runtime-configurable (per audit, intentionally not wired to avoid changing inference behavior).
-- **Out of scope for the live app:** calibrated distance, movement/approach estimation, and accuracy/precision/recall/mAP (require ground truth — see [`thesis-product-status-audit.md`](thesis-product-status-audit.md)).
+- **Engine-specific services:** `InferenceService` remains intentionally coupled to Custom TFLite/camera internals, while Ultralytics is isolated behind its native screen and result adapter. The shared controller and coordinator prevent engine-specific objects from leaking into common assistive behavior.
+- **Configuration:** model paths, labels, confidence bounds/default, and NMS IoU are centralized in [`model_config.dart`](../lib/models/model_config.dart). Detection sensitivity is persisted in [`app_settings.dart`](../lib/models/app_settings.dart) and applied by both engines at startup/reload; it is not a per-frame mutation.
+- **Out of scope for the live app:** calibrated distance, validated movement/approach estimation, and accuracy/precision/recall/mAP (require ground truth — see [`thesis-product-status-audit.md`](thesis-product-status-audit.md)).
+- **Release boundary:** final Android identity, explicit SDK policy, production signing, signed AAB validation, broad device coverage, formal benchmark evidence, licence approval, and Play release remain separate gates.

@@ -13,6 +13,17 @@
 > candidate status; [`project-status.md`](project-status.md) is authoritative
 > for the current state. The audit's product-scope gaps and release-readiness
 > conclusions remain applicable unless explicitly superseded there.
+> **Superseding status notice (2026-09-05):** The app-only candidate now also
+> includes bounded, generation-safe Custom-worker recovery, persisted detection
+> sensitivity applied by both engines, correction capture, image-free JSON/CSV
+> export, tracking/scene-summary services, expanded accessibility coverage, and
+> a selectable Custom/Ultralytics runtime boundary. The dated findings below
+> that say these capabilities are absent or only planned are historical audit
+> observations; current implementation status is tracked in
+> [`project-status.md`](project-status.md) and
+> [`implementation-progress.md`](implementation-progress.md). Native crash
+> recovery, formal research evaluation, broad device validation, Android
+> release identity/signing, and Play-release readiness remain open.
 
 ---
 
@@ -159,7 +170,9 @@ Verified directly from the code (not from docs).
 - Manual YUV420→RGB (stride-aware), nearest-neighbor resize, metadata-driven quantization, input-tensor rotation/mirror to upright.
 - Argmax per anchor → confidence threshold 0.25 → **class-wise NMS (IoU 0.45)**.
 - Emits `List<Detection>` via a broadcast `StreamController` — consumed by the UI, TTS, and telemetry.
-- Error propagation via `{'type': 'error'}`; **no isolate restart recovery** (reporting only).
+- **Historical audit finding (2026-08-16):** Error propagation used
+  `{'type': 'error'}` only; bounded isolate restart recovery was not present in
+  the revision assessed by this audit.
 
 ### 3.5 Assistive services (v0.2.0)
 

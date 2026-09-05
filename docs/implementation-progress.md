@@ -1,22 +1,27 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-09-01 (dual-engine device smoke test)
+> **Last Updated:** 2026-09-05 (app-only lifecycle validation)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
-## Current Unreleased Candidate (2026-09-01)
+## Current Unreleased Candidate (2026-09-05)
 
 This section describes unreleased work after the v0.2.2 release; the versioned
 sections below remain historical release records.
 
-- ✅ Added [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite) to the asset bundle. Direct inspection found FLOAT32 runtime input/output, input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and internal INT8 tensors; runtime classification is *Weight-Quantized*, not full integer I/O.
+- ✅ Added the metadata-enriched runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite) to the asset bundle. It is generated from the byte-identical base graph [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite). Direct inspection found FLOAT32 runtime input/output, input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and internal INT8 tensors; runtime classification is *Weight-Quantized*, not full integer I/O.
 - ✅ Updated [`inference_isolate.dart`](../lib/services/inference_isolate.dart) to select NHWC or NCHW from runtime shape metadata, write the matching YUV→RGB layout, and use [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) for layout-aware rotation/mirroring.
 - 🟡 Added an explicit XNNPACK attempt with delegate lifetime retention, recoverable setup/invocation CPU fallback, and backend logging. The exact debug APK now installs on the Snapdragon 695 target and has initial short-run evidence: 65 completed live frames were labelled `XNNPACK`; the calculated latency mean was 164.8 ms (median 157.7 ms, range 150.2–377.3 ms), and app summaries reported approximately 5.7–6.2 inference FPS. The historical native SIGSEGV remains unresolved because a native fault cannot be caught by Dart.
-- ✅ Added 14 tensor-rotation unit tests plus engine-setting, per-engine telemetry, and Ultralytics-adapter coverage; the full suite is now **77 passing** and `flutter analyze` reports **0 issues**.
+- ✅ Added 14 tensor-rotation unit tests plus engine-setting, per-engine telemetry, and Ultralytics-adapter coverage; the current repository suite is now **127 passing** and `flutter analyze` reports **0 issues**.
 - ✅ Extended the flatbuffer validator to cover the new model and verified the generated debug APK contains it.
 - ⚠️ The exact candidate APK installed after storage was cleared. Startup logs confirmed the NCHW/FLOAT32 model metadata and successful explicit XNNPACK interpreter creation. The controlled short run produced no detections across its 65 logged frames, while a separate earlier observation returned one `tv` at 67.9% confidence and 113.7 ms. These are observational results only; formal benchmark, accuracy, thermal, memory, and long-duration stability evidence remains pending.
 - ✅ Added persisted **Custom EyeCue** and **Ultralytics** modes using one model/labels/threshold configuration, with native results adapted into EyeCue's existing spatial, priority, TTS, gesture, and telemetry layers. Logs & Reports separates the two engines.
 - ✅ Resolved the Android classic LiteRT/LiteRT Next native-runtime packaging conflict. The debug APK builds with both runtime families and installed on the arm64 Snapdragon 695 target.
 - 🟡 Both engines processed live camera frames on that device. Post-fix switching passed in both directions after correcting a late Custom-isolate result that could write to a closed stream during Custom→Ultralytics disposal. Controlled paired benchmarking, wide-device coverage, actual delegate confirmation, and the Ultralytics licence decision remain open.
+- ✅ Extracted Custom-worker lifecycle/recovery orchestration into [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart), with generation-safe stale-message filtering, bounded immediate/delayed retries, healthy-operation budget reset, explicit retry, terminal failure, and disposal/backoff guards.
+- ✅ Added seven deterministic lifecycle tests covering worker exit/respawn, stale generations, busy-gate release, delayed retry, terminal failure, disposal during backoff, and healthy recovery. The explicit `reportWorkerExit` API now carries the generation and typed failure at production exit/error call sites.
+- ✅ Added bounded recovery telemetry/export rows, metadata-packaging input safety, and synchronized CSV data-dictionary coverage.
+- ✅ Added accessibility semantics and 200% text-scale coverage across controls, state panels, charts, detections, correction flows, warnings, and live regions.
+- ✅ Current validation: `flutter analyze` reports 0 issues and `flutter test` reports **127 passing tests**. Android identity/signing, release AAB generation, and device validation remain intentionally blocked on project-owner decisions, credentials, and an available Android device.
 
 ## v0.2.2 — UI Layout Fixes (2026-08-16)
 
@@ -147,7 +152,7 @@ sections below remain historical release records.
 
 ### Model & Labels (100%)
 
-- ✅ Model loading from the current candidate asset (`yolov8n_int8_new.tflite`); the v0.2.2 release baseline used `yolov8n.tflite`
+- ✅ Model loading from the current metadata-enriched runtime artifact (`yolov8n_int8_new_metadata.tflite`), generated from `yolov8n_int8_new.tflite`; the v0.2.2 release baseline used `yolov8n.tflite`
 - ✅ COCO label loading from `labels.txt` (80 classes)
 - ✅ Label lookup by class index
 - ✅ Model load success/failure logging with tensor metadata
@@ -214,7 +219,7 @@ sections below remain historical release records.
 - ✅ Message protocol extended: `{'type': 'result'/'error'/'model_loaded'}` with metadata
 - ✅ Inference latency exposed via `InferenceService.lastLatencyMs` getter
 
-### Documentation (current set synchronized through 2026-09-01)
+### Documentation (current set synchronized through 2026-09-05)
 
 - ✅ Comprehensive project audit ([`auditor.md`](../auditor.md))
 - ✅ Historical specification preserved ([`chat_spec.md`](../chat_spec.md))
@@ -227,7 +232,7 @@ sections below remain historical release records.
 - ✅ Testing plan ([`docs/testing-plan.md`](testing-plan.md))
 - ✅ Benchmark results template ([`docs/benchmark-results.md`](benchmark-results.md))
 - ✅ Formal README ([`README.md`](../README.md)) — project overview + documentation index
-- ✅ Session log ([`docs/session-log.md`](session-log.md)) — all sessions through the orientation architecture recorded
+- ✅ Session log ([`docs/session-log.md`](session-log.md)) — all sessions through the app-only lifecycle validation recorded
 - ✅ Changelog ([`docs/changelog.md`](changelog.md)) — v0.1.0 through v0.1.7 entries
 - ✅ Camera-path forensics ([`docs/camera-path-forensics.md`](camera-path-forensics.md)) — input-side defect isolated & fixed (rotation)
 - ✅ Orientation design review ([`docs/orientation-design-review.md`](orientation-design-review.md)) + implementation summary ([`docs/orientation-implementation.md`](orientation-implementation.md))
@@ -262,7 +267,7 @@ sections below remain historical release records.
 |------|--------|
 | TTS audio feedback | ✅ Complete (v0.2.0) |
 | Bounding box `CustomPainter` | ✅ Complete (2026-07-22) |
-| Error handling in isolate | 🟡 Partial — try/catch added around interpreter creation + frame loop; error propagation to main isolate; restart recovery still open |
+| Error handling in isolate | ✅ Complete — typed errors, explicit worker-exit handling, generation-safe bounded recovery, and terminal failure state |
 | Permission-denied UI | ✅ Complete (v0.2.0 — camera-denied state with retry/open-settings) |
 | Remove/wire unused dependencies | ✅ Mostly complete — `flutter_tts`/`path_provider`/`fl_chart` wired; `flutter_riverpod` retained (deliberately unused) |
 | Debug instrumentation & logging | ✅ Complete (2026-07-22) |
@@ -281,7 +286,7 @@ sections below remain historical release records.
 3. ~~**Add debug instrumentation**~~ — ✅ Done. See [`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart), [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart), [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart), [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
 4. ~~**Implement NMS**~~ — ✅ Done (2026-08-01). Class-wise, IoU 0.45, pre-NMS conf 0.25. See [`_parseYolov8Output`](../lib/services/inference_isolate.dart).
 5. **On-device validation of the v0.2.x UI** — gestures, TTS, mute toggle, settings persistence, Logs & Reports charts on the Snapdragon 695 device.
-6. **Complete error handling in inference isolate** — extend error recovery (isolate restart on crash).
+6. ~~**Complete error handling in inference isolate**~~ — ✅ Done for the app-only scope: typed errors and bounded generation-safe worker recovery.
 7. ~~**Add permission-denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
 8. **Extend validation of the unreleased XNNPACK candidate** — capture longer stability/fallback evidence and run the benchmark tool on the test device; the exact APK has already installed and completed an initial short live run.
 
@@ -291,10 +296,10 @@ See [`implementation-plan.md`](implementation-plan.md) for the full milestone br
 
 ### By Milestone:
 
-- **Milestone 1 (Audible MVP):** ✅ Complete (v0.2.0); isolate restart recovery carried to M4
-- **Milestone 2 (Research-Ready):** mostly done — on-device UI validation, formal FPS/latency benchmark, adaptive throttling polish remaining
-- **Milestone 3 (Defense-Ready):** gestures + priority TTS queue done; TalkBack semantics, adaptive throttling, extended XNNPACK/NNAPI delegate validation, package rename (`com.eyecue`), explicit minSdk remaining
-- **Milestone 4 (Production Candidate):** isolate restart recovery, model variant selection, `TransferableTypedData`, bilinear resize, full coverage, Play Store readiness
+- **Milestone 1 (Audible MVP):** ✅ Complete (v0.2.0); bounded isolate restart recovery now implemented in the unreleased app-only candidate
+- **Milestone 2 (Research-Ready):** mostly done — on-device UI validation, formal FPS/latency benchmark, adaptive throttling polish, and controlled engine comparison remain
+- **Milestone 3 (Defense-Ready):** gestures + priority TTS queue + TalkBack semantics + accessibility tests done; adaptive throttling, extended XNNPACK/NNAPI delegate validation, package rename (`com.eyecue`), and explicit minSdk remain
+- **Milestone 4 (Production Candidate):** bounded isolate recovery, model variant selection, metadata safety, export foundation, and broad test coverage done; `TransferableTypedData`, bilinear resize, release signing, full device matrix, and Play Store readiness remain
 
 **Total Estimated Effort (remaining):** ~40–70 hours (down from ~60–104)
 

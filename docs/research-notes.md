@@ -3,6 +3,14 @@
 > Research papers, benchmark references, related work, ideas, and defense notes.  
 > Separate from implementation documentation.
 
+> **Current implementation note (2026-09-05):** The runtime candidate is the
+> metadata-enriched artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite),
+> generated from the byte-identical base graph
+> [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite). Both selectable
+> engines use that artifact and the authoritative COCO labels. The model has
+> not been retrained, fine-tuned, or replaced. Formal accuracy, benchmark,
+> thermal, memory, and broad-device evidence remains pending.
+
 ---
 
 ## Research Paper
@@ -84,7 +92,7 @@ See [this discussion in chat_spec.md](../chat_spec.md) for the full analysis.
 
 | File | I/O precision | Weights / internal types | Notes |
 |------|---------------|--------------------------|-------|
-| `yolov8n_int8_new.tflite` | FLOAT32 (in/out) | INT8 (356), INT32 (90), FLOAT32 (2) | **Current unreleased candidate** — classified *Weight-Quantized*. Input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]`. Declared in `pubspec.yaml`; structurally validated and initially exercised on-device, but not formally benchmarked or accuracy-validated. |
+| `yolov8n_int8_new_metadata.tflite` | FLOAT32 (in/out) | INT8 (356), INT32 (90), FLOAT32 (2) | **Current unreleased runtime artifact** — generated from the byte-identical base graph `yolov8n_int8_new.tflite`; classified *Weight-Quantized*. Input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]`. Declared in `pubspec.yaml`; structurally validated and initially exercised on-device, but not formally benchmarked or accuracy-validated. |
 | `yolov8n.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | **Stable v0.2.2 baseline** — classified *Weight-Quantized*. Input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`. Despite its name it is **not** full INT8. |
 | `yolov8n_int8.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | Same weight-quantized structure; present in `assets/` but **not declared in pubspec** (not loadable at runtime). |
 | `yolov8n_int8ReLU.tflite` | — | — | GPU-compatible variant from the React Native prototype; **no longer present** in this repository's `assets/`. |

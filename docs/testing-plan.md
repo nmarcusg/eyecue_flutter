@@ -2,7 +2,7 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Current suite:** `flutter test` → **77 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts), services (TTS, settings, spatial, telemetry, gesture controller), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the release baseline; the tables below are the forward-looking plan (not all items are automated yet).
+> **Current suite (2026-09-05):** `flutter test` → **127 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
 
 ## Unit Testing Strategy
 
@@ -25,7 +25,7 @@
 |------|----------|-------------|
 | Isolate spawn and communication | 🟡 P1 | Verify SendPort/ReceivePort message passing works |
 | Frame dropping logic | 🟡 P1 | Verify `_isInferring` gate prevents concurrent inference |
-| Error propagation | 🟡 P1 | Verify isolate errors are sent to main isolate |
+| Error propagation and bounded recovery | 🟡 P1 | Verify typed isolate errors reach the main isolate, worker generations reject stale messages, retries are bounded, and disposal cancels pending recovery |
 | Buffer reuse | 🟢 P2 | Verify pre-allocated buffers are reused (no new allocations per frame) |
 
 ## Widget Testing Strategy
@@ -53,6 +53,8 @@
 | Model swap | 🟢 P2 | Dynamic tensor shape query handles different model shapes |
 | Engine switch | 🟡 P0 | One-device bidirectional smoke pass completed after fixing a late-result disposal race; repeated/rotated/background lifecycle coverage remains |
 | Ultralytics native path | 🟡 P0 | On-device camera → native preprocessing/inference/NMS → EyeCue adapter/cards ran on Snapdragon 695; controlled TTS/telemetry/delegate validation remains |
+| Custom worker lifecycle orchestration | ✅ | Deterministic coverage for respawn, stale generations, busy-gate release, delayed retry, terminal failure, disposal during backoff, and healthy recovery |
+| Accessibility semantics and large text | ✅ | Deterministic coverage for actionable labels, live regions, charts, correction controls, and 200% text scale |
 
 ## Manual Testing Checklist
 
@@ -77,7 +79,7 @@
 - [ ] TTS works with screen reader (TalkBack) active
 
 ### Accessibility
-- [ ] All interactive elements have TalkBack labels
+- [x] All tested interactive elements have TalkBack labels — broad semantics coverage is automated; device TalkBack validation remains manual
 - [ ] Gesture controls work (double-tap, swipe)
 - [ ] High-contrast mode is readable
 - [ ] App is fully navigable without vision
@@ -85,7 +87,7 @@
 ### Error Handling
 - [ ] Camera permission denied → shows explanation UI
 - [ ] Model fails to load → shows error UI
-- [ ] Inference crashes → app recovers gracefully
+- [x] Typed Dart-level inference failures → bounded Custom-worker recovery is covered by deterministic orchestration tests; native crashes such as SIGSEGV remain outside Dart guarantees and require device validation
 - [ ] Device rotation → no state loss
 
 ## Benchmark Plan
@@ -123,5 +125,5 @@ For the two selectable runtime modes, follow the paired protocol in [`dual-infer
 
 ### Feature: Performance Logging
 1. Enable logging → verify FPS, latency, and confidence are recorded — ✅ telemetry records these (v0.2.0)
-2. Export logs → verify data is in parseable format (JSON/CSV) — ❌ export not yet implemented
+2. Export logs → verify data is in parseable format (JSON/CSV) — ✅ JSON/CSV export and round-trip coverage implemented
 3. Dashboard → verify `fl_chart` renders real-time metrics — ✅ Logs & Reports Overview/Charts/Logs (v0.2.0–v0.2.2)

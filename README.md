@@ -10,7 +10,9 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 **Stable release: v0.2.2** — The documented release contains the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. Its CPU-only, NHWC inference baseline was validated on the Snapdragon 695 test device.
 
-The current repository also contains a **committed but unreleased dual-engine candidate**. Settings can select the existing Custom EyeCue pipeline or an `ultralytics_yolo` native path; both use the same `yolov8n_int8_new.tflite`, labels, and thresholds, then feed EyeCue's assistive layer. The debug APK builds, installs, and has processed live camera frames in both modes on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Bidirectional switching also passed after a late-isolate-result lifecycle race was fixed. Short unmatched readings suggest that Ultralytics may be faster, but delegate selection and sustained comparative performance are not yet proven; no winner is claimed before controlled paired runs. `flutter analyze` is clean (0 issues) and `flutter test` reports **77 passing tests**.
+The current repository also contains a **committed but unreleased dual-engine candidate**. Settings can select the existing Custom EyeCue pipeline or an `ultralytics_yolo` native path; both use the same metadata-enriched `yolov8n_int8_new_metadata.tflite` artifact, authoritative `labels.txt`, and thresholds, then feed EyeCue's assistive layer. The artifact preserves the validated `yolov8n_int8_new.tflite` FlatBuffer byte-for-byte and appends a deterministic `metadata.json` ZIP containing the 80 indexed labels for the native overlay. Regenerate or validate it with `dart run tool/package_ultralytics_metadata.dart` and `dart run tool/package_ultralytics_metadata.dart --check`; details and SHA-256 values are recorded in [`model-assets.md`](docs/model-assets.md). The debug APK builds, installs, and has processed live camera frames in both modes on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Bidirectional switching also passed after a late-isolate-result lifecycle race was fixed. Short unmatched readings suggest that Ultralytics may be faster, but delegate selection and sustained comparative performance are not yet proven; no winner is claimed before controlled paired runs. `flutter analyze` is clean (0 issues) and `flutter test` reports **127 passing tests**.
+
+Fresh settings default to **Ultralytics**. An explicit persisted **Custom EyeCue** choice is preserved, and Custom remains available as the bounded Advanced/compatibility fallback. Detection sensitivity is also persisted through shared presets or the bounded advanced threshold range; both engines apply the selected value when they start or reload.
 
 For an honest thesis-product completion baseline, see [`docs/thesis-product-status-audit.md`](docs/thesis-product-status-audit.md) and [`docs/project-status.md`](docs/project-status.md).
 
@@ -34,11 +36,13 @@ All project documentation is in the [`docs/`](docs/) directory:
 | [`project-status.md`](docs/project-status.md) | Current state, blockers, next steps — **read first** |
 | [`architecture.md`](docs/architecture.md) | System design, data flow, component map |
 | [`implementation-plan.md`](docs/implementation-plan.md) | Roadmap, milestones, feature dependencies |
+| [`app-only-implementation-plan.md`](docs/app-only-implementation-plan.md) | Detailed status and acceptance criteria for the 15 original repository-owned app task areas; runtime work is complete and release engineering remains gated |
 | [`implementation-progress.md`](docs/implementation-progress.md) | Completed/in-progress/remaining work |
 | [`implementation-decisions.md`](docs/implementation-decisions.md) | Key engineering decisions and rationale |
 | [`known-issues.md`](docs/known-issues.md) | Blockers, technical debt, bugs |
 | [`testing-plan.md`](docs/testing-plan.md) | Unit, widget, integration, and manual testing |
 | [`benchmark-results.md`](docs/benchmark-results.md) | Performance measurement template |
+| [`telemetry-data-dictionary.md`](docs/telemetry-data-dictionary.md) | Stable JSON/CSV telemetry fields, units, and privacy boundaries |
 | [`development-workflow.md`](docs/development-workflow.md) | Session checklist for developers and AI agents |
 | [`session-log.md`](docs/session-log.md) | Per-session log of objectives, progress, and decisions |
 | [`changelog.md`](docs/changelog.md) | Human-readable version history |
@@ -87,11 +91,19 @@ lib/
 ├── models/
 │   ├── detection.dart                 # Detection data class
 │   ├── detection_info.dart            # Spatial/priority/proximity info
+│   ├── detection_correction.dart      # Versioned correction record
+│   ├── detection_failure.dart         # Typed runtime failure model
+│   ├── detection_runtime_state.dart   # Shared runtime states and failures
+│   ├── engine_runtime_selection.dart  # Preferred/active engine state
+│   ├── inference_lifecycle_event.dart # Worker lifecycle event payload
+│   ├── inference_recovery_policy.dart # Bounded restart policy
 │   ├── app_settings.dart              # Persisted settings model
 │   ├── box_transform.dart             # Device-independent orientation math
 │   ├── model_metadata.dart            # Runtime model introspection snapshot
 │   ├── tensor_rotation.dart           # NHWC/NCHW square tensor rotation helper
 │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
+│   ├── telemetry_export.dart           # Versioned JSON/CSV export DTOs
+│   ├── tracked_detection.dart          # Timestamped motion state
 │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
 ├── screens/
 │   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
@@ -101,11 +113,19 @@ lib/
 │   └── logs_reports_screen.dart       # Logs & Reports dashboard
 ├── services/
 │   ├── inference_isolate.dart         # Isolate bridge + inference + preprocessing
+│   ├── inference_worker_lifecycle.dart # Injectable bounded worker recovery
+│   ├── assistive_detection_controller.dart # Shared normalized detection behavior
+│   ├── engine_coordinator.dart         # Preferred/active engine and fallback
+│   ├── ultralytics_detection_adapter.dart # Native result → Detection mapping
 │   ├── tts_service.dart               # TTS queue, cooldown, de-duplication, mute, repeat
 │   ├── settings_service.dart          # File-backed persisted settings (JSON)
 │   ├── spatial_analysis_service.dart  # Box → position/priority/proximity (pure)
 │   ├── haptics_service.dart           # HapticFeedback wrapper
 │   ├── telemetry_service.dart         # Session telemetry + aggregates
+│   ├── telemetry_export_service.dart  # Image-free JSON/CSV export
+│   ├── correction_service.dart        # Correction capture and records
+│   ├── object_tracker.dart             # Cross-frame motion estimates
+│   ├── scene_summary_service.dart      # Deterministic alert/scan summaries
 │   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
 │   ├── forensic_log.dart              # File-based structured diagnostics
 │   ├── inference_probe.dart           # Parser probe (disabled)
@@ -118,6 +138,8 @@ lib/
     ├── warning_banner.dart            # High-priority obstacle banner
     ├── status_pill.dart               # Detecting/Paused/Stopped indicator
     ├── accessible_button.dart         # Large high-contrast button (48dp+)
+    ├── detection_state_panel.dart      # Shared loading/error/recovery panel
+    ├── detection_correction_sheet.dart # Correct/incorrect/unsure workflow
     ├── charts.dart                    # fl_chart latency/FPS/frequency charts
     ├── debug_overlay.dart             # Debug HUD (retained, unused)
     └── info_panel.dart                # Old metrics panel (unused in primary UI)
