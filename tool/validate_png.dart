@@ -33,7 +33,8 @@ void main() {
 
   // 1. Signature check.
   const sig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-  final okSig = png.length >= 8 &&
+  final okSig =
+      png.length >= 8 &&
       List.generate(8, (i) => png[i]).join(',') == sig.join(',');
   stdout.writeln('signature: ${okSig ? "OK" : "FAIL"}');
 
@@ -56,11 +57,15 @@ void main() {
     if (type == 'IHDR') sawIHDR = true;
     if (type == 'IDAT') sawIDAT = true;
     if (type == 'IEND') sawIEND = true;
-    stdout.writeln('chunk $type len=$len crc=${crcStored == crcCalc ? "OK" : "FAIL"}');
+    stdout.writeln(
+      'chunk $type len=$len crc=${crcStored == crcCalc ? "OK" : "FAIL"}',
+    );
     pos = dataEnd + 4;
   }
   if (!(sawIHDR && sawIDAT && sawIEND)) ok = false;
-  stdout.writeln('chunks (IHDR/IDAT/IEND): ${sawIHDR && sawIDAT && sawIEND ? "OK" : "FAIL"}');
+  stdout.writeln(
+    'chunks (IHDR/IDAT/IEND): ${sawIHDR && sawIDAT && sawIEND ? "OK" : "FAIL"}',
+  );
 
   // 3. Size sanity: expected IHDR dims.
   final wRead = ByteData.sublistView(png).getUint32(16, Endian.big);

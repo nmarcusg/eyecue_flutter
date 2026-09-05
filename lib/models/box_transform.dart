@@ -91,13 +91,25 @@ class BoxTransform {
     switch (_norm(degrees)) {
       case 90:
         return Rect.fromLTWH(
-            1 - box.top - box.height, box.left, box.height, box.width);
+          1 - box.top - box.height,
+          box.left,
+          box.height,
+          box.width,
+        );
       case 180:
-        return Rect.fromLTWH(1 - box.left - box.width,
-            1 - box.top - box.height, box.width, box.height);
+        return Rect.fromLTWH(
+          1 - box.left - box.width,
+          1 - box.top - box.height,
+          box.width,
+          box.height,
+        );
       case 270:
         return Rect.fromLTWH(
-            box.top, 1 - box.left - box.width, box.height, box.width);
+          box.top,
+          1 - box.left - box.width,
+          box.height,
+          box.width,
+        );
       default:
         return box;
     }
@@ -108,13 +120,25 @@ class BoxTransform {
     switch (_norm(degrees)) {
       case 90:
         return Rect.fromLTWH(
-            box.top, 1 - box.left - box.width, box.height, box.width);
+          box.top,
+          1 - box.left - box.width,
+          box.height,
+          box.width,
+        );
       case 180:
-        return Rect.fromLTWH(1 - box.left - box.width,
-            1 - box.top - box.height, box.width, box.height);
+        return Rect.fromLTWH(
+          1 - box.left - box.width,
+          1 - box.top - box.height,
+          box.width,
+          box.height,
+        );
       case 270:
         return Rect.fromLTWH(
-            1 - box.top - box.height, box.left, box.height, box.width);
+          1 - box.top - box.height,
+          box.left,
+          box.height,
+          box.width,
+        );
       default:
         return box;
     }

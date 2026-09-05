@@ -23,8 +23,9 @@ class _FakeTtsEngine implements TtsEngine {
 /// high-contrast TextTheme with concrete font sizes, so the app must build and
 /// render the Home screen without throwing.
 void main() {
-  testWidgets('EyeCueApp builds the theme and renders the Home screen',
-      (tester) async {
+  testWidgets('EyeCueApp builds the theme and renders the Home screen', (
+    tester,
+  ) async {
     final app = EyeCueApp(
       settings: SettingsService(store: InMemorySettingsStore()),
       tts: TtsService(engine: _FakeTtsEngine()),

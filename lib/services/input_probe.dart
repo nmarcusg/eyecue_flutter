@@ -48,16 +48,22 @@ class InputProbe {
     _phaseADone = true;
 
     debugPrint('━━━ [InputProbe A] CAMERA IMAGE ━━━');
-    debugPrint('[InputProbe A] formatRaw=${image.format.raw} '
-        'formatGroup=${image.format.group}');
-    debugPrint('[InputProbe A] width=${image.width} height=${image.height} '
-        'planes=${image.planes.length}');
+    debugPrint(
+      '[InputProbe A] formatRaw=${image.format.raw} '
+      'formatGroup=${image.format.group}',
+    );
+    debugPrint(
+      '[InputProbe A] width=${image.width} height=${image.height} '
+      'planes=${image.planes.length}',
+    );
     for (int i = 0; i < image.planes.length; i++) {
       final p = image.planes[i];
-      debugPrint('[InputProbe A] plane[$i] bytesLen=${p.bytes.length} '
-          'rowStride(bytesPerRow)=${p.bytesPerRow} '
-          'pixelStride(bytesPerPixel)=${p.bytesPerPixel} '
-          'planeW=${p.width} planeH=${p.height}');
+      debugPrint(
+        '[InputProbe A] plane[$i] bytesLen=${p.bytes.length} '
+        'rowStride(bytesPerRow)=${p.bytesPerRow} '
+        'pixelStride(bytesPerPixel)=${p.bytesPerPixel} '
+        'planeW=${p.width} planeH=${p.height}',
+      );
     }
     debugPrint('[InputProbe A] inferredFormat=${_inferFormat(image)}');
     debugPrint('━━━ [InputProbe A] END ━━━');
@@ -94,29 +100,37 @@ class InputProbe {
       if (c >= 0 && c < 3) stats[c].add(v);
     }
 
-    debugPrint('━━━ [InputProbe B] RGB CHANNEL STATS (frame $frame, '
-        'layout=${isNCHW ? "NCHW" : "NHWC"}) ━━━');
+    debugPrint(
+      '━━━ [InputProbe B] RGB CHANNEL STATS (frame $frame, '
+      'layout=${isNCHW ? "NCHW" : "NHWC"}) ━━━',
+    );
     const names = ['R', 'G', 'B'];
     for (int c = 0; c < 3; c++) {
-      debugPrint('[InputProbe B] $names[c] min=${stats[c].min.toStringAsFixed(4)} '
-          'max=${stats[c].max.toStringAsFixed(4)} '
-          'mean=${stats[c].mean.toStringAsFixed(4)} '
-          'std=${stats[c].std.toStringAsFixed(4)}');
+      debugPrint(
+        '[InputProbe B] $names[c] min=${stats[c].min.toStringAsFixed(4)} '
+        'max=${stats[c].max.toStringAsFixed(4)} '
+        'mean=${stats[c].mean.toStringAsFixed(4)} '
+        'std=${stats[c].std.toStringAsFixed(4)}',
+      );
     }
     // Channel health checks.
     final means = stats.map((s) => s.mean).toList();
     final maxMean = means.reduce(math.max);
     final minMean = means.reduce(math.min);
     if ((maxMean - minMean).abs() < 1e-3) {
-      debugPrint('[InputProbe B] ⚠️ ALL CHANNELS NEARLY IDENTICAL '
-          '(mean range ${(maxMean - minMean).toStringAsExponential(1)}) — '
-          'image has no color information');
+      debugPrint(
+        '[InputProbe B] ⚠️ ALL CHANNELS NEARLY IDENTICAL '
+        '(mean range ${(maxMean - minMean).toStringAsExponential(1)}) — '
+        'image has no color information',
+      );
     }
     if (minMean < 1e-4 && maxMean < 1e-2) {
       debugPrint('[InputProbe B] ⚠️ ALL CHANNELS ~0 — image is near-black');
     }
     if (maxMean > 0.99) {
-      debugPrint('[InputProbe B] ⚠️ ALL CHANNELS ~1 — image is near-white/saturated');
+      debugPrint(
+        '[InputProbe B] ⚠️ ALL CHANNELS ~1 — image is near-white/saturated',
+      );
     }
     debugPrint('━━━ [InputProbe B] END ━━━');
   }
@@ -138,10 +152,14 @@ class InputProbe {
       s.add(_at(input, i));
     }
     debugPrint('━━━ [InputProbe C] RESIZE ━━━');
-    debugPrint('[InputProbe C] src=${srcWidth}x$srcHeight → '
-        'dst=${dstWidth}x$dstHeight expectedTensor=${m.inputShape.join("x")}');
-    debugPrint('[InputProbe C] resizedRGB min=${s.min.toStringAsFixed(4)} '
-        'max=${s.max.toStringAsFixed(4)} mean=${s.mean.toStringAsFixed(4)}');
+    debugPrint(
+      '[InputProbe C] src=${srcWidth}x$srcHeight → '
+      'dst=${dstWidth}x$dstHeight expectedTensor=${m.inputShape.join("x")}',
+    );
+    debugPrint(
+      '[InputProbe C] resizedRGB min=${s.min.toStringAsFixed(4)} '
+      'max=${s.max.toStringAsFixed(4)} mean=${s.mean.toStringAsFixed(4)}',
+    );
     debugPrint('━━━ [InputProbe C] END ━━━');
   }
 
@@ -160,9 +178,11 @@ class InputProbe {
       if (v > 1.0) aboveOne++;
     }
     debugPrint('━━━ [InputProbe D] NORMALIZATION ━━━');
-    debugPrint('[InputProbe D] min=${s.min.toStringAsFixed(6)} '
-        'max=${s.max.toStringAsFixed(6)} mean=${s.mean.toStringAsFixed(4)} '
-        'std=${s.std.toStringAsFixed(4)}');
+    debugPrint(
+      '[InputProbe D] min=${s.min.toStringAsFixed(6)} '
+      'max=${s.max.toStringAsFixed(6)} mean=${s.mean.toStringAsFixed(4)} '
+      'std=${s.std.toStringAsFixed(4)}',
+    );
     debugPrint('[InputProbe D] negatives=$neg (>1)=$aboveOne of $n');
     if (s.max == 0) {
       debugPrint('[InputProbe D] ⚠️ ALL ZERO');
@@ -173,8 +193,10 @@ class InputProbe {
       debugPrint('[InputProbe D] ⚠️ VALUES > 1 — normalization is NOT [0,1]');
     }
     if (s.mean < 0.2 || s.mean > 0.8) {
-      debugPrint('[InputProbe D] ⚠️ mean=${s.mean.toStringAsFixed(3)} outside '
-          'expected ~0.3–0.7 (typical natural image)');
+      debugPrint(
+        '[InputProbe D] ⚠️ mean=${s.mean.toStringAsFixed(3)} outside '
+        'expected ~0.3–0.7 (typical natural image)',
+      );
     }
     debugPrint('━━━ [InputProbe D] END ━━━');
   }
@@ -202,16 +224,26 @@ class InputProbe {
       }
     }
 
-    debugPrint('━━━ [InputProbe E] INPUT TENSOR BEFORE run() (frame $frame) ━━━');
-    debugPrint('[InputProbe E] dtype=${input.runtimeType} len=$n expected=$expected');
-    debugPrint('[InputProbe E] min=${s.min.toStringAsFixed(6)} '
-        'max=${s.max.toStringAsFixed(6)} mean=${s.mean.toStringAsFixed(4)}');
+    debugPrint(
+      '━━━ [InputProbe E] INPUT TENSOR BEFORE run() (frame $frame) ━━━',
+    );
+    debugPrint(
+      '[InputProbe E] dtype=${input.runtimeType} len=$n expected=$expected',
+    );
+    debugPrint(
+      '[InputProbe E] min=${s.min.toStringAsFixed(6)} '
+      'max=${s.max.toStringAsFixed(6)} mean=${s.mean.toStringAsFixed(4)}',
+    );
     debugPrint('[InputProbe E] first32=${_fmt(first)}');
     debugPrint('[InputProbe E] last32=${_fmt(last)}');
-    debugPrint('[InputProbe E] sample32=${_fmt(randomVals)} (indices=${seen.take(8).join(",")}…)');
+    debugPrint(
+      '[InputProbe E] sample32=${_fmt(randomVals)} (indices=${seen.take(8).join(",")}…)',
+    );
     if (m.requiresInputQuantization) {
-      debugPrint('[InputProbe E] inputScale=${m.inputScale} '
-          'inputZeroPoint=${m.inputZeroPoint}');
+      debugPrint(
+        '[InputProbe E] inputScale=${m.inputScale} '
+        'inputZeroPoint=${m.inputZeroPoint}',
+      );
       final ints = <int>{};
       for (int i = 0; i < n; i++) {
         ints.add(_at(input, i).round());
@@ -222,7 +254,9 @@ class InputProbe {
         if (v < lo) lo = v;
         if (v > hi) hi = v;
       }
-      debugPrint('[InputProbe E] integerRangeUsed=[$lo, $hi] distinct=${ints.length}');
+      debugPrint(
+        '[InputProbe E] integerRangeUsed=[$lo, $hi] distinct=${ints.length}',
+      );
     }
     debugPrint('━━━ [InputProbe E] END ━━━');
   }
@@ -239,11 +273,15 @@ class InputProbe {
   }) {
     final top = _topK(output, m, labels, 20);
     debugPrint('━━━ [InputProbe F] KNOWN-IMAGE RESULT ━━━');
-    debugPrint('[InputProbe F] latency=${latencyMs.toStringAsFixed(1)}ms '
-        'detections=$detectionCount (threshold 0.5)');
+    debugPrint(
+      '[InputProbe F] latency=${latencyMs.toStringAsFixed(1)}ms '
+      'detections=$detectionCount (threshold 0.5)',
+    );
     for (final e in top) {
-      debugPrint('[InputProbe F] anchor ${e.anchor}  ${e.label}  '
-          '${e.score.toStringAsFixed(4)}');
+      debugPrint(
+        '[InputProbe F] anchor ${e.anchor}  ${e.label}  '
+        '${e.score.toStringAsFixed(4)}',
+      );
     }
     debugPrint('━━━ [InputProbe F] END ━━━');
   }
@@ -300,12 +338,19 @@ class InputProbe {
   // -------------------------------------------------------------------------
   // PHASE G — top-k output inspection
   // -------------------------------------------------------------------------
-  static void phaseG(List output, ModelMetadata m, List<String> labels, int frame) {
+  static void phaseG(
+    List output,
+    ModelMetadata m,
+    List<String> labels,
+    int frame,
+  ) {
     final top = _topK(output, m, labels, 20);
     debugPrint('━━━ [InputProbe G] TOP-20 CONFIDENCES (frame $frame) ━━━');
     for (final e in top) {
-      debugPrint('[InputProbe G] anchor ${e.anchor}  ${e.label}  '
-          '${e.score.toStringAsFixed(4)}');
+      debugPrint(
+        '[InputProbe G] anchor ${e.anchor}  ${e.label}  '
+        '${e.score.toStringAsFixed(4)}',
+      );
     }
     debugPrint('━━━ [InputProbe G] END ━━━');
   }
@@ -349,12 +394,18 @@ class InputProbe {
     }
 
     debugPrint('━━━ [InputProbe H] CONFIDENCE DISTRIBUTION (frame $frame) ━━━');
-    debugPrint('[InputProbe H] max=${maxV.toStringAsFixed(4)} '
-        'mean=${mean.toStringAsFixed(4)} median=${median.toStringAsFixed(4)} '
-        'p95=${p95.toStringAsFixed(4)} p99=${p99.toStringAsFixed(4)}');
-    debugPrint('[InputProbe H] counts: '
-        '${counts.entries.map((e) => '>${e.key}:${e.value}').join(' ')}');
-    debugPrint('[InputProbe H] verdict: ${maxV < 0.5 ? "FLAT/LOW — input-side problem" : "HEALTHY — parser would detect"}');
+    debugPrint(
+      '[InputProbe H] max=${maxV.toStringAsFixed(4)} '
+      'mean=${mean.toStringAsFixed(4)} median=${median.toStringAsFixed(4)} '
+      'p95=${p95.toStringAsFixed(4)} p99=${p99.toStringAsFixed(4)}',
+    );
+    debugPrint(
+      '[InputProbe H] counts: '
+      '${counts.entries.map((e) => '>${e.key}:${e.value}').join(' ')}',
+    );
+    debugPrint(
+      '[InputProbe H] verdict: ${maxV < 0.5 ? "FLAT/LOW — input-side problem" : "HEALTHY — parser would detect"}',
+    );
     debugPrint('━━━ [InputProbe H] END ━━━');
   }
 

@@ -101,11 +101,11 @@ class SpatialAnalysisService {
   }
 
   static DetectionInfo analyze(Detection d) => DetectionInfo(
-        detection: d,
-        position: positionFor(d.box),
-        priority: priorityFor(d.classId),
-        proximity: proximityFor(d.box),
-      );
+    detection: d,
+    position: positionFor(d.box),
+    priority: priorityFor(d.classId),
+    proximity: proximityFor(d.box),
+  );
 
   static List<DetectionInfo> analyzeAll(List<Detection> detections) =>
       detections.map(analyze).toList();

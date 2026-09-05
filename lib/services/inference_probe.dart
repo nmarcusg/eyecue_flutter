@@ -42,16 +42,24 @@ class InferenceProbe {
   static void phase1(ModelMetadata m, {required int labelCount}) {
     debugPrint('━━━ [Probe P1] MODEL LOADING ━━━');
     debugPrint('[Probe P1] model=${m.modelName}');
-    debugPrint('[Probe P1] inputType=${m.inputType} inputShape=${m.inputShape} '
-        'inputScale=${m.inputScale} inputZeroPoint=${m.inputZeroPoint}');
-    debugPrint('[Probe P1] outputType=${m.outputType} outputShape=${m.outputShape} '
-        'outputScale=${m.outputScale} outputZeroPoint=${m.outputZeroPoint}');
-    debugPrint('[Probe P1] inputQuantized=${m.inputQuantized} '
-        'outputQuantized=${m.outputQuantized}');
+    debugPrint(
+      '[Probe P1] inputType=${m.inputType} inputShape=${m.inputShape} '
+      'inputScale=${m.inputScale} inputZeroPoint=${m.inputZeroPoint}',
+    );
+    debugPrint(
+      '[Probe P1] outputType=${m.outputType} outputShape=${m.outputShape} '
+      'outputScale=${m.outputScale} outputZeroPoint=${m.outputZeroPoint}',
+    );
+    debugPrint(
+      '[Probe P1] inputQuantized=${m.inputQuantized} '
+      'outputQuantized=${m.outputQuantized}',
+    );
     debugPrint('[Probe P1] modelType=${m.modelType.label}');
     debugPrint('[Probe P1] internalTensorTypes=${m.internalTensorTypeCounts}');
-    debugPrint('[Probe P1] classes=${m.classes} anchors=${m.anchors} '
-        'labelsInFile=$labelCount');
+    debugPrint(
+      '[Probe P1] classes=${m.classes} anchors=${m.anchors} '
+      'labelsInFile=$labelCount',
+    );
     debugPrint('━━━ [Probe P1] END ━━━');
   }
 
@@ -83,18 +91,28 @@ class InferenceProbe {
     final mean = length == 0 ? double.nan : sum / length;
 
     debugPrint('━━━ [Probe P2] PREPROCESSING (frame $frameNumber) ━━━');
-    debugPrint('[Probe P2] src=${srcWidth}x$srcHeight dst=${dstWidth}x$dstHeight '
-        'bufferType=${inputBuffer.runtimeType}');
-    debugPrint('[Probe P2] bufferLen=$length expected=${ModelMetadata.elementCount(m.inputShape)}');
+    debugPrint(
+      '[Probe P2] src=${srcWidth}x$srcHeight dst=${dstWidth}x$dstHeight '
+      'bufferType=${inputBuffer.runtimeType}',
+    );
+    debugPrint(
+      '[Probe P2] bufferLen=$length expected=${ModelMetadata.elementCount(m.inputShape)}',
+    );
     debugPrint('[Probe P2] min=$minV max=$maxV mean=$mean');
-    debugPrint('[Probe P2] first20=${first20.take(20).map((v) => v.toStringAsFixed(4)).join(', ')}');
+    debugPrint(
+      '[Probe P2] first20=${first20.take(20).map((v) => v.toStringAsFixed(4)).join(', ')}',
+    );
     // Channel ordering: for NHWC interleaved RGB the first 3 values are
     // [R, G, B] of pixel 0; log whether values fall in [0,1] (normalized) or
     // [0,255] (raw) to confirm the normalization path.
-    debugPrint('[Probe P2] normalization: first3=${first20.take(3).map((v) => v.toStringAsFixed(4)).join(",")} '
-        '(in [0,1] => normalized; in [0,255] => NOT normalized)');
-    debugPrint('[Probe P2] requiresInputQuantization=${m.requiresInputQuantization} '
-        'inputScale=${m.inputScale} inputZeroPoint=${m.inputZeroPoint}');
+    debugPrint(
+      '[Probe P2] normalization: first3=${first20.take(3).map((v) => v.toStringAsFixed(4)).join(",")} '
+      '(in [0,1] => normalized; in [0,255] => NOT normalized)',
+    );
+    debugPrint(
+      '[Probe P2] requiresInputQuantization=${m.requiresInputQuantization} '
+      'inputScale=${m.inputScale} inputZeroPoint=${m.inputZeroPoint}',
+    );
     debugPrint('━━━ [Probe P2] END ━━━');
   }
 
@@ -126,12 +144,20 @@ class InferenceProbe {
     final mean = output.isEmpty ? double.nan : sum / output.length;
 
     debugPrint('━━━ [Probe P3] RAW OUTPUT TENSOR (frame $frameNumber) ━━━');
-    debugPrint('[Probe P3] outLen=${output.length} '
-        'expected=${ModelMetadata.elementCount(m.outputShape)} type=${output.runtimeType}');
-    debugPrint('[Probe P3] min=$minV max=$maxV mean=$mean nan=$nanCount inf=$infCount');
+    debugPrint(
+      '[Probe P3] outLen=${output.length} '
+      'expected=${ModelMetadata.elementCount(m.outputShape)} type=${output.runtimeType}',
+    );
+    debugPrint(
+      '[Probe P3] min=$minV max=$maxV mean=$mean nan=$nanCount inf=$infCount',
+    );
     debugPrint('[Probe P3] allZero=${maxV == 0.0}');
-    debugPrint('[Probe P3] top20=${top.map((e) => '${e.value.toStringAsFixed(4)}@${e.index}').join(', ')}');
-    debugPrint('[Probe P3] top20%0-640px: if indices < 8400 => row 0 (x box); 84-167 => row1 etc.');
+    debugPrint(
+      '[Probe P3] top20=${top.map((e) => '${e.value.toStringAsFixed(4)}@${e.index}').join(', ')}',
+    );
+    debugPrint(
+      '[Probe P3] top20%0-640px: if indices < 8400 => row 0 (x box); 84-167 => row1 etc.',
+    );
     debugPrint('━━━ [Probe P3] END ━━━');
   }
 
@@ -153,9 +179,11 @@ class InferenceProbe {
       final h = _outVal(output, 3 * numBoxes + a, dequant, m);
       final best = _maxClass(output, a, numBoxes, numClasses, dequant, m);
       final top3 = _topClasses(output, a, numBoxes, numClasses, dequant, m, 3);
-      debugPrint('[Probe P4] anchor=$a bbox=[cx=$cx cy=$cy w=$w h=$h] '
-          'top3=${top3.map((e) => 'cls${e.cls}:${e.score.toStringAsFixed(4)}').join(", ")} '
-          'bestCls=${best.cls} bestScore=${best.score.toStringAsFixed(4)}');
+      debugPrint(
+        '[Probe P4] anchor=$a bbox=[cx=$cx cy=$cy w=$w h=$h] '
+        'top3=${top3.map((e) => 'cls${e.cls}:${e.score.toStringAsFixed(4)}').join(", ")} '
+        'bestCls=${best.cls} bestScore=${best.score.toStringAsFixed(4)}',
+      );
     }
 
     // Global best across the whole tensor (layout A = current parser).
@@ -170,8 +198,10 @@ class InferenceProbe {
         gCls = b.cls;
       }
     }
-    debugPrint('[Probe P4] GLOBAL bestScore=${gBest.toStringAsFixed(4)} '
-        'anchor=$gAnchor class=$gCls (label="${gCls >= 0 && gCls < 80 ? 'n/a' : 'n/a'}")');
+    debugPrint(
+      '[Probe P4] GLOBAL bestScore=${gBest.toStringAsFixed(4)} '
+      'anchor=$gAnchor class=$gCls (label="${gCls >= 0 && gCls < 80 ? 'n/a' : 'n/a'}")',
+    );
     debugPrint('━━━ [Probe P4] END ━━━');
   }
 
@@ -211,11 +241,17 @@ class InferenceProbe {
     }
 
     debugPrint('━━━ [Probe P5] THRESHOLD SWEEP (frame $frameNumber) ━━━');
-    debugPrint('[Probe P5] layoutA (features-major, current parser): max=${maxA.toStringAsFixed(4)} '
-        'counts=${countsA.entries.map((e) => '>${e.key}:${e.value}').join(' ')}');
-    debugPrint('[Probe P5] layoutB (anchors-major [1,N,4+nc]):         max=${maxB.toStringAsFixed(4)} '
-        'counts=${countsB.entries.map((e) => '>${e.key}:${e.value}').join(' ')}');
-    debugPrint('[Probe P5] production threshold=0.50 → layoutA count=${countsA[0.50] ?? 0}');
+    debugPrint(
+      '[Probe P5] layoutA (features-major, current parser): max=${maxA.toStringAsFixed(4)} '
+      'counts=${countsA.entries.map((e) => '>${e.key}:${e.value}').join(' ')}',
+    );
+    debugPrint(
+      '[Probe P5] layoutB (anchors-major [1,N,4+nc]):         max=${maxB.toStringAsFixed(4)} '
+      'counts=${countsB.entries.map((e) => '>${e.key}:${e.value}').join(' ')}',
+    );
+    debugPrint(
+      '[Probe P5] production threshold=0.50 → layoutA count=${countsA[0.50] ?? 0}',
+    );
     debugPrint('━━━ [Probe P5] END ━━━');
   }
 
@@ -245,9 +281,11 @@ class InferenceProbe {
       }
       if (cx < 0 || cx > 640 || cy < 0 || cy > 640) bad.add('outXy');
       if (w > 640 || h > 640) bad.add('outWh');
-      debugPrint('[Probe P6] anchor=$a score=${best.score.toStringAsFixed(4)} '
-          'box=[cx=$cx cy=$cy w=$w h=$h] issues=${bad.isEmpty ? 'none' : bad.join(",")} '
-          '(pixel-space expected: 0..640; normalized would be 0..1)');
+      debugPrint(
+        '[Probe P6] anchor=$a score=${best.score.toStringAsFixed(4)} '
+        'box=[cx=$cx cy=$cy w=$w h=$h] issues=${bad.isEmpty ? 'none' : bad.join(",")} '
+        '(pixel-space expected: 0..640; normalized would be 0..1)',
+      );
       shown++;
     }
     debugPrint('━━━ [Probe P6] END ━━━');
@@ -257,9 +295,11 @@ class InferenceProbe {
   // PHASE 7 — layout cross-check (one frame) — folded into phase5.
   // -------------------------------------------------------------------------
   static void phase7(List output, ModelMetadata m, int frameNumber) {
-    debugPrint('[Probe P7] Layout evidence: outputShape=${m.outputShape}. '
-        'Features-major [1,4+nc,N] implies score(anchor a, class c) = out[(4+c)*N+a]. '
-        'See phase5 sweep for A-vs-B maxima.');
+    debugPrint(
+      '[Probe P7] Layout evidence: outputShape=${m.outputShape}. '
+      'Features-major [1,4+nc,N] implies score(anchor a, class c) = out[(4+c)*N+a]. '
+      'See phase5 sweep for A-vs-B maxima.',
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -282,8 +322,10 @@ class InferenceProbe {
       final best = _maxClass(output, a, numBoxes, numClasses, dequant, m);
       if (best.score > maxConf) maxConf = best.score;
     }
-    debugPrint('[Probe P8] frame=$frameNumber latency=${latencyMs.toStringAsFixed(1)}ms '
-        'maxConf=${maxConf.toStringAsFixed(4)} detections=$detectionCount');
+    debugPrint(
+      '[Probe P8] frame=$frameNumber latency=${latencyMs.toStringAsFixed(1)}ms '
+      'maxConf=${maxConf.toStringAsFixed(4)} detections=$detectionCount',
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -321,7 +363,13 @@ class InferenceProbe {
   }
 
   static ({double score, int cls}) _maxClass(
-      List out, int anchor, int numBoxes, int numClasses, bool dequant, ModelMetadata m) {
+    List out,
+    int anchor,
+    int numBoxes,
+    int numClasses,
+    bool dequant,
+    ModelMetadata m,
+  ) {
     double best = -double.infinity;
     int bestCls = -1;
     for (int c = 0; c < numClasses; c++) {
@@ -334,8 +382,15 @@ class InferenceProbe {
     return (score: best, cls: bestCls);
   }
 
-  static List<({int cls, double score})> _topClasses(List out, int anchor,
-      int numBoxes, int numClasses, bool dequant, ModelMetadata m, int n) {
+  static List<({int cls, double score})> _topClasses(
+    List out,
+    int anchor,
+    int numBoxes,
+    int numClasses,
+    bool dequant,
+    ModelMetadata m,
+    int n,
+  ) {
     final entries = <({int cls, double score})>[];
     for (int c = 0; c < numClasses; c++) {
       entries.add((

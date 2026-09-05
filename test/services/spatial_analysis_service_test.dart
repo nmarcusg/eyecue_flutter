@@ -12,7 +12,12 @@ void main() {
     double conf = 0.9,
     required Rect box,
   }) {
-    return Detection(classId: classId, label: label, confidence: conf, box: box);
+    return Detection(
+      classId: classId,
+      label: label,
+      confidence: conf,
+      box: box,
+    );
   }
 
   group('positionFor', () {
@@ -51,25 +56,44 @@ void main() {
 
   group('priorityFor', () {
     test('people and vehicles are HIGH priority', () {
-      expect(SpatialAnalysisService.priorityFor(0), ObjectPriority.high); // person
+      expect(
+        SpatialAnalysisService.priorityFor(0),
+        ObjectPriority.high,
+      ); // person
       expect(SpatialAnalysisService.priorityFor(2), ObjectPriority.high); // car
       expect(SpatialAnalysisService.priorityFor(5), ObjectPriority.high); // bus
     });
 
     test('furniture is MEDIUM priority', () {
-      expect(SpatialAnalysisService.priorityFor(56), ObjectPriority.medium); // chair
-      expect(SpatialAnalysisService.priorityFor(73), ObjectPriority.medium); // refrigerator
+      expect(
+        SpatialAnalysisService.priorityFor(56),
+        ObjectPriority.medium,
+      ); // chair
+      expect(
+        SpatialAnalysisService.priorityFor(73),
+        ObjectPriority.medium,
+      ); // refrigerator
     });
 
     test('unlisted classes default to LOW priority', () {
-      expect(SpatialAnalysisService.priorityFor(77), ObjectPriority.low); // teddy bear
-      expect(SpatialAnalysisService.priorityFor(79), ObjectPriority.low); // toothbrush
+      expect(
+        SpatialAnalysisService.priorityFor(77),
+        ObjectPriority.low,
+      ); // teddy bear
+      expect(
+        SpatialAnalysisService.priorityFor(79),
+        ObjectPriority.low,
+      ); // toothbrush
     });
   });
 
   group('analyze', () {
     test('produces DetectionInfo with all fields', () {
-      final d = det(classId: 0, label: 'person', box: Rect.fromLTWH(0.8, 0.2, 0.15, 0.5));
+      final d = det(
+        classId: 0,
+        label: 'person',
+        box: Rect.fromLTWH(0.8, 0.2, 0.15, 0.5),
+      );
       final info = SpatialAnalysisService.analyze(d);
       expect(info.label, 'person');
       expect(info.position, RelativePosition.right);
@@ -81,8 +105,16 @@ void main() {
 
     test('analyzeAll maps every detection', () {
       final dets = [
-        det(classId: 0, label: 'person', box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2)),
-        det(classId: 56, label: 'chair', box: Rect.fromLTWH(0.5, 0.5, 0.2, 0.2)),
+        det(
+          classId: 0,
+          label: 'person',
+          box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2),
+        ),
+        det(
+          classId: 56,
+          label: 'chair',
+          box: Rect.fromLTWH(0.5, 0.5, 0.2, 0.2),
+        ),
       ];
       final infos = SpatialAnalysisService.analyzeAll(dets);
       expect(infos.length, 2);

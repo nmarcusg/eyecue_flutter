@@ -20,19 +20,19 @@ class _FakeTtsEngine implements TtsEngine {
 /// Stub pages so the shell can be tested without a real camera/inference stack.
 List<Widget> Function(BuildContext, AppShellState) stubPages() {
   return (context, shell) => [
-        // Home stub — includes a "Go to Live Camera" style action.
-        Scaffold(
-          body: Center(
-            child: TextButton(
-              onPressed: () => shell.goToTab(1),
-              child: const Text('PAGE0'),
-            ),
-          ),
+    // Home stub — includes a "Go to Live Camera" style action.
+    Scaffold(
+      body: Center(
+        child: TextButton(
+          onPressed: () => shell.goToTab(1),
+          child: const Text('PAGE0'),
         ),
-        const Scaffold(body: Center(child: Text('PAGE1'))),
-        const Scaffold(body: Center(child: Text('PAGE2'))),
-        const Scaffold(body: Center(child: Text('PAGE3'))),
-      ];
+      ),
+    ),
+    const Scaffold(body: Center(child: Text('PAGE1'))),
+    const Scaffold(body: Center(child: Text('PAGE2'))),
+    const Scaffold(body: Center(child: Text('PAGE3'))),
+  ];
 }
 
 void main() {
@@ -66,8 +66,9 @@ void main() {
     expect(find.text('PAGE1'), findsNothing);
   });
 
-  testWidgets('bottom navigation switches between all four tabs',
-      (tester) async {
+  testWidgets('bottom navigation switches between all four tabs', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildShell());
 
     for (final label in ['Detect', 'Settings', 'Help', 'Home']) {
@@ -93,8 +94,9 @@ void main() {
     expect(find.text('PAGE1'), findsOneWidget);
   });
 
-  testWidgets('settings page keeps its state when switching tabs',
-      (tester) async {
+  testWidgets('settings page keeps its state when switching tabs', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildShell());
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();

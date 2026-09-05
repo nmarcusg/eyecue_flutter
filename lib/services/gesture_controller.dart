@@ -29,8 +29,8 @@ class GestureController {
     this.singleTapConfirmDelay = const Duration(milliseconds: 300),
     this.doubleTapWindow = const Duration(milliseconds: 350),
     this.swipeDownThreshold = 80.0,
-  })  : _clock = clock ?? DateTime.now,
-        _createTimer = createTimer ?? _defaultTimer;
+  }) : _clock = clock ?? DateTime.now,
+       _createTimer = createTimer ?? _defaultTimer;
 
   static Timer _defaultTimer(Duration d, void Function() cb) => Timer(d, cb);
 

@@ -49,8 +49,9 @@ class ForensicLog {
   /// loggers work even if [init] was not awaited in time.
   static String get runDir => _runDir ?? 'debug_run';
 
-  static String get runDirName =>
-      _runDir == null ? 'debug_run' : _runDir!.split(Platform.pathSeparator).last;
+  static String get runDirName => _runDir == null
+      ? 'debug_run'
+      : _runDir!.split(Platform.pathSeparator).last;
 
   static final ForensicLogger camera = ForensicLogger('camera.txt');
   static final ForensicLogger preprocess = ForensicLogger('preprocess.txt');
@@ -79,7 +80,8 @@ class ForensicLog {
         debugDir.createSync(recursive: true);
       }
       final run = Directory(
-          '${debugDir.path}${Platform.pathSeparator}run_${_timestamp()}');
+        '${debugDir.path}${Platform.pathSeparator}run_${_timestamp()}',
+      );
       run.createSync(recursive: true);
       _runDir = run.path;
       debugPrint('[Forensic] run dir: ${run.path}');
@@ -148,29 +150,33 @@ class ForensicLog {
     required int width,
     required int height,
     required List<
-        ({
-          int len,
-          int rowStride,
-          int? pixelStride,
-          int planeWidth,
-          int planeHeight,
-          int firstByte,
-          int lastByte,
-        })> planes,
+      ({
+        int len,
+        int rowStride,
+        int? pixelStride,
+        int planeWidth,
+        int planeHeight,
+        int firstByte,
+        int lastByte,
+      })
+    >
+    planes,
     required String inferredFormat,
     int sensorOrientation = -1,
     String lensDirection = '',
   }) {
     if (sensorOrientation >= 0) {
-      camera.append('Sensor orientation: $sensorOrientation°  Lens: $lensDirection');
+      camera.append(
+        'Sensor orientation: $sensorOrientation°  Lens: $lensDirection',
+      );
     }
     _s.cameraFormat = inferredFormat;
     // The converter supports planar I420 (pixelStride 1) and semi-planar
     // NV12/NV21 (pixelStride 2, interleaved) using real rowStride/pixelStride.
     final layoutSupported =
         planes.length >= 2 &&
-            ((planes[1].pixelStride ?? 1) == 1 ||
-                (planes[1].pixelStride ?? 1) == 2);
+        ((planes[1].pixelStride ?? 1) == 1 ||
+            (planes[1].pixelStride ?? 1) == 2);
     _s.cameraMismatch = !layoutSupported;
     _s.cameraPass = layoutSupported;
 
@@ -179,10 +185,12 @@ class ForensicLog {
     camera.append('Size: ${width}x$height  planes: ${planes.length}');
     for (int i = 0; i < planes.length; i++) {
       final p = planes[i];
-      camera.append('Plane$i: rowStride=${p.rowStride} '
-          'pixelStride=${p.pixelStride ?? "n/a"} length=${p.len} '
-          'planeSize=${p.planeWidth}x${p.planeHeight} '
-          'firstByte=${p.firstByte} lastByte=${p.lastByte}');
+      camera.append(
+        'Plane$i: rowStride=${p.rowStride} '
+        'pixelStride=${p.pixelStride ?? "n/a"} length=${p.len} '
+        'planeSize=${p.planeWidth}x${p.planeHeight} '
+        'firstByte=${p.firstByte} lastByte=${p.lastByte}',
+      );
     }
     camera.append('Inferred format: $inferredFormat');
     // Definite layout classification from real plane metadata (not guessing).
@@ -195,7 +203,8 @@ class ForensicLog {
       } else if (c1 == 2 || c2 == 2) {
         final sameLen = planes[1].len == planes[2].len;
         final sameBytes = planes[1].firstByte == planes[2].firstByte;
-        layout = 'SEMI-PLANAR interleaved (chroma pixelStride==2). '
+        layout =
+            'SEMI-PLANAR interleaved (chroma pixelStride==2). '
             'plane1==plane2 buffer -> lenSame:$sameLen firstByteSame:$sameBytes '
             '(NV12 = U-led / NV21 = V-led; order NOT decided by geometry)';
       } else {
@@ -205,8 +214,10 @@ class ForensicLog {
       layout = '2-plane semi-planar (plane[1] = shared interleaved chroma)';
     }
     camera.append('Layout (from metadata): $layout');
-    camera.append('Converter support: I420 planar + NV12/NV21 semi-planar '
-        '(rowStride/pixelStride aware)');
+    camera.append(
+      'Converter support: I420 planar + NV12/NV21 semi-planar '
+      '(rowStride/pixelStride aware)',
+    );
     camera.append('Mismatch: ${layoutSupported ? "NO (handled)" : "YES"}');
   }
 
@@ -237,19 +248,27 @@ class ForensicLog {
     }
 
     preprocess.append('=== Preprocess (frame $frame) ===');
-    preprocess.append('Source: ${srcWidth}x$srcHeight  Target: ${dstWidth}x$dstHeight');
+    preprocess.append(
+      'Source: ${srcWidth}x$srcHeight  Target: ${dstWidth}x$dstHeight',
+    );
     preprocess.append('Layout: ${isNCHW ? "NCHW" : "NHWC"}');
     preprocess.append('--- RGB statistics (post YUV→RGB, normalized) ---');
     const names = ['R', 'G', 'B'];
     for (int c = 0; c < 3; c++) {
-      preprocess.append('$names[c]: min=${_f(stats[c].min)} max=${_f(stats[c].max)} '
-          'mean=${_f(stats[c].mean)} std=${_f(stats[c].std)}');
+      preprocess.append(
+        '$names[c]: min=${_f(stats[c].min)} max=${_f(stats[c].max)} '
+        'mean=${_f(stats[c].mean)} std=${_f(stats[c].std)}',
+      );
     }
     final means = stats.map((s) => s.mean).toList();
     final spread = means.reduce(math.max) - means.reduce(math.min);
     final allZero = stats.every((s) => s.max == 0);
-    final allOne = stats.every((s) => (s.min - 1).abs() < 1e-9 && (s.max - 1).abs() < 1e-9);
-    preprocess.append('channelSpread=${_f4(spread)} allZero=$allZero allOne=$allOne');
+    final allOne = stats.every(
+      (s) => (s.min - 1).abs() < 1e-9 && (s.max - 1).abs() < 1e-9,
+    );
+    preprocess.append(
+      'channelSpread=${_f4(spread)} allZero=$allZero allOne=$allOne',
+    );
 
     // Resize stage (same buffer in this fused implementation).
     preprocess.append('--- After resize ---');
@@ -257,8 +276,10 @@ class ForensicLog {
     for (int i = 0; i < n; i++) {
       resized.add(_at(input, i));
     }
-    preprocess.append('resized ${srcWidth}x$srcHeight → $dstWidth x $dstHeight '
-        'min=${_f(resized.min)} max=${_f(resized.max)} mean=${_f(resized.mean)}');
+    preprocess.append(
+      'resized ${srcWidth}x$srcHeight → $dstWidth x $dstHeight '
+      'min=${_f(resized.min)} max=${_f(resized.max)} mean=${_f(resized.mean)}',
+    );
 
     // Normalization stage.
     preprocess.append('--- After normalization ---');
@@ -271,11 +292,15 @@ class ForensicLog {
       if (v < 0) neg++;
       if (v > 1.0) aboveOne++;
     }
-    preprocess.append('min=${_f(norm.min)} max=${_f(norm.max)} '
-        'mean=${_f(norm.mean)} std=${_f(norm.std)}');
-    preprocess.append('allZero=${norm.max == 0} allOne=${(norm.min - norm.max).abs() < 1e-9} '
-        'containsNaN=$_containsNan(input) containsInf=$_containsInf(input) '
-        'negatives=$neg (>1)=$aboveOne');
+    preprocess.append(
+      'min=${_f(norm.min)} max=${_f(norm.max)} '
+      'mean=${_f(norm.mean)} std=${_f(norm.std)}',
+    );
+    preprocess.append(
+      'allZero=${norm.max == 0} allOne=${(norm.min - norm.max).abs() < 1e-9} '
+      'containsNaN=$_containsNan(input) containsInf=$_containsInf(input) '
+      'negatives=$neg (>1)=$aboveOne',
+    );
 
     _s.preprocessPass = !(allZero || allOne || norm.max > 1.0 || norm.max == 0);
   }
@@ -306,12 +331,16 @@ class ForensicLog {
     tensor.append('=== Input tensor before run() (frame $frame) ===');
     tensor.append('inputShape=${m.inputShape} dtype=${m.inputType}');
     tensor.append('expectedLen=$expected actualLen=$n');
-    tensor.append('min=${_f(s.min)} max=${_f(s.max)} mean=${_f(s.mean)} std=${_f(s.std)}');
+    tensor.append(
+      'min=${_f(s.min)} max=${_f(s.max)} mean=${_f(s.mean)} std=${_f(s.std)}',
+    );
     tensor.append('first64=${_fmt(first)}');
     tensor.append('last64=${_fmt(last)}');
     tensor.append('sample32=${_fmt(sample)}');
     if (m.requiresInputQuantization) {
-      tensor.append('inputScale=${m.inputScale} inputZeroPoint=${m.inputZeroPoint}');
+      tensor.append(
+        'inputScale=${m.inputScale} inputZeroPoint=${m.inputZeroPoint}',
+      );
     }
     _s.tensorPass = !(s.max == 0 || s.max.isNaN || s.max.isInfinite);
   }
@@ -384,7 +413,9 @@ class ForensicLog {
 
     output.append('=== Output tensor (frame $frame) ===');
     output.append('outputShape=${m.outputShape} dtype=${m.outputType}');
-    output.append('min=${_f(s.min)} max=${_f(s.max)} mean=${_f(s.mean)} std=${_f(s.std)}');
+    output.append(
+      'min=${_f(s.min)} max=${_f(s.max)} mean=${_f(s.mean)} std=${_f(s.std)}',
+    );
     output.append('containsNaN=$nan containsInf=$inf allZero=$allZero');
     output.append('--- Top 20 confidences ---');
     for (int i = 0; i < topConf.length && i < 20; i++) {
@@ -395,7 +426,9 @@ class ForensicLog {
       output.append('anchor ${e.anchor}  $label  ${_f4(e.score)}');
     }
     output.append('p50=${_f4(p50)} p95=${_f4(p95)} p99=${_f4(p99)}');
-    output.append('counts: ${counts.entries.map((e) => '${e.key}:${e.value}').join(' ')}');
+    output.append(
+      'counts: ${counts.entries.map((e) => '${e.key}:${e.value}').join(' ')}',
+    );
 
     // Update summary state.
     _s.maxConf = maxConf;
@@ -448,11 +481,15 @@ class ForensicLog {
       final cy = _val(parseable, 1 * numBoxes + e.anchor, dequant, m);
       final w = _val(parseable, 2 * numBoxes + e.anchor, dequant, m);
       final h = _val(parseable, 3 * numBoxes + e.anchor, dequant, m);
-      parser.append('anchor ${e.anchor}  $label  ${_f4(e.score)}  '
-          'rawBox=[cx=${_f4(cx)} cy=${_f4(cy)} w=${_f4(w)} h=${_f4(h)}]  '
-          'decodedBox=[${_f4(cx - w / 2)},${_f4(cy - h / 2)},${_f4(w)},${_f4(h)}]');
+      parser.append(
+        'anchor ${e.anchor}  $label  ${_f4(e.score)}  '
+        'rawBox=[cx=${_f4(cx)} cy=${_f4(cy)} w=${_f4(w)} h=${_f4(h)}]  '
+        'decodedBox=[${_f4(cx - w / 2)},${_f4(cy - h / 2)},${_f4(w)},${_f4(h)}]',
+      );
     }
-    parser.append('detections after threshold(0.25)+NMS: $detectionsAfterThreshold');
+    parser.append(
+      'detections after threshold(0.25)+NMS: $detectionsAfterThreshold',
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -471,9 +508,11 @@ class ForensicLog {
     required int outH,
   }) {
     if (!enabled) return;
-    performance.append('orientation frame=$frame sensor=$sensorOrientation '
-        'device=$deviceDegrees rot=$rotationDegrees mirror=$mirror '
-        'lens=$lensFacing in=${inW}x$inH out=${outW}x$outH');
+    performance.append(
+      'orientation frame=$frame sensor=$sensorOrientation '
+      'device=$deviceDegrees rot=$rotationDegrees mirror=$mirror '
+      'lens=$lensFacing in=${inW}x$inH out=${outW}x$outH',
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -492,11 +531,13 @@ class ForensicLog {
   }) {
     final maxConf = _maxConfidence(parseable, m);
     final inferenceFps = latencyMs > 0 ? 1000.0 / latencyMs : 0.0;
-    performance.append('frame=$frame latency=${_f1(latencyMs)}ms '
-        'cameraFps=${_f1(cameraFps)} inferenceFps=${_f1(inferenceFps)} '
-        'queueDepth=$queueDepth droppedFrames=$droppedFrames '
-        'maxConf=${_f4(maxConf)} detections=$detections'
-        '${yMean >= 0 ? ' yMean=${_f1(yMean)}' : ''}');
+    performance.append(
+      'frame=$frame latency=${_f1(latencyMs)}ms '
+      'cameraFps=${_f1(cameraFps)} inferenceFps=${_f1(inferenceFps)} '
+      'queueDepth=$queueDepth droppedFrames=$droppedFrames '
+      'maxConf=${_f4(maxConf)} detections=$detections'
+      '${yMean >= 0 ? ' yMean=${_f1(yMean)}' : ''}',
+    );
 
     // Track global max confidence for the summary.
     if (maxConf > _s.globalMaxConf) _s.globalMaxConf = maxConf;
@@ -542,7 +583,9 @@ class ForensicLog {
     b.writeln('======== SUMMARY ========');
     b.writeln('Run: $runDirName');
     b.writeln('Frames processed: ${_s.frames}');
-    b.writeln('Last latency: ${_f1(_s.lastLatencyMs)}ms  Dropped: ${_s.droppedFrames}');
+    b.writeln(
+      'Last latency: ${_f1(_s.lastLatencyMs)}ms  Dropped: ${_s.droppedFrames}',
+    );
     b.writeln();
     b.writeln('Camera');
     b.writeln('  Detected format: ${_s.cameraFormat ?? "UNKNOWN"}');
@@ -637,12 +680,16 @@ class ForensicLog {
     preprocess.append('Y: ${_planeSummary(y)}');
     preprocess.append('U: ${_planeSummary(u)}');
     preprocess.append('V: ${_planeSummary(v)}');
-    preprocess.append('geometry: y=[row:$yRowStride pix:$yPixelStride] '
-        'u=[row:$uRowStride pix:$uPixelStride] v=[row:$vRowStride pix:$vPixelStride]');
+    preprocess.append(
+      'geometry: y=[row:$yRowStride pix:$yPixelStride] '
+      'u=[row:$uRowStride pix:$uPixelStride] v=[row:$vRowStride pix:$vPixelStride]',
+    );
     final uSpread = _spreadAround(u, 128);
     final vSpread = _spreadAround(v, 128);
-    preprocess.append('chroma content: U std-around-128=${_f1(uSpread)} '
-        'V std-around-128=${_f1(vSpread)}  (>10 => real color; ~0 => flat chroma)');
+    preprocess.append(
+      'chroma content: U std-around-128=${_f1(uSpread)} '
+      'V std-around-128=${_f1(vSpread)}  (>10 => real color; ~0 => flat chroma)',
+    );
     preprocess.append('luma: ${_lumaNote(y)}');
   }
 
@@ -689,7 +736,9 @@ class ForensicLog {
       if (v > maxV) maxV = v;
     }
     if (maxV <= 16) return 'Y NEARLY BLACK (max=$maxV)';
-    if (minV >= 16 && maxV <= 235) return 'LIMITED range [16..235] (washed-out under full-range math)';
+    if (minV >= 16 && maxV <= 235) {
+      return 'LIMITED range [16..235] (washed-out under full-range math)';
+    }
     return 'FULL range [0..255]';
   }
 
@@ -716,30 +765,46 @@ class ForensicLog {
     if (!enabled || !dumpImages) return;
 
     // frame_original.png — raw luma (Y plane) as grayscale.
-    _writePng('frame_original.png',
-        _grayRgba(yPlane, srcWidth, srcHeight), srcWidth, srcHeight);
+    _writePng(
+      'frame_original.png',
+      _grayRgba(yPlane, srcWidth, srcHeight),
+      srcWidth,
+      srcHeight,
+    );
 
     // frame_rgb.png — YUV→RGB at camera resolution (dump-only, same math).
-    final rgb = _yuvToRgbRgba(yPlane, uPlane, vPlane, srcWidth, srcHeight,
-        yRowStride: yRowStride,
-        yPixelStride: yPixelStride,
-        uRowStride: uRowStride,
-        uPixelStride: uPixelStride,
-        vRowStride: vRowStride,
-        vPixelStride: vPixelStride);
+    final rgb = _yuvToRgbRgba(
+      yPlane,
+      uPlane,
+      vPlane,
+      srcWidth,
+      srcHeight,
+      yRowStride: yRowStride,
+      yPixelStride: yPixelStride,
+      uRowStride: uRowStride,
+      uPixelStride: uPixelStride,
+      vRowStride: vRowStride,
+      vPixelStride: vPixelStride,
+    );
     _writePng('frame_rgb.png', rgb, srcWidth, srcHeight);
 
     // frame_rgb_nv21.png — same planes, V-led (NV21) interpretation. If THIS
     // looks correct and frame_rgb.png is color-swapped, the device is NV21
     // (converter currently assumes NV12/U-led).
-    final rgbNv21 = _yuvToRgbRgba(yPlane, uPlane, vPlane, srcWidth, srcHeight,
-        yRowStride: yRowStride,
-        yPixelStride: yPixelStride,
-        uRowStride: uRowStride,
-        uPixelStride: uPixelStride,
-        vRowStride: vRowStride,
-        vPixelStride: vPixelStride,
-        swapUV: true);
+    final rgbNv21 = _yuvToRgbRgba(
+      yPlane,
+      uPlane,
+      vPlane,
+      srcWidth,
+      srcHeight,
+      yRowStride: yRowStride,
+      yPixelStride: yPixelStride,
+      uRowStride: uRowStride,
+      uPixelStride: uPixelStride,
+      vRowStride: vRowStride,
+      vPixelStride: vPixelStride,
+      swapUV: true,
+    );
     _writePng('frame_rgb_nv21.png', rgbNv21, srcWidth, srcHeight);
 
     // frame_resized.png — nearest-neighbor resize of the camera-res RGB.
@@ -757,8 +822,9 @@ class ForensicLog {
   static void _writePng(String name, Uint8List rgba, int w, int h) {
     try {
       final png = PngEncoder.encode(rgba: rgba, width: w, height: h);
-      File('$runDir${Platform.pathSeparator}$name')
-          .writeAsBytesSync(png, flush: true);
+      File(
+        '$runDir${Platform.pathSeparator}$name',
+      ).writeAsBytesSync(png, flush: true);
     } catch (e) {
       recordError('dump $name', e, null);
     }
@@ -834,7 +900,12 @@ class ForensicLog {
   }
 
   static Uint8List _resizeRgba(
-      Uint8List rgba, int srcW, int srcH, int dstW, int dstH) {
+    Uint8List rgba,
+    int srcW,
+    int srcH,
+    int dstW,
+    int dstH,
+  ) {
     final out = Uint8List(dstW * dstH * 4);
     for (int y = 0; y < dstH; y++) {
       final sy = (y * srcH / dstH).round().clamp(0, srcH - 1);
@@ -940,9 +1011,12 @@ class ForensicLog {
   static String _fmt(List<double> values) =>
       values.map((v) => v.toStringAsFixed(3)).join(', ');
 
-  static String _f(double v) => v.isFinite ? v.toStringAsFixed(4) : v.toString();
-  static String _f4(double v) => v.isFinite ? v.toStringAsFixed(4) : v.toString();
-  static String _f1(double v) => v.isFinite ? v.toStringAsFixed(1) : v.toString();
+  static String _f(double v) =>
+      v.isFinite ? v.toStringAsFixed(4) : v.toString();
+  static String _f4(double v) =>
+      v.isFinite ? v.toStringAsFixed(4) : v.toString();
+  static String _f1(double v) =>
+      v.isFinite ? v.toStringAsFixed(1) : v.toString();
 
   static String _timestamp() {
     final now = DateTime.now();
@@ -973,8 +1047,7 @@ class ForensicLogger {
   void append(String line) {
     if (!ForensicLog.enabled || _closed) return;
     try {
-      _file.writeAsStringSync('$line\n',
-          mode: FileMode.append, flush: true);
+      _file.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
     } catch (_) {}
   }
 

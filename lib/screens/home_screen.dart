@@ -28,7 +28,9 @@ class HomeScreen extends StatelessWidget {
             return SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 48,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -103,12 +105,12 @@ class _StatusCard extends StatelessWidget {
               Icon(
                 on ? Icons.bolt : Icons.power_settings_new,
                 size: 28,
-                color: on ? const Color(0xFFFFD600) : theme.colorScheme.onSurfaceVariant,
+                color: on
+                    ? const Color(0xFFFFD600)
+                    : theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: Text(text, style: theme.textTheme.bodyLarge),
-              ),
+              Expanded(child: Text(text, style: theme.textTheme.bodyLarge)),
             ],
           ),
         );

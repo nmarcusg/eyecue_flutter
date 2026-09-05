@@ -45,8 +45,7 @@ class BoundingBoxPainter extends CustomPainter {
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round;
 
-  static final _labelBgPaint = Paint()
-    ..style = PaintingStyle.fill;
+  static final _labelBgPaint = Paint()..style = PaintingStyle.fill;
 
   static final _labelTextStyle = TextStyle(
     color: Colors.white,
@@ -87,7 +86,11 @@ class BoundingBoxPainter extends CustomPainter {
   /// For [BoxFit.contain] this letterboxes (bars on the shorter axis); for
   /// [BoxFit.cover] it center-crops (fills the screen, hiding the excess).
   /// The result is centered exactly like `FittedBox` centers its child.
-  static Rect _calculateImageRect(Size previewSize, Size imageSize, BoxFit fit) {
+  static Rect _calculateImageRect(
+    Size previewSize,
+    Size imageSize,
+    BoxFit fit,
+  ) {
     if (imageSize.width <= 0 || imageSize.height <= 0) {
       return Rect.fromLTWH(0, 0, previewSize.width, previewSize.height);
     }
@@ -129,12 +132,20 @@ class BoundingBoxPainter extends CustomPainter {
     if (_paintCallCount % 30 == 1) {
       debugPrint('[Painter] Paint #$_paintCallCount');
       debugPrint('[Painter]   Boxes to render: ${detections.length}');
-      debugPrint('[Painter]   Screen: ${size.width.toInt()}×${size.height.toInt()}');
-      debugPrint('[Painter]   Image : ${imageSize.width.toInt()}×${imageSize.height.toInt()}');
-      debugPrint('[Painter]   Scale : ${scaleX.toStringAsFixed(2)}×${scaleY.toStringAsFixed(2)}');
-      debugPrint('[Painter]   Image rect: '
-          '(${imageRect.left.toInt()},${imageRect.top.toInt()})-'
-          '(${imageRect.right.toInt()},${imageRect.bottom.toInt()})');
+      debugPrint(
+        '[Painter]   Screen: ${size.width.toInt()}×${size.height.toInt()}',
+      );
+      debugPrint(
+        '[Painter]   Image : ${imageSize.width.toInt()}×${imageSize.height.toInt()}',
+      );
+      debugPrint(
+        '[Painter]   Scale : ${scaleX.toStringAsFixed(2)}×${scaleY.toStringAsFixed(2)}',
+      );
+      debugPrint(
+        '[Painter]   Image rect: '
+        '(${imageRect.left.toInt()},${imageRect.top.toInt()})-'
+        '(${imageRect.right.toInt()},${imageRect.bottom.toInt()})',
+      );
     }
 
     // 2. Draw each detection.
@@ -156,25 +167,31 @@ class BoundingBoxPainter extends CustomPainter {
         imageRect.top,
         imageRect.top + imageRect.height,
       );
-      screenWidth = (screenLeft + screenWidth)
-          .clamp(imageRect.left, imageRect.right) -
+      screenWidth =
+          (screenLeft + screenWidth).clamp(imageRect.left, imageRect.right) -
           screenLeft;
-      screenHeight = (screenTop + screenHeight)
-          .clamp(imageRect.top, imageRect.bottom) -
+      screenHeight =
+          (screenTop + screenHeight).clamp(imageRect.top, imageRect.bottom) -
           screenTop;
 
       if (screenWidth <= 0 || screenHeight <= 0) continue;
 
-      final Rect screenRect =
-          Rect.fromLTWH(screenLeft, screenTop, screenWidth, screenHeight);
+      final Rect screenRect = Rect.fromLTWH(
+        screenLeft,
+        screenTop,
+        screenWidth,
+        screenHeight,
+      );
 
       // --- Per-box logging (first box only, every 30th paint) ---
       if (_paintCallCount % 30 == 1 && detection == detections.first) {
-        debugPrint('[Painter]   Rendered #1 "${detection.label}": '
-            '(${screenLeft.toInt()},${screenTop.toInt()})-'
-            '(${(screenLeft + screenWidth).toInt()},${(screenTop + screenHeight).toInt()}) '
-            '[norm: ${normBox.left.toStringAsFixed(2)},${normBox.top.toStringAsFixed(2)} '
-            '${normBox.width.toStringAsFixed(2)}×${normBox.height.toStringAsFixed(2)}]');
+        debugPrint(
+          '[Painter]   Rendered #1 "${detection.label}": '
+          '(${screenLeft.toInt()},${screenTop.toInt()})-'
+          '(${(screenLeft + screenWidth).toInt()},${(screenTop + screenHeight).toInt()}) '
+          '[norm: ${normBox.left.toStringAsFixed(2)},${normBox.top.toStringAsFixed(2)} '
+          '${normBox.width.toStringAsFixed(2)}×${normBox.height.toStringAsFixed(2)}]',
+        );
       }
 
       final Color color = _colorForClass(detection.classId);
@@ -217,7 +234,10 @@ class BoundingBoxPainter extends CustomPainter {
         ? boxRect.top - textPainter.height - 2
         : boxRect.top + 2;
 
-    final double labelX = boxRect.left.clamp(0, boxRect.right - textPainter.width);
+    final double labelX = boxRect.left.clamp(
+      0,
+      boxRect.right - textPainter.width,
+    );
 
     // Background pill behind text
     final Rect bgRect = Rect.fromLTWH(

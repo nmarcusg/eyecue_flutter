@@ -31,17 +31,19 @@ void main() {
   });
 
   group('DetectionCard', () {
-    testWidgets('shows class, confidence, position, and approximate proximity',
-        (tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: DetectionCard(info: sampleInfo())),
-        ),
-      );
-      expect(find.text('person'), findsOneWidget);
-      expect(find.text('82% · right · approximately near'), findsOneWidget);
-      expect(find.text('HIGH'), findsOneWidget);
-    });
+    testWidgets(
+      'shows class, confidence, position, and approximate proximity',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: DetectionCard(info: sampleInfo())),
+          ),
+        );
+        expect(find.text('person'), findsOneWidget);
+        expect(find.text('82% · right · approximately near'), findsOneWidget);
+        expect(find.text('HIGH'), findsOneWidget);
+      },
+    );
   });
 
   group('WarningBanner', () {
@@ -81,9 +83,7 @@ void main() {
           ),
         ),
       );
-      final button = tester.widget<ElevatedButton>(
-        find.byType(ElevatedButton),
-      );
+      final button = tester.widget<ElevatedButton>(find.byType(ElevatedButton));
       expect(button.onPressed, isNull);
     });
   });

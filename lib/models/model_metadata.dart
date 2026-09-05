@@ -99,8 +99,7 @@ class ModelMetadata {
       type == TensorType.float64;
 
   /// Number of elements implied by [shape].
-  static int elementCount(List<int> shape) =>
-      shape.fold(1, (a, b) => a * b);
+  static int elementCount(List<int> shape) => shape.fold(1, (a, b) => a * b);
 
   /// -------------------------------------------------------------------------
   /// Runtime inspection — build metadata straight from the interpreter.
@@ -219,27 +218,28 @@ class ModelMetadata {
   /// isolate and shipped to the main isolate for display).
   /// -------------------------------------------------------------------------
   Map<String, dynamic> toJsonMap() => {
-        'modelName': modelName,
-        'inputType': inputType.name,
-        'outputType': outputType.name,
-        'inputShape': inputShape,
-        'outputShape': outputShape,
-        'inputScale': inputScale,
-        'inputZeroPoint': inputZeroPoint,
-        'outputScale': outputScale,
-        'outputZeroPoint': outputZeroPoint,
-        'inputQuantized': inputQuantized,
-        'outputQuantized': outputQuantized,
-        'requiresInputQuantization': requiresInputQuantization,
-        'requiresOutputDequantization': requiresOutputDequantization,
-        'classes': classes,
-        'anchors': anchors,
-        'modelType': modelType.name,
-        'internalTensorTypeCounts': internalTensorTypeCounts,
-      };
+    'modelName': modelName,
+    'inputType': inputType.name,
+    'outputType': outputType.name,
+    'inputShape': inputShape,
+    'outputShape': outputShape,
+    'inputScale': inputScale,
+    'inputZeroPoint': inputZeroPoint,
+    'outputScale': outputScale,
+    'outputZeroPoint': outputZeroPoint,
+    'inputQuantized': inputQuantized,
+    'outputQuantized': outputQuantized,
+    'requiresInputQuantization': requiresInputQuantization,
+    'requiresOutputDequantization': requiresOutputDequantization,
+    'classes': classes,
+    'anchors': anchors,
+    'modelType': modelType.name,
+    'internalTensorTypeCounts': internalTensorTypeCounts,
+  };
 
   factory ModelMetadata.fromJsonMap(Map<String, dynamic> json) {
-    final internalRaw = json['internalTensorTypeCounts'] as Map<dynamic, dynamic>?;
+    final internalRaw =
+        json['internalTensorTypeCounts'] as Map<dynamic, dynamic>?;
     final internalTypes = internalRaw == null
         ? null
         : <int, int>{
@@ -259,7 +259,8 @@ class ModelMetadata {
       inputQuantized: json['inputQuantized'] as bool,
       outputQuantized: json['outputQuantized'] as bool,
       requiresInputQuantization: json['requiresInputQuantization'] as bool,
-      requiresOutputDequantization: json['requiresOutputDequantization'] as bool,
+      requiresOutputDequantization:
+          json['requiresOutputDequantization'] as bool,
       classes: json['classes'] as int,
       anchors: json['anchors'] as int,
       modelType: ModelType.values.firstWhere(
@@ -270,11 +271,8 @@ class ModelMetadata {
     );
   }
 
-  static TensorType _tensorTypeFromName(String name) =>
-      TensorType.values.firstWhere(
-        (t) => t.name == name,
-        orElse: () => TensorType.noType,
-      );
+  static TensorType _tensorTypeFromName(String name) => TensorType.values
+      .firstWhere((t) => t.name == name, orElse: () => TensorType.noType);
 
   @override
   String toString() {

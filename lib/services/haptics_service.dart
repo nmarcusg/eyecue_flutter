@@ -12,10 +12,10 @@ class HapticsService {
     Future<void> Function()? light,
     Future<void> Function()? medium,
     Future<void> Function()? heavy,
-  })  : isEnabled = isEnabled ?? _alwaysEnabled,
-        _light = light ?? _hapticLight,
-        _medium = medium ?? _hapticMedium,
-        _heavy = heavy ?? _hapticHeavy;
+  }) : isEnabled = isEnabled ?? _alwaysEnabled,
+       _light = light ?? _hapticLight,
+       _medium = medium ?? _hapticMedium,
+       _heavy = heavy ?? _hapticHeavy;
 
   final bool Function() isEnabled;
   final Future<void> Function() _light;
