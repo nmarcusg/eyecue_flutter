@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
+import 'models/model_config.dart';
 import 'navigation/app_shell.dart';
+import 'services/correction_service.dart';
 import 'services/haptics_service.dart';
 import 'services/settings_service.dart';
 import 'services/telemetry_service.dart';
@@ -12,24 +15,44 @@ Future<void> main() async {
   final settings = SettingsService();
   final tts = TtsService(engine: FlutterTtsEngine());
   final telemetry = TelemetryService();
+  final labels = await _loadLabels();
+  final corrections = CorrectionService(labels: labels);
   final haptics = HapticsService(isEnabled: () => settings.vibrationFeedback);
 
   await settings.load();
   await tts.init();
   telemetry.startSession();
 
-  runApp(EyeCueApp(
-    settings: settings,
-    tts: tts,
-    telemetry: telemetry,
-    haptics: haptics,
-  ));
+  runApp(
+    EyeCueApp(
+      settings: settings,
+      tts: tts,
+      telemetry: telemetry,
+      corrections: corrections,
+      haptics: haptics,
+    ),
+  );
+}
+
+Future<List<String>> _loadLabels() async {
+  try {
+    final text = await rootBundle.loadString(EyeCueModelConfig.labelsAssetPath);
+    return text
+        .split('\n')
+        .map((label) => label.trim())
+        .where((label) => label.isNotEmpty)
+        .toList(growable: false);
+  } catch (error) {
+    debugPrint('[Startup] Unable to load correction labels: $error');
+    return const [];
+  }
 }
 
 class EyeCueApp extends StatelessWidget {
   final SettingsService settings;
   final TtsService tts;
   final TelemetryService telemetry;
+  final CorrectionService? corrections;
   final HapticsService haptics;
 
   const EyeCueApp({
@@ -37,6 +60,7 @@ class EyeCueApp extends StatelessWidget {
     required this.settings,
     required this.tts,
     required this.telemetry,
+    this.corrections,
     required this.haptics,
   });
 
@@ -52,6 +76,7 @@ class EyeCueApp extends StatelessWidget {
         settings: settings,
         tts: tts,
         telemetry: telemetry,
+        corrections: corrections,
         haptics: haptics,
       ),
     );
@@ -93,18 +118,54 @@ class EyeCueApp extends StatelessWidget {
       displayLarge: TextStyle(fontSize: 64, color: white),
       displayMedium: TextStyle(fontSize: 50, color: white),
       displaySmall: TextStyle(fontSize: 40, color: white),
-      headlineLarge: TextStyle(fontSize: 36, color: white, fontWeight: FontWeight.w600),
-      headlineMedium: TextStyle(fontSize: 31, color: white, fontWeight: FontWeight.w600),
-      headlineSmall: TextStyle(fontSize: 27, color: white, fontWeight: FontWeight.w600),
-      titleLarge: TextStyle(fontSize: 25, color: white, fontWeight: FontWeight.w700),
-      titleMedium: TextStyle(fontSize: 18, color: white, fontWeight: FontWeight.w600),
-      titleSmall: TextStyle(fontSize: 16, color: white, fontWeight: FontWeight.w600),
+      headlineLarge: TextStyle(
+        fontSize: 36,
+        color: white,
+        fontWeight: FontWeight.w600,
+      ),
+      headlineMedium: TextStyle(
+        fontSize: 31,
+        color: white,
+        fontWeight: FontWeight.w600,
+      ),
+      headlineSmall: TextStyle(
+        fontSize: 27,
+        color: white,
+        fontWeight: FontWeight.w600,
+      ),
+      titleLarge: TextStyle(
+        fontSize: 25,
+        color: white,
+        fontWeight: FontWeight.w700,
+      ),
+      titleMedium: TextStyle(
+        fontSize: 18,
+        color: white,
+        fontWeight: FontWeight.w600,
+      ),
+      titleSmall: TextStyle(
+        fontSize: 16,
+        color: white,
+        fontWeight: FontWeight.w600,
+      ),
       bodyLarge: TextStyle(fontSize: 18, color: white),
       bodyMedium: TextStyle(fontSize: 16, color: white),
       bodySmall: TextStyle(fontSize: 13, color: white),
-      labelLarge: TextStyle(fontSize: 16, color: white, fontWeight: FontWeight.w700),
-      labelMedium: TextStyle(fontSize: 13, color: white, fontWeight: FontWeight.w600),
-      labelSmall: TextStyle(fontSize: 12, color: white, fontWeight: FontWeight.w500),
+      labelLarge: TextStyle(
+        fontSize: 16,
+        color: white,
+        fontWeight: FontWeight.w700,
+      ),
+      labelMedium: TextStyle(
+        fontSize: 13,
+        color: white,
+        fontWeight: FontWeight.w600,
+      ),
+      labelSmall: TextStyle(
+        fontSize: 12,
+        color: white,
+        fontWeight: FontWeight.w500,
+      ),
     );
   }
 }

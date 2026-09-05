@@ -9,17 +9,22 @@ import '../models/box_transform.dart';
 import '../models/app_settings.dart';
 import '../models/detection.dart';
 import '../models/detection_info.dart';
+import '../models/detection_runtime_state.dart';
+import '../models/inference_lifecycle_event.dart';
+import '../services/assistive_detection_controller.dart';
+import '../services/correction_service.dart';
 import '../services/forensic_log.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
 import '../services/inference_isolate.dart';
 import '../services/settings_service.dart';
-import '../services/spatial_analysis_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
 import '../widgets/accessible_button.dart';
 import '../widgets/bounding_box_painter.dart';
 import '../widgets/detection_card.dart';
+import '../widgets/detection_correction_sheet.dart';
+import '../widgets/detection_state_panel.dart';
 import '../widgets/gesture_surface.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/warning_banner.dart';
@@ -44,14 +49,28 @@ class DetectionScreen extends StatefulWidget {
   final SettingsService settings;
   final TtsService tts;
   final TelemetryService telemetry;
+  final CorrectionService? corrections;
   final HapticsService haptics;
+
+  /// Reports a state together with the Custom worker generation that produced
+  /// it. Camera-only states have a null source generation.
+  final void Function(DetectionRuntimeState state, int? sourceGeneration)?
+  onRuntimeStateChanged;
+
+  /// Reports a failure together with the Custom worker generation that
+  /// produced it, when the failure originated in the isolate.
+  final void Function(DetectionFailure failure, int? sourceGeneration)?
+  onFailure;
 
   const DetectionScreen({
     super.key,
     required this.settings,
     required this.tts,
     required this.telemetry,
+    this.corrections,
     required this.haptics,
+    this.onRuntimeStateChanged,
+    this.onFailure,
   });
 
   @override
@@ -66,7 +85,17 @@ class _DetectionScreenState extends State<DetectionScreen> {
   late final TtsService _tts = widget.tts;
   late final TelemetryService _telemetry = widget.telemetry;
   late final HapticsService _haptics = widget.haptics;
-  final InferenceService _inferenceService = InferenceService();
+  late final InferenceService _inferenceService = InferenceService(
+    confidenceThreshold: _settings.detectionConfidence,
+  );
+  late final AssistiveDetectionController _assistive =
+      AssistiveDetectionController(
+        engine: InferenceEngine.custom,
+        tts: _tts,
+        telemetry: _telemetry,
+        corrections: widget.corrections,
+        confidenceThreshold: _settings.detectionConfidence,
+      );
 
   // -------------------------------------------------------------------------
   // Camera / inference state (preserved from the validated pipeline)
@@ -82,6 +111,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
   bool _paused = false;
 
   bool _permissionDenied = false;
+  DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
+  DetectionFailure? _failure;
+  StreamSubscription<List<Detection>>? _resultsSubscription;
+  StreamSubscription<String>? _errorSubscription;
+  StreamSubscription<InferenceLifecycleEvent>? _lifecycleSubscription;
 
   // Detection results from the inference isolate.
   List<Detection> _detections = [];
@@ -107,6 +141,8 @@ class _DetectionScreenState extends State<DetectionScreen> {
   double _cameraFps = 0.0;
   Timer? _perfTimer;
   DateTime _lastDispatchAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DetectionRuntimeState? _lastReportedRuntimeState;
+  int? _lastReportedWorkerGeneration;
 
   // -------------------------------------------------------------------------
   // Assistive layer
@@ -120,11 +156,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
     super.initState();
     _tts.setAudioEnabled(_settings.audioEnabled);
     debugPrint('[Camera] DetectionScreen initState()');
-    // 1. Initialize the inference isolate first (creates stream controller).
-    _inferenceService.initIsolate();
-    // 2. Subscribe to results stream.
+    // Subscribe before initialization so no worker lifecycle event is missed.
     _setupInferenceListener();
-    // 3. Camera OR temporary test-image mode.
+    _inferenceService.initIsolate();
+    // Camera OR temporary test-image mode.
     if (InferenceService.useTestImage) {
       debugPrint('[Camera] TEMPORARY test-image mode — skipping camera');
       _detectionActive = true;
@@ -140,9 +175,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
   void dispose() {
     debugPrint('[Camera] DetectionScreen dispose()');
     _perfTimer?.cancel();
+    _resultsSubscription?.cancel();
+    _errorSubscription?.cancel();
+    _lifecycleSubscription?.cancel();
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
     _inferenceService.dispose();
+    _assistive.dispose();
     _gestureController.reset();
     super.dispose();
   }
@@ -152,6 +191,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // -------------------------------------------------------------------------
   Future<void> _setupCamera() async {
     debugPrint('[Camera] _setupCamera() — requesting permission…');
+    _setRuntimeState(DetectionRuntimeState.requestingPermission);
 
     var status = await Permission.camera.status;
     if (!status.isGranted) {
@@ -165,15 +205,50 @@ class _DetectionScreenState extends State<DetectionScreen> {
           _detectionActive = false;
         });
       }
+      _reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.permissionDenied,
+          safeMessage:
+              'Camera permission is required to detect objects. Allow camera access in Settings.',
+          technicalDetail: 'Camera permission status: $status',
+          engine: InferenceEngine.custom,
+          timestamp: DateTime.now(),
+        ),
+      );
       return;
     }
 
-    final cameras = await availableCameras();
+    _setRuntimeState(DetectionRuntimeState.startingCamera);
+    late final List<CameraDescription> cameras;
+    try {
+      cameras = await availableCameras();
+    } catch (error, stack) {
+      _reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.cameraInitialization,
+          safeMessage: 'The camera could not be initialized.',
+          technicalDetail: '$error\n$stack',
+          engine: InferenceEngine.custom,
+          timestamp: DateTime.now(),
+        ),
+      );
+      return;
+    }
     if (cameras.isEmpty) {
       debugPrint('[Error] No cameras available on this device');
       if (mounted) {
         setState(() => _detectionActive = false);
       }
+      _reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.unavailable,
+          safeMessage: 'No camera is available on this device.',
+          technicalDetail: 'availableCameras returned an empty list',
+          recoverable: false,
+          engine: InferenceEngine.custom,
+          timestamp: DateTime.now(),
+        ),
+      );
       return;
     }
 
@@ -187,9 +262,23 @@ class _DetectionScreenState extends State<DetectionScreen> {
     _lensDirection = selectedCamera.lensDirection;
     _sensorOrientation = selectedCamera.sensorOrientation;
 
-    await _cameraController!.initialize();
-
-    _cameraController!.startImageStream(_processCameraImage);
+    try {
+      await _cameraController!.initialize();
+      await _cameraController!.startImageStream(_processCameraImage);
+    } catch (error, stack) {
+      await _cameraController?.dispose();
+      _cameraController = null;
+      _reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.cameraInitialization,
+          safeMessage: 'The camera could not be initialized.',
+          technicalDetail: '$error\n$stack',
+          engine: InferenceEngine.custom,
+          timestamp: DateTime.now(),
+        ),
+      );
+      return;
+    }
 
     if (mounted) {
       setState(() {
@@ -198,6 +287,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _permissionDenied = false;
       });
     }
+    _setRuntimeState(DetectionRuntimeState.ready);
     debugPrint('[Camera] Camera initialized — detection active');
   }
 
@@ -273,24 +363,63 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
   Future<void> _quickScan() async {
     await _haptics.heavyTick();
-    final infos = _detectionInfo;
-    if (infos.isEmpty) {
-      await _tts.speak('Quick scan. No objects detected.', urgent: true);
-      return;
-    }
-    final parts = infos
-        .take(4)
-        .map(
-          (d) =>
-              '${d.label} on your ${d.positionLabel}, approximately ${d.proximityLabel}',
-        )
-        .join('. ');
-    await _tts.speak('Quick scan. $parts.', urgent: true);
+    await _assistive.quickScan();
   }
 
   Future<void> _repeatAlert() async {
     await _haptics.mediumTick();
     await _tts.repeatLast();
+  }
+
+  Future<void> _reportCorrection(DetectionInfo info) async {
+    final corrections = widget.corrections;
+    if (corrections == null || !mounted) return;
+    final selection = await showDetectionCorrectionSheet(
+      context: context,
+      info: info,
+      labels: corrections.labels,
+    );
+    if (!mounted || selection == null) return;
+
+    try {
+      final record = _assistive.addCorrection(
+        info: info,
+        feedback: selection.feedback,
+        correctedLabel: selection.correctedLabel,
+      );
+      if (record == null) return;
+      final message = selection.confirmationMessage;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Semantics(
+            container: true,
+            liveRegion: true,
+            label: message,
+            child: Text(message),
+          ),
+        ),
+      );
+      await _tts.speak(message, urgent: true);
+    } on ArgumentError {
+      if (!mounted) return;
+      const message = 'Correction could not be saved.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Semantics(
+            container: true,
+            liveRegion: true,
+            label: message,
+            child: Text(message),
+          ),
+        ),
+      );
+    }
+  }
+
+  DetectionInfo? get _lastCorrectableDetection {
+    if (widget.corrections == null) return null;
+    if (_tts.lastAnnouncedEngine != InferenceEngine.custom) return null;
+    return _tts.lastAnnouncedDetection;
   }
 
   void _toggleAudio() {
@@ -317,14 +446,23 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // Inference listener
   // -------------------------------------------------------------------------
   void _setupInferenceListener() {
-    _inferenceService.resultsStream.listen((detections) {
+    _resultsSubscription = _inferenceService.resultsStream.listen((detections) {
+      final latencyMs = _inferenceService.lastLatencyMs;
+      final infos = _assistive.updateDetections(
+        detections,
+        latencyMs: latencyMs,
+      );
+      _assistive.recordMetrics(
+        latencyMs: latencyMs,
+        inferenceFps: _averageFps(),
+      );
       if (mounted) {
         setState(() {
           _detections = detections;
-          _detectionInfo = SpatialAnalysisService.analyzeAll(detections);
+          _detectionInfo = infos;
         });
       }
-      _lastLatencyMs = _inferenceService.lastLatencyMs;
+      _lastLatencyMs = latencyMs;
 
       // Rolling latency window for summaries.
       _recentLatencies.add(_lastLatencyMs);
@@ -332,34 +470,125 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _recentLatencies.removeAt(0);
       }
 
-      // Telemetry for Logs & Reports.
-      _telemetry.recordSample(
-        latencyMs: _lastLatencyMs,
-        inferenceFps: _averageFps(),
-        objectCount: detections.length,
-        engine: InferenceEngine.custom,
-      );
-      for (final info in _detectionInfo) {
-        _telemetry.recordDetection(
-          info,
-          _lastLatencyMs,
-          engine: InferenceEngine.custom,
-        );
-      }
-
-      // Audio announcement (cooldown + de-duplication handled inside TtsService).
-      _tts.announceDetections(_detectionInfo);
-
       // Release the lock so the next frame can be processed.
       _isInferring = false;
     });
 
-    _inferenceService.errorStream.listen((error) {
+    _errorSubscription = _inferenceService.errorStream.listen((error) {
       debugPrint('[Camera] Inference error — releasing busy gate: $error');
       if (_isInferring) {
         _isInferring = false;
       }
     });
+    _lifecycleSubscription = _inferenceService.lifecycleStream.listen(
+      _handleInferenceLifecycle,
+    );
+  }
+
+  void _handleInferenceLifecycle(InferenceLifecycleEvent event) {
+    if (!mounted) return;
+    _telemetry.recordRecovery(event);
+    switch (event.type) {
+      case InferenceLifecycleEventType.starting:
+        _setRuntimeState(
+          DetectionRuntimeState.loadingModel,
+          sourceGeneration: event.generation,
+        );
+      case InferenceLifecycleEventType.workerReady:
+        if (_runtimeState == DetectionRuntimeState.loadingModel) {
+          _setRuntimeState(
+            DetectionRuntimeState.ready,
+            sourceGeneration: event.generation,
+          );
+        }
+      case InferenceLifecycleEventType.modelLoaded:
+        if (_detectionActive || InferenceService.useTestImage) {
+          _setRuntimeState(
+            DetectionRuntimeState.ready,
+            sourceGeneration: event.generation,
+          );
+        } else {
+          _setRuntimeState(
+            DetectionRuntimeState.idle,
+            sourceGeneration: event.generation,
+          );
+        }
+      case InferenceLifecycleEventType.transientError:
+        _isInferring = false;
+      case InferenceLifecycleEventType.recovering:
+        _isInferring = false;
+        _setRuntimeState(
+          DetectionRuntimeState.recovering,
+          sourceGeneration: event.generation,
+        );
+      case InferenceLifecycleEventType.workerFailure:
+        _isInferring = false;
+        _setRuntimeState(
+          DetectionRuntimeState.recovering,
+          sourceGeneration: event.generation,
+        );
+      case InferenceLifecycleEventType.recoverySucceeded:
+        _isInferring = false;
+        _setRuntimeState(
+          DetectionRuntimeState.ready,
+          sourceGeneration: event.generation,
+        );
+      case InferenceLifecycleEventType.terminalFailure:
+        _isInferring = false;
+        final failure = event.failure;
+        if (failure != null) {
+          _reportFailure(failure, sourceGeneration: event.generation);
+        }
+      case InferenceLifecycleEventType.disposed:
+        break;
+    }
+  }
+
+  void _setRuntimeState(DetectionRuntimeState state, {int? sourceGeneration}) {
+    if (!mounted) return;
+    final stateChanged = _runtimeState != state;
+    if (stateChanged) {
+      setState(() => _runtimeState = state);
+    }
+    final sourceChanged = _lastReportedWorkerGeneration != sourceGeneration;
+    if (stateChanged || sourceChanged || _lastReportedRuntimeState != state) {
+      _lastReportedRuntimeState = state;
+      _lastReportedWorkerGeneration = sourceGeneration;
+      widget.onRuntimeStateChanged?.call(state, sourceGeneration);
+    }
+  }
+
+  void _reportFailure(DetectionFailure failure, {int? sourceGeneration}) {
+    if (!mounted) return;
+    setState(() {
+      _failure = failure;
+      _runtimeState = DetectionRuntimeState.failed;
+      _detectionActive = false;
+    });
+    if (widget.onFailure != null) {
+      widget.onFailure!(failure, sourceGeneration);
+    } else {
+      _telemetry.recordFailure(failure);
+    }
+  }
+
+  Future<void> _retryRuntime() async {
+    if (!mounted) return;
+    setState(() {
+      _failure = null;
+      _permissionDenied = false;
+    });
+    _setRuntimeState(DetectionRuntimeState.loadingModel);
+    await _inferenceService.retryInitialization(
+      confidenceThreshold: _settings.detectionConfidence,
+    );
+    if (!mounted) return;
+
+    if (_isCameraInitialized && _cameraController != null) {
+      await _startDetection();
+    } else {
+      await _setupCamera();
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -630,6 +859,14 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   Widget _buildMainArea(BuildContext context, bool testMode) {
+    if (_runtimeState.isBusy || _runtimeState == DetectionRuntimeState.failed) {
+      return DetectionStatePanel(
+        state: _runtimeState,
+        failure: _failure,
+        onRetry: _retryRuntime,
+        onStop: _stopDetection,
+      );
+    }
     if (_permissionDenied) {
       return _buildPermissionDenied(context);
     }
@@ -829,6 +1066,20 @@ class _DetectionScreenState extends State<DetectionScreen> {
                     icon: Icons.replay,
                     onPressed: _repeatAlert,
                   ),
+                  if (widget.corrections != null)
+                    ListenableBuilder(
+                      listenable: _tts,
+                      builder: (context, _) {
+                        final last = _lastCorrectableDetection;
+                        return AccessibleButton(
+                          label: 'Correct last announcement',
+                          icon: Icons.flag_outlined,
+                          onPressed: last == null
+                              ? null
+                              : () => _reportCorrection(last),
+                        );
+                      },
+                    ),
                   AccessibleButton(
                     label: 'Scan',
                     icon: Icons.wifi_tethering,
@@ -873,6 +1124,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
       itemBuilder: (context, i) => DetectionCard(
         info: _detectionInfo[i],
         highlight: _detectionInfo[i].priority == ObjectPriority.high,
+        onReport: widget.corrections == null
+            ? null
+            : () => _reportCorrection(_detectionInfo[i]),
       ),
     );
   }

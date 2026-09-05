@@ -5,16 +5,20 @@ import 'package:ultralytics_yolo/ultralytics_yolo.dart';
 
 import '../models/app_settings.dart';
 import '../models/detection_info.dart';
+import '../models/detection_runtime_state.dart';
 import '../models/model_config.dart';
+import '../services/assistive_detection_controller.dart';
+import '../services/correction_service.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
-import '../services/spatial_analysis_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
 import '../services/ultralytics_detection_adapter.dart';
 import '../widgets/accessible_button.dart';
 import '../widgets/detection_card.dart';
+import '../widgets/detection_correction_sheet.dart';
+import '../widgets/detection_state_panel.dart';
 import '../widgets/gesture_surface.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/warning_banner.dart';
@@ -23,14 +27,26 @@ class UltralyticsDetectionScreen extends StatefulWidget {
   final SettingsService settings;
   final TtsService tts;
   final TelemetryService telemetry;
+  final CorrectionService? corrections;
   final HapticsService haptics;
+
+  /// Native callbacks do not have a Dart worker generation. The coordinator
+  /// receives null for this source-generation field and relies on the mounted
+  /// child generation instead.
+  final void Function(DetectionRuntimeState state, int? sourceGeneration)?
+  onRuntimeStateChanged;
+  final void Function(DetectionFailure failure, int? sourceGeneration)?
+  onFailure;
 
   const UltralyticsDetectionScreen({
     super.key,
     required this.settings,
     required this.tts,
     required this.telemetry,
+    this.corrections,
     required this.haptics,
+    this.onRuntimeStateChanged,
+    this.onFailure,
   });
 
   @override
@@ -45,6 +61,14 @@ class _UltralyticsDetectionScreenState
   late final TelemetryService _telemetry = widget.telemetry;
   late final HapticsService _haptics = widget.haptics;
   final YOLOViewController _controller = YOLOViewController();
+  late final AssistiveDetectionController _assistive =
+      AssistiveDetectionController(
+        engine: InferenceEngine.ultralytics,
+        tts: _tts,
+        telemetry: _telemetry,
+        corrections: widget.corrections,
+        confidenceThreshold: _settings.detectionConfidence,
+      );
 
   late final GestureController _gestureController = GestureController(
     onGesture: _onGesture,
@@ -59,6 +83,8 @@ class _UltralyticsDetectionScreenState
   bool _modelLoaded = false;
   bool _lastLowPowerMode = false;
   String? _modelError;
+  DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
+  DetectionFailure? _failure;
   double _fps = 0;
   double _inferenceMs = 0;
   double _processingMs = 0;
@@ -85,6 +111,7 @@ class _UltralyticsDetectionScreenState
     _settings.removeListener(_handleSettingsChanged);
     _gestureController.reset();
     _controller.dispose();
+    _assistive.dispose();
     super.dispose();
   }
 
@@ -111,6 +138,7 @@ class _UltralyticsDetectionScreenState
   }
 
   Future<bool> _ensureCameraPermission() async {
+    _setRuntimeState(DetectionRuntimeState.requestingPermission);
     var status = await Permission.camera.status;
     if (!status.isGranted) status = await Permission.camera.request();
     if (status.isGranted) {
@@ -123,6 +151,16 @@ class _UltralyticsDetectionScreenState
         _starting = false;
       });
     }
+    _reportFailure(
+      DetectionFailure(
+        category: DetectionFailureCategory.permissionDenied,
+        safeMessage:
+            'Camera permission is required to detect objects. Allow camera access in Settings.',
+        technicalDetail: 'Camera permission status: $status',
+        engine: InferenceEngine.ultralytics,
+        timestamp: DateTime.now(),
+      ),
+    );
     return false;
   }
 
@@ -141,7 +179,9 @@ class _UltralyticsDetectionScreenState
       _starting = false;
       _modelLoaded = false;
       _modelError = null;
+      _failure = null;
     });
+    _setRuntimeState(DetectionRuntimeState.loadingModel);
     if (announce) await _tts.speak('Detection started', urgent: true);
   }
 
@@ -158,6 +198,7 @@ class _UltralyticsDetectionScreenState
       _inferenceMs = 0;
       _processingMs = 0;
     });
+    _setRuntimeState(DetectionRuntimeState.idle);
     await _tts.speak('Detection stopped', urgent: true);
   }
 
@@ -174,6 +215,7 @@ class _UltralyticsDetectionScreenState
     await _haptics.lightTick();
     await _controller.pause();
     if (mounted) setState(() => _paused = true);
+    _setRuntimeState(DetectionRuntimeState.paused);
     await _tts.speak('Detection paused', urgent: true);
   }
 
@@ -182,6 +224,7 @@ class _UltralyticsDetectionScreenState
     await _haptics.lightTick();
     await _controller.resume();
     if (mounted) setState(() => _paused = false);
+    _setRuntimeState(DetectionRuntimeState.ready);
     await _tts.speak('Detection resumed', urgent: true);
   }
 
@@ -196,16 +239,11 @@ class _UltralyticsDetectionScreenState
   void _handleResults(List<YOLOResult> results) {
     if (!_detectionActive || _paused) return;
     final detections = UltralyticsDetectionAdapter.convert(results, _labels);
-    final infos = SpatialAnalysisService.analyzeAll(detections);
+    final infos = _assistive.updateDetections(
+      detections,
+      latencyMs: _inferenceMs,
+    );
     if (mounted) setState(() => _detectionInfo = infos);
-    for (final info in infos) {
-      _telemetry.recordDetection(
-        info,
-        _inferenceMs,
-        engine: InferenceEngine.ultralytics,
-      );
-    }
-    _tts.announceDetections(infos);
   }
 
   void _handleMetrics(YOLOPerformanceMetrics metrics) {
@@ -220,29 +258,12 @@ class _UltralyticsDetectionScreenState
         _processingMs = metrics.processingTimeMs;
       });
     }
-    _telemetry.recordSample(
-      latencyMs: inferenceMs,
-      inferenceFps: metrics.fps,
-      objectCount: _detectionInfo.length,
-      engine: InferenceEngine.ultralytics,
-    );
+    _assistive.recordMetrics(latencyMs: inferenceMs, inferenceFps: metrics.fps);
   }
 
   Future<void> _quickScan() async {
     await _haptics.heavyTick();
-    if (_detectionInfo.isEmpty) {
-      await _tts.speak('Quick scan. No objects detected.', urgent: true);
-      return;
-    }
-    final description = _detectionInfo
-        .take(4)
-        .map(
-          (info) =>
-              '${info.label} on your ${info.positionLabel}, '
-              'approximately ${info.proximityLabel}',
-        )
-        .join('. ');
-    await _tts.speak('Quick scan. $description.', urgent: true);
+    await _assistive.quickScan();
   }
 
   Future<void> _repeatAlert() async {
@@ -250,11 +271,95 @@ class _UltralyticsDetectionScreenState
     await _tts.repeatLast();
   }
 
+  Future<void> _reportCorrection(DetectionInfo info) async {
+    final corrections = widget.corrections;
+    if (corrections == null || !mounted) return;
+    final selection = await showDetectionCorrectionSheet(
+      context: context,
+      info: info,
+      labels: corrections.labels,
+    );
+    if (!mounted || selection == null) return;
+
+    try {
+      final record = _assistive.addCorrection(
+        info: info,
+        feedback: selection.feedback,
+        correctedLabel: selection.correctedLabel,
+      );
+      if (record == null) return;
+      final message = selection.confirmationMessage;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Semantics(
+            container: true,
+            liveRegion: true,
+            label: message,
+            child: Text(message),
+          ),
+        ),
+      );
+      await _tts.speak(message, urgent: true);
+    } on ArgumentError {
+      if (!mounted) return;
+      const message = 'Correction could not be saved.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Semantics(
+            container: true,
+            liveRegion: true,
+            label: message,
+            child: Text(message),
+          ),
+        ),
+      );
+    }
+  }
+
+  DetectionInfo? get _lastCorrectableDetection {
+    if (widget.corrections == null) return null;
+    if (_tts.lastAnnouncedEngine != InferenceEngine.ultralytics) return null;
+    return _tts.lastAnnouncedDetection;
+  }
+
   void _toggleAudio() {
     final enabled = !_settings.audioEnabled;
     _settings.setAudioEnabled(enabled);
     _tts.setAudioEnabled(enabled);
     if (enabled) _tts.speak('Audio on', urgent: true);
+  }
+
+  void _setRuntimeState(DetectionRuntimeState state) {
+    if (!mounted || _runtimeState == state) return;
+    setState(() => _runtimeState = state);
+    widget.onRuntimeStateChanged?.call(state, null);
+  }
+
+  void _reportFailure(DetectionFailure failure) {
+    if (!mounted) return;
+    setState(() {
+      _failure = failure;
+      _runtimeState = DetectionRuntimeState.failed;
+      _starting = false;
+      _detectionActive = false;
+      _modelLoaded = false;
+      _modelError = failure.userMessage;
+    });
+    if (widget.onFailure != null) {
+      widget.onFailure!(failure, null);
+    } else {
+      _telemetry.recordFailure(failure);
+    }
+  }
+
+  void _retryRuntime() {
+    if (!mounted) return;
+    setState(() {
+      _failure = null;
+      _modelError = null;
+      _permissionDenied = false;
+    });
+    _startDetection();
   }
 
   void _onGesture(EyeCueGesture gesture) {
@@ -388,6 +493,14 @@ class _UltralyticsDetectionScreenState
   }
 
   Widget _buildMainArea(BuildContext context) {
+    if (_runtimeState == DetectionRuntimeState.failed) {
+      return DetectionStatePanel(
+        state: _runtimeState,
+        failure: _failure,
+        onRetry: _retryRuntime,
+        onStop: _stopDetection,
+      );
+    }
     if (_permissionDenied) return _buildPermissionDenied(context);
     if (!_detectionActive) return _buildCameraPending(context);
     return Stack(
@@ -397,7 +510,7 @@ class _UltralyticsDetectionScreenState
           modelPath: EyeCueModelConfig.modelAssetPath,
           task: YOLOTask.detect,
           controller: _controller,
-          confidenceThreshold: EyeCueModelConfig.confidenceThreshold,
+          confidenceThreshold: _settings.detectionConfidence,
           iouThreshold: EyeCueModelConfig.nmsIouThreshold,
           useGpu: true,
           streamingConfig: _streamingConfig,
@@ -408,13 +521,23 @@ class _UltralyticsDetectionScreenState
               setState(() {
                 _modelLoaded = true;
                 _modelError = null;
+                _failure = null;
               });
             }
+            _setRuntimeState(DetectionRuntimeState.ready);
           },
           onModelError: (error, _, _) {
-            if (mounted) {
-              setState(() => _modelError = 'Model error: $error');
-            }
+            _reportFailure(
+              DetectionFailure(
+                category: DetectionFailureCategory.modelLoading,
+                safeMessage:
+                    'The recommended detection engine could not load its model.',
+                technicalDetail: '$error',
+                engine: InferenceEngine.ultralytics,
+                timestamp: DateTime.now(),
+                fallbackAvailable: true,
+              ),
+            );
           },
         ),
         const Align(alignment: Alignment.bottomCenter, child: _GestureHint()),
@@ -531,6 +654,20 @@ class _UltralyticsDetectionScreenState
                     icon: Icons.replay,
                     onPressed: _repeatAlert,
                   ),
+                  if (widget.corrections != null)
+                    ListenableBuilder(
+                      listenable: _tts,
+                      builder: (context, _) {
+                        final last = _lastCorrectableDetection;
+                        return AccessibleButton(
+                          label: 'Correct last announcement',
+                          icon: Icons.flag_outlined,
+                          onPressed: last == null
+                              ? null
+                              : () => _reportCorrection(last),
+                        );
+                      },
+                    ),
                   AccessibleButton(
                     label: 'Scan',
                     icon: Icons.wifi_tethering,
@@ -565,6 +702,9 @@ class _UltralyticsDetectionScreenState
       itemBuilder: (context, index) => DetectionCard(
         info: _detectionInfo[index],
         highlight: _detectionInfo[index].priority == ObjectPriority.high,
+        onReport: widget.corrections == null
+            ? null
+            : () => _reportCorrection(_detectionInfo[index]),
       ),
     );
   }

@@ -5,6 +5,7 @@ import '../screens/help_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/logs_reports_screen.dart';
 import '../screens/settings_screen.dart';
+import '../services/correction_service.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
@@ -20,6 +21,7 @@ class AppShell extends StatefulWidget {
   final SettingsService settings;
   final TtsService tts;
   final TelemetryService telemetry;
+  final CorrectionService? corrections;
   final HapticsService haptics;
 
   /// Test hook — supply your own page widgets instead of the real screens.
@@ -31,6 +33,7 @@ class AppShell extends StatefulWidget {
     required this.settings,
     required this.tts,
     required this.telemetry,
+    this.corrections,
     required this.haptics,
     this.pagesOverride,
   });
@@ -74,7 +77,11 @@ class AppShellState extends State<AppShell> {
   void openLogsReports() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => LogsReportsScreen(telemetry: widget.telemetry),
+        builder: (_) => LogsReportsScreen(
+          telemetry: widget.telemetry,
+          settings: widget.settings,
+          corrections: widget.corrections,
+        ),
       ),
     );
   }
@@ -94,6 +101,7 @@ class AppShellState extends State<AppShell> {
           settings: widget.settings,
           tts: widget.tts,
           telemetry: widget.telemetry,
+          corrections: widget.corrections,
           haptics: widget.haptics,
         );
       case 2:
