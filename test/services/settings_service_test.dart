@@ -11,7 +11,8 @@ void main() {
       expect(service.autoStartDetection, isTrue);
       expect(service.lowPowerMode, isFalse);
       expect(service.audioEnabled, isTrue);
-      expect(service.inferenceEngine, InferenceEngine.custom);
+      expect(service.inferenceEngine, InferenceEngine.ultralytics);
+      expect(service.detectionConfidence, 0.25);
     });
 
     test('setters update values and notify listeners', () async {
@@ -32,12 +33,14 @@ void main() {
       await service.setVibrationFeedback(false);
       await service.setAutoStartDetection(false);
       await service.setInferenceEngine(InferenceEngine.ultralytics);
+      await service.setDetectionConfidence(0.4);
 
       final reloaded = SettingsService(store: store);
       await reloaded.load();
       expect(reloaded.vibrationFeedback, isFalse);
       expect(reloaded.autoStartDetection, isFalse);
       expect(reloaded.inferenceEngine, InferenceEngine.ultralytics);
+      expect(reloaded.detectionConfidence, 0.4);
     });
 
     test('corrupt persisted JSON falls back to defaults', () async {
@@ -67,11 +70,34 @@ void main() {
       expect(b, a);
     });
 
-    test('unknown persisted engine falls back to custom', () {
+    test('unknown persisted engine falls back to the recommended default', () {
       final settings = AppSettings.fromJson({
         'inferenceEngine': 'missing-engine',
       });
+      expect(settings.inferenceEngine, InferenceEngine.ultralytics);
+    });
+
+    test('explicit custom engine remains custom after migration', () {
+      final settings = AppSettings.fromJson({
+        'schemaVersion': 1,
+        'inferenceEngine': 'custom',
+      });
       expect(settings.inferenceEngine, InferenceEngine.custom);
+    });
+
+    test('confidence values are clamped and quantized', () {
+      expect(
+        AppSettings.fromJson({'detectionConfidence': 0.01}).detectionConfidence,
+        0.1,
+      );
+      expect(
+        AppSettings.fromJson({'detectionConfidence': 0.43}).detectionConfidence,
+        0.45,
+      );
+      expect(
+        AppSettings.fromJson({'detectionConfidence': 2.0}).detectionConfidence,
+        0.75,
+      );
     });
   });
 }

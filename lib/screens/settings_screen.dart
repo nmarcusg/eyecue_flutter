@@ -62,20 +62,37 @@ class SettingsScreen extends StatelessWidget {
                 },
                 child: Column(
                   children: [
-                    for (final engine in InferenceEngine.values)
-                      RadioListTile<InferenceEngine>(
-                        secondary: Icon(
-                          engine == InferenceEngine.custom
-                              ? Icons.code_rounded
-                              : Icons.memory_rounded,
-                        ),
-                        title: Text(engine.label),
-                        subtitle: Text(engine.description),
-                        value: engine,
+                    const ListTile(
+                      leading: Icon(Icons.recommend),
+                      title: Text('Recommended'),
+                      subtitle: Text(
+                        'Use the recommended native engine for normal detection.',
                       ),
+                    ),
+                    RadioListTile<InferenceEngine>(
+                      secondary: const Icon(Icons.memory_rounded),
+                      title: Text(InferenceEngine.ultralytics.label),
+                      subtitle: Text(InferenceEngine.ultralytics.description),
+                      value: InferenceEngine.ultralytics,
+                    ),
+                    const ListTile(
+                      leading: Icon(Icons.tune_rounded),
+                      title: Text('Advanced / compatibility'),
+                      subtitle: Text(
+                        'Custom EyeCue is slower and retained for recovery and testing.',
+                      ),
+                    ),
+                    RadioListTile<InferenceEngine>(
+                      secondary: const Icon(Icons.code_rounded),
+                      title: Text(InferenceEngine.custom.label),
+                      subtitle: Text(InferenceEngine.custom.description),
+                      value: InferenceEngine.custom,
+                    ),
                   ],
                 ),
               ),
+              const _SectionHeader('Detection Sensitivity'),
+              _SensitivityControls(settings: settings),
               const _SectionHeader('Audio'),
               SwitchListTile(
                 secondary: const Icon(Icons.volume_up),
@@ -96,6 +113,117 @@ class SettingsScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SensitivityControls extends StatefulWidget {
+  final SettingsService settings;
+
+  const _SensitivityControls({required this.settings});
+
+  @override
+  State<_SensitivityControls> createState() => _SensitivityControlsState();
+}
+
+class _SensitivityControlsState extends State<_SensitivityControls> {
+  late double _draft = widget.settings.detectionConfidence;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.settings.addListener(_handleSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.settings.removeListener(_handleSettingsChanged);
+    super.dispose();
+  }
+
+  void _handleSettingsChanged() {
+    final confidence = widget.settings.detectionConfidence;
+    if (confidence == _draft || !mounted) return;
+    setState(() => _draft = confidence);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preset = DetectionSensitivityPreset.fromThreshold(_draft);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          RadioGroup<DetectionSensitivityPreset>(
+            groupValue: preset,
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _draft = value.threshold);
+              widget.settings.setDetectionConfidence(value.threshold);
+            },
+            child: Column(
+              children: [
+                for (final option in DetectionSensitivityPreset.values)
+                  RadioListTile<DetectionSensitivityPreset>(
+                    title: Text(option.label),
+                    subtitle: Text(option.description),
+                    value: option,
+                  ),
+              ],
+            ),
+          ),
+          Semantics(
+            container: true,
+            label:
+                'Advanced detection confidence threshold, '
+                '${_draft.toStringAsFixed(2)}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(
+                    'Advanced threshold: ${_draft.toStringAsFixed(2)}',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                Slider(
+                  min: AppSettings.minDetectionConfidence,
+                  max: AppSettings.maxDetectionConfidence,
+                  divisions:
+                      ((AppSettings.maxDetectionConfidence -
+                                  AppSettings.minDetectionConfidence) /
+                              0.05)
+                          .round(),
+                  value: _draft,
+                  label: _draft.toStringAsFixed(2),
+                  onChanged: (value) {
+                    setState(
+                      () => _draft = AppSettings.normalizeDetectionConfidence(
+                        value,
+                      ),
+                    );
+                  },
+                  onChangeEnd: (value) {
+                    final normalized = AppSettings.normalizeDetectionConfidence(
+                      value,
+                    );
+                    setState(() => _draft = normalized);
+                    widget.settings.setDetectionConfidence(normalized);
+                  },
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Lower values find more objects. Higher values reduce false alerts. Changes apply after detection restarts.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
