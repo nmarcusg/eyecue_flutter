@@ -42,6 +42,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/yolov8n_int8_new_metadata.tflite
     - assets/yolov8n_int8_new.tflite
     - assets/yolov8n.tflite
     - assets/labels.txt

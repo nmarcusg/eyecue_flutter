@@ -8,12 +8,17 @@ import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:tflite_flutter/tflite_flutter.dart';
 import '../models/box_transform.dart';
+import '../models/app_settings.dart';
 import '../models/detection.dart';
 import '../models/model_metadata.dart';
 import '../models/model_config.dart';
+import '../models/detection_runtime_state.dart';
+import '../models/inference_lifecycle_event.dart';
+import '../models/inference_recovery_policy.dart';
 import '../models/tensor_rotation.dart';
 import '../models/tflite_flatbuffer.dart';
 import 'forensic_log.dart'; // Structured file-based forensic logging
+import 'inference_worker_lifecycle.dart';
 import 'input_probe.dart'; // TEMPORARY input-pipeline probe (test-image converter)
 
 /// ---------------------------------------------------------------------------
@@ -35,19 +40,60 @@ class InferenceService {
   /// interpreter remains the single source of truth for everything else.
   static const String _modelAssetPath = EyeCueModelConfig.modelAssetPath;
 
+  InferenceService({
+    double confidenceThreshold = EyeCueModelConfig.defaultConfidenceThreshold,
+  }) : _confidenceThreshold = EyeCueModelConfig.normalizeConfidenceThreshold(
+         confidenceThreshold,
+       );
+
   Isolate? _isolate;
   SendPort? _sendPort;
   ReceivePort? _receivePort;
+  ReceivePort? _errorPort;
+  ReceivePort? _exitPort;
   StreamSubscription<dynamic>? _receiveSubscription;
+  StreamSubscription<dynamic>? _errorSubscription;
+  StreamSubscription<dynamic>? _exitSubscription;
   bool _disposed = false;
+  Future<void>? _initializationFuture;
+  Uint8List? _modelBytes;
+  List<String>? _labels;
+  String? _runDir;
+  Completer<void>? _readyCompleter;
+  late final InferenceWorkerLifecycle _workerLifecycle =
+      InferenceWorkerLifecycle(
+        spawnWorker: _spawnWorkerForLifecycle,
+        stopWorker: () => _stopWorkerResources(kill: true),
+        onEvent: _handleLifecycleEvent,
+      );
+  Future<void>? _retryInitializationFuture;
+  double _confidenceThreshold;
 
-  late StreamController<List<Detection>> _resultsController;
+  final StreamController<List<Detection>> _resultsController =
+      StreamController.broadcast();
   Stream<List<Detection>> get resultsStream => _resultsController.stream;
 
   /// Stream of human-readable isolate error messages (for busy-gate recovery).
   final StreamController<String> _errorController =
       StreamController.broadcast();
   Stream<String> get errorStream => _errorController.stream;
+
+  /// Typed lifecycle events used by the runtime state and fallback layers.
+  final StreamController<InferenceLifecycleEvent> _lifecycleController =
+      StreamController.broadcast();
+  Stream<InferenceLifecycleEvent> get lifecycleStream =>
+      _lifecycleController.stream;
+
+  int? get activeGeneration => _workerLifecycle.activeGeneration;
+  int get automaticRestartCount => _workerLifecycle.automaticRestartCount;
+  double get confidenceThreshold => _confidenceThreshold;
+
+  static const int maxAutomaticRestarts =
+      InferenceRecoveryPolicy.defaultMaxAutomaticRestarts;
+  static const Duration secondRestartDelay =
+      InferenceRecoveryPolicy.defaultSecondRestartDelay;
+  static const Duration healthyResetDuration =
+      InferenceRecoveryPolicy.defaultHealthyResetDuration;
 
   /// Runtime model metadata, populated when the isolate reports `model_loaded`.
   ModelMetadata? _modelMetadata;
@@ -98,82 +144,305 @@ class InferenceService {
   /// IoU threshold for class-wise Non-Maximum Suppression.
   static const double kNmsIouThreshold = EyeCueModelConfig.nmsIouThreshold;
 
-  final Completer<void> _ready = Completer<void>();
-  Future<void> get _whenReady => _ready.future;
+  Future<void> get _whenReady =>
+      _readyCompleter?.future ?? Future<void>.error('Worker is not started');
 
-  Future<void> initIsolate() async {
+  Future<void> initIsolate({double? confidenceThreshold}) {
+    if (_disposed) return Future<void>.value();
+    if (confidenceThreshold != null) {
+      _confidenceThreshold = EyeCueModelConfig.normalizeConfidenceThreshold(
+        confidenceThreshold,
+      );
+    }
+    return _initializationFuture ??= _initialize();
+  }
+
+  /// Repeats model/worker initialization after a terminal startup failure.
+  ///
+  /// Initialization futures represent individual attempts rather than the
+  /// lifetime of this service. The public streams stay open while this method
+  /// replaces the failed worker, so a mounted screen can use its Retry action
+  /// without constructing a second service.
+  Future<void> retryInitialization({double? confidenceThreshold}) {
+    if (_disposed) return Future<void>.value();
+    return _retryInitializationFuture ??= _retryInitialization(
+      confidenceThreshold: confidenceThreshold,
+    ).whenComplete(() => _retryInitializationFuture = null);
+  }
+
+  Future<void> _retryInitialization({double? confidenceThreshold}) async {
+    final previousInitialization = _initializationFuture;
+    if (previousInitialization != null) await previousInitialization;
+    if (_disposed) return;
+
+    await _workerLifecycle.resetForExplicitRetry();
+    if (_disposed) return;
+    _initializationFuture = null;
+    await initIsolate(confidenceThreshold: confidenceThreshold);
+  }
+
+  Future<void> _initialize() async {
     debugPrint('[Service] InferenceService.initIsolate() — spawning isolate…');
-    _resultsController = StreamController.broadcast();
-    final receivePort = ReceivePort();
-    _receivePort = receivePort;
+    _emitLifecycle(
+      InferenceLifecycleEvent(
+        type: InferenceLifecycleEventType.starting,
+        generation: _workerLifecycle.generationCounter,
+      ),
+    );
 
-    // Create the forensic run directory (file-based diagnostics).
-    final String? runDir = await ForensicLog.init();
-    if (_disposed) {
-      ForensicLog.finalize();
-      receivePort.close();
-      return;
-    }
-
-    final modelBytes = await _loadModel();
-    if (_disposed) return;
-    final labels = await _loadLabels();
-    if (_disposed) return;
-
-    final isolate = await Isolate.spawn(_isolateEntryPoint, [
-      receivePort.sendPort,
-      modelBytes,
-      labels,
-      _modelAssetPath,
-      runDir,
-    ]);
-    if (_disposed) {
-      isolate.kill(priority: Isolate.immediate);
-      receivePort.close();
-      return;
-    }
-    _isolate = isolate;
-
-    _receiveSubscription = receivePort.listen((dynamic message) {
+    try {
+      // Create the forensic run directory (file-based diagnostics).
+      _runDir = await ForensicLog.init();
       if (_disposed) return;
-      if (message is SendPort) {
-        // --- Handshake: isolate is ready ---
-        _sendPort = message;
-        if (!_ready.isCompleted) {
-          _ready.complete();
-        }
-        debugPrint('[Service] Isolate handshake complete — sendPort received');
-      } else if (message is Map<String, dynamic> &&
-          message['type'] == 'result') {
-        // --- Inference result with metadata ---
-        final detections = (message['detections'] as List).cast<Detection>();
-        _lastLatencyMs = (message['latencyMs'] as num).toDouble();
-        _lastFrameNumber = message['frameNumber'] as int;
-        if (!_resultsController.isClosed) {
-          _resultsController.add(detections);
-        }
-      } else if (message is Map<String, dynamic> &&
-          message['type'] == 'error') {
-        // --- Error from isolate ---
-        debugPrint(
-          '[Error] Isolate error: ${message['error']}\n'
-          '${message['stackTrace']}',
+
+      _modelBytes = await _loadModel();
+      if (_disposed) return;
+      _labels = await _loadLabels();
+      if (_disposed) return;
+
+      await _workerLifecycle.start(emitStarting: false);
+    } catch (error, stack) {
+      if (_disposed) return;
+      final failure = _failure(
+        DetectionFailureCategory.modelLoading,
+        'The detection model could not be loaded.',
+        error,
+        stack,
+      );
+      if (_workerLifecycle.activeGeneration != null) {
+        _workerLifecycle.reportFailure(
+          failure,
+          generation: _workerLifecycle.activeGeneration!,
         );
-        if (!_errorController.isClosed) {
-          _errorController.add(message['error'].toString());
-        }
-      } else if (message is Map<String, dynamic> &&
-          message['type'] == 'model_loaded') {
-        // --- Runtime model metadata from the isolate ---
-        final metadata = ModelMetadata.fromJsonMap(
-          (message['metadata'] as Map).cast<String, dynamic>(),
+      } else {
+        _workerLifecycle.reportTerminalFailure(
+          failure,
+          generation: _workerLifecycle.generationCounter,
         );
-        _modelMetadata = metadata;
-        _metadataNotifier.value = metadata;
-        debugPrint('[Service] Isolate reports model loaded successfully');
-        _logModelSummary(metadata);
       }
-    });
+    }
+  }
+
+  Future<DetectionFailure?> _spawnWorkerForLifecycle(int generation) async {
+    final modelBytes = _modelBytes;
+    final labels = _labels;
+    if (_disposed || modelBytes == null || labels == null) return null;
+
+    _readyCompleter = Completer<void>();
+    final receivePort = ReceivePort();
+    final errorPort = ReceivePort();
+    final exitPort = ReceivePort();
+    _receivePort = receivePort;
+    _errorPort = errorPort;
+    _exitPort = exitPort;
+    _receiveSubscription = receivePort.listen(
+      (message) => _handleWorkerMessage(generation, message),
+    );
+    _errorSubscription = errorPort.listen(
+      (message) => _handleWorkerPortError(generation, message),
+    );
+    _exitSubscription = exitPort.listen((_) => _handleWorkerExit(generation));
+
+    try {
+      _isolate = await Isolate.spawn(
+        _isolateEntryPoint,
+        [
+          receivePort.sendPort,
+          modelBytes,
+          labels,
+          _modelAssetPath,
+          _runDir,
+          generation,
+          _confidenceThreshold,
+        ],
+        onError: errorPort.sendPort,
+        onExit: exitPort.sendPort,
+        errorsAreFatal: true,
+      );
+      if (_disposed || !_workerLifecycle.acceptsGeneration(generation)) {
+        _isolate?.kill(priority: Isolate.immediate);
+      }
+    } catch (error, stack) {
+      return _failure(
+        DetectionFailureCategory.nativeInitialization,
+        'The custom detection engine could not start.',
+        error,
+        stack,
+        retryCount: _workerLifecycle.automaticRestartCount,
+      );
+    }
+    return null;
+  }
+
+  void _handleLifecycleEvent(InferenceLifecycleEvent event) {
+    _emitLifecycle(event);
+  }
+
+  void _handleWorkerMessage(int generation, dynamic message) {
+    if (!_workerLifecycle.acceptsGeneration(generation)) return;
+    if (message is SendPort) {
+      _sendPort = message;
+      final ready = _readyCompleter;
+      if (ready != null && !ready.isCompleted) ready.complete();
+      _workerLifecycle.reportWorkerReady(generation);
+      debugPrint(
+        '[Service] Isolate handshake complete — generation=$generation',
+      );
+      return;
+    }
+    if (message is! Map) return;
+    final type = message['type'];
+    if (type == 'result') {
+      final detections = (message['detections'] as List).cast<Detection>();
+      _lastLatencyMs = (message['latencyMs'] as num).toDouble();
+      _lastFrameNumber = message['frameNumber'] as int;
+      if (!_resultsController.isClosed) _resultsController.add(detections);
+      return;
+    }
+    if (type == 'error') {
+      final error = message['error'].toString();
+      final stackTrace = message['stackTrace']?.toString() ?? '';
+      debugPrint('[Error] Isolate error: $error\n$stackTrace');
+      if (!_errorController.isClosed) _errorController.add(error);
+      final failure = _failureFromMessage(
+        message,
+        generation: generation,
+        detail: '$error\n$stackTrace',
+      );
+      if (message['fatal'] == true) {
+        _workerLifecycle.reportFailure(failure, generation: generation);
+      } else {
+        _workerLifecycle.reportTransientError(
+          generation,
+          failure,
+          detail: stackTrace,
+        );
+      }
+      return;
+    }
+    if (type == 'model_loaded') {
+      final metadata = ModelMetadata.fromJsonMap(
+        (message['metadata'] as Map).cast<String, dynamic>(),
+      );
+      _modelMetadata = metadata;
+      _metadataNotifier.value = metadata;
+      debugPrint(
+        '[Service] Isolate reports model loaded successfully '
+        '(generation=$generation)',
+      );
+      _logModelSummary(metadata);
+      _workerLifecycle.reportModelLoaded(generation);
+    }
+  }
+
+  void _handleWorkerPortError(int generation, dynamic message) {
+    if (!_workerLifecycle.acceptsGeneration(generation)) return;
+    final parts = message is List ? message : [message, ''];
+    final error = parts.isNotEmpty ? parts.first.toString() : 'Worker error';
+    final stack = parts.length > 1 ? parts[1].toString() : '';
+    if (!_errorController.isClosed) _errorController.add(error);
+    _workerLifecycle.reportWorkerExit(
+      generation,
+      _failure(
+        DetectionFailureCategory.workerExited,
+        'The detection worker stopped unexpectedly.',
+        error,
+        StackTrace.fromString(stack),
+        retryCount: _workerLifecycle.automaticRestartCount,
+      ),
+    );
+  }
+
+  void _handleWorkerExit(int generation) {
+    if (!_workerLifecycle.acceptsGeneration(generation)) return;
+    _workerLifecycle.reportWorkerExit(
+      generation,
+      _failure(
+        DetectionFailureCategory.workerExited,
+        'The detection worker stopped unexpectedly.',
+        'Worker generation $generation exited.',
+        StackTrace.empty,
+        retryCount: _workerLifecycle.automaticRestartCount,
+      ),
+    );
+  }
+
+  /// Invalidates and closes only the current worker's resources. The public
+  /// result/error streams stay open so a replacement worker can use them.
+  Future<void> _stopWorkerResources({required bool kill}) async {
+    final isolate = _isolate;
+    _isolate = null;
+    _sendPort = null;
+    final ready = _readyCompleter;
+    if (ready != null && !ready.isCompleted) ready.complete();
+    _readyCompleter = null;
+
+    final subscriptions = [
+      _receiveSubscription,
+      _errorSubscription,
+      _exitSubscription,
+    ];
+    _receiveSubscription = null;
+    _errorSubscription = null;
+    _exitSubscription = null;
+    for (final subscription in subscriptions) {
+      await subscription?.cancel();
+    }
+
+    _receivePort?.close();
+    _errorPort?.close();
+    _exitPort?.close();
+    _receivePort = null;
+    _errorPort = null;
+    _exitPort = null;
+    if (kill) isolate?.kill(priority: Isolate.immediate);
+  }
+
+  DetectionFailure _failure(
+    DetectionFailureCategory category,
+    String safeMessage,
+    Object error,
+    StackTrace stack, {
+    int retryCount = 0,
+  }) => DetectionFailure(
+    category: category,
+    safeMessage: safeMessage,
+    technicalDetail: '$error\n$stack',
+    recoverable: true,
+    engine: InferenceEngine.custom,
+    retryCount: retryCount,
+    timestamp: DateTime.now(),
+    fallbackAvailable: true,
+  );
+
+  DetectionFailure _failureFromMessage(
+    Map<dynamic, dynamic> message, {
+    required int generation,
+    required String detail,
+  }) {
+    final categoryName = message['category'];
+    final category = categoryName is String
+        ? DetectionFailureCategory.values.firstWhere(
+            (value) => value.name == categoryName,
+            orElse: () => DetectionFailureCategory.inference,
+          )
+        : DetectionFailureCategory.inference;
+    return DetectionFailure(
+      category: category,
+      safeMessage:
+          message['safeMessage'] as String? ??
+          'The custom detection engine encountered a problem.',
+      technicalDetail: detail,
+      recoverable: true,
+      engine: InferenceEngine.custom,
+      retryCount: _workerLifecycle.automaticRestartCount,
+      timestamp: DateTime.now(),
+      fallbackAvailable: true,
+    );
+  }
+
+  void _emitLifecycle(InferenceLifecycleEvent event) {
+    if (!_lifecycleController.isClosed) _lifecycleController.add(event);
   }
 
   Future<Uint8List> _loadModel() async {
@@ -339,12 +608,13 @@ class InferenceService {
     if (_disposed) return;
     _disposed = true;
     debugPrint('[Service] InferenceService.dispose() — killing isolate');
+    _workerLifecycle.dispose();
     ForensicLog.finalize();
-    _receiveSubscription?.cancel();
-    _receivePort?.close();
-    _isolate?.kill(priority: Isolate.immediate);
     if (!_resultsController.isClosed) _resultsController.close();
     if (!_errorController.isClosed) _errorController.close();
+    if (!_lifecycleController.isClosed) {
+      _lifecycleController.close();
+    }
     _metadataNotifier.dispose();
     debugPrint('[Service] InferenceService disposed');
   }
@@ -356,6 +626,14 @@ class InferenceService {
     final SendPort mainSendPort = args[0] as SendPort;
     final Uint8List modelBytes = args[1] as Uint8List;
     final List<String> labels = (args[2] as List<dynamic>).cast<String>();
+    final int generation = args.length > 5 && args[5] is int
+        ? args[5] as int
+        : 0;
+    final double confidenceThreshold = args.length > 6 && args[6] is num
+        ? EyeCueModelConfig.normalizeConfidenceThreshold(
+            (args[6] as num).toDouble(),
+          )
+        : EyeCueModelConfig.defaultConfidenceThreshold;
     final String modelName =
         (args.length > 3 ? args[3] as String : 'unknown.tflite')
             .split('/')
@@ -436,6 +714,9 @@ class InferenceService {
           'type': 'error',
           'error': 'Interpreter creation failed: $fallbackError',
           'stackTrace': fallbackStack.toString(),
+          'fatal': true,
+          'category': DetectionFailureCategory.nativeInitialization.name,
+          'safeMessage': 'The custom detection engine could not start.',
         });
         return; // Cannot proceed without an interpreter
       }
@@ -469,6 +750,9 @@ class InferenceService {
         'type': 'error',
         'error': 'Model introspection failed: $e',
         'stackTrace': stack.toString(),
+        'fatal': true,
+        'category': DetectionFailureCategory.modelLoading.name,
+        'safeMessage': 'The detection model could not be loaded.',
       });
       return;
     }
@@ -479,6 +763,7 @@ class InferenceService {
     // Notify main isolate (full metadata + legacy string fields).
     mainSendPort.send({
       'type': 'model_loaded',
+      'generation': generation,
       'metadata': metadata.toJsonMap(),
       'inputShape': metadata.inputShape.toString(),
       'inputType': metadata.inputType.toString(),
@@ -712,6 +997,10 @@ class InferenceService {
                       'CPU fallback after XNNPACK failure failed: '
                       '$fallbackError',
                   'stackTrace': fallbackStack.toString(),
+                  'fatal': true,
+                  'category': DetectionFailureCategory.inference.name,
+                  'safeMessage':
+                      'The custom detection engine stopped unexpectedly.',
                 });
                 return;
               }
@@ -748,7 +1037,7 @@ class InferenceService {
             parseableOutput,
             metadata.anchors,
             metadata.classes,
-            kConfThreshold, // confidence threshold (pre-NMS)
+            confidenceThreshold, // confidence threshold (pre-NMS)
             labels,
             metadata.requiresOutputDequantization,
             metadata.outputScale,
@@ -811,6 +1100,7 @@ class InferenceService {
           // Send result with metadata back to main isolate
           mainSendPort.send({
             'type': 'result',
+            'generation': generation,
             'detections': detections,
             'latencyMs': latencyMs,
             'frameNumber': frameNumber,
@@ -828,6 +1118,9 @@ class InferenceService {
             'type': 'error',
             'error': e.toString(),
             'stackTrace': stack.toString(),
+            'fatal': true,
+            'category': DetectionFailureCategory.inference.name,
+            'safeMessage': 'The custom detection engine encountered a problem.',
           });
         } catch (_) {
           // Main isolate may have died; nothing more we can do
