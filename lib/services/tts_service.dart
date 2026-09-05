@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import '../models/app_settings.dart';
 import '../models/detection_info.dart';
+import '../models/tracked_detection.dart';
+import 'scene_summary_service.dart';
 
 /// Abstraction over the platform text-to-speech engine so tests can run
 /// without the real `flutter_tts` plugin.
@@ -75,12 +78,19 @@ class TtsService extends ChangeNotifier {
   final Duration sameLabelCooldown;
 
   final DateTime Function() _clock;
+  final SceneSummaryService summaryService = const SceneSummaryService();
 
   bool _audioEnabled = true;
   bool get audioEnabled => _audioEnabled;
 
   String? _lastUtterance;
   String? get lastUtterance => _lastUtterance;
+
+  DetectionInfo? _lastAnnouncedDetection;
+  DetectionInfo? get lastAnnouncedDetection => _lastAnnouncedDetection;
+
+  InferenceEngine? _lastAnnouncedEngine;
+  InferenceEngine? get lastAnnouncedEngine => _lastAnnouncedEngine;
 
   DateTime? _lastAnnouncementAt;
   DateTime? _lastLabelAt;
@@ -126,6 +136,8 @@ class TtsService extends ChangeNotifier {
   Future<bool> announceDetections(
     List<DetectionInfo> detections, {
     bool force = false,
+    List<TrackedDetection> tracks = const [],
+    InferenceEngine? engine,
   }) async {
     if (detections.isEmpty) return false;
     final primary = _selectPrimary(detections);
@@ -139,9 +151,23 @@ class TtsService extends ChangeNotifier {
     _lastLabel = primary.detection.label;
     _lastLabelAt = now;
     final urgent = primary.priority == ObjectPriority.high;
-    return speak(buildDetectionUtterance(primary, detections.length),
-        urgent: urgent);
+    final announced = await speak(
+      summaryService.alert(detections, tracks: tracks),
+      urgent: urgent,
+    );
+    if (announced) {
+      _lastAnnouncedDetection = primary;
+      _lastAnnouncedEngine = engine;
+      notifyListeners();
+    }
+    return announced;
   }
+
+  Future<bool> announceQuickScan(
+    List<DetectionInfo> detections, {
+    List<TrackedDetection> tracks = const [],
+  }) =>
+      speak(summaryService.quickScan(detections, tracks: tracks), urgent: true);
 
   /// Builds the spoken phrase for one object, e.g.
   /// "Person, high priority obstacle, on your left, approximately near."
@@ -179,16 +205,16 @@ class TtsService extends ChangeNotifier {
   }
 
   static int _rank(ObjectPriority p) => switch (p) {
-        ObjectPriority.high => 2,
-        ObjectPriority.medium => 1,
-        ObjectPriority.low => 0,
-      };
+    ObjectPriority.high => 2,
+    ObjectPriority.medium => 1,
+    ObjectPriority.low => 0,
+  };
 
   static int _proximityRank(ProximityBand p) => switch (p) {
-        ProximityBand.near => 0,
-        ProximityBand.medium => 1,
-        ProximityBand.far => 2,
-      };
+    ProximityBand.near => 0,
+    ProximityBand.medium => 1,
+    ProximityBand.far => 2,
+  };
 
   /// Replays the most recent announcement (swipe-down gesture).
   Future<bool> repeatLast() async {

@@ -52,10 +52,7 @@ void main() {
   setUp(() {
     engine = FakeTtsEngine();
     now = DateTime(2026, 1, 1, 12, 0, 0);
-    tts = TtsService(
-      engine: engine,
-      clock: () => now,
-    );
+    tts = TtsService(engine: engine, clock: () => now);
   });
 
   group('speak cooldown', () {
@@ -101,16 +98,18 @@ void main() {
       expect(engine.spoken.single, contains('person'));
     });
 
-    test('does not re-announce the same label within the same-label cooldown',
-        () async {
-      final infos = [info(classId: 0, label: 'person')];
-      await tts.announceDetections(infos);
-      now = now.add(const Duration(seconds: 2));
-      // Different confidence, same label → still de-duplicated.
-      final again = [info(classId: 0, label: 'person', conf: 0.95)];
-      expect(await tts.announceDetections(again), isFalse);
-      expect(engine.spoken.length, 1);
-    });
+    test(
+      'does not re-announce the same label within the same-label cooldown',
+      () async {
+        final infos = [info(classId: 0, label: 'person')];
+        await tts.announceDetections(infos);
+        now = now.add(const Duration(seconds: 2));
+        // Different confidence, same label → still de-duplicated.
+        final again = [info(classId: 0, label: 'person', conf: 0.95)];
+        expect(await tts.announceDetections(again), isFalse);
+        expect(engine.spoken.length, 1);
+      },
+    );
 
     test('announces again once the same-label cooldown elapses', () async {
       final infos = [info(classId: 0, label: 'person')];
@@ -120,20 +119,23 @@ void main() {
       expect(engine.spoken.length, 2);
     });
 
-    test('high-priority primary is selected and marked in the utterance', () async {
-      final low = info(classId: 79, label: 'toothbrush', conf: 0.99);
-      final high = info(
-        classId: 0,
-        label: 'person',
-        box: const Rect.fromLTWH(0.7, 0.1, 0.2, 0.3),
-        conf: 0.6,
-      );
-      expect(await tts.announceDetections([low, high]), isTrue);
-      final text = engine.spoken.single;
-      expect(text, contains('person'));
-      expect(text, contains('high priority obstacle'));
-      expect(text, contains('2 objects detected'));
-    });
+    test(
+      'high-priority primary is selected and marked in the utterance',
+      () async {
+        final low = info(classId: 79, label: 'toothbrush', conf: 0.99);
+        final high = info(
+          classId: 0,
+          label: 'person',
+          box: const Rect.fromLTWH(0.7, 0.1, 0.2, 0.3),
+          conf: 0.6,
+        );
+        expect(await tts.announceDetections([low, high]), isTrue);
+        final text = engine.spoken.single;
+        expect(text, contains('person'));
+        expect(text, contains('high priority obstacle'));
+        expect(text, contains('2 objects detected'));
+      },
+    );
   });
 
   group('repeatLast', () {

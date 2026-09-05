@@ -42,15 +42,27 @@ class DetectionInfo {
 
   /// Human-readable position phrase ("left" / "center" / "right").
   String get positionLabel => switch (position) {
-        RelativePosition.left => 'left',
-        RelativePosition.center => 'center',
-        RelativePosition.right => 'right',
-      };
+    RelativePosition.left => 'left',
+    RelativePosition.center => 'center',
+    RelativePosition.right => 'right',
+  };
 
   /// Human-readable approximate proximity phrase.
   String get proximityLabel => switch (proximity) {
-        ProximityBand.near => 'near',
-        ProximityBand.medium => 'ahead',
-        ProximityBand.far => 'far',
-      };
+    ProximityBand.near => 'near',
+    ProximityBand.medium => 'ahead',
+    ProximityBand.far => 'far',
+  };
+
+  String get semanticLabel =>
+      '$label, ${(confidence * 100).toStringAsFixed(0)} percent confidence, '
+      'on your $positionLabel, approximately $proximityLabel, '
+      '${priority.name} priority';
+
+  Map<String, dynamic> toJson() => {
+    'detection': detection.toJson(),
+    'position': position.name,
+    'priority': priority.name,
+    'proximity': proximity.name,
+  };
 }

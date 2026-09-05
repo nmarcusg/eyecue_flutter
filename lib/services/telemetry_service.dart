@@ -1,27 +1,67 @@
 import 'package:flutter/foundation.dart';
+import 'dart:ui' show Rect;
 
 import '../models/app_settings.dart';
+import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
+import '../models/detection_runtime_state.dart';
+import '../models/inference_lifecycle_event.dart';
+import '../models/tracked_detection.dart';
 
 /// One recorded detection event (used by the Logs tab and aggregates).
 class TelemetryRecord {
   final DateTime timestamp;
+  final int classId;
   final String label;
   final double confidence;
   final double latencyMs;
   final ObjectPriority priority;
   final String position;
+  final ProximityBand? proximity;
+  final Rect? box;
   final InferenceEngine engine;
+  final double confidenceThreshold;
+  final int? trackId;
+  final MotionState? motion;
 
   const TelemetryRecord({
     required this.timestamp,
+    this.classId = -1,
     required this.label,
     required this.confidence,
     required this.latencyMs,
     required this.priority,
     required this.position,
+    this.proximity,
+    this.box,
     required this.engine,
+    this.confidenceThreshold = 0.25,
+    this.trackId,
+    this.motion,
   });
+
+  Map<String, dynamic> toJson() => {
+    'timestamp': timestamp.toUtc().toIso8601String(),
+    'classId': classId,
+    'label': label,
+    'confidence': confidence,
+    'latencyMs': latencyMs,
+    'priority': priority.name,
+    'position': position,
+    'proximity': proximity?.name,
+    'box': box == null
+        ? null
+        : {
+            'left': box!.left,
+            'top': box!.top,
+            'width': box!.width,
+            'height': box!.height,
+          },
+    'engine': engine.name,
+    'confidenceThreshold': confidenceThreshold,
+    'trackId': trackId,
+    'motion': motion?.name,
+  };
 }
 
 /// One latency/FPS sample point (used by the charts).
@@ -31,6 +71,7 @@ class RuntimeSample {
   final double inferenceFps;
   final int objectCount;
   final InferenceEngine engine;
+  final double confidenceThreshold;
 
   const RuntimeSample({
     required this.timestamp,
@@ -38,7 +79,77 @@ class RuntimeSample {
     required this.inferenceFps,
     required this.objectCount,
     required this.engine,
+    this.confidenceThreshold = 0.25,
   });
+
+  Map<String, dynamic> toJson() => {
+    'timestamp': timestamp.toUtc().toIso8601String(),
+    'latencyMs': latencyMs,
+    'inferenceFps': inferenceFps,
+    'objectCount': objectCount,
+    'engine': engine.name,
+    'confidenceThreshold': confidenceThreshold,
+  };
+}
+
+/// A typed runtime failure retained for the export without exposing exception
+/// text as the primary user-facing message.
+class TelemetryFailureRecord {
+  final DetectionFailure failure;
+
+  const TelemetryFailureRecord(this.failure);
+
+  Map<String, dynamic> toJson() => failure.toJson();
+}
+
+class EngineFallbackRecord {
+  final DateTime timestamp;
+  final InferenceEngine preferredEngine;
+  final InferenceEngine activeEngine;
+  final String reason;
+
+  const EngineFallbackRecord({
+    required this.timestamp,
+    required this.preferredEngine,
+    required this.activeEngine,
+    required this.reason,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'timestamp': timestamp.toUtc().toIso8601String(),
+    'preferredEngine': preferredEngine.name,
+    'activeEngine': activeEngine.name,
+    'reason': reason,
+  };
+}
+
+/// One bounded Custom-worker recovery event. It contains lifecycle metadata
+/// only; model inputs, camera frames, and internal exception text are excluded.
+class InferenceRecoveryRecord {
+  final DateTime timestamp;
+  final InferenceLifecycleEventType type;
+  final int generation;
+  final int restartAttempt;
+  final DetectionFailureCategory? failureCategory;
+  final InferenceEngine engine;
+
+  const InferenceRecoveryRecord({
+    required this.timestamp,
+    required this.type,
+    required this.generation,
+    required this.restartAttempt,
+    required this.failureCategory,
+    required this.engine,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'timestamp': timestamp.toUtc().toIso8601String(),
+    'type': type.name,
+    'generation': generation,
+    'restartAttempt': restartAttempt,
+    'failureCategory': failureCategory?.name,
+    'engine': engine.name,
+  };
 }
 
 class EngineTelemetrySummary {
@@ -62,12 +173,23 @@ class EngineTelemetrySummary {
 /// compute model accuracy (accuracy/precision/recall/mAP) — that requires
 /// ground-truth labels and is out of scope for a live camera feed.
 class TelemetryService extends ChangeNotifier {
-  TelemetryService({DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  TelemetryService({
+    DateTime Function()? clock,
+    String? sessionId,
+    this.appVersion = '1.0.0+1',
+  }) : _clock = clock ?? DateTime.now,
+       sessionId =
+           sessionId ?? 'session-${DateTime.now().microsecondsSinceEpoch}';
 
   final DateTime Function() _clock;
+  final String sessionId;
+  final String appVersion;
   final List<TelemetryRecord> _records = [];
   final List<RuntimeSample> _samples = [];
+  final List<TelemetryFailureRecord> _failures = [];
+  final List<EngineFallbackRecord> _fallbacks = [];
+  final List<InferenceRecoveryRecord> _recoveries = [];
+  final List<DetectionCorrection> _corrections = [];
 
   static const int _maxRecords = 2000;
   static const int _maxSamples = 500;
@@ -84,6 +206,11 @@ class TelemetryService extends ChangeNotifier {
 
   List<TelemetryRecord> get records => List.unmodifiable(_records);
   List<RuntimeSample> get samples => List.unmodifiable(_samples);
+  List<TelemetryFailureRecord> get failures => List.unmodifiable(_failures);
+  List<EngineFallbackRecord> get fallbacks => List.unmodifiable(_fallbacks);
+  List<InferenceRecoveryRecord> get recoveries =>
+      List.unmodifiable(_recoveries);
+  List<DetectionCorrection> get corrections => List.unmodifiable(_corrections);
 
   int get totalDetections => _records.length;
   int get highPriorityAlerts => _highPriorityAlerts;
@@ -98,16 +225,24 @@ class TelemetryService extends ChangeNotifier {
     DetectionInfo info,
     double latencyMs, {
     required InferenceEngine engine,
+    double confidenceThreshold = 0.25,
+    TrackedDetection? track,
   }) {
     _records.add(
       TelemetryRecord(
         timestamp: _clock(),
+        classId: info.detection.classId,
         label: info.label,
         confidence: info.confidence,
         latencyMs: latencyMs,
         priority: info.priority,
         position: info.positionLabel,
+        proximity: info.proximity,
+        box: info.detection.box,
         engine: engine,
+        confidenceThreshold: confidenceThreshold,
+        trackId: track?.trackId,
+        motion: track?.motion,
       ),
     );
     if (_records.length > _maxRecords) {
@@ -124,6 +259,7 @@ class TelemetryService extends ChangeNotifier {
     required double inferenceFps,
     required int objectCount,
     required InferenceEngine engine,
+    double confidenceThreshold = 0.25,
   }) {
     _framesProcessed++;
     _samples.add(
@@ -133,10 +269,76 @@ class TelemetryService extends ChangeNotifier {
         inferenceFps: inferenceFps,
         objectCount: objectCount,
         engine: engine,
+        confidenceThreshold: confidenceThreshold,
       ),
     );
     if (_samples.length > _maxSamples) {
       _samples.removeRange(0, _samples.length - _maxSamples);
+    }
+    notifyListeners();
+  }
+
+  void recordFailure(DetectionFailure failure) {
+    _failures.add(TelemetryFailureRecord(failure));
+    if (_failures.length > 200) {
+      _failures.removeRange(0, _failures.length - 200);
+    }
+    notifyListeners();
+  }
+
+  void recordFallback({
+    required InferenceEngine preferredEngine,
+    required InferenceEngine activeEngine,
+    required String reason,
+  }) {
+    _fallbacks.add(
+      EngineFallbackRecord(
+        timestamp: _clock(),
+        preferredEngine: preferredEngine,
+        activeEngine: activeEngine,
+        reason: reason,
+      ),
+    );
+    if (_fallbacks.length > 100) {
+      _fallbacks.removeRange(0, _fallbacks.length - 100);
+    }
+    notifyListeners();
+  }
+
+  void recordRecovery(InferenceLifecycleEvent event) {
+    switch (event.type) {
+      case InferenceLifecycleEventType.recovering:
+      case InferenceLifecycleEventType.recoverySucceeded:
+      case InferenceLifecycleEventType.terminalFailure:
+        break;
+      case InferenceLifecycleEventType.starting:
+      case InferenceLifecycleEventType.workerReady:
+      case InferenceLifecycleEventType.modelLoaded:
+      case InferenceLifecycleEventType.transientError:
+      case InferenceLifecycleEventType.workerFailure:
+      case InferenceLifecycleEventType.disposed:
+        return;
+    }
+    _recoveries.add(
+      InferenceRecoveryRecord(
+        timestamp: _clock(),
+        type: event.type,
+        generation: event.generation,
+        restartAttempt: event.restartAttempt,
+        failureCategory: event.failure?.category,
+        engine: event.engine,
+      ),
+    );
+    if (_recoveries.length > 200) {
+      _recoveries.removeRange(0, _recoveries.length - 200);
+    }
+    notifyListeners();
+  }
+
+  void recordCorrection(DetectionCorrection correction) {
+    _corrections.add(correction);
+    if (_corrections.length > 2000) {
+      _corrections.removeRange(0, _corrections.length - 2000);
     }
     notifyListeners();
   }
