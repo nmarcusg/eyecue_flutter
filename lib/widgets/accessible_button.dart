@@ -27,22 +27,27 @@ class AccessibleButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: label,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 26),
-        label: Text(
-          label,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(64, 56),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          backgroundColor: prominent
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          foregroundColor: prominent
-              ? theme.colorScheme.onPrimary
-              : theme.colorScheme.onSurface,
+      enabled: onPressed != null,
+      hint: onPressed == null ? 'Unavailable' : 'Double tap to activate',
+      onTap: onPressed,
+      child: ExcludeSemantics(
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, size: 26),
+          label: Text(
+            label,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(64, 56),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            backgroundColor: prominent
+                ? theme.colorScheme.primary
+                : theme.colorScheme.surfaceContainerHighest,
+            foregroundColor: prominent
+                ? theme.colorScheme.onPrimary
+                : theme.colorScheme.onSurface,
+          ),
         ),
       ),
     );

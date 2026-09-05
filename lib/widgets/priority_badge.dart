@@ -17,10 +17,10 @@ class PriorityBadge extends StatelessWidget {
     final (Color bg, Color fg, String label) = switch (priority) {
       ObjectPriority.high => (const Color(0xFFB71C1C), Colors.white, 'HIGH'),
       ObjectPriority.medium => (
-          const Color(0xFFF9A825),
-          const Color(0xFF1A1A1A),
-          'MEDIUM',
-        ),
+        const Color(0xFFF9A825),
+        const Color(0xFF1A1A1A),
+        'MEDIUM',
+      ),
       ObjectPriority.low => (const Color(0xFF1B5E20), Colors.white, 'LOW'),
     };
     return Container(

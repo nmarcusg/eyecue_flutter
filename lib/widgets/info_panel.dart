@@ -60,35 +60,45 @@ class MetricsPanel extends StatelessWidget {
     final theme = Theme.of(context);
 
     final sections = <(String, List<(String, String)>)>[
-      ('Performance', [
-        ('FPS', cameraFps.toStringAsFixed(1)),
-        ('Avg FPS', averageFps.toStringAsFixed(1)),
-        ('Inference (ms)', inferenceMs.toStringAsFixed(1)),
-        ('End-to-end (ms)', inferenceMs.toStringAsFixed(1)),
-        ('Preprocess (ms)', '—'),
-        ('Postprocess (ms)', '—'),
-      ]),
-      ('Detection', [
-        ('Objects', objectsDetected.toString()),
-        ('Highest conf', _pct(highestConfidence)),
-        ('Lowest conf', _pct(lowestConfidence)),
-        ('Average conf', _pct(averageConfidence)),
-      ]),
-      ('Camera', [
-        ('Camera res', cameraResolution),
-        ('Preview res', previewResolution),
-        ('Model input', modelInputResolution),
-        ('Aspect ratio', aspectRatio),
-      ]),
-      ('Model', [
-        ('Name', modelName),
-        ('Backend', inferenceBackend),
-        ('Quantization', quantization),
-        ('Threads', threadCount),
-      ]),
-      ('Memory', [
-        ('RAM usage', memoryUsage),
-      ]),
+      (
+        'Performance',
+        [
+          ('FPS', cameraFps.toStringAsFixed(1)),
+          ('Avg FPS', averageFps.toStringAsFixed(1)),
+          ('Inference (ms)', inferenceMs.toStringAsFixed(1)),
+          ('End-to-end (ms)', inferenceMs.toStringAsFixed(1)),
+          ('Preprocess (ms)', '—'),
+          ('Postprocess (ms)', '—'),
+        ],
+      ),
+      (
+        'Detection',
+        [
+          ('Objects', objectsDetected.toString()),
+          ('Highest conf', _pct(highestConfidence)),
+          ('Lowest conf', _pct(lowestConfidence)),
+          ('Average conf', _pct(averageConfidence)),
+        ],
+      ),
+      (
+        'Camera',
+        [
+          ('Camera res', cameraResolution),
+          ('Preview res', previewResolution),
+          ('Model input', modelInputResolution),
+          ('Aspect ratio', aspectRatio),
+        ],
+      ),
+      (
+        'Model',
+        [
+          ('Name', modelName),
+          ('Backend', inferenceBackend),
+          ('Quantization', quantization),
+          ('Threads', threadCount),
+        ],
+      ),
+      ('Memory', [('RAM usage', memoryUsage)]),
     ];
 
     return ListView(

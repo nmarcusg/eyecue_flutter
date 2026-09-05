@@ -27,7 +27,12 @@ class LatencyChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (samples.isEmpty) return const _NoData();
+    if (samples.isEmpty) {
+      return Semantics(
+        label: 'Inference latency chart. No data available yet.',
+        child: ExcludeSemantics(child: _NoData()),
+      );
+    }
     final spots = <FlSpot>[
       for (var i = 0; i < samples.length; i++)
         FlSpot(i.toDouble(), samples[i].latencyMs),
@@ -40,41 +45,52 @@ class LatencyChart extends StatelessWidget {
     // values always fit.
     final maxY = math.max(dataMax * 1.2 + 10.0, 40.0);
     final showBenchmark = maxY >= _latencyBenchmarkMs;
-    return LineChart(
-      LineChartData(
-        minY: 0,
-        maxY: maxY,
-        gridData: FlGridData(show: true, drawVerticalLine: false),
-        borderData: FlBorderData(
-          show: true,
-          border: const Border(
-            left: BorderSide(color: _axisColor),
-            bottom: BorderSide(color: _axisColor),
+    final summary = _sampleSummary(
+      samples.map((sample) => sample.latencyMs),
+      unit: 'milliseconds',
+      engine: _engineSummary(samples),
+    );
+    return Semantics(
+      container: true,
+      label: 'Inference latency chart. $summary',
+      child: ExcludeSemantics(
+        child: LineChart(
+          LineChartData(
+            minY: 0,
+            maxY: maxY,
+            gridData: FlGridData(show: true, drawVerticalLine: false),
+            borderData: FlBorderData(
+              show: true,
+              border: const Border(
+                left: BorderSide(color: _axisColor),
+                bottom: BorderSide(color: _axisColor),
+              ),
+            ),
+            titlesData: const FlTitlesData(show: false),
+            extraLinesData: ExtraLinesData(
+              horizontalLines: showBenchmark
+                  ? [
+                      HorizontalLine(
+                        y: _latencyBenchmarkMs,
+                        color: Colors.redAccent,
+                        strokeWidth: 1.5,
+                        dashArray: [6, 4],
+                      ),
+                    ]
+                  : const [],
+            ),
+            lineBarsData: [
+              LineChartBarData(
+                spots: spots,
+                isCurved: false,
+                color: _lineColor,
+                barWidth: 2,
+                dotData: const FlDotData(show: false),
+              ),
+            ],
+            lineTouchData: const LineTouchData(enabled: false),
           ),
         ),
-        titlesData: const FlTitlesData(show: false),
-        extraLinesData: ExtraLinesData(
-          horizontalLines: showBenchmark
-              ? [
-                  HorizontalLine(
-                    y: _latencyBenchmarkMs,
-                    color: Colors.redAccent,
-                    strokeWidth: 1.5,
-                    dashArray: [6, 4],
-                  ),
-                ]
-              : const [],
-        ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: false,
-            color: _lineColor,
-            barWidth: 2,
-            dotData: const FlDotData(show: false),
-          ),
-        ],
-        lineTouchData: const LineTouchData(enabled: false),
       ),
     );
   }
@@ -89,7 +105,12 @@ class FpsChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (samples.isEmpty) return const _NoData();
+    if (samples.isEmpty) {
+      return Semantics(
+        label: 'Frames per second chart. No data available yet.',
+        child: ExcludeSemantics(child: _NoData()),
+      );
+    }
     final spots = <FlSpot>[
       for (var i = 0; i < samples.length; i++)
         FlSpot(i.toDouble(), samples[i].inferenceFps),
@@ -99,41 +120,52 @@ class FpsChart extends StatelessWidget {
         .reduce((a, b) => a > b ? a : b);
     final maxY = math.max(dataMax * 1.2 + 2.0, 2.0);
     final showBenchmark = maxY >= _fpsBenchmark;
-    return LineChart(
-      LineChartData(
-        minY: 0,
-        maxY: maxY,
-        gridData: FlGridData(show: true, drawVerticalLine: false),
-        borderData: FlBorderData(
-          show: true,
-          border: const Border(
-            left: BorderSide(color: _axisColor),
-            bottom: BorderSide(color: _axisColor),
+    final summary = _sampleSummary(
+      samples.map((sample) => sample.inferenceFps),
+      unit: 'frames per second',
+      engine: _engineSummary(samples),
+    );
+    return Semantics(
+      container: true,
+      label: 'Frames per second chart. $summary',
+      child: ExcludeSemantics(
+        child: LineChart(
+          LineChartData(
+            minY: 0,
+            maxY: maxY,
+            gridData: FlGridData(show: true, drawVerticalLine: false),
+            borderData: FlBorderData(
+              show: true,
+              border: const Border(
+                left: BorderSide(color: _axisColor),
+                bottom: BorderSide(color: _axisColor),
+              ),
+            ),
+            titlesData: const FlTitlesData(show: false),
+            extraLinesData: ExtraLinesData(
+              horizontalLines: showBenchmark
+                  ? [
+                      HorizontalLine(
+                        y: _fpsBenchmark,
+                        color: Colors.greenAccent,
+                        strokeWidth: 1.5,
+                        dashArray: [6, 4],
+                      ),
+                    ]
+                  : const [],
+            ),
+            lineBarsData: [
+              LineChartBarData(
+                spots: spots,
+                isCurved: false,
+                color: _lineColor,
+                barWidth: 2,
+                dotData: const FlDotData(show: false),
+              ),
+            ],
+            lineTouchData: const LineTouchData(enabled: false),
           ),
         ),
-        titlesData: const FlTitlesData(show: false),
-        extraLinesData: ExtraLinesData(
-          horizontalLines: showBenchmark
-              ? [
-                  HorizontalLine(
-                    y: _fpsBenchmark,
-                    color: Colors.greenAccent,
-                    strokeWidth: 1.5,
-                    dashArray: [6, 4],
-                  ),
-                ]
-              : const [],
-        ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: false,
-            color: _lineColor,
-            barWidth: 2,
-            dotData: const FlDotData(show: false),
-          ),
-        ],
-        lineTouchData: const LineTouchData(enabled: false),
       ),
     );
   }
@@ -149,7 +181,12 @@ class DetectionFrequencyChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (buckets.isEmpty) return const _NoData();
+    if (buckets.isEmpty) {
+      return Semantics(
+        label: 'Detection frequency chart. No data available yet.',
+        child: ExcludeSemantics(child: _NoData()),
+      );
+    }
     final maxBucket = buckets.reduce((a, b) => a > b ? a : b).toDouble();
     // Headroom above the tallest bar; floor of 1 keeps a single low bucket
     // (or constant values) visible instead of collapsing the scale.
@@ -167,24 +204,53 @@ class DetectionFrequencyChart extends StatelessWidget {
           ],
         ),
     ];
-    return BarChart(
-      BarChartData(
-        minY: 0,
-        maxY: maxY,
-        gridData: FlGridData(show: true, drawVerticalLine: false),
-        borderData: FlBorderData(
-          show: true,
-          border: const Border(
-            left: BorderSide(color: _axisColor),
-            bottom: BorderSide(color: _axisColor),
+    final total = buckets.fold<int>(0, (sum, value) => sum + value);
+    return Semantics(
+      container: true,
+      label:
+          'Detection frequency chart. $total detections across '
+          '${buckets.length} minutes.',
+      child: ExcludeSemantics(
+        child: BarChart(
+          BarChartData(
+            minY: 0,
+            maxY: maxY,
+            gridData: FlGridData(show: true, drawVerticalLine: false),
+            borderData: FlBorderData(
+              show: true,
+              border: const Border(
+                left: BorderSide(color: _axisColor),
+                bottom: BorderSide(color: _axisColor),
+              ),
+            ),
+            titlesData: const FlTitlesData(show: false),
+            barGroups: groups,
+            barTouchData: const BarTouchData(enabled: false),
           ),
         ),
-        titlesData: const FlTitlesData(show: false),
-        barGroups: groups,
-        barTouchData: const BarTouchData(enabled: false),
       ),
     );
   }
+}
+
+String _engineSummary(List<RuntimeSample> samples) {
+  final engines = samples.map((sample) => sample.engine.label).toSet();
+  return engines.isEmpty ? 'no engine' : engines.join(', ');
+}
+
+String _sampleSummary(
+  Iterable<double> values, {
+  required String unit,
+  required String engine,
+}) {
+  final list = values.toList(growable: false);
+  final latest = list.last;
+  final min = list.reduce(math.min);
+  final max = list.reduce(math.max);
+  final average = list.reduce((a, b) => a + b) / list.length;
+  return 'Latest ${latest.toStringAsFixed(1)} $unit; average '
+      '${average.toStringAsFixed(1)}; minimum ${min.toStringAsFixed(1)}; '
+      'maximum ${max.toStringAsFixed(1)}; ${list.length} samples; engine $engine.';
 }
 
 class _NoData extends StatelessWidget {

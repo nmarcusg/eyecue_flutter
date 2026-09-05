@@ -66,10 +66,7 @@ class DebugOverlay extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xCC000000), // ~80% opaque black
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: const Color(0x44FFFFFF),
-              width: 1,
-            ),
+            border: Border.all(color: const Color(0x44FFFFFF), width: 1),
           ),
           child: DefaultTextStyle(
             style: const TextStyle(
@@ -113,22 +110,22 @@ class DebugOverlay extends StatelessWidget {
                             modelMetadata!.outputQuantized
                         ? 'Yes'
                         : 'No',
-                    valueColor: modelMetadata!.inputQuantized ||
+                    valueColor:
+                        modelMetadata!.inputQuantized ||
                             modelMetadata!.outputQuantized
                         ? const Color(0xFFFFD600)
                         : const Color(0xFFEEEEEE),
                   ),
                   if (modelMetadata!.inputQuantized) ...[
-                    _row('In Scale',
-                        _num(modelMetadata!.inputScale)),
-                    _row('In ZeroPt',
-                        modelMetadata!.inputZeroPoint.toString()),
+                    _row('In Scale', _num(modelMetadata!.inputScale)),
+                    _row('In ZeroPt', modelMetadata!.inputZeroPoint.toString()),
                   ],
                   if (modelMetadata!.outputQuantized) ...[
-                    _row('Out Scale',
-                        _num(modelMetadata!.outputScale)),
-                    _row('Out ZeroPt',
-                        modelMetadata!.outputZeroPoint.toString()),
+                    _row('Out Scale', _num(modelMetadata!.outputScale)),
+                    _row(
+                      'Out ZeroPt',
+                      modelMetadata!.outputZeroPoint.toString(),
+                    ),
                   ],
                 ],
                 const SizedBox(height: 4),
@@ -143,16 +140,21 @@ class DebugOverlay extends StatelessWidget {
                 const SizedBox(height: 2),
 
                 // Detection info
-                _row('Detections', detectionCount.toString(),
-                    valueColor: detectionCount > 0
-                        ? const Color(0xFF00E676)
-                        : const Color(0xFFFF5252)),
+                _row(
+                  'Detections',
+                  detectionCount.toString(),
+                  valueColor: detectionCount > 0
+                      ? const Color(0xFF00E676)
+                      : const Color(0xFFFF5252),
+                ),
                 if (lastDetectionLabel != null) ...[
                   _row('Last Obj', lastDetectionLabel!),
-                  _row('Confidence',
-                      lastConfidence != null
-                          ? '${(lastConfidence! * 100).toStringAsFixed(1)}%'
-                          : '--'),
+                  _row(
+                    'Confidence',
+                    lastConfidence != null
+                        ? '${(lastConfidence! * 100).toStringAsFixed(1)}%'
+                        : '--',
+                  ),
                 ],
                 const SizedBox(height: 2),
 
