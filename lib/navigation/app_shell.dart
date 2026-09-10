@@ -108,6 +108,7 @@ class AppShellState extends State<AppShell> {
         return SettingsScreen(
           settings: widget.settings,
           onOpenLogsReports: openLogsReports,
+          telemetry: widget.telemetry,
         );
       case 3:
         return const HelpScreen();
