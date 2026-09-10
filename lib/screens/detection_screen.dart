@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show DeviceOrientation;
+import 'package:flutter/services.dart'
+    show DeviceOrientation, SystemUiOverlayStyle;
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/box_transform.dart';
@@ -20,6 +21,10 @@ import '../services/inference_isolate.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_home_theme.dart';
+import '../theme/app_radii.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/accessible_button.dart';
 import '../widgets/bounding_box_painter.dart';
 import '../widgets/detection_card.dart';
@@ -781,30 +786,35 @@ class _DetectionScreenState extends State<DetectionScreen> {
   @override
   Widget build(BuildContext context) {
     final bool testMode = InferenceService.useTestImage;
-    return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            // Fixed, pre-allocated region for ALL dynamic detection content
-            // (warning banner, cards). Derived from the available screen
-            // height — never from the detection count — so the camera
-            // viewport above stays exactly the same size whether there are
-            // 0, 1, or many detections. The content region scrolls internally.
-            final double contentHeight = (constraints.maxHeight * 0.32).clamp(
-              200.0,
-              320.0,
-            );
-            return Column(
-              children: [
-                _buildTopBar(context),
-                Expanded(child: _buildMainArea(context, testMode)),
-                SizedBox(
-                  height: contentHeight,
-                  child: _buildControlsPanel(context),
-                ),
-              ],
-            );
-          },
+    return Theme(
+      data: buildHomeTheme(),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.dark,
+        child: Scaffold(
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Fixed, pre-allocated region for ALL dynamic detection content
+                // (warning banner, cards). Derived from the available screen
+                // height — never from the detection count — so the camera
+                // viewport above stays exactly the same size whether there are
+                // 0, 1, or many detections. The content region scrolls
+                // internally.
+                final double contentHeight = (constraints.maxHeight * 0.32)
+                    .clamp(260.0, 320.0);
+                return Column(
+                  children: [
+                    _buildTopBar(context),
+                    Expanded(child: _buildMainArea(context, testMode)),
+                    SizedBox(
+                      height: contentHeight,
+                      child: _buildControlsPanel(context),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -813,45 +823,36 @@ class _DetectionScreenState extends State<DetectionScreen> {
   Widget _buildTopBar(BuildContext context) {
     final theme = Theme.of(context);
     final (String label, Color color) = !_detectionActive
-        ? ('Stopped', const Color(0xFF455A64))
+        ? ('Stopped', kStatusBlueGrey)
         : _paused
-        ? ('Paused', const Color(0xFFF57F17))
-        : ('Detecting', const Color(0xFF1B5E20));
+        ? ('Paused', kStatusAmber)
+        : ('Detecting', kStatusGreen);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(kSpace16, kSpace16, kSpace16, kSpace8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Detection Mode',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                StatusPill(label: label, color: color),
-              ],
-            ),
-          ),
-          ListenableBuilder(
-            listenable: Listenable.merge([_settings, _tts]),
-            builder: (context, _) {
-              final on = _settings.audioEnabled;
-              return IconButton(
-                tooltip: on ? 'Mute audio guidance' : 'Unmute audio guidance',
-                onPressed: _toggleAudio,
-                iconSize: 32,
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(56, 56),
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                ),
-                icon: Icon(on ? Icons.volume_up : Icons.volume_off),
-              );
-            },
+          Text('Detection Mode', style: theme.textTheme.titleLarge),
+          const SizedBox(height: kSpace4),
+          Row(
+            children: [
+              StatusPill(label: label, color: color),
+              const Spacer(),
+              ListenableBuilder(
+                listenable: Listenable.merge([_settings, _tts]),
+                builder: (context, _) {
+                  final on = _settings.audioEnabled;
+                  return _AudioPill(
+                    on: on,
+                    onPressed: _toggleAudio,
+                    tooltip: on
+                        ? 'Mute audio guidance'
+                        : 'Unmute audio guidance',
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -972,41 +973,51 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            // Live feed, contained (never stretched/warped/cropped).
-            FittedBox(
-              fit: BoxFit.contain,
-              clipBehavior: Clip.hardEdge,
-              child: SizedBox(
-                width: frameSize.width,
-                height: frameSize.height,
-                child: testMode
-                    ? _buildTestImagePreview()
-                    : CameraPreview(_cameraController!),
-              ),
-            ),
-            // Bounding boxes — same contain fit, so boxes align with the feed.
-            CustomPaint(
-              painter: BoundingBoxPainter(
-                detections: _detections,
-                imageSize: frameSize,
+        // Rounded dark card around the live feed. The viewport stack itself is
+        // unchanged; only the surrounding container (dark fill + rounded clip)
+        // is added so the light chrome never sits over the camera surface.
+        return Container(
+          decoration: BoxDecoration(
+            color: kHomeInk,
+            borderRadius: BorderRadius.circular(kRadius24),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Live feed, contained (never stretched/warped/cropped).
+              FittedBox(
                 fit: BoxFit.contain,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: frameSize.width,
+                  height: frameSize.height,
+                  child: testMode
+                      ? _buildTestImagePreview()
+                      : CameraPreview(_cameraController!),
+                ),
               ),
-              size: Size.infinite,
-            ),
-            // Gesture hint.
-            const Align(
-              alignment: Alignment.bottomCenter,
-              child: _GestureHint(),
-            ),
-            // Thesis gesture capture layer (transparent, topmost).
-            GestureSurface(
-              controller: _gestureController,
-              child: const SizedBox.expand(),
-            ),
-          ],
+              // Bounding boxes — same contain fit, so boxes align with the feed.
+              CustomPaint(
+                painter: BoundingBoxPainter(
+                  detections: _detections,
+                  imageSize: frameSize,
+                  fit: BoxFit.contain,
+                ),
+                size: Size.infinite,
+              ),
+              // Gesture hint.
+              const Align(
+                alignment: Alignment.bottomCenter,
+                child: _GestureHint(),
+              ),
+              // Thesis gesture capture layer (transparent, topmost).
+              GestureSurface(
+                controller: _gestureController,
+                child: const SizedBox.expand(),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1031,72 +1042,87 @@ class _DetectionScreenState extends State<DetectionScreen> {
   Widget _buildControlsPanel(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      color: theme.colorScheme.surfaceContainerHigh,
+      color: kHomeSurfaceBase,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          child: Column(
-            children: [
-              // Warning banner lives BELOW the camera, in the fixed region.
-              if (_warningMessage != null)
-                WarningBanner(message: _warningMessage!),
-              // Scrollable detection content — adapts inside its own space.
-              Expanded(child: _buildDetectionList(context)),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  AccessibleButton(
-                    label: _detectionActive ? 'Stop' : 'Start',
-                    icon: _detectionActive
-                        ? Icons.stop_circle
-                        : Icons.play_circle,
-                    onPressed: _toggleDetectionActive,
-                  ),
-                  AccessibleButton(
-                    label: _paused ? 'Resume' : 'Pause',
-                    icon: _paused ? Icons.play_arrow : Icons.pause,
-                    onPressed: _detectionActive ? _togglePaused : null,
-                  ),
-                  AccessibleButton(
-                    label: 'Repeat',
-                    icon: Icons.replay,
-                    onPressed: _repeatAlert,
-                  ),
-                  if (widget.corrections != null)
-                    ListenableBuilder(
-                      listenable: _tts,
-                      builder: (context, _) {
-                        final last = _lastCorrectableDetection;
-                        return AccessibleButton(
-                          label: 'Correct last announcement',
-                          icon: Icons.flag_outlined,
-                          onPressed: last == null
-                              ? null
-                              : () => _reportCorrection(last),
-                        );
-                      },
-                    ),
-                  AccessibleButton(
-                    label: 'Scan',
-                    icon: Icons.wifi_tethering,
-                    onPressed: _quickScan,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Gestures: 2-finger double-tap start/stop · single tap pause/'
-                'resume · 3-finger scan · swipe down repeat',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+          padding: const EdgeInsets.fromLTRB(
+            kSpace12,
+            kSpace8,
+            kSpace12,
+            kSpace12,
+          ),
+          // The whole panel scrolls so the fixed-height region can never
+          // overflow, regardless of text scale or how many controls wrap.
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Warning banner lives BELOW the camera, in the fixed region.
+                if (_warningMessage != null)
+                  WarningBanner(message: _warningMessage!),
+                // Detection content — bounded so it scrolls internally and the
+                // panel itself can still scroll when the controls wrap.
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  child: _buildDetectionList(context),
                 ),
-              ),
-            ],
+                const SizedBox(height: kSpace6),
+                Wrap(
+                  spacing: kSpace8,
+                  runSpacing: kSpace8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    AccessibleButton(
+                      label: _detectionActive ? 'Stop' : 'Start',
+                      icon: _detectionActive
+                          ? Icons.stop_circle
+                          : Icons.play_circle,
+                      onPressed: _toggleDetectionActive,
+                    ),
+                    AccessibleButton(
+                      label: _paused ? 'Resume' : 'Pause',
+                      icon: _paused ? Icons.play_arrow : Icons.pause,
+                      prominent: true,
+                      onPressed: _detectionActive ? _togglePaused : null,
+                    ),
+                    AccessibleButton(
+                      label: 'Repeat',
+                      icon: Icons.replay,
+                      onPressed: _repeatAlert,
+                    ),
+                    if (widget.corrections != null)
+                      ListenableBuilder(
+                        listenable: _tts,
+                        builder: (context, _) {
+                          final last = _lastCorrectableDetection;
+                          return AccessibleButton(
+                            label: 'Correct last announcement',
+                            icon: Icons.flag_outlined,
+                            onPressed: last == null
+                                ? null
+                                : () => _reportCorrection(last),
+                          );
+                        },
+                      ),
+                    AccessibleButton(
+                      label: 'Scan',
+                      icon: Icons.wifi_tethering,
+                      prominent: true,
+                      onPressed: _quickScan,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: kSpace8),
+                Text(
+                  'Gestures: 2-finger double-tap start/stop · single tap pause/'
+                  'resume · 3-finger scan · swipe down repeat',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: kHomeInkMuted,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1138,16 +1164,99 @@ class _GestureHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      margin: const EdgeInsets.only(bottom: kSpace10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace14,
+        vertical: kSpace8,
+      ),
       decoration: BoxDecoration(
-        color: const Color(0xCC000000),
-        borderRadius: BorderRadius.circular(20),
+        color: kOverlayBlack,
+        borderRadius: BorderRadius.circular(kRadius20),
         border: Border.all(color: Colors.white24),
       ),
       child: const Text(
         'Gestures active on this screen',
         style: TextStyle(color: Colors.white, fontSize: 12),
+      ),
+    );
+  }
+}
+
+/// Inline audio-guidance toggle pill (screen-only helper).
+///
+/// Restyles the previous circular mute [IconButton] into the light-language
+/// `AUDIO ON` / `AUDIO OFF` capsule while preserving the toggle behavior, the
+/// tooltip text, the enabled state, and a ≥48dp touch target.
+class _AudioPill extends StatelessWidget {
+  final bool on;
+  final VoidCallback onPressed;
+  final String tooltip;
+
+  const _AudioPill({
+    required this.on,
+    required this.onPressed,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      button: true,
+      enabled: true,
+      label: 'Audio guidance, ${on ? 'on' : 'off'}',
+      child: Tooltip(
+        message: tooltip,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minWidth: kMinTouchWidth,
+            minHeight: kMinTouchHeight,
+          ),
+          child: Material(
+            color: kHomeSurfaceCard,
+            elevation: 0,
+            borderRadius: BorderRadius.circular(kRadius20),
+            child: InkWell(
+              onTap: onPressed,
+              borderRadius: BorderRadius.circular(kRadius20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpace12,
+                  vertical: kSpace6,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(kRadius20),
+                  boxShadow: kHomeShadowSoft,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ExcludeSemantics(
+                      child: Container(
+                        width: kSpace8,
+                        height: kSpace8,
+                        decoration: BoxDecoration(
+                          color: on ? kHomeAccentCyan : kHomeInkMuted,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: kSpace8),
+                    ExcludeSemantics(
+                      child: Text(
+                        on ? 'AUDIO ON' : 'AUDIO OFF',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: kHomeInk,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
