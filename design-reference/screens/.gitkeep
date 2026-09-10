@@ -1,0 +1,7 @@
+# design-reference/screens
+
+Destination for manually-exported Figma **screen** screenshots.
+
+Actual Figma export is a manual step performed outside the scaffolding task.
+Place exported screen images here (e.g. `home.png`, `detect.png`) and reference
+them from `.roo/rules/docs/component-inventory.md`.

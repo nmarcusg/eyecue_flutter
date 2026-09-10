@@ -1,0 +1,8 @@
+# design-reference/components
+
+Destination for manually-exported Figma **component** screenshots.
+
+Actual Figma export is a manual step performed outside the scaffolding task.
+Place exported component images here (e.g. `accessible-button.png`,
+`detection-card.png`) and reference them from
+`.roo/rules/docs/component-inventory.md`.
