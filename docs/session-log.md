@@ -5,6 +5,156 @@
 
 ---
 
+## 2026-09-10 (21st session) — Detection Screen Visual Redesign
+
+### Objective
+- Implement the approved visual-only Detection-screen redesign per [`detection-screen-plan.md`](detection-screen-plan.md), [`detection-screen-design-spec.md`](detection-screen-design-spec.md), and [`detection-screen-analysis.md`](detection-screen-analysis.md), preserving the existing camera/inference architecture, gestures, TTS/haptics/telemetry/correction flow, runtime-state reporting, engine fallback, navigation, and accessibility contracts.
+
+### Completed
+- Restyled both Detection child screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics) — as a visual-only change. Both now scope the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) to the Detection subtree with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), using the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light chrome does not leak into Home, Help, Settings, Logs & Reports, or the shell navigation bar.
+- The camera viewport is now a rounded dark card (`kHomeInk`, `kRadius24`, clipped). The viewport stack (`FittedBox` → `CustomPaint(BoundingBoxPainter)` → `_GestureHint` → `GestureSurface`) and the `applyBoxFit` overlay math are unchanged; the Ultralytics `YOLOView` native overlay is unchanged. No `LIVE CAMERA` label was added.
+- The header keeps the single `Detection Mode` title using the theme's `titleLarge` (non-bold `w600`, matching the Settings/Help `AppBar` title style) with the `StatusPill` retained as its own live-region element. The `StatusPill` and the `AUDIO ON` pill share one horizontal row, with the audio pill end-aligned right; the Ultralytics performance line and error text remain below that row.
+- Replaced the circular audio `IconButton` with an inline `AUDIO ON` / `AUDIO OFF` pill (private `_AudioPill` helper colocated in each screen file): `kHomeSurfaceCard`, `kRadius20`, `kHomeShadowSoft`, `kSpace8` leading dot (`kHomeAccentCyan` on / `kHomeInkMuted` off), uppercase `labelMedium` label with `letterSpacing: 0.5`, `kSpace12`/`kSpace6` padding (matching `StatusPill`), and a ≥48dp touch target. Toggle behavior, tooltip text, enabled state, and the `ListenableBuilder` merge are preserved; the pill exposes a semantic label/role/state.
+- The controls panel now uses `kHomeSurfaceBase` with `kSpace12`/`kSpace8` padding; the five-button `Wrap` is preserved with `kSpace8` spacing/runSpacing and `prominent: true` on Pause/Resume and Scan only. The disabled Pause/Resume state and the conditional Correct button are preserved. The panel content is wrapped in a `SingleChildScrollView` (detection list bounded to `maxHeight: 160`, still scrolling internally) so the fixed-height region can never overflow. The gesture-hint text color is now `kHomeInkMuted`.
+- `_GestureHint` (both screens) now uses `kOverlayBlack`, `kRadius20`, and `kSpace14`/`kSpace8`/`kSpace10`; white text, `Colors.white24` border, bottom-center position, and copy are preserved.
+- Token-consistent restyle of the shared Detection widgets: [`status_pill.dart`](../lib/widgets/status_pill.dart), [`warning_banner.dart`](../lib/widgets/warning_banner.dart), [`detection_card.dart`](../lib/widgets/detection_card.dart), [`priority_badge.dart`](../lib/widgets/priority_badge.dart), [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart), and [`detection_correction_sheet.dart`](../lib/widgets/detection_correction_sheet.dart). The correction sheet uses a `Material` surface (not a `Container` color) so `ListTile` ink/splash behavior is preserved.
+- Restyled the [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) temporary-fallback notice to the light surface; `liveRegion: true` is preserved.
+- The exact live-region split is preserved: `StatusPill`, `WarningBanner`, `DetectionStatePanel`, and the fallback notice remain live regions; `DetectionCard` remains **not** a live region.
+- Added a `DetectionScreen` group to [`test/widget_test.dart`](../test/widget_test.dart) (plugin-free subtrees: title, `StatusPill`, all five controls, `AUDIO ON` pill, no overflow) and extended [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart) (audio-pill enabled semantics, `DetectionCard` non-live-region, 200% text-scale no-overflow).
+
+### Post-Implementation Fixes (on-device)
+- **Classification:** implementation bug (not a spec gap). The plan §1.1 preserves the "no overflow at 200% text scale" contract and §5.4/§4.6 preserve the fixed-height controls region; the restyle increased the fixed content's intrinsic height without adjusting the region floor.
+- **Overflow:** the physical SM S9010 (Android 15/API 35) showed `BOTTOM OVERFLOWED BY 74 PIXELS`. Traced to [`_buildControlsPanel()`](../lib/screens/detection_screen.dart:1048) / [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:633): the fixed-height region (`contentHeight` clamped 200–320) could not fit the two-row five-button `Wrap` (~120dp) plus the gesture-hint text at the 200dp floor. Fixed by wrapping the panel content in a `SingleChildScrollView` (detection list bounded to `maxHeight: 160`, still scrolling internally) and raising the clamp floor from `200.0` to `260.0` in both screens.
+- **`AUDIO ON` pill padding:** reduced from `kSpace16` to `kSpace12`/`kSpace6` to match the `StatusPill` treatment.
+- **Header alignment:** the `Detection Mode` title now uses the theme's `titleLarge` (non-bold `w600`) instead of the `w800` override, and the header top padding was raised to `kSpace16`, matching the Settings/Help `AppBar` title position. The `StatusPill` and `AUDIO ON` pill now share one horizontal row with the audio pill end-aligned right.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **185 passing**.
+- `flutter build apk --debug`: succeeds; the debug APK installs on the physical SM S9010 (API 35) device.
+- Physical-device verification (SM S9010, `R5CTA03XNZD`, Android 15/API 35): after the post-implementation fixes, the overflow banner is gone, no RenderFlex overflows/exceptions appear, the `AUDIO ON` pill padding matches the status pill, and the header title aligns with the Settings/Help headers.
+
+### Decisions / Limitations
+- No theme/token file change was made; Detection reuses `buildHomeTheme()` and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is.
+- The camera viewport stays dark (`kHomeInk`); the light theme applies to the screen chrome only.
+- The `BoundingBoxPainter` palette unification and the Home `_StatusBadge` extraction remain deferred (per the plan).
+- The full `DetectionScreen` is not pumped in tests (it needs `CameraPlatform`/`permission_handler` mocks); the visual/state contract is covered via plugin-free subtrees.
+
+### Next Session
+- Continue any remaining frontend work or documentation sync as directed.
+
+---
+
+## 2026-09-10 (20th session) — Logs & Reports Screen Visual Restyle
+
+### Objective
+- Implement the approved visual-only restyle of the existing pushed Logs & Reports route per [`logs-reports-screen-plan.md`](logs-reports-screen-plan.md), [`logs-reports-screen-design-spec.md`](logs-reports-screen-design-spec.md), and [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md), preserving the existing architecture, telemetry/export/correction bindings, navigation, and accessibility contracts.
+
+### Completed
+- Restyled [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) as a visual-only change: the route now scopes the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) locally with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), scoped to the pushed route only and not leaking into the shell navigation bar or other tabs.
+- The route now uses a centered bounded secondary-screen layout (~480 logical px content bound, constraint-derived) with light surfaces/typography from the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change); spacing follows the 6/8/12/16/20/24 scale and existing radius roles.
+- The Overview, Charts, and Logs tabs were restyled while preserving all telemetry/correction/export/chart bindings, truthful unavailable metrics, navigation, scrolling, and accessibility contracts. [`charts.dart`](../lib/widgets/charts.dart) was **not** modified.
+- Added a focused widget test file [`test/screens/logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart) (25 tests) covering the real screen, route-local theme scope, all three tabs, exports, correction states, unavailable states, Logs priority semantics, and 200% text-scale no-overflow.
+- Post-implementation fixes: Engine Comparison rows now render as a single horizontal row with the engine label visible on the left and the value right-aligned flush to the trailing edge (corrected an alignment issue, then a label-starvation regression).
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **178 passing**.
+- Physical-device visual QA of the restyled route remains pending.
+
+### Decisions / Limitations
+- No theme/token file change was made; the route reuses `buildHomeTheme()` and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is.
+- The route uses a locally scoped light theme and dark status-bar icons; the global dark theme, shell navigation, and other screens are unchanged.
+- [`charts.dart`](../lib/widgets/charts.dart) was not modified; chart data binding, dynamic bounds, conditional benchmark lines, semantics summaries, and touch-disabled behavior are preserved.
+
+### Next Session
+- Perform physical-device visual QA of the restyled Logs & Reports route (light surface, bounded layout, tab styling, Engine Comparison row alignment, large-text behavior, TalkBack semantics, and no RenderFlex overflows/exceptions).
+
+---
+
+## 2026-09-10 (19th session) — Settings Screen Visual Redesign
+
+### Objective
+- Implement the approved visual-only Settings-screen redesign per [`settings-screen-plan.md`](settings-screen-plan.md), [`settings-screen-design-spec.md`](settings-screen-design-spec.md), and [`settings-screen-analysis.md`](settings-screen-analysis.md), preserving the existing architecture, navigation, and runtime behavior.
+
+### Completed
+- Redesigned [`settings_screen.dart`](../lib/screens/settings_screen.dart) as a light, responsive composition that reuses the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light surface is scoped to the Settings subtree only and does not leak into the shell navigation bar or other tabs.
+- The screen is now a `StatelessWidget` that wraps the subtree in `Theme(buildHomeTheme())` with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), then `Scaffold`/`AppBar('Settings')` → `ListenableBuilder` → `SafeArea` → `LayoutBuilder` → `Center` → `ConstrainedBox (~480)` → plain `ListView`. The four cards are ordered Preferences, Audio Guidance, Engine & Sensitivity, and System Performance (dark `kHomeInk` #0A0A0A).
+- Added an optional `TelemetryService? telemetry` parameter; the System Performance card renders `Avg FPS`, `Avg latency (MS)`, and `Avg confidence`, showing `—` when the value is empty or null. No accuracy/precision/recall/F1/mAP/%ACC values are fabricated.
+- [`app_shell.dart`](../lib/navigation/app_shell.dart) forwards `telemetry: widget.telemetry` into the `SettingsScreen` construction (single additive change).
+- Extended the existing `SettingsScreen` group in [`test/widget_test.dart`](../test/widget_test.dart) and added a Settings semantics group to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart) (8 tests).
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **153 passing**.
+- `flutter build apk --debug`: succeeds.
+
+### Decisions / Limitations
+- No theme/token file change was made; Settings reuses `buildHomeTheme()` and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is.
+- The Settings subtree uses a locally scoped light theme and dark status-bar icons; the global dark theme, shell navigation, and other screens are unchanged.
+- The telemetry metrics are read-only display values; no accuracy/precision/recall/F1/mAP/%ACC values are shown or fabricated.
+
+### Next Session
+- Continue any remaining frontend work or documentation sync as directed.
+
+---
+
+## 2026-09-09 (18th session) — Help Screen Visual Redesign
+
+### Objective
+- Implement the approved visual-only Help-screen redesign per [`help-screen-plan.md`](help-screen-plan.md), [`help-screen-design-spec.md`](help-screen-design-spec.md), and [`help-screen-analysis.md`](help-screen-analysis.md), preserving the existing architecture, navigation, and runtime behavior.
+
+### Completed
+- Redesigned [`help_screen.dart`](../lib/screens/help_screen.dart) as a light, responsive, accessible composition that reuses the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light surface is scoped to the Help subtree only and does not leak into the shell navigation bar or other tabs.
+- The Help subtree now uses `Theme(buildHomeTheme())` with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`); the retained `AppBar(title: 'Help & Gestures')` and the four sections and their copy are preserved verbatim.
+- The four `_HelpCard` sections are now light cards on the light surface with `kRadius24` corners, `kHomeShadowSoft` shadows, token-based padding/separation, and the retained 28px section icons (decorative, excluded from semantics). The section title is the semantic heading for each group.
+- The body is a responsive `SafeArea → LayoutBuilder → Center → ConstrainedBox (maxWidth ~480) → ListView` that scrolls at 200% text scale with no overflow.
+- Extended the existing `HelpScreen` group in [`test/widget_test.dart`](../test/widget_test.dart) (screen title, four section titles, four section icons, verbatim body copy, light-theme assertion) and added a Help semantics group to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart) (screen-title heading, section groups, decorative-icon exclusion, 200% text-scale no-overflow).
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **141 passing**.
+- `flutter build apk --debug`: succeeds.
+- On-device (physical Android): the light Help surface, card radius/shadow, large-text behavior, TalkBack semantics, and no RenderFlex overflows/exceptions were confirmed.
+
+### Decisions / Limitations
+- No theme/token file change was made; Help reuses `buildHomeTheme()` and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (owner decision, Analysis §12, Option 1).
+- The Help subtree uses a locally scoped light theme and dark status-bar icons; the global dark theme, shell navigation, and other screens are unchanged.
+- The four section titles and their full body copy are preserved verbatim; the four section icons are retained and treated as decorative (excluded from semantics).
+
+### Next Session
+- Continue any remaining frontend work or documentation sync as directed.
+
+---
+
+## 2026-09-09 (17th session) — Home Screen Visual Redesign
+
+### Objective
+- Implement the approved visual-only Home-screen redesign per [`home-screen-plan.md`](home-screen-plan.md), [`home-screen-design-spec.md`](home-screen-design-spec.md), and [`home-screen-analysis.md`](home-screen-analysis.md), preserving the existing architecture, navigation, and runtime behavior.
+
+### Completed
+- Added the `kHome*` light semantic color tokens to [`app_colors.dart`](../lib/theme/app_colors.dart) and the `kRadius3`/`kRadius14`/`kRadius18`/`kRadius24` radius tokens to [`app_radii.dart`](../lib/theme/app_radii.dart).
+- Added the Home-local light theme [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) (`buildHomeTheme()`) with IBM Plex Sans typography and Home shadow tokens; runtime font fetching is disabled there.
+- Added `google_fonts` (^8.2.1) and bundled offline IBM Plex Sans fonts under `assets/fonts/`; registered `assets/logo.png`.
+- Redesigned [`home_screen.dart`](../lib/screens/home_screen.dart): a light, responsive composition with a leading preference/status badge (`READY` / `AUTO-START OFF`), a centered decorative logo + live `EyeCue` wordmark, and a lower instruction region with a truthful headline, supporting copy, the retained `Go to Live Camera` CTA, and a static decorative cyan rail. The layout fills the viewport when short and scrolls at large text scale; the Home subtree uses dark status-bar icons.
+- Replaced the old `_StatusCard` (which claimed "Detection is already running") with a preference-truthful `_StatusBadge` driven by `settings.autoStartDetection`.
+- Updated [`test/widget_test.dart`](../test/widget_test.dart) Home tests, added a Home semantics group to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart), and updated [`test/theme_test.dart`](../test/theme_test.dart) for the light Home text color.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **133 passing**.
+- `flutter build apk --debug`: succeeds.
+- On-device (SM-S9010, Android 15/API 35): Home renders with the light surface, spread layout, reduced logo/font sizes, and visible status bar; the user confirmed the result visually.
+
+### Decisions / Limitations
+- The reference screenshot's "Swipe right to start!" and "Detection begins immediately" copy were intentionally not reproduced; the approved constraints forbid a swipe gesture and require preference-truthful copy. The visual composition (badge top, centered logo/wordmark, lower instruction, cyan rail) was matched instead.
+- The Home subtree uses a locally scoped light theme and dark status-bar icons; the global dark theme, shell navigation, and other screens are unchanged.
+
+### Next Session
+- Continue any remaining frontend work or documentation sync as directed.
+
+---
+
 ## 2026-09-05 (16th session) — App-Only Runtime Hardening and Validation
 
 ### Objective
