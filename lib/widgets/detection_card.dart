@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/detection_info.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_radii.dart';
+import '../theme/app_spacing.dart';
 import 'priority_badge.dart';
 
 /// One user-facing object card in the Detection screen's object stream.
@@ -27,15 +30,21 @@ class DetectionCard extends StatelessWidget {
       container: true,
       label: info.semanticLabel,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        margin: const EdgeInsets.symmetric(
+          vertical: kSpace4,
+          horizontal: kSpace12,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpace14,
+          vertical: kSpace12,
+        ),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
+          color: kHomeSurfaceCard,
+          borderRadius: BorderRadius.circular(kRadius12),
           border: Border.all(
             color: highlight
-                ? theme.colorScheme.error
-                : theme.colorScheme.outlineVariant,
+                ? kWarningRed
+                : kHomeInkMuted.withValues(alpha: 0.3),
             width: highlight ? 2 : 1,
           ),
         ),
@@ -61,7 +70,7 @@ class DetectionCard extends StatelessWidget {
                           '${(info.confidence * 100).toStringAsFixed(0)}% · '
                           '${info.positionLabel} · approximately ${info.proximityLabel}',
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: kHomeInkMuted,
                           ),
                         ),
                       ],
