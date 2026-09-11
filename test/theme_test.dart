@@ -40,10 +40,13 @@ void main() {
     expect(find.text('EyeCue'), findsOneWidget);
     expect(find.text('Go to Live Camera'), findsOneWidget);
 
-    // The concrete high-contrast text theme must be in effect.
+    // The concrete text theme must be in effect (no null-fontSize assertion).
+    // The Home screen now applies a Home-local light theme, so the `EyeCue`
+    // wordmark resolves to the light ink color rather than the global dark
+    // theme's white text. The global dark theme itself is unchanged.
     final context = tester.element(find.text('EyeCue'));
     final bodyMedium = Theme.of(context).textTheme.bodyMedium;
     expect(bodyMedium?.fontSize, isNotNull);
-    expect(bodyMedium?.color, Colors.white);
+    expect(bodyMedium?.color, const Color(0xFF0A0A0A));
   });
 }

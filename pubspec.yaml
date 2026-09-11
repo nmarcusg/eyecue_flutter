@@ -33,6 +33,10 @@ dependencies:
 
   # 8. Alternative native YOLO pipeline (runtime-comparable with custom mode)
   ultralytics_yolo: 0.6.13
+  marionette_flutter: ^0.6.0
+
+  # 9. Offline IBM Plex Sans typography for the Home-local light theme
+  google_fonts: ^8.2.1
 
 dev_dependencies:
   flutter_test:
@@ -49,3 +53,7 @@ flutter:
     # TEMPORARY (test-image mode): known-good RGB photo of COCO objects.
     # Remove together with the useTestImage flag.
     - assets/test_image.jpg
+    # Home visual mark (decorative; wordmark stays live text).
+    - assets/logo.png
+    # Offline IBM Plex Sans fonts for the Home-local light theme.
+    - assets/fonts/

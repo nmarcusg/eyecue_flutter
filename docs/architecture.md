@@ -129,7 +129,7 @@ eyecue_flutter/
 │   │   ├── detection_screen.dart          # Detection: assistive UI + Custom pipeline
 │   │   ├── engine_detection_screen.dart   # Engine-selected detection wrapper
 │   │   ├── ultralytics_detection_screen.dart # Native Ultralytics detection screen
-│   │   ├── settings_screen.dart           # Settings: haptics/performance/audio/research
+│   │   ├── settings_screen.dart           # Settings: light Home-theme cards + telemetry metrics
 │   │   ├── help_screen.dart               # Help & Gestures manual
 │   │   └── logs_reports_screen.dart       # Logs & Reports dashboard (Overview/Charts/Logs)
 │   ├── services/
@@ -164,11 +164,19 @@ eyecue_flutter/
 │       ├── charts.dart                    # fl_chart latency/FPS/frequency charts
 │       ├── debug_overlay.dart             # Debug HUD (retained, unused)
 │       └── info_panel.dart                # Old developer metrics panel (unused in primary UI)
+│   └── theme/                             # Design tokens + theme (UI-owned)
+│       ├── app_colors.dart                # Semantic color tokens
+│       ├── app_spacing.dart               # Spacing scale
+│       ├── app_radii.dart                 # Corner-radius scale
+│       ├── app_typography.dart            # High-contrast TextTheme builder
+│       ├── app_theme.dart                 # buildEyeCueTheme() (moved out of main.dart)
+│       └── app_home_theme.dart            # Home-local light theme + IBM Plex Sans + shadows
 ├── tool/                                  # CLI validation tools (unchanged)
-├── assets/                                # Model + labels (+ test image)
+├── assets/                                # Model + labels (+ test image + logo + fonts)
 ├── android/                               # Android platform (the only supported platform)
 ├── test/                                  # Unit + widget tests (navigation, services, widgets)
 ├── docs/                                  # Project documentation
+├── design-reference/                      # Manually-exported Figma screenshots (screens/ + components/)
 ├── pubspec.yaml                           # Dependencies & asset declarations
 ├── chat_spec.md                           # Historical specification (~3100 lines)
 └── auditor.md                             # Comprehensive project audit
@@ -178,12 +186,15 @@ eyecue_flutter/
 
 | Component | File | Responsibility |
 |-----------|------|---------------|
-| App Entry | [`main.dart`](../lib/main.dart) | MaterialApp init, dark high-contrast theme, service wiring |
+| App Entry | [`main.dart`](../lib/main.dart) | MaterialApp init, service wiring, debug-only Marionette binding |
+| App Theme | [`app_theme.dart`](../lib/theme/app_theme.dart) | `buildEyeCueTheme()` — dark high-contrast theme consuming the token files |
+| Design Tokens | [`app_colors.dart`](../lib/theme/app_colors.dart), [`app_spacing.dart`](../lib/theme/app_spacing.dart), [`app_radii.dart`](../lib/theme/app_radii.dart), [`app_typography.dart`](../lib/theme/app_typography.dart) | Semantic color/spacing/radius tokens + high-contrast `TextTheme` builder; includes the `kHome*` light tokens and `kRadius3/14/18/24` |
+| Home Theme | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) | Home-local light `ThemeData` (`buildHomeTheme()`), IBM Plex Sans typography, and Home shadow tokens; scoped to the Home, Help, Settings, Logs & Reports, and Detection subtrees only |
 | Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route |
-| Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Branding, Auto-Start status card, Go to Live Camera |
-| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority, controls) |
-| Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Vibration / Auto-Start / Low Power / Audio / Logs & Reports |
-| Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Operations + gesture manual |
+| Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Light Home composition: preference/status badge, decorative logo + live `EyeCue` wordmark, lower instruction region, accessible CTA, cyan rail |
+| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority, controls); light Home-theme chrome (`Theme(buildHomeTheme())` + dark status-bar icons) with a rounded dark `kHomeInk` camera viewport and an inline `AUDIO ON` pill |
+| Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Light Home-theme composition (`Theme(buildHomeTheme())` + dark status-bar icons) with four cards — Preferences, Audio Guidance, Engine & Sensitivity, and a dark `kHomeInk` System Performance card; optional `TelemetryService? telemetry` renders `Avg FPS` / `Avg latency (MS)` / `Avg confidence` (showing `—` when empty/null) with no fabricated accuracy metrics |
+| Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Light, responsive operations + gesture manual; consumes the `buildHomeTheme()` light subtree (scoped to Help only) with `kRadius24` cards and `kHomeShadowSoft` shadows |
 | Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | Overview / Charts / Logs dashboard (researcher-facing) |
 | Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Custom-isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), backend selection, input rotation |
 | Worker Lifecycle | [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart) | Generation-safe Custom-worker start, bounded restart/backoff, healthy-budget reset, terminal failure, and disposal guards |
@@ -223,6 +234,8 @@ eyecue_flutter/
 | `permission_handler` | ^12.0.3 | Camera permission requests |
 | `path_provider` | ^2.1.4 | File-backed settings persistence ([`settings_service.dart`](../lib/services/settings_service.dart)) + forensic run directories ([`forensic_log.dart`](../lib/services/forensic_log.dart)) |
 | `fl_chart` | ^1.2.0 | Latency/FPS/frequency charts in Logs & Reports ([`charts.dart`](../lib/widgets/charts.dart)) |
+| `marionette_flutter` | ^0.6.0 | Debug-only runtime-inspection companion for the Marionette MCP server; initialized in [`main.dart`](../lib/main.dart) via `MarionetteBinding.ensureInitialized()` guarded by `kDebugMode` — never runs in release builds |
+| `google_fonts` | ^8.2.1 | Offline IBM Plex Sans typography for the Home-local light theme ([`app_home_theme.dart`](../lib/theme/app_home_theme.dart)); fonts bundled under `assets/fonts/`, runtime fetching disabled |
 
 ## AI Pipeline
 

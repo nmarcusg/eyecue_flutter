@@ -8,6 +8,9 @@ import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_radii.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/accessible_button.dart';
 import 'detection_screen.dart';
 import 'ultralytics_detection_screen.dart';
@@ -144,9 +147,9 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
   Widget _buildFallbackNotice(BuildContext context, String? reason) {
     final theme = Theme.of(context);
     return Positioned(
-      top: 8,
-      left: 12,
-      right: 12,
+      top: kSpace8,
+      left: kSpace12,
+      right: kSpace12,
       child: SafeArea(
         bottom: false,
         child: Semantics(
@@ -156,9 +159,13 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
               'Temporary fallback. Custom EyeCue is active because '
               '${reason ?? 'the recommended engine is unavailable.'}',
           child: Card(
-            color: theme.colorScheme.tertiaryContainer,
+            color: kHomeSurfaceCard,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(kRadius12),
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(kSpace12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -167,20 +174,18 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
                     'Temporary fallback active',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
-                      color: theme.colorScheme.onTertiaryContainer,
+                      color: kHomeInk,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: kSpace4),
                   Text(
                     'Custom EyeCue is active. ${reason ?? 'The recommended engine is unavailable.'}',
-                    style: TextStyle(
-                      color: theme.colorScheme.onTertiaryContainer,
-                    ),
+                    style: TextStyle(color: kHomeInkMuted),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: kSpace8),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: kSpace8,
+                    runSpacing: kSpace8,
                     children: [
                       AccessibleButton(
                         label: 'Retry Ultralytics',

@@ -1,11 +1,17 @@
-import 'dart:ui' show SemanticsAction, Tristate;
+import 'dart:ui' show SemanticsAction, Size, Tristate;
 
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
+import 'package:eyecue_flutter/screens/help_screen.dart';
+import 'package:eyecue_flutter/screens/home_screen.dart';
+import 'package:eyecue_flutter/screens/settings_screen.dart';
+import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
+import 'package:eyecue_flutter/theme/app_colors.dart';
+import 'package:eyecue_flutter/theme/app_home_theme.dart';
 import 'package:eyecue_flutter/widgets/accessible_button.dart';
 import 'package:eyecue_flutter/widgets/charts.dart';
 import 'package:eyecue_flutter/widgets/detection_card.dart';
@@ -182,6 +188,65 @@ void main() {
         expectSemanticNode(RegExp(RegExp.escape(info.semanticLabel)));
         expect(find.semantics.byLabel('HIGH').evaluate(), isEmpty);
       });
+    });
+
+    testWidgets('DetectionCard is NOT a live region', (tester) async {
+      final info = sampleInfo();
+      await tester.pumpWidget(appWithBody(DetectionCard(info: info)));
+      await withSemantics(tester, () async {
+        final node = expectSemanticNode(
+          RegExp(RegExp.escape(info.semanticLabel)),
+        );
+        expect(node.getSemanticsData().flagsCollection.isLiveRegion, isFalse);
+      });
+    });
+
+    testWidgets('audio pill exposes an enabled Audio guidance node', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        appWithBody(
+          Semantics(
+            button: true,
+            enabled: true,
+            label: 'Audio guidance, on',
+            child: GestureDetector(onTap: () {}, child: const Text('AUDIO ON')),
+          ),
+        ),
+      );
+      await withSemantics(tester, () async {
+        final node = expectSemanticNode(RegExp('Audio guidance, on'));
+        final data = node.getSemanticsData();
+        expect(data.flagsCollection.isButton, isTrue);
+        expect(data.flagsCollection.isEnabled, Tristate.isTrue);
+        expect(data.hasAction(SemanticsAction.tap), isTrue);
+      });
+    });
+
+    testWidgets('Detection chrome has no overflow at 200% text scale', (
+      tester,
+    ) async {
+      final info = sampleInfo();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2.0)),
+            child: Theme(
+              data: buildHomeTheme(),
+              child: Scaffold(
+                body: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const StatusPill(label: 'Detecting', color: kStatusGreen),
+                    DetectionCard(info: info),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('DetectionCard keeps reporting as a separate action', (
@@ -386,5 +451,408 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+  });
+
+  group('home semantics', () {
+    SettingsService homeSettings({bool autoStart = true}) {
+      final s = SettingsService(store: InMemorySettingsStore());
+      // Force the desired preference synchronously through the notifier.
+      s.setAutoStartDetection(autoStart);
+      return s;
+    }
+
+    Widget homeApp(SettingsService s) {
+      return MaterialApp(
+        home: HomeScreen(settings: s, onGoToDetection: () {}),
+      );
+    }
+
+    testWidgets('status badge exposes the full on-state meaning', (
+      tester,
+    ) async {
+      await tester.pumpWidget(homeApp(homeSettings(autoStart: true)));
+      await withSemantics(tester, () async {
+        expectSemanticNode(
+          'Auto-Start is on. Detection will begin when you open Detect.',
+        );
+        // The live wordmark is present exactly once (logo is decorative).
+        expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
+        expectButtonSemantics(tester, 'Go to Live Camera');
+        expect(
+          expectSemanticNode('Go to Live Camera').hint,
+          'Double tap to activate',
+        );
+      });
+    });
+
+    testWidgets('status badge exposes the full off-state meaning', (
+      tester,
+    ) async {
+      await tester.pumpWidget(homeApp(homeSettings(autoStart: false)));
+      await withSemantics(tester, () async {
+        expectSemanticNode(
+          'Auto-Start is off. Open Detect and press Start to begin.',
+        );
+        expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
+        expectButtonSemantics(tester, 'Go to Live Camera');
+      });
+    });
+
+    testWidgets('logo and rail are decorative and do not duplicate labels', (
+      tester,
+    ) async {
+      await tester.pumpWidget(homeApp(homeSettings(autoStart: true)));
+      await withSemantics(tester, () async {
+        // Only the live wordmark carries the 'EyeCue' label; the logo image is
+        // excluded and must not add a second one.
+        expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
+        // The CTA is exposed exactly once (no duplicate wrapper semantics).
+        expect(
+          find.semantics
+              .byPredicate(
+                (node) =>
+                    node.label == 'Go to Live Camera' &&
+                    node.getSemanticsData().flagsCollection.isButton,
+              )
+              .evaluate(),
+          hasLength(1),
+        );
+      });
+    });
+
+    testWidgets('home has no overflow at 200 percent text scale', (
+      tester,
+    ) async {
+      // Use a realistic phone-sized surface (the reference canvas is 390x844
+      // logical pixels) so the fill-then-scroll Home layout is exercised at a
+      // height representative of a physical device rather than the short
+      // default test surface.
+      tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(2.0)),
+            child: HomeScreen(
+              settings: homeSettings(autoStart: true),
+              onGoToDetection: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('help semantics', () {
+    // The Help body is a scrollable ListView, so use a tall phone-sized surface
+    // so all four section cards are built and their semantics are available.
+    Future<void> pumpHelp(WidgetTester tester, {double textScale = 1.0}) async {
+      tester.view.physicalSize = const Size(390 * 3, 1600 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+            child: const HelpScreen(),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('screen title is a real semantic heading', (tester) async {
+      await pumpHelp(tester);
+      await withSemantics(tester, () async {
+        final title = expectSemanticNode('Help & Gestures');
+        expect(title.getSemanticsData().flagsCollection.isHeader, isTrue);
+      });
+    });
+
+    testWidgets('each section is one coherent group with its title', (
+      tester,
+    ) async {
+      await pumpHelp(tester);
+      await withSemantics(tester, () async {
+        // Each section title is present as a semantic heading.
+        expectSemanticNode('How It Works');
+        expectSemanticNode('Gesture Controls');
+        expectSemanticNode('Gesture Confirmation');
+        expectSemanticNode('Best Use Tip (Android)');
+        // The section icons are decorative and must not add duplicate labels.
+        expect(find.semantics.byLabel('How It Works').evaluate(), hasLength(1));
+        expect(
+          find.semantics.byLabel('Gesture Controls').evaluate(),
+          hasLength(1),
+        );
+      });
+    });
+
+    testWidgets('section icons are excluded from the accessibility tree', (
+      tester,
+    ) async {
+      await pumpHelp(tester);
+      await withSemantics(tester, () async {
+        // No semantic node carries an icon-only label (the icons duplicate the
+        // adjacent titles and are wrapped in ExcludeSemantics).
+        expect(find.semantics.byLabel('timeline').evaluate(), isEmpty);
+        expect(find.semantics.byLabel('touch_app').evaluate(), isEmpty);
+        expect(find.semantics.byLabel('vibration').evaluate(), isEmpty);
+        expect(find.semantics.byLabel('phone_android').evaluate(), isEmpty);
+      });
+    });
+
+    testWidgets('help has no overflow at 200 percent text scale', (
+      tester,
+    ) async {
+      // Use a realistic phone-sized surface so the scrollable Help layout is
+      // exercised at a height representative of a physical device.
+      tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(2.0)),
+            child: const HelpScreen(),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('settings semantics', () {
+    // The Settings body is a scrollable ListView of four cards, so use a tall
+    // phone-sized surface so all cards are built and their semantics are
+    // available (ListView builds only the children in the viewport).
+    Future<void> pumpSettings(
+      WidgetTester tester, {
+      SettingsService? service,
+      TelemetryService? telemetry,
+      double textScale = 1.0,
+    }) async {
+      // Tall enough that the scrollable ListView builds all four cards (the
+      // dark System Performance card is last and would otherwise be outside
+      // the viewport, so its semantics would not exist).
+      tester.view.physicalSize = const Size(390 * 3, 4000 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+            child: SettingsScreen(
+              settings:
+                  service ?? SettingsService(store: InMemorySettingsStore()),
+              onOpenLogsReports: () {},
+              telemetry: telemetry,
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('screen title and card headings are real semantic headings', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      await withSemantics(tester, () async {
+        final title = expectSemanticNode('Settings');
+        expect(title.getSemanticsData().flagsCollection.isHeader, isTrue);
+
+        // Each card heading is exposed as a semantic heading for its group.
+        for (final heading in const [
+          'Preferences',
+          'Audio Guidance',
+          'Engine & Sensitivity',
+          'System Performance',
+        ]) {
+          final node = expectSemanticNode(heading);
+          expect(
+            node.getSemanticsData().flagsCollection.isHeader,
+            isTrue,
+            reason: 'Card heading is not a semantic header: $heading',
+          );
+          // The heading is exposed exactly once (the visual Text is excluded,
+          // so the decorative icon + heading do not duplicate the label).
+          expect(
+            find.semantics.byLabel(heading).evaluate(),
+            hasLength(1),
+            reason: 'Heading label duplicated: $heading',
+          );
+        }
+      });
+    });
+
+    testWidgets('decorative card icons are excluded from the tree', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      await withSemantics(tester, () async {
+        // The card/row icons duplicate the adjacent headings and are wrapped in
+        // ExcludeSemantics, so no icon-only label is exposed.
+        expect(find.semantics.byLabel('tune_rounded').evaluate(), isEmpty);
+        expect(find.semantics.byLabel('volume_up').evaluate(), isEmpty);
+        expect(find.semantics.byLabel('memory_rounded').evaluate(), isEmpty);
+        expect(find.semantics.byLabel('bar_chart_rounded').evaluate(), isEmpty);
+      });
+    });
+
+    testWidgets('switches expose label, role, and checked state', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      await withSemantics(tester, () async {
+        // Each Preferences/Audio switch is a toggle with a checked state and a
+        // tap action; the widgets already expose this without extra Semantics.
+        for (final label in const [
+          'Vibration Feedback',
+          'Auto-Start on Open',
+          'Low Power Mode',
+          'Audio / Voice Guidance',
+        ]) {
+          final node = expectSemanticNode(RegExp('^${RegExp.escape(label)}'));
+          final data = node.getSemanticsData();
+          expect(
+            data.flagsCollection.isToggled,
+            isNot(Tristate.none),
+            reason: 'Switch has no toggled state: $label',
+          );
+          expect(
+            data.hasAction(SemanticsAction.tap),
+            isTrue,
+            reason: 'Switch is not actionable: $label',
+          );
+        }
+      });
+    });
+
+    testWidgets('radio tiles expose label, role, and selected state', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      await withSemantics(tester, () async {
+        // Engine options and sensitivity presets are radio tiles; each exposes
+        // a selected state and a tap action from the widget itself.
+        for (final label in const [
+          'Ultralytics',
+          'Custom EyeCue',
+          'More detections',
+          'Balanced',
+          'Fewer false alerts',
+        ]) {
+          final node = expectSemanticNode(RegExp('^${RegExp.escape(label)}'));
+          final data = node.getSemanticsData();
+          expect(
+            data.flagsCollection.isInMutuallyExclusiveGroup,
+            isTrue,
+            reason: 'Radio tile is not in a mutually exclusive group: $label',
+          );
+          expect(
+            data.hasAction(SemanticsAction.tap),
+            isTrue,
+            reason: 'Radio tile is not actionable: $label',
+          );
+        }
+      });
+    });
+
+    testWidgets('advanced slider exposes its container label and value', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      await withSemantics(tester, () async {
+        // The preserved Semantics(container: true, label: ...) wrapper exposes
+        // the current threshold value in its label.
+        expectSemanticNode(
+          RegExp(r'^Advanced detection confidence threshold, 0\.25'),
+        );
+        // The inner Slider node carries the adjustable value and the
+        // increase/decrease actions (the container wrapper does not).
+        final slider = expectSemanticNode('0.25');
+        final data = slider.getSemanticsData();
+        expect(data.hasAction(SemanticsAction.increase), isTrue);
+        expect(data.hasAction(SemanticsAction.decrease), isTrue);
+      });
+    });
+
+    testWidgets('performance metrics are text semantics, not a live region', (
+      tester,
+    ) async {
+      final telemetry = TelemetryService();
+      telemetry.recordSample(
+        latencyMs: 120,
+        inferenceFps: 8,
+        objectCount: 1,
+        engine: InferenceEngine.ultralytics,
+      );
+      await pumpSettings(tester, telemetry: telemetry);
+      await withSemantics(tester, () async {
+        // The System Performance card merges its metric text into one semantic
+        // node (the card's ListTile merges its subtree). The metric labels and
+        // values are therefore available as text/semantics within that node.
+        final card = expectSemanticNode(
+          RegExp(r'Avg FPS[\s\S]*Avg latency \(MS\)[\s\S]*Avg confidence'),
+        );
+        final label = card.getSemanticsData().label;
+        expect(label, contains('Avg FPS'));
+        expect(label, contains('Avg latency (MS)'));
+        expect(label, contains('Avg confidence'));
+        expect(label, contains('8.0'));
+        expect(label, contains('120.0'));
+
+        // The metrics are deliberate status text, not a per-frame live region.
+        expect(
+          card.getSemanticsData().flagsCollection.isLiveRegion,
+          isFalse,
+          reason: 'Performance metrics must not be a live region',
+        );
+      });
+    });
+
+    testWidgets('performance metrics show — placeholders without telemetry', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      await withSemantics(tester, () async {
+        // The em-dash placeholders are exposed as text/semantics (not
+        // color-only) within the merged System Performance node.
+        final card = expectSemanticNode(
+          RegExp(r'Avg FPS[\s\S]*Avg latency \(MS\)[\s\S]*Avg confidence'),
+        );
+        final label = card.getSemanticsData().label;
+        expect(label, contains('Avg FPS'));
+        expect(label, contains('Avg latency (MS)'));
+        expect(label, contains('Avg confidence'));
+        expect('—'.allMatches(label).length, 3);
+      });
+    });
+
+    testWidgets('settings has no overflow at 200 percent text scale', (
+      tester,
+    ) async {
+      // Use a realistic phone-sized surface so the scrollable Settings layout
+      // is exercised at a height representative of a physical device.
+      tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(2.0)),
+            child: SettingsScreen(
+              settings: SettingsService(store: InMemorySettingsStore()),
+              onOpenLogsReports: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
   });
 }

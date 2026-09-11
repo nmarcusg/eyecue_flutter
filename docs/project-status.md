@@ -1,6 +1,6 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-09-05 (app-only lifecycle validation)
+> **Last Updated:** 2026-09-09 (Home screen visual redesign)
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned app task areas and their acceptance criteria), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
 > **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The repository contains committed but unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
@@ -88,6 +88,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Recent Accomplishments
 
+- ✅ **Home screen visual redesign (2026-09-09):** light, responsive Home composition with a preference-truthful `READY` / `AUTO-START OFF` badge, a centered decorative logo + live `EyeCue` wordmark, a lower instruction region with the retained `Go to Live Camera` CTA and a static cyan rail; Home-local light theme ([`app_home_theme.dart`](../lib/theme/app_home_theme.dart)) with offline IBM Plex Sans; `kHome*` color and `kRadius3/14/18/24` tokens; dark status-bar icons on the light surface; **133 tests** and static validation passing; on-device (SM-S9010) confirmed visually
 - ✅ **Assistive application UI (v0.2.0):** Home / Detect / Settings / Help navigation + Logs & Reports; TTS audio guidance (cooldown, de-duplication, urgent bypass, repeat, mute); the four thesis gestures with haptic + TTS confirmation; persisted settings (vibration, auto-start, low-power, audio); spatial/priority/proximity interpretation; runtime telemetry + charts
 - ✅ **v0.2.1:** fixed startup theme-construction assertion (explicit high-contrast `TextTheme`)
 - ✅ **v0.2.2:** fixed camera viewport resizing with detections + chart overflow; 59-test release baseline

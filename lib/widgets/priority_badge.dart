@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/detection_info.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_radii.dart';
+import '../theme/app_spacing.dart';
 
 /// Small high-contrast badge showing an object's priority tier.
 ///
@@ -15,22 +18,18 @@ class PriorityBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (Color bg, Color fg, String label) = switch (priority) {
-      ObjectPriority.high => (const Color(0xFFB71C1C), Colors.white, 'HIGH'),
-      ObjectPriority.medium => (
-        const Color(0xFFF9A825),
-        const Color(0xFF1A1A1A),
-        'MEDIUM',
-      ),
-      ObjectPriority.low => (const Color(0xFF1B5E20), Colors.white, 'LOW'),
+      ObjectPriority.high => (kWarningRed, Colors.white, 'HIGH'),
+      ObjectPriority.medium => (kMediumAmber, kOnAmberDark, 'MEDIUM'),
+      ObjectPriority.low => (kLowGreen, Colors.white, 'LOW'),
     };
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: large ? 14 : 10,
-        vertical: large ? 8 : 4,
+        horizontal: large ? kSpace14 : kSpace10,
+        vertical: large ? kSpace8 : kSpace4,
       ),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(kRadius6),
       ),
       child: Text(
         label,
