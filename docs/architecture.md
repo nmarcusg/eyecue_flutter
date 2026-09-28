@@ -107,7 +107,7 @@ eyecue_flutter/
 ├── lib/
 │   ├── main.dart                          # App entry, theme, service wiring
 │   ├── navigation/
-│   │   └── app_shell.dart                 # 4-tab bottom nav (Home/Detect/Settings/Help)
+│   │   └── app_shell.dart                 # 4-tab bottom nav + one-finger gesture navigation
 │   ├── models/
 │   │   ├── detection.dart                 # Detection data class (classId, label, confidence, box)
 │   │   ├── detection_info.dart            # Spatial/priority/proximity user-facing info
@@ -190,7 +190,7 @@ eyecue_flutter/
 | App Theme | [`app_theme.dart`](../lib/theme/app_theme.dart) | `buildEyeCueTheme()` — dark high-contrast theme consuming the token files |
 | Design Tokens | [`app_colors.dart`](../lib/theme/app_colors.dart), [`app_spacing.dart`](../lib/theme/app_spacing.dart), [`app_radii.dart`](../lib/theme/app_radii.dart), [`app_typography.dart`](../lib/theme/app_typography.dart) | Semantic color/spacing/radius tokens + high-contrast `TextTheme` builder; includes the `kHome*` light tokens and `kRadius3/14/18/24` |
 | Home Theme | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) | Home-local light `ThemeData` (`buildHomeTheme()`), IBM Plex Sans typography, and Home shadow tokens; scoped to the Home, Help, Settings, Logs & Reports, and Detection subtrees only |
-| Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route |
+| Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route; one-finger linear non-wrapping primary gesture navigation with effective bar visibility derived from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf` |
 | Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Light Home composition: preference/status badge, decorative logo + live `EyeCue` wordmark, lower instruction region, accessible CTA, cyan rail |
 | Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority, controls); light Home-theme chrome (`Theme(buildHomeTheme())` + dark status-bar icons) with a rounded dark `kHomeInk` camera viewport and an inline `AUDIO ON` pill |
 | Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Light Home-theme composition (`Theme(buildHomeTheme())` + dark status-bar icons) with four cards — Preferences, Audio Guidance, Engine & Sensitivity, and a dark `kHomeInk` System Performance card; optional `TelemetryService? telemetry` renders `Avg FPS` / `Avg latency (MS)` / `Avg confidence` (showing `—` when empty/null) with no fabricated accuracy metrics |

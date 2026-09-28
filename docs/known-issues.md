@@ -1,9 +1,22 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-09-05
+> **Last Updated:** 2026-09-28
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
 
 ## Current Blockers
+
+### 🟡 Primary Gesture Navigation — Device-Observed Issues (Unresolved)
+
+The primary gesture navigation feature is implemented (persisted `hideBottomNavigation` preference with accessible-navigation override, one-finger linear non-wrapping primary navigation, Detection directional arbitration, Detection-owned horizontal navigation, light/medium haptic wayfinding, minimal best-effort navigation TTS, preserved system Back behavior, and preserved Detection lifecycle). Physical-device testing surfaced three issues. All three are **device-observed, unresolved, and pending a root-cause fix** — they are not fixed.
+
+- **Basic primary navigation:** Unlike the Home, Settings, and Help screens, a long or fast swipe on the Detection screen without releasing your finger triggers navigation. (Moving only one tab is the correct behavior.)
+- **Detection horizontal navigation:** Navigation only triggers within the camera viewport.
+- **Multi-pointer safety:** On the Home, Settings, and Help screens, swiping with one finger, holding it, adding a second finger, and then releasing the initial finger incorrectly triggers navigation.
+
+- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (shell gesture layer), [`gesture_controller.dart`](../lib/services/gesture_controller.dart) (Detection directional arbitration), and the Detection viewport [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart).
+- **Impact:** Primary navigation can fire on an unintended gesture (Detection long/fast swipe without release; multi-pointer sequence on Home/Settings/Help), and Detection horizontal navigation is limited to the camera viewport rather than the whole screen.
+- **Planned Fix:** Root-cause each issue and re-verify on the physical Android device. The provisional horizontal thresholds, displacement guards, and dominance ratio remain subject to physical-device tuning.
+- **Status:** **Device-observed, unresolved, pending a root-cause fix.**
 
 ### 🔴 Dual-Engine Benchmark, Compatibility, and Licence Validation (Critical)
 

@@ -2,7 +2,7 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Current suite (2026-09-05):** `flutter test` → **127 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell, screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
+> **Current suite (2026-09-28):** `flutter test` → passing, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
 
 ## Unit Testing Strategy
 
@@ -39,6 +39,7 @@
 | Error state UI | 🟡 P1 | Verify error message renders on isolate failure |
 | Pause/resume button | 🟢 P2 | Verify toggle changes detection state |
 | Screen/navigation smoke tests | ✅ | Home / Settings / Help screens + 4-tab shell (implemented) |
+| Primary gesture navigation | ✅ | One-finger linear non-wrapping shell navigation, boundary attempts, second-pointer invalidation, feedback origin, accessibility/bar truth table, real Slider ownership, route/Back isolation, and cached Detection page preservation (implemented) |
 | Assistive widgets | ✅ | Priority badge, detection card, warning banner, accessible button (implemented) |
 | Charts | ✅ | Latency/FPS/frequency chart bounds incl. empty/very-high/constant data (implemented) |
 
@@ -81,6 +82,7 @@
 ### Accessibility
 - [x] All tested interactive elements have TalkBack labels — broad semantics coverage is automated; device TalkBack validation remains manual
 - [ ] Gesture controls work (double-tap, swipe)
+- [ ] Primary gesture navigation works on-device — ⚠️ device-observed issues pending a root-cause fix (Detection long/fast swipe without release triggers navigation; Detection horizontal navigation only within the camera viewport; multi-pointer sequence on Home/Settings/Help triggers navigation). See [`known-issues.md`](known-issues.md)
 - [ ] High-contrast mode is readable
 - [ ] App is fully navigable without vision
 
