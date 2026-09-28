@@ -7,6 +7,7 @@ import '../screens/home_screen.dart';
 import '../screens/logs_reports_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/correction_service.dart';
+import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
@@ -130,6 +131,11 @@ class AppShell extends StatefulWidget {
   final List<Widget> Function(BuildContext context, AppShellState shell)?
   pagesOverride;
 
+  /// Test hook — supply a coordinator so tests can observe the shared
+  /// lifecycle/start-intent state the shell owns. Production leaves this null
+  /// and the shell constructs its own instance.
+  final EngineCoordinator? coordinatorOverride;
+
   const AppShell({
     super.key,
     required this.settings,
@@ -138,6 +144,7 @@ class AppShell extends StatefulWidget {
     this.corrections,
     required this.haptics,
     this.pagesOverride,
+    this.coordinatorOverride,
   });
 
   @override
@@ -160,18 +167,51 @@ class AppShellState extends State<AppShell> {
   final List<bool> _visited = [true, false, false, false];
   final List<Widget?> _pages = List.filled(4, null);
 
+  /// The single app-shell-owned Detection lifecycle/status source.
+  ///
+  /// Home, Custom Detection, and Ultralytics Detection all render their
+  /// user-facing lifecycle status from this one instance. It is created once
+  /// from the already-loaded persisted preferred engine and disposed with the
+  /// shell.
+  late final EngineCoordinator _coordinator =
+      widget.coordinatorOverride ??
+      EngineCoordinator(
+        preferredEngine: widget.settings.inferenceEngine,
+        telemetry: widget.telemetry,
+      );
+
   @override
   void initState() {
     super.initState();
     _syncAudio();
     widget.settings.addListener(_syncAudio);
     widget.settings.addListener(_handleSettingsChanged);
+    _applyLaunchPolicy();
+  }
+
+  /// Applies the finalized startup policy from the already-loaded preference.
+  ///
+  /// Auto-start ON: mark Detect visited/cached before the first shell build and
+  /// issue one silent launch start intent while Home remains selected. The
+  /// cached engine mounts behind visible Home and initializes in the
+  /// background.
+  ///
+  /// Auto-start OFF: leave Detect unbuilt and the coordinator idle. Detection
+  /// starts only on an intentional entry into the Detect tab.
+  ///
+  /// A persisted Auto-start change while the app is already running is out of
+  /// scope for this task and receives no reactive behavior here.
+  void _applyLaunchPolicy() {
+    if (!widget.settings.autoStartDetection) return;
+    _visited[1] = true;
+    _coordinator.requestStart(StartIntentOrigin.launch);
   }
 
   @override
   void dispose() {
     widget.settings.removeListener(_syncAudio);
     widget.settings.removeListener(_handleSettingsChanged);
+    _coordinator.disposeCoordinator();
     super.dispose();
   }
 
@@ -184,17 +224,18 @@ class AppShellState extends State<AppShell> {
     if (mounted) setState(() {});
   }
 
-  /// Switches to a bottom-nav tab (used by Home's "Go to Live Camera" CTA).
+  /// Switches to a bottom-nav tab.
   ///
   /// This is the direct, feedback-free path: it is shared by the visible
-  /// navigation bar, the Home CTA, and Back, none of which should emit
-  /// gesture-origin wayfinding feedback.
+  /// navigation bar and Back, neither of which should emit gesture-origin
+  /// wayfinding feedback.
   void goToTab(int index) {
     if (index < 0 || index > 3) return;
     setState(() {
       _visited[index] = true;
       _index = index;
     });
+    _requestEntryStartIfEnteringDetection(index);
   }
 
   /// Moves one tab in [direction] (`-1` toward Home, `+1` toward Help).
@@ -214,6 +255,18 @@ class AppShellState extends State<AppShell> {
       _index = target;
     });
     _emitNavigationFeedback(target);
+    _requestEntryStartIfEnteringDetection(target);
+  }
+
+  /// Requests one entry start when the user intentionally enters Detect.
+  ///
+  /// Only the initial [DetectionRuntimeState.idle] state accepts an automatic
+  /// entry start; paused, stopped, busy, ready, fallback, and failed states
+  /// reject it so a retained-session manual pause/stop is never auto-restarted.
+  /// This never writes the persisted Auto-start preference.
+  void _requestEntryStartIfEnteringDetection(int index) {
+    if (index != 1) return;
+    _coordinator.requestEntryStartIfIdle();
   }
 
   /// Gesture-origin success feedback: light tick + destination speech.
@@ -249,10 +302,7 @@ class AppShellState extends State<AppShell> {
     }
     switch (index) {
       case 0:
-        return HomeScreen(
-          settings: widget.settings,
-          onGoToDetection: () => goToTab(1),
-        );
+        return HomeScreen(settings: widget.settings, coordinator: _coordinator);
       case 1:
         return EngineDetectionScreen(
           settings: widget.settings,
@@ -260,6 +310,7 @@ class AppShellState extends State<AppShell> {
           telemetry: widget.telemetry,
           corrections: widget.corrections,
           haptics: widget.haptics,
+          coordinator: _coordinator,
           onNavigateRelative: navigateRelative,
         );
       case 2:
