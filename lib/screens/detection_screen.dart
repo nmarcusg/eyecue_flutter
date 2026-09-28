@@ -14,6 +14,7 @@ import '../models/detection_runtime_state.dart';
 import '../models/inference_lifecycle_event.dart';
 import '../services/assistive_detection_controller.dart';
 import '../services/correction_service.dart';
+import '../services/engine_coordinator.dart';
 import '../services/forensic_log.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
@@ -71,6 +72,20 @@ class DetectionScreen extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The one-shot start request issued by the app-shell-owned coordinator.
+  ///
+  /// The engine consumes it exactly once by comparing its token with the token
+  /// it last consumed. A silent launch intent must not produce start haptics or
+  /// speech; an entry intent uses the existing start route.
+  final StartIntent? startIntent;
+
+  /// The single app-shell-owned Detection lifecycle/status source.
+  ///
+  /// The engine reports lifecycle/failure facts to it and renders its visible
+  /// status pill and state panel from this snapshot. It never derives visible
+  /// lifecycle status from engine-local booleans.
+  final EngineCoordinator coordinator;
+
   /// Requests one relative primary-tab move from the shell (`-1` toward Home,
   /// `+1` toward Help). The shell owns boundary handling and feedback.
   final void Function(int direction)? onNavigateRelative;
@@ -92,6 +107,8 @@ class DetectionScreen extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    required this.coordinator,
+    this.startIntent,
     this.onNavigateRelative,
     this.onRuntimeStateChanged,
     this.onFailure,
@@ -136,10 +153,22 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
   bool _permissionDenied = false;
   DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
-  DetectionFailure? _failure;
   StreamSubscription<List<Detection>>? _resultsSubscription;
   StreamSubscription<String>? _errorSubscription;
   StreamSubscription<InferenceLifecycleEvent>? _lifecycleSubscription;
+
+  /// The start-intent token this engine has already consumed. Guards against
+  /// acting on the same request twice (e.g. across rebuilds).
+  int? _consumedStartIntentToken;
+
+  /// Whether the Custom model has reported a loaded lifecycle event. Combined
+  /// with [_isCameraInitialized] this gates the shared Ready publication so
+  /// Ready never means camera-only or worker-port-only readiness.
+  bool _modelLoaded = false;
+
+  /// Whether a camera setup is already in progress, so an entry start cannot
+  /// duplicate camera initialization while a launch start is still running.
+  bool _setupInProgress = false;
 
   // Detection results from the inference isolate.
   List<Detection> _detections = [];
@@ -188,11 +217,37 @@ class _DetectionScreenState extends State<DetectionScreen> {
       debugPrint('[Camera] TEMPORARY test-image mode — skipping camera');
       _detectionActive = true;
       _inferenceService.runTestImage();
-    } else if (_settings.autoStartDetection) {
-      _setupCamera();
+    } else {
+      // The engine no longer reads the Auto-start preference directly. It acts
+      // only on the shared start intent issued by the app-shell coordinator.
+      _consumeStartIntent(widget.startIntent);
     }
     // 4. Start periodic performance logging.
     _startPerformanceLogger();
+  }
+
+  @override
+  void didUpdateWidget(covariant DetectionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.startIntent?.token != oldWidget.startIntent?.token) {
+      _consumeStartIntent(widget.startIntent);
+    }
+  }
+
+  /// Consumes a shared start intent exactly once.
+  ///
+  /// A silent launch intent starts the camera without start haptics or speech;
+  /// an entry intent uses the existing start route. An already-consumed token
+  /// is ignored so a rebuild cannot start the engine twice.
+  void _consumeStartIntent(StartIntent? intent) {
+    if (intent == null) return;
+    if (_consumedStartIntentToken == intent.token) return;
+    _consumedStartIntentToken = intent.token;
+    if (intent.origin == StartIntentOrigin.launch) {
+      _setupCamera();
+    } else {
+      _startDetection();
+    }
   }
 
   @override
@@ -214,6 +269,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // Camera setup
   // -------------------------------------------------------------------------
   Future<void> _setupCamera() async {
+    // Guard against a concurrent entry start duplicating camera setup while a
+    // launch start is still in progress.
+    if (_setupInProgress) return;
+    _setupInProgress = true;
     debugPrint('[Camera] _setupCamera() — requesting permission…');
     _setRuntimeState(DetectionRuntimeState.requestingPermission);
 
@@ -223,6 +282,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
     if (!status.isGranted) {
       debugPrint('[Error] Camera permission denied — cannot proceed');
+      _setupInProgress = false;
       if (mounted) {
         setState(() {
           _permissionDenied = true;
@@ -247,6 +307,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     try {
       cameras = await availableCameras();
     } catch (error, stack) {
+      _setupInProgress = false;
       _reportFailure(
         DetectionFailure(
           category: DetectionFailureCategory.cameraInitialization,
@@ -260,6 +321,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
     if (cameras.isEmpty) {
       debugPrint('[Error] No cameras available on this device');
+      _setupInProgress = false;
       if (mounted) {
         setState(() => _detectionActive = false);
       }
@@ -292,6 +354,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     } catch (error, stack) {
       await _cameraController?.dispose();
       _cameraController = null;
+      _setupInProgress = false;
       _reportFailure(
         DetectionFailure(
           category: DetectionFailureCategory.cameraInitialization,
@@ -304,6 +367,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
       return;
     }
 
+    _setupInProgress = false;
     if (mounted) {
       setState(() {
         _isCameraInitialized = true;
@@ -311,7 +375,14 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _permissionDenied = false;
       });
     }
-    _setRuntimeState(DetectionRuntimeState.ready);
+    // Shared Ready is gated on both camera streaming AND model-loaded evidence.
+    // If the model is not yet loaded, publish the busy loading state instead of
+    // a partial Ready; the modelLoaded lifecycle event will publish Ready.
+    if (_modelLoaded) {
+      _setRuntimeState(DetectionRuntimeState.ready);
+    } else {
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+    }
     debugPrint('[Camera] Camera initialized — detection active');
   }
 
@@ -335,6 +406,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _paused = false;
       });
     }
+    // Publish the shared lifecycle state from the same readiness gate used by
+    // camera setup: Ready only when both camera and model are available.
+    if (_modelLoaded) {
+      _setRuntimeState(DetectionRuntimeState.ready);
+    } else {
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+    }
     await _tts.speak('Detection started', urgent: true);
   }
 
@@ -353,6 +431,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _detectionInfo = [];
       });
     }
+    // Publish an explicit shared Stopped state (not idle/disposed) so a
+    // retained-session tab leave/return does not auto-restart.
+    _setRuntimeState(DetectionRuntimeState.stopped);
     await _tts.speak('Detection stopped', urgent: true);
   }
 
@@ -367,12 +448,20 @@ class _DetectionScreenState extends State<DetectionScreen> {
   Future<void> _pauseDetection() async {
     await _haptics.lightTick();
     if (mounted) setState(() => _paused = true);
+    // Publish the shared Paused state so Home and Detection stay in sync.
+    _setRuntimeState(DetectionRuntimeState.paused);
     await _tts.speak('Detection paused', urgent: true);
   }
 
   Future<void> _resumeDetection() async {
     await _haptics.lightTick();
     if (mounted) setState(() => _paused = false);
+    // Publish the shared Ready state on resume (same readiness gate).
+    if (_modelLoaded) {
+      _setRuntimeState(DetectionRuntimeState.ready);
+    } else {
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+    }
     await _tts.speak('Detection resumed', urgent: true);
   }
 
@@ -525,13 +614,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
           sourceGeneration: event.generation,
         );
       case InferenceLifecycleEventType.workerReady:
-        if (_runtimeState == DetectionRuntimeState.loadingModel) {
-          _setRuntimeState(
-            DetectionRuntimeState.ready,
-            sourceGeneration: event.generation,
-          );
-        }
+        // Worker readiness alone is not user-facing Ready; the model-loaded
+        // event below publishes Ready once the model is genuinely available.
+        break;
       case InferenceLifecycleEventType.modelLoaded:
+        _modelLoaded = true;
         if (_detectionActive || InferenceService.useTestImage) {
           _setRuntimeState(
             DetectionRuntimeState.ready,
@@ -559,6 +646,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
         );
       case InferenceLifecycleEventType.recoverySucceeded:
         _isInferring = false;
+        _modelLoaded = true;
         _setRuntimeState(
           DetectionRuntimeState.ready,
           sourceGeneration: event.generation,
@@ -591,7 +679,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   void _reportFailure(DetectionFailure failure, {int? sourceGeneration}) {
     if (!mounted) return;
     setState(() {
-      _failure = failure;
       _runtimeState = DetectionRuntimeState.failed;
       _detectionActive = false;
     });
@@ -605,7 +692,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   Future<void> _retryRuntime() async {
     if (!mounted) return;
     setState(() {
-      _failure = null;
       _permissionDenied = false;
     });
     _setRuntimeState(DetectionRuntimeState.loadingModel);
@@ -793,6 +879,20 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // -------------------------------------------------------------------------
   // Derived UI state
   // -------------------------------------------------------------------------
+
+  /// Maps the shared coordinator snapshot to the visible status pill.
+  ///
+  /// This is the single user-facing lifecycle mapping shared with Home and the
+  /// Ultralytics engine; it never reads engine-local booleans.
+  (String, Color) _sharedStatusPresentation(DetectionRuntimeState state) =>
+      switch (detectionStatusOutcomeFor(state)) {
+        DetectionStatusOutcome.preparing => ('Preparing', kStatusBlue),
+        DetectionStatusOutcome.ready => ('Detecting', kStatusGreen),
+        DetectionStatusOutcome.paused => ('Paused', kStatusAmber),
+        DetectionStatusOutcome.stopped => ('Stopped', kStatusBlueGrey),
+        DetectionStatusOutcome.unavailable => ('Unavailable', kWarningRed),
+      };
+
   String? get _warningMessage {
     final high = _detectionInfo
         .where((d) => d.priority == ObjectPriority.high)
@@ -847,11 +947,12 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
   Widget _buildTopBar(BuildContext context) {
     final theme = Theme.of(context);
-    final (String label, Color color) = !_detectionActive
-        ? ('Stopped', kStatusBlueGrey)
-        : _paused
-        ? ('Paused', kStatusAmber)
-        : ('Detecting', kStatusGreen);
+    // The visible status pill renders the shared coordinator snapshot, never
+    // engine-local booleans. Local flags remain only for camera/inference
+    // mechanics.
+    final (String label, Color color) = _sharedStatusPresentation(
+      widget.coordinator.state,
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(kSpace16, kSpace16, kSpace16, kSpace8),
@@ -885,10 +986,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   Widget _buildMainArea(BuildContext context, bool testMode) {
-    if (_runtimeState.isBusy || _runtimeState == DetectionRuntimeState.failed) {
+    // The visible lifecycle/status panel renders the shared coordinator
+    // snapshot, never engine-local runtime state.
+    final sharedState = widget.coordinator.state;
+    if (sharedState.isBusy || sharedState == DetectionRuntimeState.failed) {
       return DetectionStatePanel(
-        state: _runtimeState,
-        failure: _failure,
+        state: sharedState,
+        failure: widget.coordinator.failure,
         onRetry: _retryRuntime,
         onStop: _stopDetection,
       );

@@ -9,6 +9,7 @@ import '../models/detection_runtime_state.dart';
 import '../models/model_config.dart';
 import '../services/assistive_detection_controller.dart';
 import '../services/correction_service.dart';
+import '../services/engine_coordinator.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
@@ -48,6 +49,20 @@ class UltralyticsDetectionScreen extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The single app-shell-owned Detection lifecycle/status source.
+  ///
+  /// The engine reports lifecycle/failure facts to it and renders its visible
+  /// status pill and state panel from this snapshot. It never derives visible
+  /// lifecycle status from engine-local booleans.
+  final EngineCoordinator coordinator;
+
+  /// The one-shot start request issued by the app-shell-owned coordinator.
+  ///
+  /// The engine consumes it exactly once by comparing its token with the token
+  /// it last consumed. A silent launch intent must not produce start haptics or
+  /// speech; an entry intent uses the existing start route.
+  final StartIntent? startIntent;
+
   /// Requests one relative primary-tab move from the shell (`-1` toward Home,
   /// `+1` toward Help). The shell owns boundary handling and feedback.
   final void Function(int direction)? onNavigateRelative;
@@ -67,6 +82,8 @@ class UltralyticsDetectionScreen extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    required this.coordinator,
+    this.startIntent,
     this.onNavigateRelative,
     this.onRuntimeStateChanged,
     this.onFailure,
@@ -103,14 +120,16 @@ class _UltralyticsDetectionScreenState
   bool _paused = false;
   bool _permissionDenied = false;
   bool _starting = false;
-  bool _modelLoaded = false;
   bool _lastLowPowerMode = false;
   String? _modelError;
   DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
-  DetectionFailure? _failure;
   double _fps = 0;
   double _inferenceMs = 0;
   double _processingMs = 0;
+
+  /// The start-intent token this engine has already consumed. Guards against
+  /// acting on the same request twice (e.g. across rebuilds).
+  int? _consumedStartIntentToken;
 
   YOLOStreamingConfig get _streamingConfig => YOLOStreamingConfig(
     inferenceFrequency: _settings.lowPowerMode ? 4 : null,
@@ -122,10 +141,37 @@ class _UltralyticsDetectionScreenState
     _lastLowPowerMode = _settings.lowPowerMode;
     _settings.addListener(_handleSettingsChanged);
     _loadLabels();
-    if (_settings.autoStartDetection) {
+    // The engine no longer reads the Auto-start preference directly. It acts
+    // only on the shared start intent issued by the app-shell coordinator.
+    if (widget.startIntent != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _startDetection(announce: false, haptic: false);
+        _consumeStartIntent(widget.startIntent);
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant UltralyticsDetectionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.startIntent?.token != oldWidget.startIntent?.token) {
+      _consumeStartIntent(widget.startIntent);
+    }
+  }
+
+  /// Consumes a shared start intent exactly once.
+  ///
+  /// A silent launch intent starts without start haptics or speech; an entry
+  /// intent uses the existing start route. An already-consumed token is
+  /// ignored, and the existing `_starting`/`_detectionActive` guard in
+  /// [_startDetection] prevents a duplicate start.
+  void _consumeStartIntent(StartIntent? intent) {
+    if (intent == null) return;
+    if (_consumedStartIntentToken == intent.token) return;
+    _consumedStartIntentToken = intent.token;
+    if (intent.origin == StartIntentOrigin.launch) {
+      _startDetection(announce: false, haptic: false);
+    } else {
+      _startDetection();
     }
   }
 
@@ -200,9 +246,7 @@ class _UltralyticsDetectionScreenState
       _detectionActive = true;
       _paused = false;
       _starting = false;
-      _modelLoaded = false;
       _modelError = null;
-      _failure = null;
     });
     _setRuntimeState(DetectionRuntimeState.loadingModel);
     if (announce) await _tts.speak('Detection started', urgent: true);
@@ -215,13 +259,14 @@ class _UltralyticsDetectionScreenState
     setState(() {
       _detectionActive = false;
       _paused = false;
-      _modelLoaded = false;
       _detectionInfo = const [];
       _fps = 0;
       _inferenceMs = 0;
       _processingMs = 0;
     });
-    _setRuntimeState(DetectionRuntimeState.idle);
+    // Publish an explicit shared Stopped state (not idle) so a retained-session
+    // tab leave/return does not auto-restart.
+    _setRuntimeState(DetectionRuntimeState.stopped);
     await _tts.speak('Detection stopped', urgent: true);
   }
 
@@ -361,11 +406,9 @@ class _UltralyticsDetectionScreenState
   void _reportFailure(DetectionFailure failure) {
     if (!mounted) return;
     setState(() {
-      _failure = failure;
       _runtimeState = DetectionRuntimeState.failed;
       _starting = false;
       _detectionActive = false;
-      _modelLoaded = false;
       _modelError = failure.userMessage;
     });
     if (widget.onFailure != null) {
@@ -378,7 +421,6 @@ class _UltralyticsDetectionScreenState
   void _retryRuntime() {
     if (!mounted) return;
     setState(() {
-      _failure = null;
       _modelError = null;
       _permissionDenied = false;
     });
@@ -416,6 +458,19 @@ class _UltralyticsDetectionScreenState
     return 'High-priority obstacles detected. Please adjust your path.';
   }
 
+  /// Maps the shared coordinator snapshot to the visible status pill.
+  ///
+  /// This is the single user-facing lifecycle mapping shared with Home and the
+  /// Custom engine; it never reads engine-local booleans.
+  (String, Color) _sharedStatusPresentation(DetectionRuntimeState state) =>
+      switch (detectionStatusOutcomeFor(state)) {
+        DetectionStatusOutcome.preparing => ('Preparing', kStatusBlue),
+        DetectionStatusOutcome.ready => ('Detecting', kStatusGreen),
+        DetectionStatusOutcome.paused => ('Paused', kStatusAmber),
+        DetectionStatusOutcome.stopped => ('Stopped', kStatusBlueGrey),
+        DetectionStatusOutcome.unavailable => ('Unavailable', kWarningRed),
+      };
+
   @override
   Widget build(BuildContext context) {
     return Theme(
@@ -450,13 +505,10 @@ class _UltralyticsDetectionScreenState
 
   Widget _buildTopBar(BuildContext context) {
     final theme = Theme.of(context);
-    final (label, color) = !_detectionActive
-        ? ('Stopped', kStatusBlueGrey)
-        : _paused
-        ? ('Paused', kStatusAmber)
-        : !_modelLoaded
-        ? ('Loading', kStatusBlue)
-        : ('Detecting', kStatusGreen);
+    // The visible status pill renders the shared coordinator snapshot, never
+    // engine-local booleans. Local flags remain only for native controller and
+    // inference mechanics.
+    final (label, color) = _sharedStatusPresentation(widget.coordinator.state);
     return Padding(
       padding: const EdgeInsets.fromLTRB(kSpace16, kSpace16, kSpace16, kSpace8),
       child: Column(
@@ -514,10 +566,13 @@ class _UltralyticsDetectionScreenState
   }
 
   Widget _buildMainArea(BuildContext context) {
-    if (_runtimeState == DetectionRuntimeState.failed) {
+    // The visible lifecycle/status panel renders the shared coordinator
+    // snapshot, never engine-local runtime state.
+    final sharedState = widget.coordinator.state;
+    if (sharedState == DetectionRuntimeState.failed) {
       return DetectionStatePanel(
-        state: _runtimeState,
-        failure: _failure,
+        state: sharedState,
+        failure: widget.coordinator.failure,
         onRetry: _retryRuntime,
         onStop: _stopDetection,
       );
@@ -549,9 +604,7 @@ class _UltralyticsDetectionScreenState
             onModelLoad: (_, _) {
               if (mounted) {
                 setState(() {
-                  _modelLoaded = true;
                   _modelError = null;
-                  _failure = null;
                 });
               }
               _setRuntimeState(DetectionRuntimeState.ready);

@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
+import '../models/detection_runtime_state.dart';
+import '../services/engine_coordinator.dart';
 import '../services/settings_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/accessible_button.dart';
 
 /// Home — the application entry point.
 ///
-/// Branding + a preference/status badge (reflecting Auto-Start), a centered
-/// decorative mark with a live `EyeCue` wordmark, and a lower instruction
-/// region with a truthful headline, supporting copy, the primary
-/// "Go to Live Camera" action, and a static decorative cyan rail.
+/// Branding + a shared Detection lifecycle/status badge, a centered decorative
+/// mark with a live `EyeCue` wordmark, and a lower instruction region with a
+/// truthful headline, supporting copy, and a static decorative cyan rail.
+///
+/// Home renders its visible lifecycle/status from the app-shell-owned
+/// [EngineCoordinator] snapshot only. It never queries settings for status and
+/// performs no lifecycle action; there is no CTA.
 ///
 /// The Home subtree uses a locally scoped light visual theme
 /// ([buildHomeTheme]); the global dark theme and the shell navigation bar are
@@ -21,12 +25,14 @@ import '../widgets/accessible_button.dart';
 /// rest of the app.
 class HomeScreen extends StatelessWidget {
   final SettingsService settings;
-  final VoidCallback onGoToDetection;
+
+  /// The single app-shell-owned Detection lifecycle/status source.
+  final EngineCoordinator coordinator;
 
   const HomeScreen({
     super.key,
     required this.settings,
-    required this.onGoToDetection,
+    required this.coordinator,
   });
 
   @override
@@ -72,10 +78,10 @@ class HomeScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // Leading preference/status badge near the top.
+                            // Leading shared lifecycle/status badge near the top.
                             Align(
                               alignment: Alignment.centerLeft,
-                              child: _StatusBadge(settings: settings),
+                              child: _StatusBadge(coordinator: coordinator),
                             ),
                             const Spacer(flex: 2),
                             // Centered brand group: decorative mark + wordmark.
@@ -118,8 +124,7 @@ class HomeScreen extends StatelessWidget {
                                   maxWidth: boundedWidth,
                                 ),
                                 child: _InstructionRegion(
-                                  settings: settings,
-                                  onGoToDetection: onGoToDetection,
+                                  coordinator: coordinator,
                                 ),
                               ),
                             ),
@@ -138,30 +143,29 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-/// Preference/status badge that reflects the Auto-Start setting.
+/// Shared Detection lifecycle/status badge.
 ///
-/// This is a non-interactive semantic container. `READY` is a presentation of
-/// the `autoStartDetection` preference only — it is not evidence that the
-/// camera, model, engine, or detection runtime is ready or running.
+/// This is a non-interactive semantic container that renders the app-shell
+/// coordinator snapshot. It never reads the Auto-start preference or any
+/// engine-local flag; the visible label and meaning come from the single
+/// shared lifecycle mapping.
 class _StatusBadge extends StatelessWidget {
-  final SettingsService settings;
+  final EngineCoordinator coordinator;
 
-  const _StatusBadge({required this.settings});
+  const _StatusBadge({required this.coordinator});
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: settings,
+      listenable: coordinator,
       builder: (context, _) {
-        final on = settings.autoStartDetection;
-        final label = on ? 'READY' : 'AUTO-START OFF';
-        final meaning = on
-            ? 'Auto-Start is on. Detection will begin when you open Detect.'
-            : 'Auto-Start is off. Open Detect and press Start to begin.';
-        final dotColor = on ? kHomeAccentCyan : kHomeInkMuted;
+        final presentation = _homeStatusPresentation(
+          coordinator.state,
+          coordinator.failure,
+        );
         return Semantics(
           container: true,
-          label: meaning,
+          label: presentation.meaning,
           child: ExcludeSemantics(
             child: Container(
               padding: const EdgeInsets.symmetric(
@@ -180,13 +184,13 @@ class _StatusBadge extends StatelessWidget {
                     width: kSpace8,
                     height: kSpace8,
                     decoration: BoxDecoration(
-                      color: dotColor,
+                      color: presentation.dotColor,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: kSpace8),
                   Text(
-                    label,
+                    presentation.badge,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: kHomeInk,
                       letterSpacing: 0.5,
@@ -202,49 +206,37 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// Lower instruction region: truthful headline, supporting copy, the retained
-/// accessible CTA, and a static decorative cyan rail.
+/// Lower instruction region: shared-lifecycle headline, supporting copy, and a
+/// static decorative cyan rail. There is no CTA.
 class _InstructionRegion extends StatelessWidget {
-  final SettingsService settings;
-  final VoidCallback onGoToDetection;
+  final EngineCoordinator coordinator;
 
-  const _InstructionRegion({
-    required this.settings,
-    required this.onGoToDetection,
-  });
+  const _InstructionRegion({required this.coordinator});
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: settings,
+      listenable: coordinator,
       builder: (context, _) {
-        final on = settings.autoStartDetection;
-        final headline = on ? 'Ready when you are' : 'Start when you are ready';
-        final supporting = on
-            ? 'Auto-Start is on. Detection will begin when you open Detect.'
-            : 'Auto-Start is off. Open Detect and press Start to begin.';
+        final presentation = _homeStatusPresentation(
+          coordinator.state,
+          coordinator.failure,
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              headline,
+              presentation.headline,
               textAlign: TextAlign.left,
               style: Theme.of(context).textTheme.headlineLarge,
             ),
             const SizedBox(height: kSpace8),
             Text(
-              supporting,
+              presentation.supporting,
               textAlign: TextAlign.left,
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
-            ),
-            const SizedBox(height: kSpace20),
-            AccessibleButton(
-              label: 'Go to Live Camera',
-              icon: Icons.videocam_rounded,
-              prominent: true,
-              onPressed: onGoToDetection,
             ),
             const SizedBox(height: kSpace24),
             // Static decorative cyan rail. Not an interactive track, progress
@@ -262,5 +254,84 @@ class _InstructionRegion extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// The finalized Home presentation for one shared lifecycle outcome.
+class _HomeStatusPresentation {
+  const _HomeStatusPresentation({
+    required this.badge,
+    required this.headline,
+    required this.supporting,
+    required this.meaning,
+    required this.dotColor,
+  });
+
+  final String badge;
+  final String headline;
+  final String supporting;
+  final String meaning;
+  final Color dotColor;
+}
+
+/// Maps the shared coordinator snapshot to the finalized Home copy.
+///
+/// This is the single user-facing lifecycle mapping shared with both Detection
+/// engines; it never reads the Auto-start preference or engine-local flags.
+_HomeStatusPresentation _homeStatusPresentation(
+  DetectionRuntimeState state,
+  DetectionFailure? failure,
+) {
+  switch (detectionStatusOutcomeFor(state)) {
+    case DetectionStatusOutcome.preparing:
+      // The initial idle state is the Auto-start-OFF, not-started
+      // presentation; any other Preparing source is active initialization.
+      final isInitialIdle = state == DetectionRuntimeState.idle;
+      return _HomeStatusPresentation(
+        badge: 'PREPARING',
+        headline: isInitialIdle
+            ? 'Swipe left to start!'
+            : 'Getting things ready',
+        supporting: isInitialIdle
+            ? 'Detection begins immediately.'
+            : 'Detection is preparing.',
+        meaning: isInitialIdle
+            ? 'Preparing. Swipe left to start! Detection begins immediately.'
+            : 'Preparing. Getting things ready. Detection is preparing.',
+        dotColor: kHomeWarningAmber,
+      );
+    case DetectionStatusOutcome.ready:
+      return const _HomeStatusPresentation(
+        badge: 'READY',
+        headline: 'Ready when you are',
+        supporting: 'Detection is ready.',
+        meaning: 'Ready. Ready when you are. Detection is ready.',
+        dotColor: kHomeAccentCyan,
+      );
+    case DetectionStatusOutcome.paused:
+      return const _HomeStatusPresentation(
+        badge: 'PAUSED',
+        headline: 'Detection is paused',
+        supporting: 'Open Detect to resume.',
+        meaning: 'Paused. Detection is paused. Open Detect to resume.',
+        dotColor: kHomeInkMuted,
+      );
+    case DetectionStatusOutcome.stopped:
+      return const _HomeStatusPresentation(
+        badge: 'STOPPED',
+        headline: 'Detection is stopped',
+        supporting: 'Open Detect to start again.',
+        meaning: 'Stopped. Detection is stopped. Open Detect to start again.',
+        dotColor: kHomeInkMuted,
+      );
+    case DetectionStatusOutcome.unavailable:
+      final message = failure?.userMessage ?? 'Detection is unavailable.';
+      return _HomeStatusPresentation(
+        badge: 'UNAVAILABLE',
+        headline: 'Detection needs attention',
+        supporting: message,
+        meaning: 'Unavailable. Detection needs attention. $message',
+        dotColor: kWarningRed,
+      );
   }
 }

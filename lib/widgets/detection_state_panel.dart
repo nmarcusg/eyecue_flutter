@@ -133,6 +133,7 @@ class DetectionStatePanel extends StatelessWidget {
     DetectionRuntimeState.failed => Icons.error_outline,
     DetectionRuntimeState.paused => Icons.pause_circle_outline,
     DetectionRuntimeState.ready => Icons.check_circle_outline,
+    DetectionRuntimeState.stopped => Icons.stop_circle_outlined,
     DetectionRuntimeState.disposed => Icons.stop_circle_outlined,
     DetectionRuntimeState.idle => Icons.center_focus_strong_outlined,
   };
@@ -149,6 +150,7 @@ class DetectionStatePanel extends StatelessWidget {
     DetectionRuntimeState.fallback =>
       'The recommended engine is unavailable. A compatibility engine is active.',
     DetectionRuntimeState.failed => 'Detection is unavailable.',
+    DetectionRuntimeState.stopped => 'Detection is stopped.',
     DetectionRuntimeState.disposed => 'Detection has stopped.',
   };
 }
