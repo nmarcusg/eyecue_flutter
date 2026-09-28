@@ -34,6 +34,20 @@ import '../widgets/gesture_surface.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/warning_banner.dart';
 
+/// Maps a horizontal gesture intent to a relative primary-tab direction.
+///
+/// Product Decision 2: a left swipe advances to the next tab (`+1`) and a
+/// right swipe returns to the previous tab (`-1`). Returns `null` for any
+/// non-horizontal gesture. Pure so both Detection engines can be tested
+/// without a camera/native dependency.
+int? relativeDirectionForGesture(EyeCueGesture gesture) {
+  return switch (gesture) {
+    EyeCueGesture.swipeLeft => 1,
+    EyeCueGesture.swipeRight => -1,
+    _ => null,
+  };
+}
+
 /// Detection — the core assistive screen.
 ///
 /// Reuses the validated camera/inference pipeline (persistent isolate,
@@ -57,6 +71,10 @@ class DetectionScreen extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// Requests one relative primary-tab move from the shell (`-1` toward Home,
+  /// `+1` toward Help). The shell owns boundary handling and feedback.
+  final void Function(int direction)? onNavigateRelative;
+
   /// Reports a state together with the Custom worker generation that produced
   /// it. Camera-only states have a null source generation.
   final void Function(DetectionRuntimeState state, int? sourceGeneration)?
@@ -74,6 +92,7 @@ class DetectionScreen extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    this.onNavigateRelative,
     this.onRuntimeStateChanged,
     this.onFailure,
   });
@@ -444,6 +463,12 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _quickScan();
       case EyeCueGesture.swipeDown:
         _repeatAlert();
+      case EyeCueGesture.swipeLeft:
+      case EyeCueGesture.swipeRight:
+        final direction = relativeDirectionForGesture(gesture);
+        if (direction != null) {
+          widget.onNavigateRelative?.call(direction);
+        }
     }
   }
 

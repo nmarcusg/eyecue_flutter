@@ -22,6 +22,14 @@ class EngineDetectionScreen extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// Requests one relative primary-tab move from the shell.
+  ///
+  /// `-1` moves one tab toward Home, `+1` one tab toward Help. The shell owns
+  /// boundary handling and wayfinding feedback; this screen only forwards the
+  /// gesture intent. The callback must have stable identity for the cached
+  /// page lifetime so ordinary navigation never remounts the engine.
+  final void Function(int direction)? onNavigateRelative;
+
   const EngineDetectionScreen({
     super.key,
     required this.settings,
@@ -29,6 +37,7 @@ class EngineDetectionScreen extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    this.onNavigateRelative,
   });
 
   @override
@@ -112,6 +121,7 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
             telemetry: widget.telemetry,
             corrections: widget.corrections,
             haptics: widget.haptics,
+            onNavigateRelative: widget.onNavigateRelative,
             onRuntimeStateChanged: (state, sourceGeneration) =>
                 _reportState(state, generation, sourceGeneration),
             onFailure: (failure, sourceGeneration) =>
@@ -124,6 +134,7 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
             telemetry: widget.telemetry,
             corrections: widget.corrections,
             haptics: widget.haptics,
+            onNavigateRelative: widget.onNavigateRelative,
             onRuntimeStateChanged: (state, sourceGeneration) =>
                 _reportState(state, generation, sourceGeneration),
             onFailure: (failure, sourceGeneration) =>

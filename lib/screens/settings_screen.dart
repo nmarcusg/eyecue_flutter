@@ -100,6 +100,20 @@ class SettingsScreen extends StatelessWidget {
                                   value: settings.lowPowerMode,
                                   onChanged: settings.setLowPowerMode,
                                 ),
+                                SwitchListTile(
+                                  secondary: const Icon(
+                                    Icons.visibility_off_outlined,
+                                  ),
+                                  title: const Text('Hide Bottom Navigation'),
+                                  subtitle: const Text(
+                                    'Hides the bottom bar only. Destinations and '
+                                    'swipe navigation still work. Android '
+                                    'accessibility navigation keeps the bar '
+                                    'visible.',
+                                  ),
+                                  value: settings.hideBottomNavigation,
+                                  onChanged: settings.setHideBottomNavigation,
+                                ),
                               ],
                             ),
                             _SettingsCard(
