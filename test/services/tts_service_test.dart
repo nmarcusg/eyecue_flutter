@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:eyecue_flutter/models/detection.dart';
@@ -20,6 +21,30 @@ class FakeTtsEngine implements TtsEngine {
   @override
   Future<void> speak(String text) async {
     spoken.add(text);
+  }
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> dispose() async {}
+}
+
+/// A TTS engine whose `speak` blocks until [gate] completes, so a test can
+/// observe the service while Detection speech is genuinely in flight.
+class _GatedTtsEngine implements TtsEngine {
+  _GatedTtsEngine(this.gate);
+
+  final Completer<void> gate;
+  final List<String> spoken = [];
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<void> speak(String text) async {
+    spoken.add(text);
+    await gate.future;
   }
 
   @override
@@ -136,6 +161,49 @@ void main() {
         expect(text, contains('2 objects detected'));
       },
     );
+  });
+
+  group('speakWayfinding', () {
+    test('speaks a wayfinding phrase when idle', () async {
+      expect(await tts.speakWayfinding('Settings'), isTrue);
+      expect(engine.spoken, ['Settings']);
+    });
+
+    test('muted audio suppresses wayfinding', () async {
+      tts.setAudioEnabled(false);
+      expect(await tts.speakWayfinding('Settings'), isFalse);
+      expect(engine.spoken, isEmpty);
+    });
+
+    test('wayfinding never replaces the Detection replay utterance', () async {
+      await tts.speak('person, high priority obstacle');
+      now = now.add(const Duration(seconds: 1));
+      await tts.speakWayfinding('Settings');
+      // repeatLast must still replay the Detection alert, not the destination.
+      now = now.add(const Duration(seconds: 1));
+      expect(await tts.repeatLast(), isTrue);
+      expect(engine.spoken.last, 'person, high priority obstacle');
+    });
+
+    test('repeated boundary phrase applies the anti-repeat rule', () async {
+      expect(await tts.speakWayfinding('End of navigation'), isTrue);
+      now = now.add(const Duration(milliseconds: 500));
+      expect(await tts.speakWayfinding('End of navigation'), isFalse);
+      now = now.add(const Duration(seconds: 3));
+      expect(await tts.speakWayfinding('End of navigation'), isTrue);
+    });
+
+    test('wayfinding drops while Detection speech is active', () async {
+      final gate = Completer<void>();
+      final slowEngine = _GatedTtsEngine(gate);
+      final slowTts = TtsService(engine: slowEngine, clock: () => now);
+      final detection = slowTts.speak('person detected');
+      // Detection speech is now in flight.
+      expect(await slowTts.speakWayfinding('Settings'), isFalse);
+      expect(slowEngine.spoken, ['person detected']);
+      gate.complete();
+      await detection;
+    });
   });
 
   group('repeatLast', () {

@@ -147,6 +147,12 @@ void main() {
       expect(find.text('Audio / Voice Guidance'), findsOneWidget);
       expect(find.text('View Logs & Reports'), findsOneWidget);
 
+      // Test-only scope exception: the navigation feature added the "Hide
+      // Bottom Navigation" switch to the Preferences card, which pushes the
+      // Logs & Reports entry below the viewport. Scroll it into view before
+      // tapping; no production behavior is asserted differently here.
+      await tester.ensureVisible(find.text('View Logs & Reports'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('View Logs & Reports'));
       expect(openedLogs, isTrue);
     });

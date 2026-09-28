@@ -13,6 +13,21 @@ void main() {
       expect(service.audioEnabled, isTrue);
       expect(service.inferenceEngine, InferenceEngine.ultralytics);
       expect(service.detectionConfidence, 0.25);
+      expect(service.hideBottomNavigation, isFalse);
+    });
+
+    test('hideBottomNavigation setter notifies and persists', () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      var notified = 0;
+      service.addListener(() => notified++);
+      await service.setHideBottomNavigation(true);
+      expect(service.hideBottomNavigation, isTrue);
+      expect(notified, 1);
+
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.hideBottomNavigation, isTrue);
     });
 
     test('setters update values and notify listeners', () async {
@@ -67,6 +82,18 @@ void main() {
         inferenceEngine: InferenceEngine.ultralytics,
       );
       final b = AppSettings.fromJson(a.toJson());
+      expect(b, a);
+    });
+
+    test('missing hideBottomNavigation parses to a visible bar', () {
+      final settings = AppSettings.fromJson({'schemaVersion': 1});
+      expect(settings.hideBottomNavigation, isFalse);
+    });
+
+    test('hideBottomNavigation round-trips through JSON', () {
+      const a = AppSettings(hideBottomNavigation: true);
+      final b = AppSettings.fromJson(a.toJson());
+      expect(b.hideBottomNavigation, isTrue);
       expect(b, a);
     });
 
