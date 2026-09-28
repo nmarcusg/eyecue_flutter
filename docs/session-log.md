@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-09-28 (24th session) — Detection Redesign (PD1–PD3)
+
+### Objective
+- Implement the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md): a unified, engine-parity Detection composition (PD1), one coordinator-driven consolidated physical lifecycle control (PD2), and a compact current-information overlay (PD3), without merging the Custom and Ultralytics camera/inference internals or changing the app-shell lifecycle policy.
+
+### Completed
+- Implemented PD1–PD3 in both engine screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
+- **PD1:** dominant flexible camera viewport retained; top area keeps `Detection Mode`, the coordinator-derived status pill, and the Audio pill; exactly two side-by-side physical controls in one row beneath the viewport; no normal vertical scrolling. Removed from the normal UI: the detection card list, empty-state messages, `_GestureHint`, the visual `WarningBanner`, standalone Start/Stop, standalone Pause/Resume, visible Repeat, the standalone correction button, and correction/report actions on detection items. Correction removal is UI-only — [`CorrectionService`](../lib/services/correction_service.dart), its persistence, and the correction sheet remain intact. Ultralytics developer metrics were removed from the normal UI while telemetry collection is retained. The stopped viewport shell and [`GestureSurface`](../lib/widgets/gesture_surface.dart) are retained (Custom already did this; Ultralytics now does too).
+- **PD2:** one coordinator-driven consolidated lifecycle control. Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing and Unavailable disabled. Visible copy: `PAUSE` + `HOLD 3 SEC TO STOP`; `RESUME` + `HOLD 3 SEC TO STOP`; `START` + `HOLD 3 SEC`; `PREPARING`; `UNAVAILABLE`. Progress starts at 0% on pointer down and fills continuously over the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; early release maps to tap; release after the timeout but before three seconds is an abandoned hold with no action; completion dispatches exactly once with a duplicate-dispatch lock; existing engine-owned completion TTS/haptics are reused without duplication. Quick Scan is tap-only, Ready/healthy-fallback only, and disabled during an active physical hold.
+- **PD3:** compact in-viewport informational overlay, maximum two rows, stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, hidden outside Ready/healthy fallback.
+- Added the shared presentation widgets [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) (`DetectionActionControls`) and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) (`DetectionInformationOverlay`).
+
+### Runtime Repairs (post-implementation, on-device)
+- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen).
+- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+- **Ultralytics Stop → Start stuck in Preparing:** fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
+
+### Behavioral-Deviation Audit
+- Result: **no unintended deviations.** Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **323 passing**.
+
+### Decisions / Limitations
+- Strict PD3 result provenance/freshness remains deferred under its existing scope boundary (non-blocking for the redesign).
+- Ultralytics Ready timing semantics: Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`; the current definition is model/native initialization readiness, not strict pipeline-operational proof.
+- Post-resume freshness diagnostic limitation: the epoch diagnostic cannot isolate the first result after Resume.
+- FlutterJNI teardown fatal was not reproduced in the latest capture and is **not fixed** — dedicated full-app teardown verification is pending.
+- Ultralytics GPU path falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
+- Native CameraX graph churn during recreation is expected plugin settling, not a proven leak.
+
+### Next Session
+- Complete dedicated full-app teardown verification for the FlutterJNI fatal, and continue the deferred strict PD3 provenance work under its existing scope boundary.
+
+---
+
 ## 2026-09-28 (23rd session) — Home/Detection Shared Lifecycle State
 
 ### Objective

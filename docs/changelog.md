@@ -5,6 +5,38 @@
 
 ---
 
+## Unreleased — Detection Redesign (PD1–PD3) (2026-09-28)
+
+### Added
+- Added the shared presentation widget [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) (`DetectionActionControls`): one coordinator-driven consolidated lifecycle control plus a physical Quick Scan control, rendered side-by-side in a single non-scrolling row. It owns local physical-pointer hold tracking and horizontal progress from 0% at pointer down through the full three-second hold, and imports no camera/inference/native/service internals.
+- Added the shared presentation widget [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) (`DetectionInformationOverlay`): a compact in-viewport informational overlay of at most two rows, with stable High-priority promotion preserving source order, no confidence/debug/metric values, a dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority treatment, no animations, one manual non-live informational semantics node per row, and pointer transparency.
+
+### Changed
+- Implemented the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) in both engine screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
+- **PD1 (unified composition):** the dominant flexible camera viewport is retained; the top area keeps `Detection Mode`, the coordinator-derived status pill, and the Audio pill; exactly two side-by-side physical controls sit in one row beneath the viewport; and the normal screen no longer scrolls vertically. Removed from the normal UI: the detection card list, empty-state messages, `_GestureHint`, the visual `WarningBanner`, standalone Start/Stop, standalone Pause/Resume, visible Repeat, the standalone correction button, and correction/report actions on detection items. Correction removal is UI-only — [`CorrectionService`](../lib/services/correction_service.dart), its persistence, and the correction sheet remain intact. Ultralytics developer metrics were removed from the normal UI while telemetry collection is retained. The stopped viewport shell and [`GestureSurface`](../lib/widgets/gesture_surface.dart) are retained (Custom already did this; Ultralytics now does too).
+- **PD2 (consolidated lifecycle control):** one coordinator-driven control. Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing and Unavailable disabled. Visible copy: `PAUSE` + `HOLD 3 SEC TO STOP`; `RESUME` + `HOLD 3 SEC TO STOP`; `START` + `HOLD 3 SEC`; `PREPARING`; `UNAVAILABLE`. Progress starts at 0% on pointer down and fills continuously over the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; early release maps to tap; release after the timeout but before three seconds is an abandoned hold with no action; completion dispatches exactly once with a duplicate-dispatch lock; existing engine-owned completion TTS/haptics are reused without duplication. Quick Scan is tap-only, Ready/healthy-fallback only, and disabled during an active physical hold.
+- **PD3 (compact overlay):** a compact in-viewport informational overlay, maximum two rows, stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, hidden outside Ready/healthy fallback.
+
+### Fixed (post-implementation, on-device)
+- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen).
+- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+- **Ultralytics Stop → Start stuck in Preparing:** fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **323 passing**.
+- Behavioral-deviation audit: no unintended deviations. Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
+
+### Non-Blocking Notes
+- **Ultralytics Ready timing semantics:** Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`; the current definition is model/native initialization readiness, not strict pipeline-operational proof.
+- **Post-resume freshness diagnostic limitation:** the epoch diagnostic cannot isolate the first result after Resume.
+- **FlutterJNI teardown fatal:** not reproduced in the latest capture and **not fixed** — dedicated full-app teardown verification is pending.
+- **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
+- **Native CameraX graph churn** during recreation is expected plugin settling, not a proven leak.
+- **Deferred:** strict PD3 result provenance/freshness remains deferred under its existing scope boundary.
+
+---
+
 ## Unreleased — Home/Detection Shared Lifecycle State (2026-09-28)
 
 ### Added

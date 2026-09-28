@@ -1,9 +1,22 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-09-28
+> **Last Updated:** 2026-09-28 (Detection redesign PD1–PD3)
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
 
 ## Current Blockers
+
+### 🟢 Detection Redesign (PD1–PD3) — Non-Blocking Notes
+
+The Detection redesign (PD1–PD3) is implemented and statically validated (`flutter analyze` 0 issues; `flutter test` **323 passing**), with three runtime repairs applied after physical-device validation (Custom `IntrinsicHeight` layout cascade, Custom post-frame start intent, Ultralytics native-session recreation on start-after-stop). The behavioral-deviation audit found **no unintended deviations** from baseline `f310e73`. The following items are **non-blocking for the redesign** and are recorded for follow-up.
+
+- **Ultralytics Ready timing semantics:** Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`. The current definition is model/native initialization readiness, not strict pipeline-operational proof.
+- **Post-resume freshness diagnostic limitation:** the epoch diagnostic cannot isolate the first result after Resume.
+- **FlutterJNI teardown fatal:** not reproduced in the latest capture and **not fixed** — dedicated full-app teardown verification is pending.
+- **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
+- **Native CameraX graph churn** during recreation is expected plugin settling, not a proven leak.
+- **Deferred — strict PD3 result provenance/freshness:** remains deferred under its existing scope boundary (see [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) §13/§18). The overlay's UI-only snapshot clearing prevents known historical values from remaining visible after a non-Ready transition, but does not prove that a delayed pre-transition result cannot arrive after a later Ready state. This is **non-blocking for the redesign** and is not claimed as resolved.
+- **Location:** [`detection_screen.dart`](../lib/screens/detection_screen.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart).
+- **Status:** **Redesign implemented and statically validated; the items above are non-blocking follow-ups.**
 
 ### 🟡 Primary Gesture Navigation — Device-Observed Issues (Unresolved)
 

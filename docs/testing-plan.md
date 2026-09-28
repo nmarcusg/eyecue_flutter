@@ -2,7 +2,7 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Current suite (2026-09-28):** `flutter test` → passing, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
+> **Current suite (2026-09-28):** `flutter test` → **323 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows, and the Detection redesign's [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart)), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
 
 ## Unit Testing Strategy
 
@@ -42,6 +42,8 @@
 | Primary gesture navigation | ✅ | One-finger linear non-wrapping shell navigation, boundary attempts, second-pointer invalidation, feedback origin, accessibility/bar truth table, real Slider ownership, route/Back isolation, and cached Detection page preservation (implemented) |
 | Assistive widgets | ✅ | Priority badge, detection card, warning banner, accessible button (implemented) |
 | Charts | ✅ | Latency/FPS/frequency chart bounds incl. empty/very-high/constant data (implemented) |
+| Detection redesign controls (PD2) | ✅ | [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart): coordinator-outcome label/secondary-text/enabled mapping, physical Quick Scan gating, pointer-down 0% progress across the full three-second hold, `kLongPressTimeout` `KEEP HOLDING` classification without progress restart, early-release tap mapping, abandoned-hold suppression, single-dispatch lock, and cancellation (implemented) |
+| Detection redesign overlay (PD3) | ✅ | Compact two-row overlay selection (stable High promotion preserving source order, no Medium-over-Low ranking), non-live informational semantics, and hidden-outside-Ready behavior (implemented) |
 
 ## Integration Testing Strategy
 
