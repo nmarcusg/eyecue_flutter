@@ -7,6 +7,7 @@ import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/screens/help_screen.dart';
 import 'package:eyecue_flutter/screens/home_screen.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
+import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
@@ -454,69 +455,96 @@ void main() {
   });
 
   group('home semantics', () {
-    SettingsService homeSettings({bool autoStart = true}) {
-      final s = SettingsService(store: InMemorySettingsStore());
-      // Force the desired preference synchronously through the notifier.
-      s.setAutoStartDetection(autoStart);
-      return s;
-    }
+    EngineCoordinator homeCoordinator() =>
+        EngineCoordinator(preferredEngine: InferenceEngine.ultralytics);
 
-    Widget homeApp(SettingsService s) {
+    Widget homeApp(EngineCoordinator c) {
       return MaterialApp(
-        home: HomeScreen(settings: s, onGoToDetection: () {}),
+        home: HomeScreen(
+          settings: SettingsService(store: InMemorySettingsStore()),
+          coordinator: c,
+        ),
       );
     }
 
-    testWidgets('status badge exposes the full on-state meaning', (
+    testWidgets('initial Preparing state exposes the full meaning', (
       tester,
     ) async {
-      await tester.pumpWidget(homeApp(homeSettings(autoStart: true)));
+      await tester.pumpWidget(homeApp(homeCoordinator()));
       await withSemantics(tester, () async {
         expectSemanticNode(
-          'Auto-Start is on. Detection will begin when you open Detect.',
+          'Preparing. Swipe left to start! Detection begins immediately.',
         );
         // The live wordmark is present exactly once (logo is decorative).
         expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
-        expectButtonSemantics(tester, 'Go to Live Camera');
-        expect(
-          expectSemanticNode('Go to Live Camera').hint,
-          'Double tap to activate',
+        // No CTA or substitute action is exposed.
+        expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
+      });
+    });
+
+    testWidgets('Ready state exposes the full meaning', (tester) async {
+      final c = homeCoordinator();
+      c.reportReady();
+      await tester.pumpWidget(homeApp(c));
+      await withSemantics(tester, () async {
+        expectSemanticNode('Ready. Ready when you are. Detection is ready.');
+        expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
+        expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
+      });
+    });
+
+    testWidgets('Paused and Stopped states expose their full meaning', (
+      tester,
+    ) async {
+      final paused = homeCoordinator();
+      paused.reportPaused();
+      await tester.pumpWidget(homeApp(paused));
+      await withSemantics(tester, () async {
+        expectSemanticNode(
+          'Paused. Detection is paused. Open Detect to resume.',
+        );
+      });
+
+      final stopped = homeCoordinator();
+      stopped.reportStopped();
+      await tester.pumpWidget(homeApp(stopped));
+      await withSemantics(tester, () async {
+        expectSemanticNode(
+          'Stopped. Detection is stopped. Open Detect to start again.',
         );
       });
     });
 
-    testWidgets('status badge exposes the full off-state meaning', (
+    testWidgets('Unavailable state reads the shared safe message', (
       tester,
     ) async {
-      await tester.pumpWidget(homeApp(homeSettings(autoStart: false)));
+      final c = homeCoordinator();
+      c.reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.permissionDenied,
+          safeMessage: 'Camera permission is required to detect objects.',
+          timestamp: DateTime(2026, 1, 1),
+        ),
+      );
+      await tester.pumpWidget(homeApp(c));
       await withSemantics(tester, () async {
         expectSemanticNode(
-          'Auto-Start is off. Open Detect and press Start to begin.',
+          'Unavailable. Detection needs attention. '
+          'Camera permission is required to detect objects.',
         );
-        expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
-        expectButtonSemantics(tester, 'Go to Live Camera');
       });
     });
 
     testWidgets('logo and rail are decorative and do not duplicate labels', (
       tester,
     ) async {
-      await tester.pumpWidget(homeApp(homeSettings(autoStart: true)));
+      await tester.pumpWidget(homeApp(homeCoordinator()));
       await withSemantics(tester, () async {
         // Only the live wordmark carries the 'EyeCue' label; the logo image is
         // excluded and must not add a second one.
         expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
-        // The CTA is exposed exactly once (no duplicate wrapper semantics).
-        expect(
-          find.semantics
-              .byPredicate(
-                (node) =>
-                    node.label == 'Go to Live Camera' &&
-                    node.getSemanticsData().flagsCollection.isButton,
-              )
-              .evaluate(),
-          hasLength(1),
-        );
+        // No replacement action is exposed.
+        expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
       });
     });
 
@@ -535,8 +563,8 @@ void main() {
           home: MediaQuery(
             data: MediaQueryData(textScaler: TextScaler.linear(2.0)),
             child: HomeScreen(
-              settings: homeSettings(autoStart: true),
-              onGoToDetection: () {},
+              settings: SettingsService(store: InMemorySettingsStore()),
+              coordinator: homeCoordinator(),
             ),
           ),
         ),

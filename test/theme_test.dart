@@ -38,7 +38,10 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('EyeCue'), findsOneWidget);
-    expect(find.text('Go to Live Camera'), findsOneWidget);
+    // The finalized Home has no CTA. The lifecycle copy itself is covered by
+    // widget_test.dart with a controlled coordinator; this test protects the
+    // startup theme regression only.
+    expect(find.text('Go to Live Camera'), findsNothing);
 
     // The concrete text theme must be in effect (no null-fontSize assertion).
     // The Home screen now applies a Home-local light theme, so the `EyeCue`

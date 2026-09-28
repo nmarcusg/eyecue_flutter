@@ -1,6 +1,8 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/navigation/app_shell.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
+import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/gesture_controller.dart';
 import 'package:eyecue_flutter/services/haptics_service.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
@@ -22,17 +24,13 @@ class _FakeTtsEngine implements TtsEngine {
 }
 
 /// Stub pages so the shell can be tested without a real camera/inference stack.
+///
+/// The Home stub is a plain page with no CTA: the finalized Home has no
+/// action, and navigation into Detect is exercised through the shell's own
+/// tab-selection paths.
 List<Widget> Function(BuildContext, AppShellState) stubPages() {
   return (context, shell) => [
-    // Home stub — includes a "Go to Live Camera" style action.
-    Scaffold(
-      body: Center(
-        child: TextButton(
-          onPressed: () => shell.goToTab(1),
-          child: const Text('PAGE0'),
-        ),
-      ),
-    ),
+    const Scaffold(body: Center(child: Text('PAGE0'))),
     const Scaffold(body: Center(child: Text('PAGE1'))),
     const Scaffold(body: Center(child: Text('PAGE2'))),
     const Scaffold(body: Center(child: Text('PAGE3'))),
@@ -116,9 +114,11 @@ void main() {
     expect(find.text('PAGE2'), findsOneWidget);
   });
 
-  testWidgets('Home CTA navigates to the Detection tab', (tester) async {
+  testWidgets('bottom-bar Detect selection navigates to the Detection tab', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildShell());
-    await tester.tap(find.text('PAGE0'));
+    await tester.tap(find.text('Detect'));
     await tester.pumpAndSettle();
     expect(find.text('PAGE1'), findsOneWidget);
   });
@@ -185,13 +185,13 @@ void main() {
       expect(hapticCalls, ['light']);
     });
 
-    testWidgets('bar taps and CTA emit no gesture feedback', (tester) async {
+    testWidgets('bar taps emit no gesture feedback', (tester) async {
       await tester.pumpWidget(buildShell());
       await tester.tap(find.text('Detect'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Home'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('PAGE0')); // Home CTA → Detect
+      await tester.tap(find.text('Detect'));
       await tester.pumpAndSettle();
       expect(hapticCalls, isEmpty);
     });
@@ -409,5 +409,157 @@ void main() {
         expect(settings.detectionConfidence, after);
       },
     );
+  });
+
+  group('startup policy and shared lifecycle', () {
+    Widget buildShellWithCoordinator(EngineCoordinator coordinator) {
+      return MaterialApp(
+        home: AppShell(
+          settings: settings,
+          tts: tts,
+          telemetry: telemetry,
+          haptics: haptics,
+          pagesOverride: stubPages(),
+          coordinatorOverride: coordinator,
+        ),
+      );
+    }
+
+    testWidgets('Auto-start ON prewarms Detect and emits one silent intent', (
+      tester,
+    ) async {
+      // Auto-start defaults to on.
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(buildShellWithCoordinator(coordinator));
+
+      // Home remains the selected page.
+      expect(find.text('PAGE0'), findsOneWidget);
+      // Detect is cached before visual entry (offstage in the IndexedStack).
+      expect(find.text('PAGE1', skipOffstage: false), findsOneWidget);
+      // Exactly one silent launch intent was issued.
+      expect(coordinator.pendingStartIntent, isNotNull);
+      expect(coordinator.pendingStartIntent!.origin, StartIntentOrigin.launch);
+    });
+
+    testWidgets('Auto-start OFF does not create Detect at launch', (
+      tester,
+    ) async {
+      await settings.setAutoStartDetection(false);
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(buildShellWithCoordinator(coordinator));
+
+      expect(find.text('PAGE0'), findsOneWidget);
+      expect(find.text('PAGE1'), findsNothing);
+      expect(coordinator.pendingStartIntent, isNull);
+      expect(coordinator.state, DetectionRuntimeState.idle);
+    });
+
+    testWidgets('Auto-start OFF entry into Detect issues one entry intent', (
+      tester,
+    ) async {
+      await settings.setAutoStartDetection(false);
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(buildShellWithCoordinator(coordinator));
+
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('PAGE1'), findsOneWidget);
+      expect(coordinator.pendingStartIntent, isNotNull);
+      expect(coordinator.pendingStartIntent!.origin, StartIntentOrigin.entry);
+      // The persisted preference is never written by entry.
+      expect(settings.autoStartDetection, isFalse);
+    });
+
+    testWidgets('Home left swipe still advances exactly one tab', (
+      tester,
+    ) async {
+      await settings.setAutoStartDetection(false);
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(buildShellWithCoordinator(coordinator));
+
+      await swipeBody(tester, -200);
+      expect(find.text('PAGE1'), findsOneWidget);
+      expect(coordinator.pendingStartIntent?.origin, StartIntentOrigin.entry);
+    });
+
+    testWidgets('returning from paused Detect does not auto-restart', (
+      tester,
+    ) async {
+      await settings.setAutoStartDetection(false);
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(buildShellWithCoordinator(coordinator));
+
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+      final entryToken = coordinator.pendingStartIntent!.token;
+
+      // Simulate the engine publishing Paused, then leave and return.
+      coordinator.reportPaused();
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+
+      // No new intent was issued; the paused session is preserved.
+      expect(coordinator.pendingStartIntent!.token, entryToken);
+      expect(coordinator.state, DetectionRuntimeState.paused);
+    });
+
+    testWidgets('returning from stopped Detect does not auto-restart', (
+      tester,
+    ) async {
+      await settings.setAutoStartDetection(false);
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(buildShellWithCoordinator(coordinator));
+
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+      final entryToken = coordinator.pendingStartIntent!.token;
+
+      coordinator.reportStopped();
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+
+      expect(coordinator.pendingStartIntent!.token, entryToken);
+      expect(coordinator.state, DetectionRuntimeState.stopped);
+    });
+
+    testWidgets('cached Detect identity is stable across navigation', (
+      tester,
+    ) async {
+      await settings.setAutoStartDetection(false);
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(buildShellWithCoordinator(coordinator));
+
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+      final detectElement = tester.element(find.text('PAGE1'));
+
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Help'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+
+      expect(tester.element(find.text('PAGE1')), same(detectElement));
+    });
   });
 }

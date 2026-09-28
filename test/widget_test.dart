@@ -1,7 +1,9 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/screens/help_screen.dart';
 import 'package:eyecue_flutter/screens/home_screen.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
+import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
@@ -15,93 +17,107 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   SettingsService settings() => SettingsService(store: InMemorySettingsStore());
 
+  EngineCoordinator coordinator() =>
+      EngineCoordinator(preferredEngine: InferenceEngine.ultralytics);
+
   group('HomeScreen', () {
-    testWidgets('renders branding, READY badge, and Go to Live Camera CTA', (
+    Widget homeApp(EngineCoordinator c) => MaterialApp(
+      home: HomeScreen(settings: settings(), coordinator: c),
+    );
+
+    testWidgets('renders branding and the initial Preparing state', (
       tester,
     ) async {
-      var wentToDetection = false;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(
-            settings: settings(),
-            onGoToDetection: () => wentToDetection = true,
-          ),
-        ),
-      );
+      await tester.pumpWidget(homeApp(coordinator()));
 
       // Live wordmark is present.
       expect(find.text('EyeCue'), findsOneWidget);
-      // Auto-Start defaults to on -> READY badge and exact on copy.
-      expect(find.text('READY'), findsOneWidget);
-      expect(
-        find.text(
-          'Auto-Start is on. Detection will begin when you open Detect.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Go to Live Camera'), findsOneWidget);
-      // The old false "already running" claim is gone.
-      expect(find.textContaining('Detection is already running'), findsNothing);
-
-      await tester.tap(find.text('Go to Live Camera'));
-      expect(wentToDetection, isTrue);
+      // Initial idle -> Preparing with the finalized Auto-start-OFF copy.
+      expect(find.text('PREPARING'), findsOneWidget);
+      expect(find.text('Swipe left to start!'), findsOneWidget);
+      expect(find.text('Detection begins immediately.'), findsOneWidget);
+      // The CTA is removed and not replaced.
+      expect(find.text('Go to Live Camera'), findsNothing);
+      expect(find.byType(AccessibleButton), findsNothing);
     });
 
-    testWidgets('reflects Auto-Start off with AUTO-START OFF badge', (
+    testWidgets('renders Ready from the shared snapshot', (tester) async {
+      final c = coordinator();
+      c.reportReady();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('READY'), findsOneWidget);
+      expect(find.text('Ready when you are'), findsOneWidget);
+      expect(find.text('Detection is ready.'), findsOneWidget);
+    });
+
+    testWidgets('renders Preparing during active initialization', (
       tester,
     ) async {
-      final s = settings();
-      await s.setAutoStartDetection(false);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(settings: s, onGoToDetection: () {}),
+      final c = coordinator();
+      c.reportState(DetectionRuntimeState.loadingModel);
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('PREPARING'), findsOneWidget);
+      expect(find.text('Getting things ready'), findsOneWidget);
+      expect(find.text('Detection is preparing.'), findsOneWidget);
+    });
+
+    testWidgets('renders Paused from the shared snapshot', (tester) async {
+      final c = coordinator();
+      c.reportPaused();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('PAUSED'), findsOneWidget);
+      expect(find.text('Detection is paused'), findsOneWidget);
+      expect(find.text('Open Detect to resume.'), findsOneWidget);
+    });
+
+    testWidgets('renders Stopped from the shared snapshot', (tester) async {
+      final c = coordinator();
+      c.reportStopped();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('STOPPED'), findsOneWidget);
+      expect(find.text('Detection is stopped'), findsOneWidget);
+      expect(find.text('Open Detect to start again.'), findsOneWidget);
+    });
+
+    testWidgets('renders Unavailable with the shared safe message', (
+      tester,
+    ) async {
+      final c = coordinator();
+      c.reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.permissionDenied,
+          safeMessage: 'Camera permission is required to detect objects.',
+          timestamp: DateTime(2026, 1, 1),
         ),
       );
+      await tester.pumpWidget(homeApp(c));
 
-      expect(find.text('AUTO-START OFF'), findsOneWidget);
+      expect(find.text('UNAVAILABLE'), findsOneWidget);
+      expect(find.text('Detection needs attention'), findsOneWidget);
       expect(
-        find.text('Auto-Start is off. Open Detect and press Start to begin.'),
+        find.text('Camera permission is required to detect objects.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('updates the presentation when the shared state changes', (
+      tester,
+    ) async {
+      final c = coordinator();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('PREPARING'), findsOneWidget);
       expect(find.text('READY'), findsNothing);
-    });
 
-    testWidgets('updates the presentation when Auto-Start changes', (
-      tester,
-    ) async {
-      final s = settings();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(settings: s, onGoToDetection: () {}),
-        ),
-      );
-
-      expect(find.text('READY'), findsOneWidget);
-      expect(find.text('AUTO-START OFF'), findsNothing);
-
-      await s.setAutoStartDetection(false);
+      c.reportReady();
       await tester.pumpAndSettle();
 
-      expect(find.text('AUTO-START OFF'), findsOneWidget);
-      expect(find.text('READY'), findsNothing);
-    });
-
-    testWidgets('Go to Live Camera invokes onGoToDetection exactly once', (
-      tester,
-    ) async {
-      var calls = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(
-            settings: settings(),
-            onGoToDetection: () => calls++,
-          ),
-        ),
-      );
-
-      await tester.tap(find.text('Go to Live Camera'));
-      await tester.tap(find.text('Go to Live Camera'));
-      expect(calls, 2);
+      expect(find.text('READY'), findsOneWidget);
+      expect(find.text('PREPARING'), findsNothing);
     });
   });
 
