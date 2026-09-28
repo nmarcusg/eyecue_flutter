@@ -9,6 +9,7 @@ import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:eyecue_flutter/theme/app_home_theme.dart';
 import 'package:eyecue_flutter/widgets/accessible_button.dart';
+import 'package:eyecue_flutter/widgets/detection_action_controls.dart';
 import 'package:eyecue_flutter/widgets/status_pill.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -332,7 +333,7 @@ void main() {
   // permission_handler mocks (see docs/detection-screen-plan.md §6.1), so the
   // visual/state contract is covered by pumping the plugin-free subtrees that
   // the screen composes: the header title, the StatusPill, the audio pill, and
-  // the five-control Wrap.
+  // the single two-control row (DetectionActionControls).
   group('DetectionScreen', () {
     Widget detectionChrome(Widget child) {
       return MaterialApp(
@@ -379,51 +380,32 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('renders all five controls', (tester) async {
+    testWidgets('renders exactly two normal physical controls in one row', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         detectionChrome(
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              AccessibleButton(
-                label: 'Start',
-                icon: Icons.play_circle,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Pause',
-                icon: Icons.pause,
-                prominent: true,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Repeat',
-                icon: Icons.replay,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Correct last announcement',
-                icon: Icons.flag_outlined,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Scan',
-                icon: Icons.wifi_tethering,
-                prominent: true,
-                onPressed: () {},
-              ),
-            ],
+          DetectionActionControls(
+            outcome: DetectionStatusOutcome.ready,
+            onPause: () {},
+            onResume: () {},
+            onStop: () {},
+            onStart: () {},
+            onQuickScan: () {},
           ),
         ),
       );
 
-      expect(find.text('Start'), findsOneWidget);
-      expect(find.text('Pause'), findsOneWidget);
-      expect(find.text('Repeat'), findsOneWidget);
-      expect(find.text('Correct last announcement'), findsOneWidget);
-      expect(find.text('Scan'), findsOneWidget);
+      // The consolidated lifecycle control plus the physical Quick Scan.
+      expect(find.text('PAUSE'), findsOneWidget);
+      expect(find.text('QUICK SCAN'), findsOneWidget);
+      // The removed normal controls are gone.
+      expect(find.text('Start'), findsNothing);
+      expect(find.text('Stop'), findsNothing);
+      expect(find.text('Resume'), findsNothing);
+      expect(find.text('Repeat'), findsNothing);
+      expect(find.text('Correct last announcement'), findsNothing);
+      expect(find.text('Scan'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
