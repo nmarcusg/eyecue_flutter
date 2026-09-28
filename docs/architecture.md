@@ -72,6 +72,39 @@ preferred-versus-active engine state, one-shot fallback, generation filtering,
 and recovery actions. A temporary fallback does not rewrite the persisted
 preference and cannot cause automatic engine oscillation.
 
+### Shared user-facing Detection lifecycle
+
+The coordinator is also the **single app-shell-owned, user-facing Detection
+lifecycle/status source**. [`app_shell.dart`](../lib/navigation/app_shell.dart)
+constructs exactly one coordinator for the shell lifetime and injects it into
+Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart).
+Home, Custom Detection, and Ultralytics Detection all render visible status
+(**Preparing / Ready / Paused / Stopped / Unavailable**) from the same
+coordinator snapshot via a shared mapping. Engine-local booleans remain only for
+camera/controller/inference mechanics and never select user-facing lifecycle or
+status content.
+
+- **Auto-start ON:** app launch keeps Home visible while Detection
+  initializes/starts in the background; the shared status moves
+  Preparing → Ready/Unavailable; opening Detection later reuses the
+  already-initialized cached instance without a second start.
+- **Auto-start OFF:** Detection stays off at launch; a deliberate primary
+  navigation into Detection starts it immediately without changing the persisted
+  `autoStartDetection` preference.
+- **Manual pause/stop is session-scoped:** leaving and re-entering Detection
+  during the retained session does not auto-restart; an explicit resume/start is
+  required. There is no cross-process persistence.
+- The coordinator gained a monotonic one-shot **start-intent** token (silent
+  launch origin versus user-entry origin) plus entry-start/stop APIs, and
+  [`detection_runtime_state.dart`](../lib/models/detection_runtime_state.dart)
+  gained an explicit `stopped` state distinct from `idle` and `disposed`.
+
+**[Needs Verification]** Offstage camera/native startup behavior on a physical
+device (Auto-start ON background preparation) has not been observed end-to-end.
+Changing Auto-start while the app is already running, and Android
+background/foreground, process death, and camera pre-emption lifecycle behavior,
+are out of scope and unverified.
+
 ## Custom EyeCue Data Flow
 
 1. `CameraController.startImageStream()` delivers `CameraImage` at native FPS (~30)
@@ -125,7 +158,7 @@ eyecue_flutter/
 │   │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
 │   ├── screens/
-│   │   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
+│   │   ├── home_screen.dart               # Home: branding, coordinator-derived status, wordmark
 │   │   ├── detection_screen.dart          # Detection: assistive UI + Custom pipeline
 │   │   ├── engine_detection_screen.dart   # Engine-selected detection wrapper
 │   │   ├── ultralytics_detection_screen.dart # Native Ultralytics detection screen
@@ -190,15 +223,15 @@ eyecue_flutter/
 | App Theme | [`app_theme.dart`](../lib/theme/app_theme.dart) | `buildEyeCueTheme()` — dark high-contrast theme consuming the token files |
 | Design Tokens | [`app_colors.dart`](../lib/theme/app_colors.dart), [`app_spacing.dart`](../lib/theme/app_spacing.dart), [`app_radii.dart`](../lib/theme/app_radii.dart), [`app_typography.dart`](../lib/theme/app_typography.dart) | Semantic color/spacing/radius tokens + high-contrast `TextTheme` builder; includes the `kHome*` light tokens and `kRadius3/14/18/24` |
 | Home Theme | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) | Home-local light `ThemeData` (`buildHomeTheme()`), IBM Plex Sans typography, and Home shadow tokens; scoped to the Home, Help, Settings, Logs & Reports, and Detection subtrees only |
-| Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route; one-finger linear non-wrapping primary gesture navigation with effective bar visibility derived from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf` |
-| Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Light Home composition: preference/status badge, decorative logo + live `EyeCue` wordmark, lower instruction region, accessible CTA, cyan rail |
-| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority, controls); light Home-theme chrome (`Theme(buildHomeTheme())` + dark status-bar icons) with a rounded dark `kHomeInk` camera viewport and an inline `AUDIO ON` pill |
+| Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route; one-finger linear non-wrapping primary gesture navigation with effective bar visibility derived from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf`; owns the single app-shell-lifetime [`EngineCoordinator`](../lib/services/engine_coordinator.dart) and injects it into Home and Engine Detection |
+| Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Light Home composition: coordinator-derived status (Preparing/Ready/Paused/Stopped/Unavailable), decorative logo + live `EyeCue` wordmark, lower instruction region, cyan rail. The `Go to Live Camera` CTA was removed without replacement; Home renders status only and performs no lifecycle action |
+| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority, controls); light Home-theme chrome (`Theme(buildHomeTheme())` + dark status-bar icons) with a rounded dark `kHomeInk` camera viewport and an inline `AUDIO ON` pill; renders visible lifecycle/status from the injected coordinator snapshot |
 | Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Light Home-theme composition (`Theme(buildHomeTheme())` + dark status-bar icons) with four cards — Preferences, Audio Guidance, Engine & Sensitivity, and a dark `kHomeInk` System Performance card; optional `TelemetryService? telemetry` renders `Avg FPS` / `Avg latency (MS)` / `Avg confidence` (showing `—` when empty/null) with no fabricated accuracy metrics |
 | Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Light, responsive operations + gesture manual; consumes the `buildHomeTheme()` light subtree (scoped to Help only) with `kRadius24` cards and `kHomeShadowSoft` shadows |
 | Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | Overview / Charts / Logs dashboard (researcher-facing) |
 | Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Custom-isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), backend selection, input rotation |
 | Worker Lifecycle | [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart) | Generation-safe Custom-worker start, bounded restart/backoff, healthy-budget reset, terminal failure, and disposal guards |
-| Engine Coordinator | [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart) | Preferred/active engine state, one-shot fallback, stale-generation filtering, and retry actions |
+| Engine Coordinator | [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart) | Single app-shell-owned, user-facing Detection lifecycle/status source: preferred/active engine state, one-shot fallback, stale-generation filtering, retry actions, explicit `stopped` state, and a monotonic one-shot start-intent token (silent launch versus user-entry origin) |
 | Ultralytics Adapter | [`ultralytics_detection_adapter.dart`](../lib/services/ultralytics_detection_adapter.dart) | Maps native YOLO results into the shared `Detection` contract |
 | Shared Assistive Controller | [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart) | Common spatial interpretation, tracking, summaries, TTS, haptics, corrections, telemetry, export, and accessibility state |
 | TTS Service | [`tts_service.dart`](../lib/services/tts_service.dart) | Speech scheduling, cooldown, de-duplication, mute, repeat-last |
@@ -283,6 +316,7 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 - **No dependency injection framework:** Services are wired in `main.dart` and passed via constructors — simple and sufficient, but not a full DI container.
 - **State management:** plain `ChangeNotifier` services + `setState`; Riverpod remains declared but unused (intentionally — the app does not need a framework).
 - **Engine-specific services:** `InferenceService` remains intentionally coupled to Custom TFLite/camera internals, while Ultralytics is isolated behind its native screen and result adapter. The shared controller and coordinator prevent engine-specific objects from leaking into common assistive behavior.
+- **Single user-facing lifecycle source:** the app-shell-owned [`EngineCoordinator`](../lib/services/engine_coordinator.dart) is the sole authority for user-facing Detection lifecycle/status. Home and both Detection implementations render its snapshot; engine-local booleans govern mechanics only. Auto-start is a startup input and is never written by entry, pause, or stop.
 - **Configuration:** model paths, labels, confidence bounds/default, and NMS IoU are centralized in [`model_config.dart`](../lib/models/model_config.dart). Detection sensitivity is persisted in [`app_settings.dart`](../lib/models/app_settings.dart) and applied by both engines at startup/reload; it is not a per-frame mutation.
 - **Out of scope for the live app:** calibrated distance, validated movement/approach estimation, and accuracy/precision/recall/mAP (require ground truth — see [`thesis-product-status-audit.md`](thesis-product-status-audit.md)).
 - **Release boundary:** final Android identity, explicit SDK policy, production signing, signed AAB validation, broad device coverage, formal benchmark evidence, licence approval, and Play release remain separate gates.

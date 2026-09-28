@@ -18,6 +18,14 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 - **Planned Fix:** Root-cause each issue and re-verify on the physical Android device. The provisional horizontal thresholds, displacement guards, and dominance ratio remain subject to physical-device tuning.
 - **Status:** **Device-observed, unresolved, pending a root-cause fix.**
 
+### 🟡 Home/Detection Shared Lifecycle — Physical-Device Behavior (Needs Verification)
+
+- **Description:** The shared Home/Detection lifecycle state is implemented and statically validated: [`EngineCoordinator`](../lib/services/engine_coordinator.dart) is the single app-shell-owned, user-facing Detection lifecycle/status source; Home and both Detection implementations render Preparing/Ready/Paused/Stopped/Unavailable from the same snapshot; an explicit `stopped` state and a one-shot start-intent contract were added; Auto-start ON prepares Detection in the background while Home stays visible; Auto-start OFF starts on deliberate entry without writing the preference; manual pause/stop is session-scoped; and the Home `Go to Live Camera` CTA was removed without replacement.
+- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (coordinator ownership + entry/launch intent), [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), [`detection_screen.dart`](../lib/screens/detection_screen.dart), and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart).
+- **Impact:** Offstage camera/native startup behavior on a physical device (Auto-start ON background preparation) has **not** been observed end-to-end. Whether an offstage cached `CameraPreview` or native `YOLOView` genuinely prepares at launch while Home is selected — including permission-dialog behavior and duplicate-open prevention — is unverified. Changing Auto-start while the app is already running, and Android background/foreground, process death, and camera pre-emption lifecycle behavior, are out of scope and unverified.
+- **Planned Fix:** Validate the Auto-start ON background-preparation and Auto-start OFF entry-start flows on a physical Android device, and confirm the shared status surfaces (Home + both Detection implementations) match on-device.
+- **Status:** **Implemented and statically validated; physical-device behavior Needs Verification.**
+
 ### 🔴 Dual-Engine Benchmark, Compatibility, and Licence Validation (Critical)
 
 - **Description:** The selector, adapter, per-engine telemetry, Android packaging bridge, and basic device runtime are implemented. The fixed debug APK now installs and both engines process live camera frames on the Snapdragon 695/API 33 target; switching in both directions passed after correcting a lifecycle race. A controlled benchmark and broad device matrix have not been run.

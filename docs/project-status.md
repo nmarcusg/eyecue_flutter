@@ -1,6 +1,6 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-09-28 (Primary gesture navigation)
+> **Last Updated:** 2026-09-28 (Home/Detection shared lifecycle state)
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned app task areas and their acceptance criteria), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
 > **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The repository contains committed but unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
@@ -15,7 +15,7 @@
 The app is no longer a single developer camera screen. It now has the thesis-aligned application structure (built in v0.2.0; layout/theme fixes in v0.2.1–v0.2.2):
 
 - **Navigation:** 4-tab bottom bar — Home, Detect, Settings, Help ([`app_shell.dart`](../lib/navigation/app_shell.dart)); Logs & Reports pushed from Settings.
-- **Home:** branding, status card (Auto-Start aware), "Go to Live Camera".
+- **Home:** branding, coordinator-derived status (Preparing/Ready/Paused/Stopped/Unavailable), live `EyeCue` wordmark. The `Go to Live Camera` CTA was removed without replacement (unreleased candidate).
 - **Detection:** the validated camera/inference pipeline preserved, now with an assistive UI — status pill, audio mute, object cards with priority badges, high-priority warning banner, visible controls, and thesis gestures (two-finger double-tap start/stop, single tap pause/resume, three-finger scan, swipe-down repeat) with haptic + TTS confirmation. The unreleased candidate adds a persisted Custom EyeCue / Ultralytics engine selector; both feed EyeCue's spatial, priority, TTS, and telemetry layers.
 - **TTS audio feedback:** implemented ([`tts_service.dart`](../lib/services/tts_service.dart)) — cooldown, de-duplication, urgent bypass, repeat-last, mute state. `flutter_tts` is now wired (previously declared-only).
 - **Settings:** persisted preferences — Vibration, Auto-Start, Low Power Mode (dispatch throttle), Audio guidance, inference engine, Logs & Reports ([`settings_service.dart`](../lib/services/settings_service.dart)).
@@ -57,6 +57,7 @@ This candidate must remain labelled **unreleased and initially device-observed**
 | Permission-denied UI | ✅ Implemented (v0.2.0 — camera-denied screen with retry/open-settings) |
 | Isolate restart recovery | ✅ Implemented — injectable coordinator, immediate/delayed bounded retries, stale-event guards, healthy-budget reset, and disposal safety |
 | Primary gesture navigation (persisted hide-bar preference, one-finger linear navigation, Detection directional arbitration, haptic/TTS wayfinding) | ✅ Implemented (unreleased candidate) — three device-observed issues remain unresolved (see [`known-issues.md`](known-issues.md)) |
+| Shared Home/Detection lifecycle state (single app-shell-owned coordinator, explicit `stopped`, start-intent contract, Auto-start ON background preparation, Auto-start OFF entry start, session-scoped manual pause/stop, Home CTA removed) | ✅ Implemented (unreleased candidate) — statically validated; physical-device background-preparation behavior remains **Needs Verification** |
 | Orientation re-validation (back landscape + front camera) | 🟡 In progress — stable NHWC baseline portrait/static verified; candidate NCHW has an initial short portrait run, while landscape/front-camera device runs remain pending |
 
 ## Current Blocker
@@ -71,6 +72,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 2. **Re-validate orientation on-device** — candidate NCHW portrait/landscape and front-camera runs, plus the deferred stable-baseline cases.
 3. **Run the controlled dual-engine benchmark** — compare Custom EyeCue and Ultralytics on the same device, model, scene, settings, duration, and thermal starting state using [`dual-inference-engine-test.md`](dual-inference-engine-test.md); do not infer performance from static inspection or a short observational run.
 4. **Complete the v0.2.x UI validation** — gestures, TTS, mute toggle, settings persistence, and Logs & Reports charts.
+5. **Validate the Home/Detection shared lifecycle on a physical device** — confirm Auto-start ON background preparation, Auto-start OFF entry start, and matching shared status across Home and both Detection implementations (currently **Needs Verification**).
 5. **Complete repository-owned release preparation** — confirm Android identity/signing decisions, then validate release artifacts; research evaluation remains intentionally outside this app-only implementation.
 
 ## High-Priority Tasks
@@ -89,6 +91,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Recent Accomplishments
 
+- ✅ **Home/Detection shared lifecycle state (2026-09-28):** promoted [`EngineCoordinator`](../lib/services/engine_coordinator.dart) to the single app-shell-owned, user-facing Detection lifecycle/status source shared by Home, Custom Detection, and Ultralytics Detection; added an explicit `stopped` state and a monotonic one-shot start-intent contract; Auto-start ON prepares Detection in the background while Home stays visible, Auto-start OFF starts on deliberate entry without writing the preference; manual pause/stop is session-scoped; removed the Home `Go to Live Camera` CTA without replacement; preserved Home→Detect left swipe, Detection-local gestures, TTS, haptics, accessibility semantics, cached pages, Settings, system Back, and Logs & Reports; `flutter analyze` no issues and **247 tests passed**. Physical-device background-preparation behavior remains **Needs Verification**
 - ✅ **Primary gesture navigation (2026-09-28):** persisted `hideBottomNavigation` preference with accessible-navigation override; one-finger linear non-wrapping primary navigation; Detection directional arbitration; Detection-owned horizontal navigation; light/medium haptic wayfinding; minimal best-effort navigation TTS; preserved system Back behavior and Detection lifecycle; static validation passing. Physical-device testing surfaced three unresolved issues (Detection long/fast swipe without release triggers navigation; Detection horizontal navigation only within the camera viewport; multi-pointer sequence on Home/Settings/Help triggers navigation) — device-observed, unresolved, pending a root-cause fix (see [`known-issues.md`](known-issues.md))
 - ✅ **Home screen visual redesign (2026-09-09):** light, responsive Home composition with a preference-truthful `READY` / `AUTO-START OFF` badge, a centered decorative logo + live `EyeCue` wordmark, a lower instruction region with the retained `Go to Live Camera` CTA and a static cyan rail; Home-local light theme ([`app_home_theme.dart`](../lib/theme/app_home_theme.dart)) with offline IBM Plex Sans; `kHome*` color and `kRadius3/14/18/24` tokens; dark status-bar icons on the light surface; **133 tests** and static validation passing; on-device (SM-S9010) confirmed visually
 - ✅ **Assistive application UI (v0.2.0):** Home / Detect / Settings / Help navigation + Logs & Reports; TTS audio guidance (cooldown, de-duplication, urgent bypass, repeat, mute); the four thesis gestures with haptic + TTS confirmation; persisted settings (vibration, auto-start, low-power, audio); spatial/priority/proximity interpretation; runtime telemetry + charts
