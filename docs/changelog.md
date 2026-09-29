@@ -5,6 +5,24 @@
 
 ---
 
+## Unreleased — Presentation-Only Visual Redesign Closeout (2026-09-29)
+
+### Changed
+- Completed the presentation-only redesign across the retained four-tab shell and its Home, Settings, Help, Logs & Reports, and Detection surfaces. Home now has a fixed, non-scrollable normal composition with an enlarged fixed decorative logo; the light/Home-theme bottom bar retains its Home / Detect / Settings / Help order, callbacks, selection, cached pages, and visibility behavior.
+- Refined Settings typography and leading-edge alignment; removed decorative icons; retained active cyan controls; clarified the Engine & Sensitivity hierarchy with indented sensitivity sub-options; preserved the dark System Performance card's truthful values; and restyled the `View Logs & Reports` entry without changing its callback.
+- Refined Help's icon-free cards and app-bar title styling, and applied the same fixed light app-bar/body surface treatment to the scrolling Settings, Help, and Logs & Reports routes.
+- Updated both Detection presentations with higher-contrast `Detection Mode` title treatment, a bottom edge-inset overlay with left-aligned information rows, and two mockup-inspired action cards with state icons and left-aligned content. Lifecycle mappings, action callbacks, hold/tap timing, Quick Scan gating, gestures, and accessibility semantics are unchanged.
+
+### Added
+- Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146), the semantic 11%-white overlay token used only for the `View Logs & Reports` action surface in Settings.
+
+### Verified
+- `flutter analyze`: **0 issues**.
+- `flutter test`: **343 passing, 0 failing**.
+- Physical Android visual checks were explicitly confirmed by the user for this completed redesign. The confirmed scope includes the fixed Home layout/logo; retained four-tab navigation presentation; Settings, Help, and Logs & Reports light surfaces; Settings control hierarchy and truthful System Performance presentation; Detection title, overlay, and two-card controls. No visual requirements remain outstanding for this redesign.
+
+---
+
 ## Unreleased — Detection Redesign (PD1–PD3) (2026-09-28)
 
 ### Added

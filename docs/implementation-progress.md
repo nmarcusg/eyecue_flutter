@@ -1,7 +1,18 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-09-28 (Detection redesign PD1–PD3)
+> **Last Updated:** 2026-09-29 (presentation-only visual redesign closeout)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
+
+## Current Unreleased Candidate (2026-09-29) — Presentation-Only Visual Redesign Closeout
+
+- ✅ Completed the fixed, non-scrollable normal Home composition with an enlarged fixed decorative logo; shared lifecycle status, logo/wordmark semantics, and the shell-owned Home-left swipe remain unchanged.
+- ✅ Applied the light/Home-theme refresh to the retained four-tab bottom navigation without changing destination order (Home / Detect / Settings / Help), selection, callbacks, cache, visibility preference, accessibility override, Back behavior, or gesture ownership.
+- ✅ Completed the Settings presentation: aligned typography, removed decorative icons, retained cyan active controls, clarified the Engine & Sensitivity hierarchy with indented sensitivity sub-options, retained truthful System Performance values, and restyled the existing Logs entry without changing its value bindings or callback.
+- ✅ Completed Help card/icon removal and app-bar title styling, and the fixed consistent light app-bar/body surface treatment while Settings, Help, and Logs & Reports scroll.
+- ✅ Completed the Detection presentation update in both engines: stronger `Detection Mode` title contrast; an edge-inset, left-aligned [`DetectionInformationOverlay`](../lib/widgets/detection_information_overlay.dart); and two mockup-inspired [`DetectionActionControls`](../lib/widgets/detection_action_controls.dart) cards with state icons and left-aligned content. Lifecycle, gesture, action, hold/tap, Quick Scan, and semantics behavior are unchanged.
+- ✅ Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146), the semantic 11%-white overlay token used only by the Settings `View Logs & Reports` action surface.
+- ✅ Final validation: `flutter analyze` reports **0 issues**; `flutter test` reports **343 passing, 0 failing**; and the user explicitly confirmed physical Android visual checks across the completed scope. No visual requirements remain outstanding for this redesign.
+- ⚠️ **Needs Verification [inferred-from-codebase]:** Golden-test readiness remains unconfirmed. It was outside this presentation-only closeout and does not invalidate the confirmed physical-device visual checks.
 
 ## Current Unreleased Candidate (2026-09-28) — Detection Redesign (PD1–PD3)
 

@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-09-29 (25th session) — Presentation-Only Visual Redesign Closeout
+
+### Objective
+- Close out the confirmed presentation-only visual redesign in the authoritative documentation without changing application behavior, runtime logic, tests, assets, Android configuration, or other non-documentation files.
+
+### Completed
+- Recorded the completed fixed/non-scrollable Home layout with its enlarged fixed decorative logo, while retaining shared lifecycle status rendering and the shell-owned Home-left swipe.
+- Recorded the retained four-tab light/Home-theme navigation presentation without changing destination order, selection, callbacks, visibility preference, accessibility override, cache, Back behavior, or gesture ownership.
+- Recorded the completed Settings typography/alignment, decorative icon removal, cyan active controls, Engine & Sensitivity hierarchy/indentation, truthful System Performance presentation, and unchanged Logs entry values/callback.
+- Recorded Help's icon-free card and app-bar title styling, plus the shared fixed light surface treatment for the scrolling Settings, Help, and Logs & Reports routes.
+- Recorded the Detection title contrast, edge-inset left-aligned information overlay, and two state-icon, left-aligned action cards. Existing lifecycle mappings, gesture behavior, action callbacks, hold/tap timing, Quick Scan gate, and semantics remain unchanged.
+- Recorded [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146) as the semantic 11%-white Settings action-surface token.
+- Updated the applicable root documentation and synchronized only the changed curated copies of [`architecture.md`](architecture.md) and [`testing-plan.md`](testing-plan.md).
+
+### Verified
+- `flutter analyze`: **0 issues**.
+- `flutter test`: **343 passing, 0 failing**.
+- The user explicitly confirmed physical Android visual checks for the full redesign scope. No visual requirements remain outstanding for this redesign.
+
+### Remaining Needs Verification
+- **Golden-test readiness [inferred-from-codebase]:** no approved golden-test harness, baselines, font-stable workflow, or device-pixel policy has been confirmed. This was not required for the confirmed physical-device visual closeout.
+- Existing unrelated device/runtime follow-ups remain tracked separately in [`known-issues.md`](known-issues.md); this closeout does not resolve them.
+
+---
+
 ## 2026-09-28 (24th session) — Detection Redesign (PD1–PD3)
 
 ### Objective

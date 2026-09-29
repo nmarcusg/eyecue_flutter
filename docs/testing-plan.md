@@ -2,7 +2,7 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Current suite (2026-09-28):** `flutter test` → **323 passing**, `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows, and the Detection redesign's [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart)), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
+> **Current suite (2026-09-29):** `flutter test` → **343 passing, 0 failing**; `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows, and the Detection redesign's [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart)), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
 
 ## Unit Testing Strategy
 
@@ -87,6 +87,14 @@
 - [ ] Primary gesture navigation works on-device — ⚠️ device-observed issues pending a root-cause fix (Detection long/fast swipe without release triggers navigation; Detection horizontal navigation only within the camera viewport; multi-pointer sequence on Home/Settings/Help triggers navigation). See [`known-issues.md`](known-issues.md)
 - [ ] High-contrast mode is readable
 - [ ] App is fully navigable without vision
+
+### Presentation-Only Visual Redesign (Confirmed 2026-09-29)
+- [x] Fixed/non-scrollable Home normal composition and enlarged fixed decorative logo render as required, with shared lifecycle status and shell navigation behavior retained.
+- [x] The retained four-tab bottom navigation has the approved light/Home-theme presentation while destination order, selection, callbacks, visibility preference, accessibility override, Back behavior, and gesture ownership remain unchanged.
+- [x] Settings control hierarchy/alignment, cyan active controls, icon-free presentation, truthful System Performance values, and the existing Logs entry callback are visually confirmed.
+- [x] Help's icon-free cards and app-bar title, plus the consistent fixed light surfaces while Settings, Help, and Logs & Reports scroll, are visually confirmed.
+- [x] Both Detection presentations have confirmed title contrast, edge-inset left-aligned information overlay, and two-card action-control treatment; lifecycle, gesture, hold/tap, Quick Scan, and semantics behavior remain unchanged.
+- [x] Physical Android visual checks for this redesign were explicitly confirmed by the user. No visual requirements remain outstanding for this redesign.
 
 ### Error Handling
 - [ ] Camera permission denied → shows explanation UI
