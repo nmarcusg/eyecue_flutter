@@ -54,85 +54,74 @@ class HomeScreen extends StatelessWidget {
                 // instruction region so text and the rail stay readable on wide
                 // constraints. Derived from available width, not the screenshot.
                 final boundedWidth = contentWidth > 480 ? 480.0 : contentWidth;
-                // A scrollable column with generous vertical gaps between the
-                // badge, brand group, and instruction region. This keeps the
-                // composition airy on tall screens while scrolling gracefully
-                // (never overflowing) when the content is taller than the
-                // viewport, e.g. at 200% text scale.
-                // CustomScrollView + SliverFillRemaining(hasScrollBody: false)
-                // fills the available viewport when the content is shorter than
-                // it and lets the whole column scroll when the content is
-                // taller (e.g. at 200% text scale). The badge is pinned to the
-                // top, the brand group is vertically centered in the remaining
-                // space, and the instruction region is anchored toward the
-                // bottom, matching the reference composition.
-                return CustomScrollView(
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: kSpace16,
-                        vertical: kSpace24,
+                // Fixed, non-scrollable normal composition. The badge is pinned
+                // to the top, the brand group is vertically centered in the
+                // remaining space, and the instruction region is anchored toward
+                // the bottom, matching the reference composition. The layout is
+                // bounded by the viewport (no scroll container); the brand group
+                // and instruction region are wrapped in Flexible so the column
+                // can shrink gracefully instead of overflowing when the content
+                // is taller than the viewport (e.g. at 200% text scale).
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kSpace16,
+                    vertical: kSpace24,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Leading shared lifecycle/status badge near the top.
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: _StatusBadge(coordinator: coordinator),
                       ),
-                      sliver: SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Leading shared lifecycle/status badge near the top.
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: _StatusBadge(coordinator: coordinator),
-                            ),
-                            const Spacer(flex: 2),
-                            // Centered brand group: decorative mark + wordmark.
-                            Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: boundedWidth,
-                                ),
-                                child: Column(
-                                  children: [
-                                    // Decorative mark; excluded from semantics
-                                    // because the adjacent live wordmark carries
-                                    // the meaning.
-                                    ExcludeSemantics(
-                                      child: Image.asset(
-                                        'assets/logo.png',
-                                        width: 110,
-                                        height: 110,
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ),
-                                    const SizedBox(height: kSpace12),
-                                    Text(
-                                      'EyeCue',
-                                      textAlign: TextAlign.center,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.displayLarge,
-                                    ),
-                                  ],
+                      const Spacer(),
+                      // Centered brand group: decorative mark + wordmark.
+                      // The brand group is NOT flexible so the fixed logo
+                      // renders at its full, consistent size instead of being
+                      // squeezed by the surrounding spacers. The spacers absorb
+                      // the remaining space and shrink first on short viewports.
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: boundedWidth),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Decorative mark; excluded from semantics
+                              // because the adjacent live wordmark carries
+                              // the meaning. Fixed, non-flexible logo so it
+                              // renders at a consistent, larger size and never
+                              // shrinks with the surrounding layout.
+                              ExcludeSemantics(
+                                child: Image.asset(
+                                  'assets/logo.png',
+                                  width: 140,
+                                  height: 140,
+                                  fit: BoxFit.contain,
                                 ),
                               ),
-                            ),
-                            const Spacer(flex: 2),
-                            // Lower instruction region anchored toward the
-                            // bottom.
-                            Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: boundedWidth,
-                                ),
-                                child: _InstructionRegion(
-                                  coordinator: coordinator,
-                                ),
+                              const SizedBox(height: kSpace12),
+                              Text(
+                                'EyeCue',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.displayLarge,
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                      const Spacer(),
+                      // Lower instruction region anchored toward the bottom.
+                      Flexible(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: boundedWidth),
+                            child: _InstructionRegion(coordinator: coordinator),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               },
             ),
@@ -222,21 +211,31 @@ class _InstructionRegion extends StatelessWidget {
           coordinator.state,
           coordinator.failure,
         );
+        // The instruction region is bounded by the fixed Home layout, so the
+        // text children are Flexible and can shrink (with ellipsis) instead of
+        // overflowing when the viewport is short or text is scaled up.
         return Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              presentation.headline,
-              textAlign: TextAlign.left,
-              style: Theme.of(context).textTheme.headlineLarge,
+            Flexible(
+              child: Text(
+                presentation.headline,
+                textAlign: TextAlign.left,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineLarge,
+              ),
             ),
             const SizedBox(height: kSpace8),
-            Text(
-              presentation.supporting,
-              textAlign: TextAlign.left,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+            Flexible(
+              child: Text(
+                presentation.supporting,
+                textAlign: TextAlign.left,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+              ),
             ),
             const SizedBox(height: kSpace24),
             // Static decorative cyan rail. Not an interactive track, progress

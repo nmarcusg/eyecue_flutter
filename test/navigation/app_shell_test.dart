@@ -8,6 +8,7 @@ import 'package:eyecue_flutter/services/haptics_service.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
+import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -325,6 +326,16 @@ void main() {
     testWidgets('visible by default', (tester) async {
       await tester.pumpWidget(buildShell());
       expect(find.byType(NavigationBar), findsOneWidget);
+    });
+
+    testWidgets('bar uses the light Home-theme presentation', (tester) async {
+      await tester.pumpWidget(buildShell());
+      // The bar is wrapped in the light Home theme; the theme-owned
+      // NavigationBarThemeData supplies the light surface and cyan indicator.
+      final theme = Theme.of(tester.element(find.byType(NavigationBar)));
+      expect(theme.brightness, Brightness.light);
+      expect(theme.navigationBarTheme.backgroundColor, kHomeSurfaceCard);
+      expect(theme.navigationBarTheme.indicatorColor, kHomeAccentCyanLight);
     });
 
     testWidgets('hidden when the preference is set', (tester) async {

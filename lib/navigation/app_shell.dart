@@ -12,6 +12,7 @@ import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
+import '../theme/app_home_theme.dart';
 
 /// Arena-aware, **exactly-one-active-pointer** horizontal drag recognizer.
 ///
@@ -378,32 +379,39 @@ class AppShellState extends State<AppShell> {
         ),
         bottomNavigationBar: _effectiveHideBar
             ? null
-            : NavigationBar(
-                selectedIndex: _index,
-                onDestinationSelected: goToTab,
-                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.home_outlined),
-                    selectedIcon: Icon(Icons.home_rounded),
-                    label: 'Home',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.center_focus_strong_outlined),
-                    selectedIcon: Icon(Icons.center_focus_strong_rounded),
-                    label: 'Detect',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.settings_outlined),
-                    selectedIcon: Icon(Icons.settings_rounded),
-                    label: 'Settings',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.help_outline_rounded),
-                    selectedIcon: Icon(Icons.help_rounded),
-                    label: 'Help',
-                  ),
-                ],
+            // Presentation-only refresh: the light/Home-theme bar treatment is
+            // supplied by buildHomeTheme()'s NavigationBarThemeData. Ownership
+            // of the bar (destinations, order, callbacks, selection, visibility)
+            // stays here and is unchanged.
+            : Theme(
+                data: buildHomeTheme(),
+                child: NavigationBar(
+                  selectedIndex: _index,
+                  onDestinationSelected: goToTab,
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home_rounded),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.center_focus_strong_outlined),
+                      selectedIcon: Icon(Icons.center_focus_strong_rounded),
+                      label: 'Detect',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.settings_outlined),
+                      selectedIcon: Icon(Icons.settings_rounded),
+                      label: 'Settings',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.help_outline_rounded),
+                      selectedIcon: Icon(Icons.help_rounded),
+                      label: 'Help',
+                    ),
+                  ],
+                ),
               ),
       ),
     );

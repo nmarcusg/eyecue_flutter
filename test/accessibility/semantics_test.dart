@@ -618,13 +618,13 @@ void main() {
       });
     });
 
-    testWidgets('section icons are excluded from the accessibility tree', (
+    testWidgets('section icons are removed from the accessibility tree', (
       tester,
     ) async {
       await pumpHelp(tester);
       await withSemantics(tester, () async {
-        // No semantic node carries an icon-only label (the icons duplicate the
-        // adjacent titles and are wrapped in ExcludeSemantics).
+        // The decorative section icons were removed entirely, so no icon-only
+        // label exists and the titles remain the single heading per section.
         expect(find.semantics.byLabel('timeline').evaluate(), isEmpty);
         expect(find.semantics.byLabel('touch_app').evaluate(), isEmpty);
         expect(find.semantics.byLabel('vibration').evaluate(), isEmpty);

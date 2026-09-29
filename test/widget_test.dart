@@ -120,6 +120,16 @@ void main() {
       expect(find.text('READY'), findsOneWidget);
       expect(find.text('PREPARING'), findsNothing);
     });
+
+    testWidgets('normal layout is fixed and non-scrollable', (tester) async {
+      // The visual redesign replaced the scroll container with a fixed layout.
+      await tester.pumpWidget(homeApp(coordinator()));
+
+      expect(find.byType(CustomScrollView), findsNothing);
+      expect(find.byType(SliverFillRemaining), findsNothing);
+      expect(find.byType(ListView), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('SettingsScreen', () {
@@ -194,6 +204,85 @@ void main() {
       final theme = Theme.of(tester.element(find.text('Preferences')));
       expect(theme.brightness, Brightness.light);
       expect(theme.scaffoldBackgroundColor, kHomeSurfaceBase);
+    });
+
+    testWidgets(
+      'app-bar title uses the Detection Mode titleLarge + ink style',
+      (tester) async {
+        await pumpSettings(tester, service: settings());
+
+        final title = tester.widget<Text>(find.text('Settings'));
+        final context = tester.element(find.text('Settings'));
+        final expected = Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: kHomeInk);
+        expect(title.style?.fontSize, expected?.fontSize);
+        expect(title.style?.fontWeight, expected?.fontWeight);
+        expect(title.style?.color, kHomeInk);
+      },
+    );
+
+    testWidgets('parent section titles align with their child rows', (
+      tester,
+    ) async {
+      await pumpSettings(tester, service: settings());
+
+      // The parent heading and its first child row must share the same leading
+      // edge (the child ListTile contentPadding is kSpace16, so the heading is
+      // inset by the same token).
+      final parentLeft = tester.getTopLeft(find.text('Preferences')).dx;
+      final childLeft = tester.getTopLeft(find.text('Vibration Feedback')).dx;
+      expect(childLeft, parentLeft);
+
+      final audioParentLeft = tester.getTopLeft(find.text('Audio Guidance')).dx;
+      final audioChildLeft = tester
+          .getTopLeft(find.text('Audio / Voice Guidance'))
+          .dx;
+      expect(audioChildLeft, audioParentLeft);
+    });
+
+    testWidgets('Custom EyeCue aligns with the parent title and only its '
+        'sensitivity sub-options are indented', (tester) async {
+      await pumpSettings(tester, service: settings());
+
+      // The Custom EyeCue option is a direct child row, so its text leading
+      // edge matches the parent section title's leading edge (kSpace16).
+      final parentLeft = tester
+          .getTopLeft(find.text('Engine & Sensitivity'))
+          .dx;
+      final customLeft = tester.getTopLeft(find.text('Custom EyeCue')).dx;
+      expect(customLeft, parentLeft);
+
+      // The sensitivity presets are sub-options of Custom EyeCue, so their
+      // text is indented to the right of the parent row.
+      final moreDetectionsLeft = tester
+          .getTopLeft(find.text('More detections'))
+          .dx;
+      expect(moreDetectionsLeft, greaterThan(customLeft));
+
+      // The sub-option radios stay vertically aligned with each other.
+      final balancedLeft = tester.getTopLeft(find.text('Balanced')).dx;
+      final fewerFalseAlertsLeft = tester
+          .getTopLeft(find.text('Fewer false alerts'))
+          .dx;
+      expect(balancedLeft, moreDetectionsLeft);
+      expect(fewerFalseAlertsLeft, moreDetectionsLeft);
+    });
+
+    testWidgets('removes the decorative section and row icons', (tester) async {
+      // The visual redesign removed the decorative card/row icons; the
+      // headings and labels alone carry the meaning.
+      await pumpSettings(tester, service: settings());
+
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
+      expect(find.byIcon(Icons.volume_up), findsNothing);
+      expect(find.byIcon(Icons.memory_rounded), findsNothing);
+      expect(find.byIcon(Icons.bar_chart_rounded), findsNothing);
+      expect(find.byIcon(Icons.vibration), findsNothing);
+      expect(find.byIcon(Icons.autorenew), findsNothing);
+      expect(find.byIcon(Icons.battery_saver), findsNothing);
+      // The retained System Performance chevron remains.
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
     });
 
     testWidgets('System Performance shows — placeholders without telemetry', (
@@ -273,12 +362,30 @@ void main() {
       expect(find.text('Best Use Tip (Android)'), findsOneWidget);
     });
 
-    testWidgets('retains the four section icons', (tester) async {
+    testWidgets(
+      'app-bar title uses the Detection Mode titleLarge + ink style',
+      (tester) async {
+        await pumpHelp(tester);
+
+        final title = tester.widget<Text>(find.text('Help & Gestures'));
+        final context = tester.element(find.text('Help & Gestures'));
+        final expected = Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: kHomeInk);
+        expect(title.style?.fontSize, expected?.fontSize);
+        expect(title.style?.fontWeight, expected?.fontWeight);
+        expect(title.style?.color, kHomeInk);
+      },
+    );
+
+    testWidgets('removes the decorative section icons', (tester) async {
+      // The visual redesign removed the decorative section icons; the section
+      // titles alone carry the meaning.
       await pumpHelp(tester);
-      expect(find.byIcon(Icons.timeline_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.touch_app_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.vibration_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.phone_android_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.timeline_rounded), findsNothing);
+      expect(find.byIcon(Icons.touch_app_rounded), findsNothing);
+      expect(find.byIcon(Icons.vibration_rounded), findsNothing);
+      expect(find.byIcon(Icons.phone_android_rounded), findsNothing);
     });
 
     testWidgets('preserves the full body copy verbatim', (tester) async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
+import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
@@ -28,7 +29,20 @@ class HelpScreen extends StatelessWidget {
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.dark,
         child: Scaffold(
-          appBar: AppBar(title: const Text('Help & Gestures')),
+          // The app-bar title uses the same `titleLarge` + ink treatment as the
+          // Detection screen's `Detection Mode` header so the two top bars
+          // share one typographic style. Background, elevation, and all other
+          // app-bar behavior are unchanged.
+          appBar: AppBar(
+            title: Builder(
+              builder: (context) => Text(
+                'Help & Gestures',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(color: kHomeInk),
+              ),
+            ),
+          ),
           body: SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -47,7 +61,6 @@ class HelpScreen extends StatelessWidget {
                       ),
                       children: const [
                         _HelpCard(
-                          icon: Icons.timeline_rounded,
                           title: 'How It Works',
                           body:
                               '1. Open EyeCue.\n'
@@ -59,7 +72,6 @@ class HelpScreen extends StatelessWidget {
                               'internet needed.',
                         ),
                         _HelpCard(
-                          icon: Icons.touch_app_rounded,
                           title: 'Gesture Controls',
                           body:
                               '• Two-finger double tap — start or exit '
@@ -71,7 +83,6 @@ class HelpScreen extends StatelessWidget {
                               'recent audio alert.',
                         ),
                         _HelpCard(
-                          icon: Icons.vibration_rounded,
                           title: 'Gesture Confirmation',
                           body:
                               'Every gesture gives instant feedback: an audio '
@@ -80,7 +91,6 @@ class HelpScreen extends StatelessWidget {
                               'need to look at the screen.',
                         ),
                         _HelpCard(
-                          icon: Icons.phone_android_rounded,
                           title: 'Best Use Tip (Android)',
                           body:
                               '• Mount or carry the phone at chest height for '
@@ -105,18 +115,14 @@ class HelpScreen extends StatelessWidget {
   }
 }
 
-/// A light Help section card: a decorative icon + title header and the body
-/// copy, exposed as one coherent semantic group with the title as the heading.
+/// A light Help section card: a title header and the body copy, exposed as one
+/// coherent semantic group with the title as the heading. The decorative
+/// section icon was removed; the title alone carries the section meaning.
 class _HelpCard extends StatelessWidget {
-  final IconData icon;
   final String title;
   final String body;
 
-  const _HelpCard({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
+  const _HelpCard({required this.title, required this.body});
 
   @override
   Widget build(BuildContext context) {
@@ -125,40 +131,28 @@ class _HelpCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: kSpace16),
       padding: const EdgeInsets.all(kSpace16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: kHomeSurfaceCard,
         borderRadius: BorderRadius.circular(kRadius24),
         boxShadow: kHomeShadowSoft,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              // Decorative icon: it duplicates the adjacent title, so it is
-              // excluded from the accessibility tree.
-              ExcludeSemantics(
-                child: Icon(icon, color: theme.colorScheme.primary, size: 28),
-              ),
-              const SizedBox(width: kSpace12),
-              Expanded(
-                child: Semantics(
-                  // The section title is the semantic heading for the group.
-                  // The inner Text is excluded so the title is exposed exactly
-                  // once (no duplicate label from the visual text).
-                  container: true,
-                  header: true,
-                  label: title,
-                  child: ExcludeSemantics(
-                    child: Text(
-                      title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
+          Semantics(
+            // The section title is the semantic heading for the group. The
+            // inner Text is excluded so the title is exposed exactly once (no
+            // duplicate label from the visual text).
+            container: true,
+            header: true,
+            label: title,
+            child: ExcludeSemantics(
+              child: Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            ],
+            ),
           ),
           const SizedBox(height: kSpace12),
           Text(body, style: theme.textTheme.bodyLarge?.copyWith(height: 1.4)),
