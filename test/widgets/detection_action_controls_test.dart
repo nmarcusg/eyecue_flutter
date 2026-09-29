@@ -1,6 +1,8 @@
 import 'dart:ui' show SemanticsAction, Tristate;
 
 import 'package:eyecue_flutter/services/engine_coordinator.dart';
+import 'package:eyecue_flutter/theme/app_colors.dart';
+import 'package:eyecue_flutter/theme/app_home_theme.dart';
 import 'package:eyecue_flutter/widgets/detection_action_controls.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -567,6 +569,121 @@ void main() {
       expect(recorder.resume, 0);
       expect(recorder.stop, 0);
       handle.dispose();
+    });
+  });
+
+  group('visual treatment', () {
+    /// The decorated container that paints the given control surface.
+    BoxDecoration decorationFor(WidgetTester tester, String label) {
+      final container = tester.widget<Container>(
+        find
+            .ancestor(of: find.text(label), matching: find.byType(Container))
+            .first,
+      );
+      return container.decoration! as BoxDecoration;
+    }
+
+    testWidgets('lifecycle control uses surface-card with the soft shadow', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.ready, Recorder()),
+      );
+      final decoration = decorationFor(tester, 'PAUSE');
+      expect(decoration.color, kHomeSurfaceCard);
+      expect(decoration.boxShadow, kHomeShadowSoft);
+    });
+
+    testWidgets('quick scan control uses accent-cyan with the soft shadow', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.ready, Recorder()),
+      );
+      final decoration = decorationFor(tester, 'QUICK SCAN');
+      expect(decoration.color, kHomeAccentCyan);
+      expect(decoration.boxShadow, kHomeShadowSoft);
+    });
+
+    testWidgets(
+      'disabled lifecycle control keeps the surface at reduced alpha',
+      (tester) async {
+        await tester.pumpWidget(
+          buildControls(DetectionStatusOutcome.preparing, Recorder()),
+        );
+        final decoration = decorationFor(tester, 'PREPARING');
+        expect(decoration.color, kHomeSurfaceCard.withValues(alpha: 0.5));
+        expect(decoration.boxShadow, kHomeShadowSoft);
+      },
+    );
+  });
+
+  group('state icons and alignment', () {
+    /// The icon rendered inside the lifecycle control for [label].
+    IconData lifecycleIcon(WidgetTester tester, String label) {
+      final icon = tester.widget<Icon>(
+        find.descendant(
+          of: find
+              .ancestor(of: find.text(label), matching: find.byType(Column))
+              .first,
+          matching: find.byType(Icon),
+        ),
+      );
+      return icon.icon!;
+    }
+
+    testWidgets('lifecycle icon reflects each outcome', (tester) async {
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.ready, Recorder()),
+      );
+      expect(lifecycleIcon(tester, 'PAUSE'), Icons.pause);
+
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.paused, Recorder()),
+      );
+      expect(lifecycleIcon(tester, 'RESUME'), Icons.play_arrow);
+
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.stopped, Recorder()),
+      );
+      expect(lifecycleIcon(tester, 'START'), Icons.play_arrow);
+
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.preparing, Recorder()),
+      );
+      expect(lifecycleIcon(tester, 'PREPARING'), Icons.hourglass_top);
+
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.unavailable, Recorder()),
+      );
+      expect(lifecycleIcon(tester, 'UNAVAILABLE'), Icons.error_outline);
+    });
+
+    testWidgets('quick scan renders its own icon and TAP hint', (tester) async {
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.ready, Recorder()),
+      );
+      expect(find.text('TAP'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('QUICK SCAN'),
+            matching: find.byType(Column),
+          ),
+          matching: find.byIcon(Icons.center_focus_strong),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('control text is left aligned, not centered', (tester) async {
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.ready, Recorder()),
+      );
+      final pause = tester.widget<Text>(find.text('PAUSE'));
+      expect(pause.textAlign, TextAlign.left);
+      final scan = tester.widget<Text>(find.text('QUICK SCAN'));
+      expect(scan.textAlign, TextAlign.left);
     });
   });
 }

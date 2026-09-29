@@ -147,6 +147,43 @@ void main() {
         findsOneWidget,
       );
     });
+
+    /// The overlay card's inner content column, which is inset from the
+    /// viewport edges by the card margin and padding.
+    Finder cardContentFinder() => find
+        .descendant(
+          of: find.byType(DetectionInformationOverlay),
+          matching: find.byType(Column),
+        )
+        .first;
+
+    testWidgets('card spans the viewport width with a visible edge gap', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(
+          DetectionInformationOverlay(infos: [info('Person')], eligible: true),
+        ),
+      );
+      final content = tester.getRect(cardContentFinder());
+      // The card content is inset from the viewport edges, so the card never
+      // touches the viewport border.
+      expect(content.left, greaterThan(0));
+      expect(content.right, lessThan(360));
+      expect(content.width, lessThan(360));
+    });
+
+    testWidgets('row content is left aligned inside the card', (tester) async {
+      await tester.pumpWidget(
+        wrap(
+          DetectionInformationOverlay(infos: [info('Person')], eligible: true),
+        ),
+      );
+      final content = tester.getRect(cardContentFinder());
+      final text = tester.getRect(find.textContaining('Person'));
+      // The text sits at the left edge of the card content area, not centered.
+      expect(text.left, lessThan(content.center.dx));
+    });
   });
 
   group('semantics', () {

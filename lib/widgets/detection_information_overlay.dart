@@ -64,7 +64,13 @@ class DetectionInformationOverlay extends StatelessWidget {
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Container(
-          margin: const EdgeInsets.all(kSpace12),
+          // Occupy the viewport width while keeping a visible horizontal gap
+          // between the card edges and the viewport edges.
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(
+            horizontal: kSpace16,
+            vertical: kSpace12,
+          ),
           padding: const EdgeInsets.symmetric(
             horizontal: kSpace12,
             vertical: kSpace8,
@@ -111,7 +117,8 @@ class _DetectionOverlayRow extends StatelessWidget {
       label: label,
       child: ExcludeSemantics(
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.max,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               width: kSpace4,

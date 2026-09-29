@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../services/engine_coordinator.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
 
@@ -131,6 +132,18 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
     DetectionStatusOutcome.stopped => 'START',
     DetectionStatusOutcome.preparing => 'PREPARING',
     DetectionStatusOutcome.unavailable => 'UNAVAILABLE',
+  };
+
+  /// The built-in Material icon reflecting the current lifecycle outcome.
+  ///
+  /// Presentation only: the icon mirrors the already-derived outcome and never
+  /// influences labels, enabled state, or dispatch behavior.
+  IconData get _lifecycleIcon => switch (widget.outcome) {
+    DetectionStatusOutcome.ready => Icons.pause,
+    DetectionStatusOutcome.paused => Icons.play_arrow,
+    DetectionStatusOutcome.stopped => Icons.play_arrow,
+    DetectionStatusOutcome.preparing => Icons.hourglass_top,
+    DetectionStatusOutcome.unavailable => Icons.error_outline,
   };
 
   /// The secondary instruction for the current outcome and hold state.
@@ -289,12 +302,14 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
               minHeight: kMinTouchHeight,
             ),
             decoration: BoxDecoration(
+              // Lifecycle control: surface-card with the shared soft shadow.
+              // Disabled keeps the same surface at reduced opacity for
+              // contrast without changing the enabled/disabled semantics.
               color: enabled
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : theme.colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.5,
-                    ),
+                  ? kHomeSurfaceCard
+                  : kHomeSurfaceCard.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(kRadius14),
+              boxShadow: kHomeShadowSoft,
             ),
             child: Stack(
               children: [
@@ -316,15 +331,23 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: kSpace12,
-                    vertical: kSpace10,
+                    vertical: kSpace6,
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Icon(
+                        _lifecycleIcon,
+                        size: kSpace16,
+                        color: enabled
+                            ? kHomeInk
+                            : kHomeInk.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: kSpace2),
                       Text(
                         _primaryLabel,
-                        textAlign: TextAlign.center,
+                        textAlign: TextAlign.left,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: enabled
@@ -336,7 +359,7 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
                         const SizedBox(height: kSpace2),
                         Text(
                           secondary,
-                          textAlign: TextAlign.center,
+                          textAlign: TextAlign.left,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: kHomeInkMuted,
                           ),
@@ -393,25 +416,47 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
               minHeight: kMinTouchHeight,
             ),
             decoration: BoxDecoration(
+              // Quick Scan control: accent-cyan surface with the same shared
+              // soft shadow. Disabled keeps the accent at reduced opacity for
+              // contrast without changing the Ready-only gate semantics.
               color: enabled
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : theme.colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.5,
-                    ),
+                  ? kHomeAccentCyan
+                  : kHomeAccentCyan.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(kRadius14),
+              boxShadow: kHomeShadowSoft,
             ),
-            alignment: Alignment.center,
+            alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(
               horizontal: kSpace12,
-              vertical: kSpace10,
+              vertical: kSpace6,
             ),
-            child: Text(
-              'QUICK SCAN',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: enabled ? kHomeInk : kHomeInk.withValues(alpha: 0.5),
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.center_focus_strong,
+                  size: kSpace16,
+                  color: enabled ? kHomeInk : kHomeInk.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: kSpace2),
+                Text(
+                  'QUICK SCAN',
+                  textAlign: TextAlign.left,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: enabled ? kHomeInk : kHomeInk.withValues(alpha: 0.5),
+                  ),
+                ),
+                const SizedBox(height: kSpace2),
+                Text(
+                  'TAP',
+                  textAlign: TextAlign.left,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: kHomeInkMuted,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

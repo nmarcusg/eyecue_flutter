@@ -709,7 +709,13 @@ class _UltralyticsDetectionScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Detection Mode', style: theme.textTheme.titleLarge),
+          // The header uses the ink token so it stays legible against the
+          // light Detection surface. No other header element or behavior
+          // changes.
+          Text(
+            'Detection Mode',
+            style: theme.textTheme.titleLarge?.copyWith(color: kHomeInk),
+          ),
           const SizedBox(height: kSpace4),
           Row(
             children: [
