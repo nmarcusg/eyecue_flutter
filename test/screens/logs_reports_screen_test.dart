@@ -168,6 +168,20 @@ void main() {
       expect(theme.scaffoldBackgroundColor, kHomeSurfaceBase);
     });
 
+    testWidgets('app bar and body share the fixed light surface', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTelemetry());
+
+      // The theme-owned light AppBarTheme keeps the app bar and the scrolling
+      // body on one consistent light surface.
+      final theme = Theme.of(tester.element(find.text('Logs & Reports')));
+      expect(theme.appBarTheme.backgroundColor, kHomeSurfaceBase);
+      expect(theme.scaffoldBackgroundColor, kHomeSurfaceBase);
+      // The TabBar is part of the same app-bar surface treatment.
+      expect(find.byType(TabBar), findsOneWidget);
+    });
+
     testWidgets('scopes the dark status-bar overlay to the pushed route', (
       tester,
     ) async {
