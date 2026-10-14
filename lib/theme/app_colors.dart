@@ -140,3 +140,7 @@ const Color kHomeAccentCyanDark = Color(0xFF087A9E);
 
 /// Reserved for the deferred Preparing variant; not used to imply Auto-Start off.
 const Color kHomeWarningAmber = Color(0xFFF5B942);
+
+/// Inner surface for the `View Logs & Reports` action area on the dark
+/// System Performance card (11% white). Scoped to that action area only.
+const Color kHomeOverlayWhite11 = Color(0x1CFFFFFF);

@@ -5,6 +5,127 @@
 
 ---
 
+## 2026-09-29 (25th session) — Presentation-Only Visual Redesign Closeout
+
+### Objective
+- Close out the confirmed presentation-only visual redesign in the authoritative documentation without changing application behavior, runtime logic, tests, assets, Android configuration, or other non-documentation files.
+
+### Completed
+- Recorded the completed fixed/non-scrollable Home layout with its enlarged fixed decorative logo, while retaining shared lifecycle status rendering and the shell-owned Home-left swipe.
+- Recorded the retained four-tab light/Home-theme navigation presentation without changing destination order, selection, callbacks, visibility preference, accessibility override, cache, Back behavior, or gesture ownership.
+- Recorded the completed Settings typography/alignment, decorative icon removal, cyan active controls, Engine & Sensitivity hierarchy/indentation, truthful System Performance presentation, and unchanged Logs entry values/callback.
+- Recorded Help's icon-free card and app-bar title styling, plus the shared fixed light surface treatment for the scrolling Settings, Help, and Logs & Reports routes.
+- Recorded the Detection title contrast, edge-inset left-aligned information overlay, and two state-icon, left-aligned action cards. Existing lifecycle mappings, gesture behavior, action callbacks, hold/tap timing, Quick Scan gate, and semantics remain unchanged.
+- Recorded [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146) as the semantic 11%-white Settings action-surface token.
+- Updated the applicable root documentation and synchronized only the changed curated copies of [`architecture.md`](architecture.md) and [`testing-plan.md`](testing-plan.md).
+
+### Verified
+- `flutter analyze`: **0 issues**.
+- `flutter test`: **343 passing, 0 failing**.
+- The user explicitly confirmed physical Android visual checks for the full redesign scope. No visual requirements remain outstanding for this redesign.
+
+### Remaining Needs Verification
+- **Golden-test readiness [inferred-from-codebase]:** no approved golden-test harness, baselines, font-stable workflow, or device-pixel policy has been confirmed. This was not required for the confirmed physical-device visual closeout.
+- Existing unrelated device/runtime follow-ups remain tracked separately in [`known-issues.md`](known-issues.md); this closeout does not resolve them.
+
+---
+
+## 2026-09-28 (24th session) — Detection Redesign (PD1–PD3)
+
+### Objective
+- Implement the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md): a unified, engine-parity Detection composition (PD1), one coordinator-driven consolidated physical lifecycle control (PD2), and a compact current-information overlay (PD3), without merging the Custom and Ultralytics camera/inference internals or changing the app-shell lifecycle policy.
+
+### Completed
+- Implemented PD1–PD3 in both engine screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
+- **PD1:** dominant flexible camera viewport retained; top area keeps `Detection Mode`, the coordinator-derived status pill, and the Audio pill; exactly two side-by-side physical controls in one row beneath the viewport; no normal vertical scrolling. Removed from the normal UI: the detection card list, empty-state messages, `_GestureHint`, the visual `WarningBanner`, standalone Start/Stop, standalone Pause/Resume, visible Repeat, the standalone correction button, and correction/report actions on detection items. Correction removal is UI-only — [`CorrectionService`](../lib/services/correction_service.dart), its persistence, and the correction sheet remain intact. Ultralytics developer metrics were removed from the normal UI while telemetry collection is retained. The stopped viewport shell and [`GestureSurface`](../lib/widgets/gesture_surface.dart) are retained (Custom already did this; Ultralytics now does too).
+- **PD2:** one coordinator-driven consolidated lifecycle control. Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing and Unavailable disabled. Visible copy: `PAUSE` + `HOLD 3 SEC TO STOP`; `RESUME` + `HOLD 3 SEC TO STOP`; `START` + `HOLD 3 SEC`; `PREPARING`; `UNAVAILABLE`. Progress starts at 0% on pointer down and fills continuously over the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; early release maps to tap; release after the timeout but before three seconds is an abandoned hold with no action; completion dispatches exactly once with a duplicate-dispatch lock; existing engine-owned completion TTS/haptics are reused without duplication. Quick Scan is tap-only, Ready/healthy-fallback only, and disabled during an active physical hold.
+- **PD3:** compact in-viewport informational overlay, maximum two rows, stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, hidden outside Ready/healthy fallback.
+- Added the shared presentation widgets [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) (`DetectionActionControls`) and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) (`DetectionInformationOverlay`).
+
+### Runtime Repairs (post-implementation, on-device)
+- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen).
+- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+- **Ultralytics Stop → Start stuck in Preparing:** fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
+
+### Behavioral-Deviation Audit
+- Result: **no unintended deviations.** Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **323 passing**.
+
+### Decisions / Limitations
+- Strict PD3 result provenance/freshness remains deferred under its existing scope boundary (non-blocking for the redesign).
+- Ultralytics Ready timing semantics: Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`; the current definition is model/native initialization readiness, not strict pipeline-operational proof.
+- Post-resume freshness diagnostic limitation: the epoch diagnostic cannot isolate the first result after Resume.
+- FlutterJNI teardown fatal was not reproduced in the latest capture and is **not fixed** — dedicated full-app teardown verification is pending.
+- Ultralytics GPU path falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
+- Native CameraX graph churn during recreation is expected plugin settling, not a proven leak.
+
+### Next Session
+- Complete dedicated full-app teardown verification for the FlutterJNI fatal, and continue the deferred strict PD3 provenance work under its existing scope boundary.
+
+---
+
+## 2026-09-28 (23rd session) — Home/Detection Shared Lifecycle State
+
+### Objective
+- Implement the finalized Home and Detection state behavior per [`home-detection-state-plan.md`](frontend-workflow/home-detection-state-plan.md): promote [`EngineCoordinator`](../lib/services/engine_coordinator.dart) to the single app-shell-owned, user-facing Detection lifecycle/status source shared by Home, Custom Detection, and Ultralytics Detection; add an explicit `stopped` state and a one-shot start-intent contract; remove the Home CTA; and make Auto-start control startup only.
+
+### Completed
+- Promoted [`EngineCoordinator`](../lib/services/engine_coordinator.dart) from a Detect-tab-local runtime observer to the single app-shell-owned, user-facing Detection lifecycle/status source. [`app_shell.dart`](../lib/navigation/app_shell.dart) now constructs exactly one coordinator for the shell lifetime and injects it into Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart); the coordinator is no longer constructed/disposed inside `_EngineDetectionScreenState`.
+- Home and both Detection implementations (Custom [`detection_screen.dart`](../lib/screens/detection_screen.dart) and Ultralytics [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart)) now render visible status (Preparing / Ready / Paused / Stopped / Unavailable) from the same coordinator snapshot via a shared mapping. Engine-local booleans remain only for camera/controller/inference mechanics and no longer select user-facing lifecycle/status content.
+- Added a `stopped` runtime state to [`detection_runtime_state.dart`](../lib/models/detection_runtime_state.dart) so an explicit manual stop is distinguishable from `idle` (never started) and `disposed` (teardown); every exhaustive state mapping (including [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart) and [`status_pill.dart`](../lib/widgets/status_pill.dart)) handles the new state.
+- Added start-intent / entry-start / stop APIs to [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart): a monotonic one-shot start-intent token (silent launch origin versus user-entry origin) plus guarded transition APIs.
+- **Auto-start ON:** app launch keeps Home visible while Detection initializes/starts in the background; the shared status moves Preparing → Ready/Unavailable; opening Detection later reuses the already-initialized cached instance without a second start.
+- **Auto-start OFF:** Detection stays off at launch; a deliberate primary navigation into Detection starts it immediately without changing the persisted `autoStartDetection` preference.
+- **Manual pause/stop is session-scoped:** leaving and re-entering Detection during the retained session does not auto-restart; an explicit resume/start is required. There is no cross-process persistence.
+- Removed the Home `Go to Live Camera` CTA and its callback/import/layout gap without replacement. Home now shows coordinator-derived status and the finalized copy set.
+- Preserved Home → Detect one-finger LEFT swipe, Detection-local gestures, TTS, haptics, accessibility semantics, cached-page behavior, Settings, system Back, and Logs & Reports.
+
+### Verified
+- `flutter analyze`: no issues.
+- `flutter test`: all **247 tests passed**.
+
+### Decisions / Limitations
+- Changing Auto-start while the app is already running is out of scope and has no defined behavior.
+- Android background/foreground, process death, and camera pre-emption lifecycle behavior is out of scope and unverified.
+- Offstage camera/native startup behavior on a physical device (Auto-start ON background preparation) is **Needs Verification** — it has not been observed end-to-end on a physical Android device. No physical-device validation is claimed for this change.
+
+### Next Session
+- Validate the Auto-start ON background-preparation and Auto-start OFF entry-start flows on a physical Android device, and confirm the shared status surfaces (Home + both Detection implementations) match on-device.
+
+---
+
+## 2026-09-28 (22nd session) — Primary Gesture Navigation
+
+### Objective
+- Implement the approved non-visual primary gesture navigation feature per [`navigation-plan.md`](frontend-workflow/navigation-plan.md), preserving the existing camera/inference architecture, Detection lifecycle, system Back behavior, and accessibility contracts.
+
+### Completed
+- Added the persisted `hideBottomNavigation` preference to [`app_settings.dart`](../lib/models/app_settings.dart) (default `false`, backward-compatible parse for older JSON) with a matching getter/setter on [`settings_service.dart`](../lib/services/settings_service.dart) and a labeled Preferences control in [`settings_screen.dart`](../lib/screens/settings_screen.dart). The control represents the persisted preference, not the effective accessibility override.
+- Added one-finger linear, non-wrapping primary navigation in [`app_shell.dart`](../lib/navigation/app_shell.dart): a body-only, arena-aware horizontal drag layer moves linearly through Home → Detection → Settings → Help and does not modulo-wrap. A boundary attempt stays on the current tab and emits boundary feedback once.
+- Added Detection directional arbitration in [`gesture_controller.dart`](../lib/services/gesture_controller.dart): the first committed directional intent for a one-pointer sequence is locked (horizontal commit prevents a later downward repeat and vice versa), a second pointer before commitment invalidates one-pointer directional classification, and pointer cancellation suppresses every delayed or directional action from that sequence. Existing single-tap, two-finger double-tap, three-finger-tap, and downward-repeat intents are unchanged.
+- Added Detection-owned horizontal navigation: [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) carries a stable relative-navigation callback to both [`detection_screen.dart`](../lib/screens/detection_screen.dart) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), which forward horizontal intents while preserving the existing downward repeat mapping. The viewport-only [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) remains the only raw-pointer implementation.
+- Added light/medium haptic wayfinding at the shell gesture-origin path only: `lightTick` on successful relative navigation and `mediumTick` on a committed boundary attempt; no haptic on insufficient drag or cancellation, and never `heavyTick` for routine navigation.
+- Added a minimal best-effort, drop-if-busy wayfinding API to [`tts_service.dart`](../lib/services/tts_service.dart) for destination/boundary phrases. It is suppressed when audio is disabled or accessible-navigation mode is on, never interrupts or delays Detection speech, and preserves Detection replay state.
+- [`app_shell.dart`](../lib/navigation/app_shell.dart) now derives effective bottom-bar visibility from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf`: the bar is forced visible whenever accessible-navigation mode is active, and the accessibility override is never written back to the persisted preference. When accessibility mode turns off, the persisted preference takes effect again.
+- Gesture-origin wayfinding feedback is emitted only from the horizontal-drag navigation path; direct tab selection (`goToTab`), the Home CTA, and system Back remain feedback-free.
+- Preserved system Back behavior (Back from a non-Home primary tab returns to Home; a pushed secondary route receives Back first) and the Detection lifecycle (ordinary primary navigation does not dispose or recreate the cached Detection page, and no new remount path was added).
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: passing, including new coverage for the settings preference, Detection directional arbitration, TTS wayfinding policy, shell gesture navigation, the accessibility/bar truth table, Slider ownership, route/Back isolation, and cached-page preservation.
+
+### Decisions / Limitations
+- Physical-device testing surfaced three unresolved issues (recorded in [`known-issues.md`](known-issues.md)): Detection long/fast swipe without releasing the finger triggers navigation; Detection horizontal navigation only triggers within the camera viewport; and a multi-pointer sequence on Home/Settings/Help (one finger held, second finger added, initial finger released) incorrectly triggers navigation. These are device-observed, unresolved, and pending a root-cause fix.
+- The provisional horizontal thresholds, displacement guards, and dominance ratio remain subject to physical-device tuning; the existing Detection downward threshold is unchanged.
+
+### Next Session
+- Root-cause and fix the three device-observed gesture-navigation issues, then re-verify on the physical Android device.
+
+---
+
 ## 2026-09-10 (21st session) — Detection Screen Visual Redesign
 
 ### Objective

@@ -1,12 +1,15 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/screens/help_screen.dart';
 import 'package:eyecue_flutter/screens/home_screen.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
+import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:eyecue_flutter/theme/app_home_theme.dart';
 import 'package:eyecue_flutter/widgets/accessible_button.dart';
+import 'package:eyecue_flutter/widgets/detection_action_controls.dart';
 import 'package:eyecue_flutter/widgets/status_pill.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,93 +18,117 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   SettingsService settings() => SettingsService(store: InMemorySettingsStore());
 
+  EngineCoordinator coordinator() =>
+      EngineCoordinator(preferredEngine: InferenceEngine.ultralytics);
+
   group('HomeScreen', () {
-    testWidgets('renders branding, READY badge, and Go to Live Camera CTA', (
+    Widget homeApp(EngineCoordinator c) => MaterialApp(
+      home: HomeScreen(settings: settings(), coordinator: c),
+    );
+
+    testWidgets('renders branding and the initial Preparing state', (
       tester,
     ) async {
-      var wentToDetection = false;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(
-            settings: settings(),
-            onGoToDetection: () => wentToDetection = true,
-          ),
-        ),
-      );
+      await tester.pumpWidget(homeApp(coordinator()));
 
       // Live wordmark is present.
       expect(find.text('EyeCue'), findsOneWidget);
-      // Auto-Start defaults to on -> READY badge and exact on copy.
-      expect(find.text('READY'), findsOneWidget);
-      expect(
-        find.text(
-          'Auto-Start is on. Detection will begin when you open Detect.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Go to Live Camera'), findsOneWidget);
-      // The old false "already running" claim is gone.
-      expect(find.textContaining('Detection is already running'), findsNothing);
-
-      await tester.tap(find.text('Go to Live Camera'));
-      expect(wentToDetection, isTrue);
+      // Initial idle -> Preparing with the finalized Auto-start-OFF copy.
+      expect(find.text('PREPARING'), findsOneWidget);
+      expect(find.text('Swipe left to start!'), findsOneWidget);
+      expect(find.text('Detection begins immediately.'), findsOneWidget);
+      // The CTA is removed and not replaced.
+      expect(find.text('Go to Live Camera'), findsNothing);
+      expect(find.byType(AccessibleButton), findsNothing);
     });
 
-    testWidgets('reflects Auto-Start off with AUTO-START OFF badge', (
+    testWidgets('renders Ready from the shared snapshot', (tester) async {
+      final c = coordinator();
+      c.reportReady();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('READY'), findsOneWidget);
+      expect(find.text('Ready when you are'), findsOneWidget);
+      expect(find.text('Detection is ready.'), findsOneWidget);
+    });
+
+    testWidgets('renders Preparing during active initialization', (
       tester,
     ) async {
-      final s = settings();
-      await s.setAutoStartDetection(false);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(settings: s, onGoToDetection: () {}),
+      final c = coordinator();
+      c.reportState(DetectionRuntimeState.loadingModel);
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('PREPARING'), findsOneWidget);
+      expect(find.text('Getting things ready'), findsOneWidget);
+      expect(find.text('Detection is preparing.'), findsOneWidget);
+    });
+
+    testWidgets('renders Paused from the shared snapshot', (tester) async {
+      final c = coordinator();
+      c.reportPaused();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('PAUSED'), findsOneWidget);
+      expect(find.text('Detection is paused'), findsOneWidget);
+      expect(find.text('Open Detect to resume.'), findsOneWidget);
+    });
+
+    testWidgets('renders Stopped from the shared snapshot', (tester) async {
+      final c = coordinator();
+      c.reportStopped();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('STOPPED'), findsOneWidget);
+      expect(find.text('Detection is stopped'), findsOneWidget);
+      expect(find.text('Open Detect to start again.'), findsOneWidget);
+    });
+
+    testWidgets('renders Unavailable with the shared safe message', (
+      tester,
+    ) async {
+      final c = coordinator();
+      c.reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.permissionDenied,
+          safeMessage: 'Camera permission is required to detect objects.',
+          timestamp: DateTime(2026, 1, 1),
         ),
       );
+      await tester.pumpWidget(homeApp(c));
 
-      expect(find.text('AUTO-START OFF'), findsOneWidget);
+      expect(find.text('UNAVAILABLE'), findsOneWidget);
+      expect(find.text('Detection needs attention'), findsOneWidget);
       expect(
-        find.text('Auto-Start is off. Open Detect and press Start to begin.'),
+        find.text('Camera permission is required to detect objects.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('updates the presentation when the shared state changes', (
+      tester,
+    ) async {
+      final c = coordinator();
+      await tester.pumpWidget(homeApp(c));
+
+      expect(find.text('PREPARING'), findsOneWidget);
       expect(find.text('READY'), findsNothing);
-    });
 
-    testWidgets('updates the presentation when Auto-Start changes', (
-      tester,
-    ) async {
-      final s = settings();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(settings: s, onGoToDetection: () {}),
-        ),
-      );
-
-      expect(find.text('READY'), findsOneWidget);
-      expect(find.text('AUTO-START OFF'), findsNothing);
-
-      await s.setAutoStartDetection(false);
+      c.reportReady();
       await tester.pumpAndSettle();
 
-      expect(find.text('AUTO-START OFF'), findsOneWidget);
-      expect(find.text('READY'), findsNothing);
+      expect(find.text('READY'), findsOneWidget);
+      expect(find.text('PREPARING'), findsNothing);
     });
 
-    testWidgets('Go to Live Camera invokes onGoToDetection exactly once', (
-      tester,
-    ) async {
-      var calls = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(
-            settings: settings(),
-            onGoToDetection: () => calls++,
-          ),
-        ),
-      );
+    testWidgets('normal layout is fixed and non-scrollable', (tester) async {
+      // The visual redesign replaced the scroll container with a fixed layout.
+      await tester.pumpWidget(homeApp(coordinator()));
 
-      await tester.tap(find.text('Go to Live Camera'));
-      await tester.tap(find.text('Go to Live Camera'));
-      expect(calls, 2);
+      expect(find.byType(CustomScrollView), findsNothing);
+      expect(find.byType(SliverFillRemaining), findsNothing);
+      expect(find.byType(ListView), findsNothing);
+      expect(tester.takeException(), isNull);
     });
   });
 
@@ -147,6 +174,12 @@ void main() {
       expect(find.text('Audio / Voice Guidance'), findsOneWidget);
       expect(find.text('View Logs & Reports'), findsOneWidget);
 
+      // Test-only scope exception: the navigation feature added the "Hide
+      // Bottom Navigation" switch to the Preferences card, which pushes the
+      // Logs & Reports entry below the viewport. Scroll it into view before
+      // tapping; no production behavior is asserted differently here.
+      await tester.ensureVisible(find.text('View Logs & Reports'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('View Logs & Reports'));
       expect(openedLogs, isTrue);
     });
@@ -171,6 +204,85 @@ void main() {
       final theme = Theme.of(tester.element(find.text('Preferences')));
       expect(theme.brightness, Brightness.light);
       expect(theme.scaffoldBackgroundColor, kHomeSurfaceBase);
+    });
+
+    testWidgets(
+      'app-bar title uses the Detection Mode titleLarge + ink style',
+      (tester) async {
+        await pumpSettings(tester, service: settings());
+
+        final title = tester.widget<Text>(find.text('Settings'));
+        final context = tester.element(find.text('Settings'));
+        final expected = Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: kHomeInk);
+        expect(title.style?.fontSize, expected?.fontSize);
+        expect(title.style?.fontWeight, expected?.fontWeight);
+        expect(title.style?.color, kHomeInk);
+      },
+    );
+
+    testWidgets('parent section titles align with their child rows', (
+      tester,
+    ) async {
+      await pumpSettings(tester, service: settings());
+
+      // The parent heading and its first child row must share the same leading
+      // edge (the child ListTile contentPadding is kSpace16, so the heading is
+      // inset by the same token).
+      final parentLeft = tester.getTopLeft(find.text('Preferences')).dx;
+      final childLeft = tester.getTopLeft(find.text('Vibration Feedback')).dx;
+      expect(childLeft, parentLeft);
+
+      final audioParentLeft = tester.getTopLeft(find.text('Audio Guidance')).dx;
+      final audioChildLeft = tester
+          .getTopLeft(find.text('Audio / Voice Guidance'))
+          .dx;
+      expect(audioChildLeft, audioParentLeft);
+    });
+
+    testWidgets('Custom EyeCue aligns with the parent title and only its '
+        'sensitivity sub-options are indented', (tester) async {
+      await pumpSettings(tester, service: settings());
+
+      // The Custom EyeCue option is a direct child row, so its text leading
+      // edge matches the parent section title's leading edge (kSpace16).
+      final parentLeft = tester
+          .getTopLeft(find.text('Engine & Sensitivity'))
+          .dx;
+      final customLeft = tester.getTopLeft(find.text('Custom EyeCue')).dx;
+      expect(customLeft, parentLeft);
+
+      // The sensitivity presets are sub-options of Custom EyeCue, so their
+      // text is indented to the right of the parent row.
+      final moreDetectionsLeft = tester
+          .getTopLeft(find.text('More detections'))
+          .dx;
+      expect(moreDetectionsLeft, greaterThan(customLeft));
+
+      // The sub-option radios stay vertically aligned with each other.
+      final balancedLeft = tester.getTopLeft(find.text('Balanced')).dx;
+      final fewerFalseAlertsLeft = tester
+          .getTopLeft(find.text('Fewer false alerts'))
+          .dx;
+      expect(balancedLeft, moreDetectionsLeft);
+      expect(fewerFalseAlertsLeft, moreDetectionsLeft);
+    });
+
+    testWidgets('removes the decorative section and row icons', (tester) async {
+      // The visual redesign removed the decorative card/row icons; the
+      // headings and labels alone carry the meaning.
+      await pumpSettings(tester, service: settings());
+
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
+      expect(find.byIcon(Icons.volume_up), findsNothing);
+      expect(find.byIcon(Icons.memory_rounded), findsNothing);
+      expect(find.byIcon(Icons.bar_chart_rounded), findsNothing);
+      expect(find.byIcon(Icons.vibration), findsNothing);
+      expect(find.byIcon(Icons.autorenew), findsNothing);
+      expect(find.byIcon(Icons.battery_saver), findsNothing);
+      // The retained System Performance chevron remains.
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
     });
 
     testWidgets('System Performance shows — placeholders without telemetry', (
@@ -250,12 +362,30 @@ void main() {
       expect(find.text('Best Use Tip (Android)'), findsOneWidget);
     });
 
-    testWidgets('retains the four section icons', (tester) async {
+    testWidgets(
+      'app-bar title uses the Detection Mode titleLarge + ink style',
+      (tester) async {
+        await pumpHelp(tester);
+
+        final title = tester.widget<Text>(find.text('Help & Gestures'));
+        final context = tester.element(find.text('Help & Gestures'));
+        final expected = Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: kHomeInk);
+        expect(title.style?.fontSize, expected?.fontSize);
+        expect(title.style?.fontWeight, expected?.fontWeight);
+        expect(title.style?.color, kHomeInk);
+      },
+    );
+
+    testWidgets('removes the decorative section icons', (tester) async {
+      // The visual redesign removed the decorative section icons; the section
+      // titles alone carry the meaning.
       await pumpHelp(tester);
-      expect(find.byIcon(Icons.timeline_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.touch_app_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.vibration_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.phone_android_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.timeline_rounded), findsNothing);
+      expect(find.byIcon(Icons.touch_app_rounded), findsNothing);
+      expect(find.byIcon(Icons.vibration_rounded), findsNothing);
+      expect(find.byIcon(Icons.phone_android_rounded), findsNothing);
     });
 
     testWidgets('preserves the full body copy verbatim', (tester) async {
@@ -310,7 +440,7 @@ void main() {
   // permission_handler mocks (see docs/detection-screen-plan.md §6.1), so the
   // visual/state contract is covered by pumping the plugin-free subtrees that
   // the screen composes: the header title, the StatusPill, the audio pill, and
-  // the five-control Wrap.
+  // the single two-control row (DetectionActionControls).
   group('DetectionScreen', () {
     Widget detectionChrome(Widget child) {
       return MaterialApp(
@@ -357,51 +487,32 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('renders all five controls', (tester) async {
+    testWidgets('renders exactly two normal physical controls in one row', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         detectionChrome(
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              AccessibleButton(
-                label: 'Start',
-                icon: Icons.play_circle,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Pause',
-                icon: Icons.pause,
-                prominent: true,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Repeat',
-                icon: Icons.replay,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Correct last announcement',
-                icon: Icons.flag_outlined,
-                onPressed: () {},
-              ),
-              AccessibleButton(
-                label: 'Scan',
-                icon: Icons.wifi_tethering,
-                prominent: true,
-                onPressed: () {},
-              ),
-            ],
+          DetectionActionControls(
+            outcome: DetectionStatusOutcome.ready,
+            onPause: () {},
+            onResume: () {},
+            onStop: () {},
+            onStart: () {},
+            onQuickScan: () {},
           ),
         ),
       );
 
-      expect(find.text('Start'), findsOneWidget);
-      expect(find.text('Pause'), findsOneWidget);
-      expect(find.text('Repeat'), findsOneWidget);
-      expect(find.text('Correct last announcement'), findsOneWidget);
-      expect(find.text('Scan'), findsOneWidget);
+      // The consolidated lifecycle control plus the physical Quick Scan.
+      expect(find.text('PAUSE'), findsOneWidget);
+      expect(find.text('QUICK SCAN'), findsOneWidget);
+      // The removed normal controls are gone.
+      expect(find.text('Start'), findsNothing);
+      expect(find.text('Stop'), findsNothing);
+      expect(find.text('Resume'), findsNothing);
+      expect(find.text('Repeat'), findsNothing);
+      expect(find.text('Correct last announcement'), findsNothing);
+      expect(find.text('Scan'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 

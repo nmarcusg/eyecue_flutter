@@ -67,6 +67,7 @@ class TtsService extends ChangeNotifier {
     DateTime Function()? clock,
     this.announcementCooldown = const Duration(seconds: 3),
     this.sameLabelCooldown = const Duration(seconds: 6),
+    this.wayfindingRepeatCooldown = const Duration(seconds: 2),
   }) : _clock = clock ?? DateTime.now;
 
   final TtsEngine engine;
@@ -76,6 +77,12 @@ class TtsService extends ChangeNotifier {
 
   /// Minimum gap before the same object label is announced again.
   final Duration sameLabelCooldown;
+
+  /// Minimum gap before the same wayfinding phrase is spoken again.
+  ///
+  /// Wayfinding has its own anti-repeat rule so it never shares (or delays)
+  /// the Detection announcement cooldown.
+  final Duration wayfindingRepeatCooldown;
 
   final DateTime Function() _clock;
   final SceneSummaryService summaryService = const SceneSummaryService();
@@ -97,6 +104,12 @@ class TtsService extends ChangeNotifier {
   String? _lastLabel;
   bool _speaking = false;
   bool get isSpeaking => _speaking;
+
+  /// Wayfinding anti-repeat state — deliberately separate from Detection
+  /// replay/cooldown state so navigation feedback can never displace the
+  /// Detection utterance replayed by [repeatLast].
+  String? _lastWayfindingPhrase;
+  DateTime? _lastWayfindingAt;
 
   Future<void> init() => engine.init();
 
@@ -124,6 +137,43 @@ class TtsService extends ChangeNotifier {
     notifyListeners();
     try {
       await engine.speak(text);
+    } finally {
+      _speaking = false;
+      notifyListeners();
+    }
+    return true;
+  }
+
+  /// Best-effort wayfinding speech for primary navigation feedback.
+  ///
+  /// This is deliberately **not** the general [speak] path:
+  ///
+  /// * it never writes [_lastUtterance], so it cannot replace the Detection
+  ///   message replayed by [repeatLast];
+  /// * it never touches the Detection announcement cooldown, so it cannot
+  ///   delay a Detection announcement;
+  /// * it drops (returns `false`) whenever Detection speech is active, rather
+  ///   than queueing, coalescing, or interrupting;
+  /// * it applies its own minimal anti-repeat rule for the same phrase.
+  ///
+  /// Returns `true` only when the phrase was actually sent to the engine.
+  Future<bool> speakWayfinding(String phrase) async {
+    if (!_audioEnabled) return false;
+    // Never interrupt or contend with Detection/critical speech.
+    if (_speaking) return false;
+    final now = _clock();
+    final last = _lastWayfindingAt;
+    if (last != null &&
+        _lastWayfindingPhrase == phrase &&
+        now.difference(last) < wayfindingRepeatCooldown) {
+      return false;
+    }
+    _lastWayfindingPhrase = phrase;
+    _lastWayfindingAt = now;
+    _speaking = true;
+    notifyListeners();
+    try {
+      await engine.speak(phrase);
     } finally {
       _speaking = false;
       notifyListeners();

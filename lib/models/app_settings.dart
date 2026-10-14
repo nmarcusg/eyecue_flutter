@@ -59,7 +59,12 @@ enum DetectionSensitivityPreset {
 /// All values have safe defaults so a missing/corrupt settings file never
 /// breaks startup.
 class AppSettings {
-  static const int currentSchemaVersion = 2;
+  // Incremented 1 -> 2 when `detectionConfidence` was added and 2 -> 3 when
+  // `hideBottomNavigation` was added: the established convention is that a new
+  // persisted field bumps the schema version. The parser is field-tolerant and
+  // has no migration branch, so this is a marker only; older JSON that lacks
+  // the field still parses with the safe default.
+  static const int currentSchemaVersion = 3;
   static const double defaultDetectionConfidence = 0.25;
   static const double minDetectionConfidence = 0.10;
   static const double maxDetectionConfidence = 0.75;
@@ -70,6 +75,13 @@ class AppSettings {
   final bool audioEnabled;
   final InferenceEngine inferenceEngine;
   final double detectionConfidence;
+
+  /// Persisted preference for hiding the primary bottom navigation bar.
+  ///
+  /// This is the *user preference* only. The effective bar visibility also
+  /// depends on the accessibility-navigation state, which is never written
+  /// back here (see `AppShellState`).
+  final bool hideBottomNavigation;
   final int schemaVersion;
 
   const AppSettings({
@@ -79,6 +91,7 @@ class AppSettings {
     this.audioEnabled = true,
     this.inferenceEngine = InferenceEngine.ultralytics,
     this.detectionConfidence = defaultDetectionConfidence,
+    this.hideBottomNavigation = false,
     this.schemaVersion = currentSchemaVersion,
   });
 
@@ -89,6 +102,7 @@ class AppSettings {
     bool? audioEnabled,
     InferenceEngine? inferenceEngine,
     double? detectionConfidence,
+    bool? hideBottomNavigation,
   }) {
     return AppSettings(
       vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
@@ -99,6 +113,7 @@ class AppSettings {
       detectionConfidence: detectionConfidence == null
           ? this.detectionConfidence
           : normalizeDetectionConfidence(detectionConfidence),
+      hideBottomNavigation: hideBottomNavigation ?? this.hideBottomNavigation,
     );
   }
 
@@ -110,6 +125,7 @@ class AppSettings {
     'audioEnabled': audioEnabled,
     'inferenceEngine': inferenceEngine.name,
     'detectionConfidence': detectionConfidence,
+    'hideBottomNavigation': hideBottomNavigation,
   };
 
   /// Parses old and partially written settings without allowing one malformed
@@ -134,6 +150,9 @@ class AppSettings {
       detectionConfidence: confidence is num
           ? normalizeDetectionConfidence(confidence.toDouble())
           : defaultDetectionConfidence,
+      // Older persisted JSON lacks this field; default to a visible bar so
+      // upgrading users keep the navigation bar they already had.
+      hideBottomNavigation: _boolOr(json['hideBottomNavigation'], false),
       schemaVersion: currentSchemaVersion,
     );
   }
@@ -160,7 +179,8 @@ class AppSettings {
       other.lowPowerMode == lowPowerMode &&
       other.audioEnabled == audioEnabled &&
       other.inferenceEngine == inferenceEngine &&
-      other.detectionConfidence == detectionConfidence;
+      other.detectionConfidence == detectionConfidence &&
+      other.hideBottomNavigation == hideBottomNavigation;
 
   @override
   int get hashCode => Object.hash(
@@ -170,5 +190,6 @@ class AppSettings {
     audioEnabled,
     inferenceEngine,
     detectionConfidence,
+    hideBottomNavigation,
   );
 }

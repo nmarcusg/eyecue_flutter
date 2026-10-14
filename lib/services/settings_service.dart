@@ -71,6 +71,7 @@ class SettingsService extends ChangeNotifier {
   bool get audioEnabled => _settings.audioEnabled;
   InferenceEngine get inferenceEngine => _settings.inferenceEngine;
   double get detectionConfidence => _settings.detectionConfidence;
+  bool get hideBottomNavigation => _settings.hideBottomNavigation;
 
   /// Loads persisted settings. Safe to call once at startup; on any failure
   /// (missing/corrupt file) the defaults are kept.
@@ -103,6 +104,9 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setDetectionConfidence(double value) =>
       _update(_settings.copyWith(detectionConfidence: value));
+
+  Future<void> setHideBottomNavigation(bool value) =>
+      _update(_settings.copyWith(hideBottomNavigation: value));
 
   Future<void> _update(AppSettings next) async {
     if (next == _settings) return;

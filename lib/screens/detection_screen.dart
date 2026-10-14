@@ -14,6 +14,7 @@ import '../models/detection_runtime_state.dart';
 import '../models/inference_lifecycle_event.dart';
 import '../services/assistive_detection_controller.dart';
 import '../services/correction_service.dart';
+import '../services/engine_coordinator.dart';
 import '../services/forensic_log.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
@@ -27,12 +28,26 @@ import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/accessible_button.dart';
 import '../widgets/bounding_box_painter.dart';
-import '../widgets/detection_card.dart';
+import '../widgets/detection_action_controls.dart';
 import '../widgets/detection_correction_sheet.dart';
+import '../widgets/detection_information_overlay.dart';
 import '../widgets/detection_state_panel.dart';
 import '../widgets/gesture_surface.dart';
 import '../widgets/status_pill.dart';
-import '../widgets/warning_banner.dart';
+
+/// Maps a horizontal gesture intent to a relative primary-tab direction.
+///
+/// Product Decision 2: a left swipe advances to the next tab (`+1`) and a
+/// right swipe returns to the previous tab (`-1`). Returns `null` for any
+/// non-horizontal gesture. Pure so both Detection engines can be tested
+/// without a camera/native dependency.
+int? relativeDirectionForGesture(EyeCueGesture gesture) {
+  return switch (gesture) {
+    EyeCueGesture.swipeLeft => 1,
+    EyeCueGesture.swipeRight => -1,
+    _ => null,
+  };
+}
 
 /// Detection — the core assistive screen.
 ///
@@ -57,6 +72,24 @@ class DetectionScreen extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The one-shot start request issued by the app-shell-owned coordinator.
+  ///
+  /// The engine consumes it exactly once by comparing its token with the token
+  /// it last consumed. A silent launch intent must not produce start haptics or
+  /// speech; an entry intent uses the existing start route.
+  final StartIntent? startIntent;
+
+  /// The single app-shell-owned Detection lifecycle/status source.
+  ///
+  /// The engine reports lifecycle/failure facts to it and renders its visible
+  /// status pill and state panel from this snapshot. It never derives visible
+  /// lifecycle status from engine-local booleans.
+  final EngineCoordinator coordinator;
+
+  /// Requests one relative primary-tab move from the shell (`-1` toward Home,
+  /// `+1` toward Help). The shell owns boundary handling and feedback.
+  final void Function(int direction)? onNavigateRelative;
+
   /// Reports a state together with the Custom worker generation that produced
   /// it. Camera-only states have a null source generation.
   final void Function(DetectionRuntimeState state, int? sourceGeneration)?
@@ -74,6 +107,9 @@ class DetectionScreen extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    required this.coordinator,
+    this.startIntent,
+    this.onNavigateRelative,
     this.onRuntimeStateChanged,
     this.onFailure,
   });
@@ -117,14 +153,54 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
   bool _permissionDenied = false;
   DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
-  DetectionFailure? _failure;
   StreamSubscription<List<Detection>>? _resultsSubscription;
   StreamSubscription<String>? _errorSubscription;
   StreamSubscription<InferenceLifecycleEvent>? _lifecycleSubscription;
 
+  /// The start-intent token this engine has already consumed. Guards against
+  /// acting on the same request twice (e.g. across rebuilds).
+  int? _consumedStartIntentToken;
+
+  /// Whether the Custom model has reported a loaded lifecycle event. Combined
+  /// with [_isCameraInitialized] this gates the shared Ready publication so
+  /// Ready never means camera-only or worker-port-only readiness.
+  bool _modelLoaded = false;
+
+  /// Whether a camera setup is already in progress, so an entry start cannot
+  /// duplicate camera initialization while a launch start is still running.
+  bool _setupInProgress = false;
+
   // Detection results from the inference isolate.
   List<Detection> _detections = [];
+
+  /// The underlying assistive/correction detection state.
+  ///
+  /// PD1 removes the normal visible card list, but the assistive layer's
+  /// analysis output is retained as the source for correction context and
+  /// telemetry. The compact overlay renders [_overlayInfos] instead, which is
+  /// the presentation-only snapshot gated on the mapped Ready outcome.
+  // ignore: unused_field
   List<DetectionInfo> _detectionInfo = [];
+
+  /// The presentation-only snapshot rendered by [DetectionInformationOverlay].
+  ///
+  /// This is deliberately separate from [_detectionInfo] (the underlying
+  /// assistive/correction state). The overlay snapshot is cleared synchronously
+  /// whenever the mapped coordinator outcome leaves Ready and is only accepted
+  /// while the currently observed mapped outcome is Ready.
+  ///
+  /// PD3 freshness limitation (see plan §13): this presentation-local gate
+  /// prevents *known historical* rows from remaining visible after a
+  /// non-Ready transition, but it cannot prove that an asynchronous result
+  /// produced before a transition will never arrive after a later Ready
+  /// transition. The Custom isolate's worker `generation`/`frameNumber`
+  /// provenance is discarded by `InferenceService.resultsStream`, which
+  /// publishes only `List<Detection>`, so a late pre-transition callback is
+  /// indistinguishable from a valid new Ready callback here. A strict
+  /// guarantee requires a narrow cross-layer result envelope (preserving the
+  /// existing worker generation/frame number through `InferenceService`) and
+  /// explicit approval before touching `inference_isolate.dart`.
+  List<DetectionInfo> _overlayInfos = [];
 
   double _imageWidth = 0.0;
   double _imageHeight = 0.0;
@@ -169,11 +245,48 @@ class _DetectionScreenState extends State<DetectionScreen> {
       debugPrint('[Camera] TEMPORARY test-image mode — skipping camera');
       _detectionActive = true;
       _inferenceService.runTestImage();
-    } else if (_settings.autoStartDetection) {
-      _setupCamera();
+    } else if (widget.startIntent != null) {
+      // The engine no longer reads the Auto-start preference directly. It acts
+      // only on the shared start intent issued by the app-shell coordinator.
+      //
+      // The intent must NOT be consumed synchronously here: consuming it runs
+      // `_setupCamera()` → `_setRuntimeState()` → `onRuntimeStateChanged` →
+      // `coordinator.reportState()` → `notifyListeners()`, which marks the
+      // `ListenableBuilder` that is currently building this child screen dirty
+      // mid-build. That produces `setState() or markNeedsBuild() called during
+      // build` and the `!_dirty` assertion. Deferring to the first post-frame
+      // callback lets the coordinator's build complete before the one-shot
+      // start intent mutates coordinator state.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _consumeStartIntent(widget.startIntent);
+      });
     }
     // 4. Start periodic performance logging.
     _startPerformanceLogger();
+  }
+
+  @override
+  void didUpdateWidget(covariant DetectionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.startIntent?.token != oldWidget.startIntent?.token) {
+      _consumeStartIntent(widget.startIntent);
+    }
+  }
+
+  /// Consumes a shared start intent exactly once.
+  ///
+  /// A silent launch intent starts the camera without start haptics or speech;
+  /// an entry intent uses the existing start route. An already-consumed token
+  /// is ignored so a rebuild cannot start the engine twice.
+  void _consumeStartIntent(StartIntent? intent) {
+    if (intent == null) return;
+    if (_consumedStartIntentToken == intent.token) return;
+    _consumedStartIntentToken = intent.token;
+    if (intent.origin == StartIntentOrigin.launch) {
+      _setupCamera();
+    } else {
+      _startDetection();
+    }
   }
 
   @override
@@ -195,6 +308,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // Camera setup
   // -------------------------------------------------------------------------
   Future<void> _setupCamera() async {
+    // Guard against a concurrent entry start duplicating camera setup while a
+    // launch start is still in progress.
+    if (_setupInProgress) return;
+    _setupInProgress = true;
     debugPrint('[Camera] _setupCamera() — requesting permission…');
     _setRuntimeState(DetectionRuntimeState.requestingPermission);
 
@@ -204,6 +321,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
     if (!status.isGranted) {
       debugPrint('[Error] Camera permission denied — cannot proceed');
+      _setupInProgress = false;
       if (mounted) {
         setState(() {
           _permissionDenied = true;
@@ -228,6 +346,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     try {
       cameras = await availableCameras();
     } catch (error, stack) {
+      _setupInProgress = false;
       _reportFailure(
         DetectionFailure(
           category: DetectionFailureCategory.cameraInitialization,
@@ -241,6 +360,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
     if (cameras.isEmpty) {
       debugPrint('[Error] No cameras available on this device');
+      _setupInProgress = false;
       if (mounted) {
         setState(() => _detectionActive = false);
       }
@@ -273,6 +393,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     } catch (error, stack) {
       await _cameraController?.dispose();
       _cameraController = null;
+      _setupInProgress = false;
       _reportFailure(
         DetectionFailure(
           category: DetectionFailureCategory.cameraInitialization,
@@ -285,6 +406,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
       return;
     }
 
+    _setupInProgress = false;
     if (mounted) {
       setState(() {
         _isCameraInitialized = true;
@@ -292,7 +414,14 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _permissionDenied = false;
       });
     }
-    _setRuntimeState(DetectionRuntimeState.ready);
+    // Shared Ready is gated on both camera streaming AND model-loaded evidence.
+    // If the model is not yet loaded, publish the busy loading state instead of
+    // a partial Ready; the modelLoaded lifecycle event will publish Ready.
+    if (_modelLoaded) {
+      _setRuntimeState(DetectionRuntimeState.ready);
+    } else {
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+    }
     debugPrint('[Camera] Camera initialized — detection active');
   }
 
@@ -316,6 +445,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _paused = false;
       });
     }
+    // Publish the shared lifecycle state from the same readiness gate used by
+    // camera setup: Ready only when both camera and model are available.
+    if (_modelLoaded) {
+      _setRuntimeState(DetectionRuntimeState.ready);
+    } else {
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+    }
     await _tts.speak('Detection started', urgent: true);
   }
 
@@ -334,6 +470,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
         _detectionInfo = [];
       });
     }
+    // Publish an explicit shared Stopped state (not idle/disposed) so a
+    // retained-session tab leave/return does not auto-restart.
+    _setRuntimeState(DetectionRuntimeState.stopped);
     await _tts.speak('Detection stopped', urgent: true);
   }
 
@@ -348,12 +487,20 @@ class _DetectionScreenState extends State<DetectionScreen> {
   Future<void> _pauseDetection() async {
     await _haptics.lightTick();
     if (mounted) setState(() => _paused = true);
+    // Publish the shared Paused state so Home and Detection stay in sync.
+    _setRuntimeState(DetectionRuntimeState.paused);
     await _tts.speak('Detection paused', urgent: true);
   }
 
   Future<void> _resumeDetection() async {
     await _haptics.lightTick();
     if (mounted) setState(() => _paused = false);
+    // Publish the shared Ready state on resume (same readiness gate).
+    if (_modelLoaded) {
+      _setRuntimeState(DetectionRuntimeState.ready);
+    } else {
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+    }
     await _tts.speak('Detection resumed', urgent: true);
   }
 
@@ -376,6 +523,14 @@ class _DetectionScreenState extends State<DetectionScreen> {
     await _tts.repeatLast();
   }
 
+  /// Retained correction-capture path.
+  ///
+  /// PD1 removes the normal visible correction/report affordance, but the
+  /// correction service, persistence, and sheet infrastructure remain in
+  /// scope to preserve. This method is intentionally kept (not deleted) so the
+  /// supporting system stays wired; it is currently unreferenced from the
+  /// normal layout.
+  // ignore: unused_element
   Future<void> _reportCorrection(DetectionInfo info) async {
     final corrections = widget.corrections;
     if (corrections == null || !mounted) return;
@@ -421,6 +576,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
   }
 
+  /// Retained correction-context accessor for the correction-capture path.
+  ///
+  /// Kept alongside [_reportCorrection] so the correction infrastructure stays
+  /// wired even though PD1 removes its normal visible trigger.
+  // ignore: unused_element
   DetectionInfo? get _lastCorrectableDetection {
     if (widget.corrections == null) return null;
     if (_tts.lastAnnouncedEngine != InferenceEngine.custom) return null;
@@ -441,9 +601,19 @@ class _DetectionScreenState extends State<DetectionScreen> {
       case EyeCueGesture.twoFingerDoubleTap:
         _toggleDetectionActive();
       case EyeCueGesture.threeFingerTap:
-        _quickScan();
+        // PD2: the three-finger Quick Scan gesture is gated by the shared
+        // mapped outcome — Ready (including healthy fallback) only. It does
+        // nothing for Paused, Stopped, Preparing, or Unavailable. The gate
+        // lives here in screen dispatch, so GestureController is unchanged.
+        if (_overlayEligible) _quickScan();
       case EyeCueGesture.swipeDown:
         _repeatAlert();
+      case EyeCueGesture.swipeLeft:
+      case EyeCueGesture.swipeRight:
+        final direction = relativeDirectionForGesture(gesture);
+        if (direction != null) {
+          widget.onNavigateRelative?.call(direction);
+        }
     }
   }
 
@@ -461,10 +631,18 @@ class _DetectionScreenState extends State<DetectionScreen> {
         latencyMs: latencyMs,
         inferenceFps: _averageFps(),
       );
+      // PD3: accept a new overlay snapshot only while the currently observed
+      // mapped coordinator outcome is Ready (healthy fallback maps to Ready).
+      // This is a presentation-local gate; see the [_overlayInfos] doc comment
+      // for the residual delayed-result freshness limitation.
+      final overlayEligible = _overlayEligible;
       if (mounted) {
         setState(() {
           _detections = detections;
           _detectionInfo = infos;
+          if (overlayEligible) {
+            _overlayInfos = infos;
+          }
         });
       }
       _lastLatencyMs = latencyMs;
@@ -500,13 +678,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
           sourceGeneration: event.generation,
         );
       case InferenceLifecycleEventType.workerReady:
-        if (_runtimeState == DetectionRuntimeState.loadingModel) {
-          _setRuntimeState(
-            DetectionRuntimeState.ready,
-            sourceGeneration: event.generation,
-          );
-        }
+        // Worker readiness alone is not user-facing Ready; the model-loaded
+        // event below publishes Ready once the model is genuinely available.
+        break;
       case InferenceLifecycleEventType.modelLoaded:
+        _modelLoaded = true;
         if (_detectionActive || InferenceService.useTestImage) {
           _setRuntimeState(
             DetectionRuntimeState.ready,
@@ -534,6 +710,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
         );
       case InferenceLifecycleEventType.recoverySucceeded:
         _isInferring = false;
+        _modelLoaded = true;
         _setRuntimeState(
           DetectionRuntimeState.ready,
           sourceGeneration: event.generation,
@@ -553,7 +730,15 @@ class _DetectionScreenState extends State<DetectionScreen> {
     if (!mounted) return;
     final stateChanged = _runtimeState != state;
     if (stateChanged) {
-      setState(() => _runtimeState = state);
+      setState(() {
+        _runtimeState = state;
+        // PD3: clear the displayed overlay snapshot synchronously whenever the
+        // mapped outcome leaves Ready. The coordinator snapshot is the single
+        // source of the visible lifecycle, so this uses the same mapping.
+        if (detectionStatusOutcomeFor(state) != DetectionStatusOutcome.ready) {
+          _overlayInfos = [];
+        }
+      });
     }
     final sourceChanged = _lastReportedWorkerGeneration != sourceGeneration;
     if (stateChanged || sourceChanged || _lastReportedRuntimeState != state) {
@@ -566,7 +751,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   void _reportFailure(DetectionFailure failure, {int? sourceGeneration}) {
     if (!mounted) return;
     setState(() {
-      _failure = failure;
       _runtimeState = DetectionRuntimeState.failed;
       _detectionActive = false;
     });
@@ -580,7 +764,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   Future<void> _retryRuntime() async {
     if (!mounted) return;
     setState(() {
-      _failure = null;
       _permissionDenied = false;
     });
     _setRuntimeState(DetectionRuntimeState.loadingModel);
@@ -768,17 +951,27 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // -------------------------------------------------------------------------
   // Derived UI state
   // -------------------------------------------------------------------------
-  String? get _warningMessage {
-    final high = _detectionInfo
-        .where((d) => d.priority == ObjectPriority.high)
-        .toList();
-    if (high.isEmpty) return null;
-    if (high.length == 1) {
-      return 'High-priority obstacle detected: ${high.first.label}. '
-          'Please adjust your path.';
-    }
-    return 'High-priority obstacles detected. Please adjust your path.';
-  }
+
+  /// Maps the shared coordinator snapshot to the visible status pill.
+  ///
+  /// This is the single user-facing lifecycle mapping shared with Home and the
+  /// Ultralytics engine; it never reads engine-local booleans.
+  (String, Color) _sharedStatusPresentation(DetectionRuntimeState state) =>
+      switch (detectionStatusOutcomeFor(state)) {
+        DetectionStatusOutcome.preparing => ('Preparing', kStatusBlue),
+        DetectionStatusOutcome.ready => ('Detecting', kStatusGreen),
+        DetectionStatusOutcome.paused => ('Paused', kStatusAmber),
+        DetectionStatusOutcome.stopped => ('Stopped', kStatusBlueGrey),
+        DetectionStatusOutcome.unavailable => ('Unavailable', kWarningRed),
+      };
+
+  /// Whether the compact information overlay is eligible to render.
+  ///
+  /// Eligible only for the mapped Ready outcome, which includes a healthy
+  /// temporary fallback. Every other visible lifecycle outcome hides it.
+  bool get _overlayEligible =>
+      detectionStatusOutcomeFor(widget.coordinator.state) ==
+      DetectionStatusOutcome.ready;
 
   // -------------------------------------------------------------------------
   // UI
@@ -792,27 +985,55 @@ class _DetectionScreenState extends State<DetectionScreen> {
         value: SystemUiOverlayStyle.dark,
         child: Scaffold(
           body: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Fixed, pre-allocated region for ALL dynamic detection content
-                // (warning banner, cards). Derived from the available screen
-                // height — never from the detection count — so the camera
-                // viewport above stays exactly the same size whether there are
-                // 0, 1, or many detections. The content region scrolls
-                // internally.
-                final double contentHeight = (constraints.maxHeight * 0.32)
-                    .clamp(260.0, 320.0);
-                return Column(
-                  children: [
-                    _buildTopBar(context),
-                    Expanded(child: _buildMainArea(context, testMode)),
-                    SizedBox(
-                      height: contentHeight,
-                      child: _buildControlsPanel(context),
-                    ),
-                  ],
-                );
-              },
+            child: Column(
+              children: [
+                _buildTopBar(context),
+                // The viewport is the only flexible region; the control row
+                // below derives its height from its content and the minimum
+                // touch targets rather than a fixed percentage allocation.
+                Expanded(child: _buildMainArea(context, testMode)),
+                _buildActionControlsRow(context),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The single non-scrolling, side-by-side physical-control row.
+  ///
+  /// The left lifecycle control is driven only by the coordinator-derived
+  /// outcome; the right control is the tap-only physical Quick Scan. The row
+  /// sits outside the viewport stack so it never participates in viewport
+  /// gesture recognition.
+  Widget _buildActionControlsRow(BuildContext context) {
+    return Container(
+      color: kHomeSurfaceBase,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            kSpace12,
+            kSpace8,
+            kSpace12,
+            kSpace12,
+          ),
+          // IntrinsicHeight bounds the row's cross-axis height so the shared
+          // control's `CrossAxisAlignment.stretch` row can lay out inside the
+          // non-flexible Column slot without an unbounded-height constraint.
+          // Without it the stretch row receives `maxHeight: double.infinity`
+          // and forces an infinite height on both Expanded children, producing
+          // `BoxConstraints forces an infinite height` followed by
+          // `RenderBox was not laid out` and a failed hit test.
+          child: IntrinsicHeight(
+            child: DetectionActionControls(
+              outcome: detectionStatusOutcomeFor(widget.coordinator.state),
+              onPause: _pauseDetection,
+              onResume: _resumeDetection,
+              onStop: _stopDetection,
+              onStart: _startDetection,
+              onQuickScan: _quickScan,
             ),
           ),
         ),
@@ -822,18 +1043,25 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
   Widget _buildTopBar(BuildContext context) {
     final theme = Theme.of(context);
-    final (String label, Color color) = !_detectionActive
-        ? ('Stopped', kStatusBlueGrey)
-        : _paused
-        ? ('Paused', kStatusAmber)
-        : ('Detecting', kStatusGreen);
+    // The visible status pill renders the shared coordinator snapshot, never
+    // engine-local booleans. Local flags remain only for camera/inference
+    // mechanics.
+    final (String label, Color color) = _sharedStatusPresentation(
+      widget.coordinator.state,
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(kSpace16, kSpace16, kSpace16, kSpace8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Detection Mode', style: theme.textTheme.titleLarge),
+          // The header uses the ink token so it stays legible against the
+          // light Detection surface. No other header element or behavior
+          // changes.
+          Text(
+            'Detection Mode',
+            style: theme.textTheme.titleLarge?.copyWith(color: kHomeInk),
+          ),
           const SizedBox(height: kSpace4),
           Row(
             children: [
@@ -860,10 +1088,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   Widget _buildMainArea(BuildContext context, bool testMode) {
-    if (_runtimeState.isBusy || _runtimeState == DetectionRuntimeState.failed) {
+    // The visible lifecycle/status panel renders the shared coordinator
+    // snapshot, never engine-local runtime state.
+    final sharedState = widget.coordinator.state;
+    if (sharedState.isBusy || sharedState == DetectionRuntimeState.failed) {
       return DetectionStatePanel(
-        state: _runtimeState,
-        failure: _failure,
+        state: sharedState,
+        failure: widget.coordinator.failure,
         onRetry: _retryRuntime,
         onStop: _stopDetection,
       );
@@ -1006,10 +1237,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
                 ),
                 size: Size.infinite,
               ),
-              // Gesture hint.
-              const Align(
-                alignment: Alignment.bottomCenter,
-                child: _GestureHint(),
+              // Compact current-information overlay (PD3). Pointer-inert, so it
+              // never consumes raw pointers intended for the gesture surface.
+              DetectionInformationOverlay(
+                infos: _overlayInfos,
+                eligible: _overlayEligible,
               ),
               // Thesis gesture capture layer (transparent, topmost).
               GestureSurface(
@@ -1033,151 +1265,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
       fit: BoxFit.fill,
       gaplessPlayback: true,
       filterQuality: FilterQuality.none,
-    );
-  }
-
-  /// The bottom content region. Its total height is fixed by the outer
-  /// [SizedBox]; only what is inside scrolls, so the camera viewport is never
-  /// resized by detection content.
-  Widget _buildControlsPanel(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      color: kHomeSurfaceBase,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            kSpace12,
-            kSpace8,
-            kSpace12,
-            kSpace12,
-          ),
-          // The whole panel scrolls so the fixed-height region can never
-          // overflow, regardless of text scale or how many controls wrap.
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                // Warning banner lives BELOW the camera, in the fixed region.
-                if (_warningMessage != null)
-                  WarningBanner(message: _warningMessage!),
-                // Detection content — bounded so it scrolls internally and the
-                // panel itself can still scroll when the controls wrap.
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 160),
-                  child: _buildDetectionList(context),
-                ),
-                const SizedBox(height: kSpace6),
-                Wrap(
-                  spacing: kSpace8,
-                  runSpacing: kSpace8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    AccessibleButton(
-                      label: _detectionActive ? 'Stop' : 'Start',
-                      icon: _detectionActive
-                          ? Icons.stop_circle
-                          : Icons.play_circle,
-                      onPressed: _toggleDetectionActive,
-                    ),
-                    AccessibleButton(
-                      label: _paused ? 'Resume' : 'Pause',
-                      icon: _paused ? Icons.play_arrow : Icons.pause,
-                      prominent: true,
-                      onPressed: _detectionActive ? _togglePaused : null,
-                    ),
-                    AccessibleButton(
-                      label: 'Repeat',
-                      icon: Icons.replay,
-                      onPressed: _repeatAlert,
-                    ),
-                    if (widget.corrections != null)
-                      ListenableBuilder(
-                        listenable: _tts,
-                        builder: (context, _) {
-                          final last = _lastCorrectableDetection;
-                          return AccessibleButton(
-                            label: 'Correct last announcement',
-                            icon: Icons.flag_outlined,
-                            onPressed: last == null
-                                ? null
-                                : () => _reportCorrection(last),
-                          );
-                        },
-                      ),
-                    AccessibleButton(
-                      label: 'Scan',
-                      icon: Icons.wifi_tethering,
-                      prominent: true,
-                      onPressed: _quickScan,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: kSpace8),
-                Text(
-                  'Gestures: 2-finger double-tap start/stop · single tap pause/'
-                  'resume · 3-finger scan · swipe down repeat',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: kHomeInkMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetectionList(BuildContext context) {
-    final theme = Theme.of(context);
-    if (_detectionInfo.isEmpty) {
-      return Center(
-        child: Text(
-          _isCameraInitialized
-              ? 'Point the camera at your surroundings.'
-              : 'Detection is off.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
-    // Always scrollable so any number of detections stays inside the region.
-    return ListView.builder(
-      itemCount: _detectionInfo.length,
-      itemBuilder: (context, i) => DetectionCard(
-        info: _detectionInfo[i],
-        highlight: _detectionInfo[i].priority == ObjectPriority.high,
-        onReport: widget.corrections == null
-            ? null
-            : () => _reportCorrection(_detectionInfo[i]),
-      ),
-    );
-  }
-}
-
-class _GestureHint extends StatelessWidget {
-  const _GestureHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: kSpace10),
-      padding: const EdgeInsets.symmetric(
-        horizontal: kSpace14,
-        vertical: kSpace8,
-      ),
-      decoration: BoxDecoration(
-        color: kOverlayBlack,
-        borderRadius: BorderRadius.circular(kRadius20),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: const Text(
-        'Gestures active on this screen',
-        style: TextStyle(color: Colors.white, fontSize: 12),
-      ),
     );
   }
 }

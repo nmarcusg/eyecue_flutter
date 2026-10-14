@@ -9,6 +9,7 @@ import '../models/detection_runtime_state.dart';
 import '../models/model_config.dart';
 import '../services/assistive_detection_controller.dart';
 import '../services/correction_service.dart';
+import '../services/engine_coordinator.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
@@ -20,12 +21,54 @@ import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/accessible_button.dart';
-import '../widgets/detection_card.dart';
+import '../widgets/detection_action_controls.dart';
 import '../widgets/detection_correction_sheet.dart';
+import '../widgets/detection_information_overlay.dart';
 import '../widgets/detection_state_panel.dart';
 import '../widgets/gesture_surface.dart';
 import '../widgets/status_pill.dart';
-import '../widgets/warning_banner.dart';
+
+/// Maps a horizontal gesture intent to a relative primary-tab direction.
+///
+/// Product Decision 2: a left swipe advances to the next tab (`+1`) and a
+/// right swipe returns to the previous tab (`-1`). Returns `null` for any
+/// non-horizontal gesture. Pure so both Detection engines can be tested
+/// without a camera/native dependency.
+int? relativeDirectionForGesture(EyeCueGesture gesture) {
+  return switch (gesture) {
+    EyeCueGesture.swipeLeft => 1,
+    EyeCueGesture.swipeRight => -1,
+    _ => null,
+  };
+}
+
+/// Decides whether a Start request must recreate the native detection session.
+///
+/// Native `YOLOView.stop()` permanently destroys the predictor (it closes and
+/// nulls `predictor`, clears the predictor cache, and nulls the callbacks), and
+/// `startCamera()` early-returns while `predictor == null`. The plugin's own
+/// comment confirms `stop()` is not reversible by `start()`. The only path to
+/// Ready is the native `onModelLoad` callback, which fires on `YOLOView`
+/// mount/model resolution and therefore never re-fires after a stop.
+///
+/// A fresh platform view must therefore be mounted on a start-after-stop. This
+/// pure helper returns `true` exactly when the native session must be recreated
+/// (a start after a stop), and `false` for a first start (the view is already
+/// mounting) or a resume from pause (the predictor is still alive). It is pure
+/// so the epoch decision is unit-testable without a native/camera dependency.
+bool shouldRecreateNativeSessionOnStart({
+  required bool nativeViewMounted,
+  required bool detectionActive,
+  required bool paused,
+}) {
+  // First start: the native view is not mounted yet, so the normal mount path
+  // already resolves the model and fires `onModelLoad`.
+  if (!nativeViewMounted) return false;
+  // Resume from pause: the predictor was never destroyed, so no recreation.
+  if (detectionActive && paused) return false;
+  // Start after a stop: the predictor is gone and must be recreated.
+  return true;
+}
 
 class UltralyticsDetectionScreen extends StatefulWidget {
   final SettingsService settings;
@@ -33,6 +76,24 @@ class UltralyticsDetectionScreen extends StatefulWidget {
   final TelemetryService telemetry;
   final CorrectionService? corrections;
   final HapticsService haptics;
+
+  /// The single app-shell-owned Detection lifecycle/status source.
+  ///
+  /// The engine reports lifecycle/failure facts to it and renders its visible
+  /// status pill and state panel from this snapshot. It never derives visible
+  /// lifecycle status from engine-local booleans.
+  final EngineCoordinator coordinator;
+
+  /// The one-shot start request issued by the app-shell-owned coordinator.
+  ///
+  /// The engine consumes it exactly once by comparing its token with the token
+  /// it last consumed. A silent launch intent must not produce start haptics or
+  /// speech; an entry intent uses the existing start route.
+  final StartIntent? startIntent;
+
+  /// Requests one relative primary-tab move from the shell (`-1` toward Home,
+  /// `+1` toward Help). The shell owns boundary handling and feedback.
+  final void Function(int direction)? onNavigateRelative;
 
   /// Native callbacks do not have a Dart worker generation. The coordinator
   /// receives null for this source-generation field and relies on the mounted
@@ -49,6 +110,9 @@ class UltralyticsDetectionScreen extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    required this.coordinator,
+    this.startIntent,
+    this.onNavigateRelative,
     this.onRuntimeStateChanged,
     this.onFailure,
   });
@@ -79,19 +143,93 @@ class _UltralyticsDetectionScreenState
   );
 
   List<String> _labels = const [];
+
+  /// The underlying assistive/correction detection state.
+  ///
+  /// PD1 removes the normal visible card list, but the assistive layer's
+  /// analysis output is retained as the source for correction context and
+  /// telemetry. The compact overlay renders [_overlayInfos] instead, which is
+  /// the presentation-only snapshot gated on the mapped Ready outcome.
+  // ignore: unused_field
   List<DetectionInfo> _detectionInfo = const [];
+
+  /// The presentation-only snapshot rendered by [DetectionInformationOverlay].
+  ///
+  /// This is deliberately separate from [_detectionInfo] (the underlying
+  /// assistive/correction state). The overlay snapshot is cleared synchronously
+  /// whenever the mapped coordinator outcome leaves Ready and is only accepted
+  /// while the currently observed mapped outcome is Ready.
+  ///
+  /// PD3 freshness limitation (see plan §13): this presentation-local gate
+  /// prevents *known historical* rows from remaining visible after a
+  /// non-Ready transition, but it cannot prove that an asynchronous native
+  /// result produced before a transition will never arrive after a later Ready
+  /// transition. The native `onResult` callback delivers a bare
+  /// `List<YOLOResult>` with no screen/session epoch, so a late pre-transition
+  /// callback is indistinguishable from a valid new Ready callback here. A
+  /// strict guarantee requires a narrow cross-layer result envelope
+  /// (correlating the native streaming frame/timestamp metadata with converted
+  /// results, or a screen-to-native session bridge) and explicit approval
+  /// before touching the adapter/native boundary.
+  List<DetectionInfo> _overlayInfos = const [];
+
   bool _detectionActive = false;
+
+  /// Whether the native YOLOView shell has been mounted at least once.
+  ///
+  /// PD1 stopped-shell parity: once true, the native viewport shell and the
+  /// viewport GestureSurface are retained after a manual Stop instead of being
+  /// replaced by [_buildCameraPending]. This keeps the viewport layout, gesture
+  /// handling, and horizontal navigation reachable while stopped.
+  bool _nativeViewMounted = false;
+
+  /// Local native-view epoch.
+  ///
+  /// Included in the [YOLOView] key so a start-after-stop mounts a *fresh*
+  /// platform view. Native `stop()` permanently destroys the predictor and
+  /// `startCamera()` early-returns while it is null, so the only way to reach
+  /// Ready again is to remount the view and let `_resolveModel()` run and fire
+  /// `onModelLoad` once more. Bumped only when a start-after-stop requires a
+  /// new native session (see [shouldRecreateNativeSessionOnStart]).
+  int _nativeViewEpoch = 0;
+
+  /// The epoch whose `onModelLoad` is allowed to publish Ready.
+  ///
+  /// A stale `onModelLoad` from a previous epoch (e.g. a late callback from the
+  /// view being torn down) must never be treated as the current session's
+  /// Ready. The callback captures the epoch it was built with and is ignored
+  /// unless it matches this field.
+  int _activeNativeEpoch = 0;
+
+  /// Guards against duplicate/overlapping start attempts.
+  ///
+  /// Set synchronously at the top of [_startDetection] before any `await`, so a
+  /// second Start (button, gesture, or start intent) cannot begin a second
+  /// native session while the first is still being established.
+  bool _startInFlight = false;
+
+  /// Whether the first fresh native result of the current session was logged.
+  ///
+  /// Reset on each start so the diagnostic fires once per session rather than
+  /// once per frame.
+  bool _firstResultLogged = false;
+
   bool _paused = false;
   bool _permissionDenied = false;
   bool _starting = false;
-  bool _modelLoaded = false;
   bool _lastLowPowerMode = false;
   String? _modelError;
   DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
-  DetectionFailure? _failure;
-  double _fps = 0;
+
+  /// The most recent native inference latency in milliseconds.
+  ///
+  /// PD1 removes the visible developer metrics, but this value is still passed
+  /// to the shared assistive layer for telemetry, so it is retained.
   double _inferenceMs = 0;
-  double _processingMs = 0;
+
+  /// The start-intent token this engine has already consumed. Guards against
+  /// acting on the same request twice (e.g. across rebuilds).
+  int? _consumedStartIntentToken;
 
   YOLOStreamingConfig get _streamingConfig => YOLOStreamingConfig(
     inferenceFrequency: _settings.lowPowerMode ? 4 : null,
@@ -103,10 +241,37 @@ class _UltralyticsDetectionScreenState
     _lastLowPowerMode = _settings.lowPowerMode;
     _settings.addListener(_handleSettingsChanged);
     _loadLabels();
-    if (_settings.autoStartDetection) {
+    // The engine no longer reads the Auto-start preference directly. It acts
+    // only on the shared start intent issued by the app-shell coordinator.
+    if (widget.startIntent != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _startDetection(announce: false, haptic: false);
+        _consumeStartIntent(widget.startIntent);
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant UltralyticsDetectionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.startIntent?.token != oldWidget.startIntent?.token) {
+      _consumeStartIntent(widget.startIntent);
+    }
+  }
+
+  /// Consumes a shared start intent exactly once.
+  ///
+  /// A silent launch intent starts without start haptics or speech; an entry
+  /// intent uses the existing start route. An already-consumed token is
+  /// ignored, and the existing `_starting`/`_detectionActive` guard in
+  /// [_startDetection] prevents a duplicate start.
+  void _consumeStartIntent(StartIntent? intent) {
+    if (intent == null) return;
+    if (_consumedStartIntentToken == intent.token) return;
+    _consumedStartIntentToken = intent.token;
+    if (intent.origin == StartIntentOrigin.launch) {
+      _startDetection(announce: false, haptic: false);
+    } else {
+      _startDetection();
     }
   }
 
@@ -172,37 +337,91 @@ class _UltralyticsDetectionScreenState
     bool announce = true,
     bool haptic = true,
   }) async {
-    if (_starting || _detectionActive) return;
-    if (haptic) await _haptics.mediumTick();
-    if (mounted) setState(() => _starting = true);
-    if (!await _ensureCameraPermission()) return;
-    if (!mounted) return;
-    setState(() {
-      _detectionActive = true;
-      _paused = false;
-      _starting = false;
-      _modelLoaded = false;
-      _modelError = null;
-      _failure = null;
-    });
-    _setRuntimeState(DetectionRuntimeState.loadingModel);
-    if (announce) await _tts.speak('Detection started', urgent: true);
+    // Duplicate/overlapping start guard. `_startInFlight` is set synchronously
+    // before any `await` so a second Start cannot begin a second native session
+    // while the first is still being established.
+    if (_startInFlight || _starting || _detectionActive) return;
+    _startInFlight = true;
+    debugPrint(
+      '[Ultralytics] Start requested — coordinator=${widget.coordinator.state} '
+      'local(active=$_detectionActive paused=$_paused '
+      'mounted=$_nativeViewMounted epoch=$_nativeViewEpoch)',
+    );
+    try {
+      if (haptic) await _haptics.mediumTick();
+      if (mounted) setState(() => _starting = true);
+      if (!await _ensureCameraPermission()) return;
+      if (!mounted) return;
+
+      // A start after a stop must recreate the native session: native `stop()`
+      // permanently destroys the predictor and `startCamera()` is a no-op while
+      // it is null, so the only path back to Ready is a fresh platform view
+      // whose `_resolveModel()` fires `onModelLoad` again. A first start or a
+      // resume from pause must NOT bump the epoch.
+      final recreate = shouldRecreateNativeSessionOnStart(
+        nativeViewMounted: _nativeViewMounted,
+        detectionActive: _detectionActive,
+        paused: _paused,
+      );
+      setState(() {
+        _detectionActive = true;
+        // The native YOLOView shell is now (or will be) mounted; retain it after
+        // a later manual Stop for PD1 stopped-shell parity.
+        _nativeViewMounted = true;
+        _paused = false;
+        _starting = false;
+        _modelError = null;
+        // Re-arm the once-per-session first-result diagnostic.
+        _firstResultLogged = false;
+        if (recreate) {
+          _nativeViewEpoch++;
+          _activeNativeEpoch = _nativeViewEpoch;
+        }
+      });
+      if (recreate) {
+        debugPrint(
+          '[Ultralytics] Native session reinit requested — new epoch '
+          '$_nativeViewEpoch (fresh YOLOView mount)',
+        );
+      }
+      // Keep the coordinator at Preparing until native detection is genuinely
+      // operational; Ready is published only from the epoch-guarded
+      // `onModelLoad` callback.
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+      if (announce) await _tts.speak('Detection started', urgent: true);
+    } finally {
+      _startInFlight = false;
+    }
   }
 
   Future<void> _stopDetection() async {
+    debugPrint(
+      '[Ultralytics] Stop requested — coordinator=${widget.coordinator.state} '
+      'local(active=$_detectionActive paused=$_paused epoch=$_nativeViewEpoch)',
+    );
     await _haptics.mediumTick();
+    // The native controller may stop internally, but the native YOLOView shell
+    // and the viewport GestureSurface remain mounted (see [_buildMainArea]) so
+    // the stopped screen keeps its layout, gesture handling, and horizontal
+    // navigation. PD1 stopped-shell parity with the Custom screen.
+    //
+    // Native `stop()` permanently destroys the predictor; the retained shell is
+    // therefore a visual/gesture shell only. A later Start recreates the native
+    // session by bumping [_nativeViewEpoch] (see [_startDetection]).
     await _controller.stop();
     if (!mounted) return;
     setState(() {
       _detectionActive = false;
       _paused = false;
-      _modelLoaded = false;
       _detectionInfo = const [];
-      _fps = 0;
+      // PD3: clear the displayed overlay snapshot immediately on stop.
+      _overlayInfos = const [];
       _inferenceMs = 0;
-      _processingMs = 0;
     });
-    _setRuntimeState(DetectionRuntimeState.idle);
+    // Publish an explicit shared Stopped state (not idle) so a retained-session
+    // tab leave/return does not auto-restart.
+    _setRuntimeState(DetectionRuntimeState.stopped);
+    debugPrint('[Ultralytics] Stop teardown complete — coordinator=stopped');
     await _tts.speak('Detection stopped', urgent: true);
   }
 
@@ -242,12 +461,31 @@ class _UltralyticsDetectionScreenState
 
   void _handleResults(List<YOLOResult> results) {
     if (!_detectionActive || _paused) return;
+    if (!_firstResultLogged) {
+      _firstResultLogged = true;
+      debugPrint(
+        '[Ultralytics] First fresh result received — epoch $_nativeViewEpoch '
+        '(${results.length} raw results)',
+      );
+    }
     final detections = UltralyticsDetectionAdapter.convert(results, _labels);
     final infos = _assistive.updateDetections(
       detections,
       latencyMs: _inferenceMs,
     );
-    if (mounted) setState(() => _detectionInfo = infos);
+    // PD3: accept a new overlay snapshot only while the currently observed
+    // mapped coordinator outcome is Ready (healthy fallback maps to Ready).
+    // This is a presentation-local gate; see the [_overlayInfos] doc comment
+    // for the residual delayed-result freshness limitation.
+    final overlayEligible = _overlayEligible;
+    if (mounted) {
+      setState(() {
+        _detectionInfo = infos;
+        if (overlayEligible) {
+          _overlayInfos = infos;
+        }
+      });
+    }
   }
 
   void _handleMetrics(YOLOPerformanceMetrics metrics) {
@@ -255,12 +493,11 @@ class _UltralyticsDetectionScreenState
     final inferenceMs = metrics.inferenceMs > 0
         ? metrics.inferenceMs
         : metrics.processingTimeMs;
+    // PD1: the visible developer metrics are removed, but the metric values are
+    // still recorded for telemetry (Logs & Reports) and the latest inference
+    // latency is retained for the shared assistive layer.
     if (mounted) {
-      setState(() {
-        _fps = metrics.fps;
-        _inferenceMs = inferenceMs;
-        _processingMs = metrics.processingTimeMs;
-      });
+      setState(() => _inferenceMs = inferenceMs);
     }
     _assistive.recordMetrics(latencyMs: inferenceMs, inferenceFps: metrics.fps);
   }
@@ -275,6 +512,14 @@ class _UltralyticsDetectionScreenState
     await _tts.repeatLast();
   }
 
+  /// Retained correction-capture path.
+  ///
+  /// PD1 removes the normal visible correction/report affordance, but the
+  /// correction service, persistence, and sheet infrastructure remain in
+  /// scope to preserve. This method is intentionally kept (not deleted) so the
+  /// supporting system stays wired; it is currently unreferenced from the
+  /// normal layout.
+  // ignore: unused_element
   Future<void> _reportCorrection(DetectionInfo info) async {
     final corrections = widget.corrections;
     if (corrections == null || !mounted) return;
@@ -320,6 +565,11 @@ class _UltralyticsDetectionScreenState
     }
   }
 
+  /// Retained correction-context accessor for the correction-capture path.
+  ///
+  /// Kept alongside [_reportCorrection] so the correction infrastructure stays
+  /// wired even though PD1 removes its normal visible trigger.
+  // ignore: unused_element
   DetectionInfo? get _lastCorrectableDetection {
     if (widget.corrections == null) return null;
     if (_tts.lastAnnouncedEngine != InferenceEngine.ultralytics) return null;
@@ -335,18 +585,33 @@ class _UltralyticsDetectionScreenState
 
   void _setRuntimeState(DetectionRuntimeState state) {
     if (!mounted || _runtimeState == state) return;
-    setState(() => _runtimeState = state);
+    setState(() {
+      _runtimeState = state;
+      // PD3: clear the displayed overlay snapshot synchronously whenever the
+      // mapped outcome leaves Ready. The coordinator snapshot is the single
+      // source of the visible lifecycle, so this uses the same mapping.
+      if (detectionStatusOutcomeFor(state) != DetectionStatusOutcome.ready) {
+        _overlayInfos = const [];
+      }
+    });
+    debugPrint(
+      '[Ultralytics] Child lifecycle report emitted — state=$state '
+      'epoch=$_nativeViewEpoch',
+    );
     widget.onRuntimeStateChanged?.call(state, null);
+    debugPrint(
+      '[Ultralytics] Coordinator accepted lifecycle report — '
+      'coordinator=${widget.coordinator.state} '
+      'mapped=${detectionStatusOutcomeFor(widget.coordinator.state)}',
+    );
   }
 
   void _reportFailure(DetectionFailure failure) {
     if (!mounted) return;
     setState(() {
-      _failure = failure;
       _runtimeState = DetectionRuntimeState.failed;
       _starting = false;
       _detectionActive = false;
-      _modelLoaded = false;
       _modelError = failure.userMessage;
     });
     if (widget.onFailure != null) {
@@ -359,7 +624,6 @@ class _UltralyticsDetectionScreenState
   void _retryRuntime() {
     if (!mounted) return;
     setState(() {
-      _failure = null;
       _modelError = null;
       _permissionDenied = false;
     });
@@ -373,23 +637,42 @@ class _UltralyticsDetectionScreenState
       case EyeCueGesture.twoFingerDoubleTap:
         _toggleDetectionActive();
       case EyeCueGesture.threeFingerTap:
-        _quickScan();
+        // PD2: the three-finger Quick Scan gesture is gated by the shared
+        // mapped outcome — Ready (including healthy fallback) only. It does
+        // nothing for Paused, Stopped, Preparing, or Unavailable. The gate
+        // lives here in screen dispatch, so GestureController is unchanged.
+        if (_overlayEligible) _quickScan();
       case EyeCueGesture.swipeDown:
         _repeatAlert();
+      case EyeCueGesture.swipeLeft:
+      case EyeCueGesture.swipeRight:
+        final direction = relativeDirectionForGesture(gesture);
+        if (direction != null) {
+          widget.onNavigateRelative?.call(direction);
+        }
     }
   }
 
-  String? get _warningMessage {
-    final high = _detectionInfo
-        .where((info) => info.priority == ObjectPriority.high)
-        .toList();
-    if (high.isEmpty) return null;
-    if (high.length == 1) {
-      return 'High-priority obstacle detected: ${high.first.label}. '
-          'Please adjust your path.';
-    }
-    return 'High-priority obstacles detected. Please adjust your path.';
-  }
+  /// Maps the shared coordinator snapshot to the visible status pill.
+  ///
+  /// This is the single user-facing lifecycle mapping shared with Home and the
+  /// Custom engine; it never reads engine-local booleans.
+  (String, Color) _sharedStatusPresentation(DetectionRuntimeState state) =>
+      switch (detectionStatusOutcomeFor(state)) {
+        DetectionStatusOutcome.preparing => ('Preparing', kStatusBlue),
+        DetectionStatusOutcome.ready => ('Detecting', kStatusGreen),
+        DetectionStatusOutcome.paused => ('Paused', kStatusAmber),
+        DetectionStatusOutcome.stopped => ('Stopped', kStatusBlueGrey),
+        DetectionStatusOutcome.unavailable => ('Unavailable', kWarningRed),
+      };
+
+  /// Whether the compact information overlay is eligible to render.
+  ///
+  /// Eligible only for the mapped Ready outcome, which includes a healthy
+  /// temporary fallback. Every other visible lifecycle outcome hides it.
+  bool get _overlayEligible =>
+      detectionStatusOutcomeFor(widget.coordinator.state) ==
+      DetectionStatusOutcome.ready;
 
   @override
   Widget build(BuildContext context) {
@@ -399,23 +682,15 @@ class _UltralyticsDetectionScreenState
         value: SystemUiOverlayStyle.dark,
         child: Scaffold(
           body: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final contentHeight = (constraints.maxHeight * 0.32).clamp(
-                  260.0,
-                  320.0,
-                );
-                return Column(
-                  children: [
-                    _buildTopBar(context),
-                    Expanded(child: _buildMainArea(context)),
-                    SizedBox(
-                      height: contentHeight,
-                      child: _buildControlsPanel(context),
-                    ),
-                  ],
-                );
-              },
+            child: Column(
+              children: [
+                _buildTopBar(context),
+                // The viewport is the only flexible region; the control row
+                // below derives its height from its content and the minimum
+                // touch targets rather than a fixed percentage allocation.
+                Expanded(child: _buildMainArea(context)),
+                _buildActionControlsRow(context),
+              ],
             ),
           ),
         ),
@@ -425,19 +700,22 @@ class _UltralyticsDetectionScreenState
 
   Widget _buildTopBar(BuildContext context) {
     final theme = Theme.of(context);
-    final (label, color) = !_detectionActive
-        ? ('Stopped', kStatusBlueGrey)
-        : _paused
-        ? ('Paused', kStatusAmber)
-        : !_modelLoaded
-        ? ('Loading', kStatusBlue)
-        : ('Detecting', kStatusGreen);
+    // The visible status pill renders the shared coordinator snapshot, never
+    // engine-local booleans. Local flags remain only for native controller and
+    // inference mechanics.
+    final (label, color) = _sharedStatusPresentation(widget.coordinator.state);
     return Padding(
       padding: const EdgeInsets.fromLTRB(kSpace16, kSpace16, kSpace16, kSpace8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Detection Mode', style: theme.textTheme.titleLarge),
+          // The header uses the ink token so it stays legible against the
+          // light Detection surface. No other header element or behavior
+          // changes.
+          Text(
+            'Detection Mode',
+            style: theme.textTheme.titleLarge?.copyWith(color: kHomeInk),
+          ),
           const SizedBox(height: kSpace4),
           Row(
             children: [
@@ -458,24 +736,9 @@ class _UltralyticsDetectionScreenState
               ),
             ],
           ),
-          const SizedBox(height: kSpace4),
-          Wrap(
-            spacing: kSpace8,
-            runSpacing: kSpace4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Ultralytics GPU→CPU · ${_fps.toStringAsFixed(1)} FPS · '
-                '${_inferenceMs.toStringAsFixed(1)} ms infer',
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
-          ),
-          if (_processingMs > 0)
-            Text(
-              '${_processingMs.toStringAsFixed(1)} ms native total',
-              style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
-            ),
+          // PD1: the visible developer metrics (FPS, inference latency, native
+          // total time) are removed from the normal UI. Metric collection in
+          // [_handleMetrics] is preserved so Logs & Reports is unaffected.
           if (_modelError != null)
             Text(
               _modelError!,
@@ -489,16 +752,32 @@ class _UltralyticsDetectionScreenState
   }
 
   Widget _buildMainArea(BuildContext context) {
-    if (_runtimeState == DetectionRuntimeState.failed) {
+    // The visible lifecycle/status panel renders the shared coordinator
+    // snapshot, never engine-local runtime state.
+    final sharedState = widget.coordinator.state;
+    if (sharedState == DetectionRuntimeState.failed) {
       return DetectionStatePanel(
-        state: _runtimeState,
-        failure: _failure,
+        state: sharedState,
+        failure: widget.coordinator.failure,
         onRetry: _retryRuntime,
         onStop: _stopDetection,
       );
     }
     if (_permissionDenied) return _buildPermissionDenied(context);
-    if (!_detectionActive) return _buildCameraPending(context);
+    // PD1 stopped-shell parity: once the native view has been mounted (i.e.
+    // detection has been started at least once), the native YOLOView shell and
+    // the viewport GestureSurface are retained even after a manual Stop. The
+    // native controller may stop internally, but the shell stays mounted so the
+    // viewport layout, gesture handling, and horizontal navigation remain
+    // reachable. Only a never-started screen falls back to the pending surface.
+    //
+    // Residual limitation (Needs Verification [external-runtime]): the retained
+    // native texture after stop may render frozen, cleared, or inactive on a
+    // physical device. This must be observed on the target device; the shell is
+    // retained regardless so gesture/layout ownership is preserved.
+    if (!_detectionActive && !_nativeViewMounted) {
+      return _buildCameraPending(context);
+    }
     // Rounded dark card around the native YOLOView. The native overlay is
     // unchanged; only the surrounding container (dark fill + rounded clip) is
     // added so the light chrome never sits over the camera surface.
@@ -512,6 +791,11 @@ class _UltralyticsDetectionScreenState
         fit: StackFit.expand,
         children: [
           YOLOView(
+            // The epoch is part of the key so a start-after-stop mounts a fresh
+            // platform view. Native `stop()` permanently destroys the predictor
+            // and `startCamera()` is a no-op while it is null, so remounting is
+            // the only way `_resolveModel()` runs and `onModelLoad` fires again.
+            key: ValueKey('ultralytics-native-$_nativeViewEpoch'),
             modelPath: EyeCueModelConfig.modelAssetPath,
             task: YOLOTask.detect,
             controller: _controller,
@@ -522,11 +806,23 @@ class _UltralyticsDetectionScreenState
             onResult: _handleResults,
             onPerformanceMetrics: _handleMetrics,
             onModelLoad: (_, _) {
+              // Ignore a stale `onModelLoad` from a previous epoch (e.g. a late
+              // callback from the view being torn down) so it is never treated
+              // as the current session's Ready.
+              if (_nativeViewEpoch != _activeNativeEpoch) {
+                debugPrint(
+                  '[Ultralytics] Ignoring stale onModelLoad — callback epoch '
+                  '$_nativeViewEpoch != active $_activeNativeEpoch',
+                );
+                return;
+              }
+              debugPrint(
+                '[Ultralytics] Native model loaded — epoch $_nativeViewEpoch; '
+                'reporting Ready',
+              );
               if (mounted) {
                 setState(() {
-                  _modelLoaded = true;
                   _modelError = null;
-                  _failure = null;
                 });
               }
               _setRuntimeState(DetectionRuntimeState.ready);
@@ -545,7 +841,13 @@ class _UltralyticsDetectionScreenState
               );
             },
           ),
-          const Align(alignment: Alignment.bottomCenter, child: _GestureHint()),
+          // Compact current-information overlay (PD3). Pointer-inert, so it
+          // never consumes raw pointers intended for the gesture surface.
+          DetectionInformationOverlay(
+            infos: _overlayInfos,
+            eligible: _overlayEligible,
+          ),
+          // Thesis gesture capture layer (transparent, topmost).
           GestureSurface(
             controller: _gestureController,
             child: const SizedBox.expand(),
@@ -624,7 +926,13 @@ class _UltralyticsDetectionScreenState
     );
   }
 
-  Widget _buildControlsPanel(BuildContext context) {
+  /// The single non-scrolling, side-by-side physical-control row.
+  ///
+  /// The left lifecycle control is driven only by the coordinator-derived
+  /// outcome; the right control is the tap-only physical Quick Scan. The row
+  /// sits outside the viewport stack so it never participates in viewport
+  /// gesture recognition.
+  Widget _buildActionControlsRow(BuildContext context) {
     return Container(
       color: kHomeSurfaceBase,
       child: SafeArea(
@@ -636,118 +944,20 @@ class _UltralyticsDetectionScreenState
             kSpace12,
             kSpace12,
           ),
-          // The whole panel scrolls so the fixed-height region can never
-          // overflow, regardless of text scale or how many controls wrap.
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                if (_warningMessage != null)
-                  WarningBanner(message: _warningMessage!),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 160),
-                  child: _buildDetectionList(context),
-                ),
-                const SizedBox(height: kSpace6),
-                Wrap(
-                  spacing: kSpace8,
-                  runSpacing: kSpace8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    AccessibleButton(
-                      label: _detectionActive ? 'Stop' : 'Start',
-                      icon: _detectionActive
-                          ? Icons.stop_circle
-                          : Icons.play_circle,
-                      onPressed: _toggleDetectionActive,
-                    ),
-                    AccessibleButton(
-                      label: _paused ? 'Resume' : 'Pause',
-                      icon: _paused ? Icons.play_arrow : Icons.pause,
-                      prominent: true,
-                      onPressed: _detectionActive ? _togglePaused : null,
-                    ),
-                    AccessibleButton(
-                      label: 'Repeat',
-                      icon: Icons.replay,
-                      onPressed: _repeatAlert,
-                    ),
-                    if (widget.corrections != null)
-                      ListenableBuilder(
-                        listenable: _tts,
-                        builder: (context, _) {
-                          final last = _lastCorrectableDetection;
-                          return AccessibleButton(
-                            label: 'Correct last announcement',
-                            icon: Icons.flag_outlined,
-                            onPressed: last == null
-                                ? null
-                                : () => _reportCorrection(last),
-                          );
-                        },
-                      ),
-                    AccessibleButton(
-                      label: 'Scan',
-                      icon: Icons.wifi_tethering,
-                      prominent: true,
-                      onPressed: _quickScan,
-                    ),
-                  ],
-                ),
-              ],
+          // IntrinsicHeight bounds the row's cross-axis height so the shared
+          // control's `CrossAxisAlignment.stretch` row can lay out inside the
+          // non-flexible Column slot without an unbounded-height constraint.
+          child: IntrinsicHeight(
+            child: DetectionActionControls(
+              outcome: detectionStatusOutcomeFor(widget.coordinator.state),
+              onPause: _pauseDetection,
+              onResume: _resumeDetection,
+              onStop: _stopDetection,
+              onStart: _startDetection,
+              onQuickScan: _quickScan,
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildDetectionList(BuildContext context) {
-    final theme = Theme.of(context);
-    if (_detectionInfo.isEmpty) {
-      return Center(
-        child: Text(
-          _detectionActive
-              ? 'Point the camera at your surroundings.'
-              : 'Detection is off.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
-    return ListView.builder(
-      itemCount: _detectionInfo.length,
-      itemBuilder: (context, index) => DetectionCard(
-        info: _detectionInfo[index],
-        highlight: _detectionInfo[index].priority == ObjectPriority.high,
-        onReport: widget.corrections == null
-            ? null
-            : () => _reportCorrection(_detectionInfo[index]),
-      ),
-    );
-  }
-}
-
-class _GestureHint extends StatelessWidget {
-  const _GestureHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: kSpace10),
-      padding: const EdgeInsets.symmetric(
-        horizontal: kSpace14,
-        vertical: kSpace8,
-      ),
-      decoration: BoxDecoration(
-        color: kOverlayBlack,
-        borderRadius: BorderRadius.circular(kRadius20),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: const Text(
-        'Gestures active · Ultralytics engine',
-        style: TextStyle(color: Colors.white, fontSize: 12),
       ),
     );
   }

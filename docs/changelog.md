@@ -5,6 +5,105 @@
 
 ---
 
+## Unreleased — Presentation-Only Visual Redesign Closeout (2026-09-29)
+
+### Changed
+- Completed the presentation-only redesign across the retained four-tab shell and its Home, Settings, Help, Logs & Reports, and Detection surfaces. Home now has a fixed, non-scrollable normal composition with an enlarged fixed decorative logo; the light/Home-theme bottom bar retains its Home / Detect / Settings / Help order, callbacks, selection, cached pages, and visibility behavior.
+- Refined Settings typography and leading-edge alignment; removed decorative icons; retained active cyan controls; clarified the Engine & Sensitivity hierarchy with indented sensitivity sub-options; preserved the dark System Performance card's truthful values; and restyled the `View Logs & Reports` entry without changing its callback.
+- Refined Help's icon-free cards and app-bar title styling, and applied the same fixed light app-bar/body surface treatment to the scrolling Settings, Help, and Logs & Reports routes.
+- Updated both Detection presentations with higher-contrast `Detection Mode` title treatment, a bottom edge-inset overlay with left-aligned information rows, and two mockup-inspired action cards with state icons and left-aligned content. Lifecycle mappings, action callbacks, hold/tap timing, Quick Scan gating, gestures, and accessibility semantics are unchanged.
+
+### Added
+- Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146), the semantic 11%-white overlay token used only for the `View Logs & Reports` action surface in Settings.
+
+### Verified
+- `flutter analyze`: **0 issues**.
+- `flutter test`: **343 passing, 0 failing**.
+- Physical Android visual checks were explicitly confirmed by the user for this completed redesign. The confirmed scope includes the fixed Home layout/logo; retained four-tab navigation presentation; Settings, Help, and Logs & Reports light surfaces; Settings control hierarchy and truthful System Performance presentation; Detection title, overlay, and two-card controls. No visual requirements remain outstanding for this redesign.
+
+---
+
+## Unreleased — Detection Redesign (PD1–PD3) (2026-09-28)
+
+### Added
+- Added the shared presentation widget [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) (`DetectionActionControls`): one coordinator-driven consolidated lifecycle control plus a physical Quick Scan control, rendered side-by-side in a single non-scrolling row. It owns local physical-pointer hold tracking and horizontal progress from 0% at pointer down through the full three-second hold, and imports no camera/inference/native/service internals.
+- Added the shared presentation widget [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) (`DetectionInformationOverlay`): a compact in-viewport informational overlay of at most two rows, with stable High-priority promotion preserving source order, no confidence/debug/metric values, a dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority treatment, no animations, one manual non-live informational semantics node per row, and pointer transparency.
+
+### Changed
+- Implemented the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) in both engine screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
+- **PD1 (unified composition):** the dominant flexible camera viewport is retained; the top area keeps `Detection Mode`, the coordinator-derived status pill, and the Audio pill; exactly two side-by-side physical controls sit in one row beneath the viewport; and the normal screen no longer scrolls vertically. Removed from the normal UI: the detection card list, empty-state messages, `_GestureHint`, the visual `WarningBanner`, standalone Start/Stop, standalone Pause/Resume, visible Repeat, the standalone correction button, and correction/report actions on detection items. Correction removal is UI-only — [`CorrectionService`](../lib/services/correction_service.dart), its persistence, and the correction sheet remain intact. Ultralytics developer metrics were removed from the normal UI while telemetry collection is retained. The stopped viewport shell and [`GestureSurface`](../lib/widgets/gesture_surface.dart) are retained (Custom already did this; Ultralytics now does too).
+- **PD2 (consolidated lifecycle control):** one coordinator-driven control. Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing and Unavailable disabled. Visible copy: `PAUSE` + `HOLD 3 SEC TO STOP`; `RESUME` + `HOLD 3 SEC TO STOP`; `START` + `HOLD 3 SEC`; `PREPARING`; `UNAVAILABLE`. Progress starts at 0% on pointer down and fills continuously over the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; early release maps to tap; release after the timeout but before three seconds is an abandoned hold with no action; completion dispatches exactly once with a duplicate-dispatch lock; existing engine-owned completion TTS/haptics are reused without duplication. Quick Scan is tap-only, Ready/healthy-fallback only, and disabled during an active physical hold.
+- **PD3 (compact overlay):** a compact in-viewport informational overlay, maximum two rows, stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, hidden outside Ready/healthy fallback.
+
+### Fixed (post-implementation, on-device)
+- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen).
+- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+- **Ultralytics Stop → Start stuck in Preparing:** fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **323 passing**.
+- Behavioral-deviation audit: no unintended deviations. Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
+
+### Non-Blocking Notes
+- **Ultralytics Ready timing semantics:** Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`; the current definition is model/native initialization readiness, not strict pipeline-operational proof.
+- **Post-resume freshness diagnostic limitation:** the epoch diagnostic cannot isolate the first result after Resume.
+- **FlutterJNI teardown fatal:** not reproduced in the latest capture and **not fixed** — dedicated full-app teardown verification is pending.
+- **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
+- **Native CameraX graph churn** during recreation is expected plugin settling, not a proven leak.
+- **Deferred:** strict PD3 result provenance/freshness remains deferred under its existing scope boundary.
+
+---
+
+## Unreleased — Home/Detection Shared Lifecycle State (2026-09-28)
+
+### Added
+- Added a `stopped` runtime state to [`detection_runtime_state.dart`](../lib/models/detection_runtime_state.dart) so an explicit manual stop is distinguishable from `idle` (never started) and `disposed` (teardown). Every exhaustive state mapping (including [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart) and [`status_pill.dart`](../lib/widgets/status_pill.dart)) handles the new state.
+- Added start-intent / entry-start / stop APIs to [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart): a monotonic one-shot start-intent token (silent launch origin versus user-entry origin) plus guarded transition APIs. The coordinator remains the single cross-engine `ChangeNotifier`; it does not own camera/controller instances.
+
+### Changed
+- Promoted [`EngineCoordinator`](../lib/services/engine_coordinator.dart) from a Detect-tab-local runtime observer to the single app-shell-owned, user-facing Detection lifecycle/status source. [`app_shell.dart`](../lib/navigation/app_shell.dart) now constructs exactly one coordinator for the shell lifetime and injects it into Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart); the coordinator is no longer constructed/disposed inside `_EngineDetectionScreenState`.
+- Home and both Detection implementations (Custom [`detection_screen.dart`](../lib/screens/detection_screen.dart) and Ultralytics [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart)) now render visible status (Preparing / Ready / Paused / Stopped / Unavailable) from the same coordinator snapshot via a shared mapping. Engine-local booleans remain only for camera/controller/inference mechanics and no longer select user-facing lifecycle/status content.
+- **Auto-start ON:** app launch keeps Home visible while Detection initializes/starts in the background; the shared status moves Preparing → Ready/Unavailable; opening Detection later reuses the already-initialized cached instance without a second start.
+- **Auto-start OFF:** Detection stays off at launch; a deliberate primary navigation into Detection starts it immediately without changing the persisted `autoStartDetection` preference.
+- **Manual pause/stop is session-scoped:** leaving and re-entering Detection during the retained session does not auto-restart; an explicit resume/start is required. There is no cross-process persistence.
+- Removed the Home `Go to Live Camera` CTA and its callback/import/layout gap without replacement. Home now shows coordinator-derived status and the finalized copy set (`Preparing` / `Ready` / `Paused` / `Stopped` / `Unavailable`).
+- Preserved Home → Detect one-finger LEFT swipe, Detection-local gestures, TTS, haptics, accessibility semantics, cached-page behavior, Settings, system Back, and Logs & Reports.
+
+### Verified
+- `flutter analyze`: no issues.
+- `flutter test`: all **247 tests passed**.
+
+### Needs Verification
+- Changing Auto-start while the app is already running is out of scope and has no defined behavior.
+- Android background/foreground, process death, and camera pre-emption lifecycle behavior is out of scope and unverified.
+- Offstage camera/native startup behavior on a physical device (Auto-start ON background preparation) is **Needs Verification** — it has not been observed end-to-end on a physical Android device.
+
+---
+
+## Unreleased — Primary Gesture Navigation (2026-09-28)
+
+### Added
+- Added a persisted `hideBottomNavigation` preference to [`app_settings.dart`](../lib/models/app_settings.dart) (default `false`, backward-compatible parse for older JSON) with a matching getter/setter on [`settings_service.dart`](../lib/services/settings_service.dart) and a labeled Preferences control in [`settings_screen.dart`](../lib/screens/settings_screen.dart). The control represents the persisted preference, not the effective accessibility override.
+- Added one-finger linear, non-wrapping primary navigation in [`app_shell.dart`](../lib/navigation/app_shell.dart): a body-only, arena-aware horizontal drag layer moves linearly through Home → Detection → Settings → Help and does not modulo-wrap. A boundary attempt stays on the current tab and emits boundary feedback once.
+- Added Detection directional arbitration in [`gesture_controller.dart`](../lib/services/gesture_controller.dart): the first committed directional intent for a one-pointer sequence is locked (horizontal commit prevents a later downward repeat and vice versa), a second pointer before commitment invalidates one-pointer directional classification, and pointer cancellation suppresses every delayed or directional action from that sequence. Existing single-tap, two-finger double-tap, three-finger-tap, and downward-repeat intents are unchanged.
+- Added Detection-owned horizontal navigation: [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) carries a stable relative-navigation callback to both [`detection_screen.dart`](../lib/screens/detection_screen.dart) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), which forward horizontal intents while preserving the existing downward repeat mapping. The viewport-only [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) remains the only raw-pointer implementation.
+- Added light/medium haptic wayfinding at the shell gesture-origin path only: [`lightTick`](../lib/services/haptics_service.dart) on successful relative navigation and [`mediumTick`](../lib/services/haptics_service.dart) on a committed boundary attempt; no haptic on insufficient drag or cancellation, and never `heavyTick` for routine navigation.
+- Added a minimal best-effort, drop-if-busy wayfinding API to [`tts_service.dart`](../lib/services/tts_service.dart) for destination/boundary phrases. It is suppressed when audio is disabled or accessible-navigation mode is on, never interrupts or delays Detection speech, and preserves Detection replay state.
+
+### Changed
+- [`app_shell.dart`](../lib/navigation/app_shell.dart) now derives effective bottom-bar visibility from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf`: the bar is forced visible whenever accessible-navigation mode is active, and the accessibility override is never written back to the persisted preference. When accessibility mode turns off, the persisted preference takes effect again.
+- Gesture-origin wayfinding feedback is emitted only from the horizontal-drag navigation path; direct tab selection (`goToTab`), the Home CTA, and system Back remain feedback-free.
+- Preserved system Back behavior: Back from a non-Home primary tab returns to Home, Back from Home follows the platform's normal route/exit behavior, and a pushed secondary route (Logs & Reports) receives Back first.
+- Preserved Detection lifecycle: ordinary primary navigation does not dispose or recreate the cached Detection page, and no new remount path was added; engine selection, fallback/recovery, and active-engine restart retain their existing generation-key remount behavior.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: passing, including new coverage for the settings preference, Detection directional arbitration, TTS wayfinding policy, shell gesture navigation, the accessibility/bar truth table, Slider ownership, route/Back isolation, and cached-page preservation.
+- Physical-device testing surfaced three unresolved issues (see [`known-issues.md`](known-issues.md)): Detection long/fast swipe without releasing the finger triggers navigation; Detection horizontal navigation only triggers within the camera viewport; and a multi-pointer sequence on Home/Settings/Help (one finger held, second finger added, initial finger released) incorrectly triggers navigation. These are device-observed, unresolved, and pending a root-cause fix.
+
+---
+
 ## Unreleased — Detection Screen Visual Redesign (2026-09-10)
 
 ### Changed

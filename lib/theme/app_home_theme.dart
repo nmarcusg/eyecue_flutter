@@ -115,6 +115,63 @@ ThemeData buildHomeTheme() {
   return base.copyWith(
     scaffoldBackgroundColor: kHomeSurfaceBase,
     textTheme: textTheme,
+    // Fixed light app-bar surface shared by Settings, Help, and Logs &
+    // Reports. The bar and the scrolling body therefore keep one consistent
+    // light surface while scrolling (no scroll-driven color transitions).
+    appBarTheme: AppBarTheme(
+      backgroundColor: kHomeSurfaceBase,
+      foregroundColor: kHomeInk,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      titleTextStyle: textTheme.titleLarge,
+    ),
+    // Light bottom-navigation presentation for the shell bar. Ownership of the
+    // bar (destinations, callbacks, selection, visibility) stays in AppShell;
+    // this only supplies the light/Home-theme visual treatment.
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: kHomeSurfaceCard,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: kHomeAccentCyanLight,
+      elevation: 0,
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        final selected = states.contains(WidgetState.selected);
+        return textTheme.labelMedium?.copyWith(
+          color: selected ? kHomeInk : kHomeInkMuted,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        );
+      }),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        final selected = states.contains(WidgetState.selected);
+        return IconThemeData(
+          color: selected ? kHomeAccentCyanDark : kHomeInkMuted,
+        );
+      }),
+    ),
+    // Active toggle/radio/slider states use the cyan accent through the light
+    // component themes so every control shares one token-backed treatment.
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return kHomeSurfaceCard;
+        return null;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return kHomeAccentCyan;
+        return null;
+      }),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return kHomeAccentCyan;
+        return null;
+      }),
+    ),
+    sliderTheme: base.sliderTheme.copyWith(
+      activeTrackColor: kHomeAccentCyan,
+      thumbColor: kHomeAccentCyan,
+      inactiveTrackColor: kHomeAccentCyanLight,
+    ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: kHomeAccentCyan,
