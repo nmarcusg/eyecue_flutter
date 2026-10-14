@@ -5,6 +5,237 @@
 
 ---
 
+## Unreleased — Presentation-Only Visual Redesign Closeout (2026-09-29)
+
+### Changed
+- Completed the presentation-only redesign across the retained four-tab shell and its Home, Settings, Help, Logs & Reports, and Detection surfaces. Home now has a fixed, non-scrollable normal composition with an enlarged fixed decorative logo; the light/Home-theme bottom bar retains its Home / Detect / Settings / Help order, callbacks, selection, cached pages, and visibility behavior.
+- Refined Settings typography and leading-edge alignment; removed decorative icons; retained active cyan controls; clarified the Engine & Sensitivity hierarchy with indented sensitivity sub-options; preserved the dark System Performance card's truthful values; and restyled the `View Logs & Reports` entry without changing its callback.
+- Refined Help's icon-free cards and app-bar title styling, and applied the same fixed light app-bar/body surface treatment to the scrolling Settings, Help, and Logs & Reports routes.
+- Updated both Detection presentations with higher-contrast `Detection Mode` title treatment, a bottom edge-inset overlay with left-aligned information rows, and two mockup-inspired action cards with state icons and left-aligned content. Lifecycle mappings, action callbacks, hold/tap timing, Quick Scan gating, gestures, and accessibility semantics are unchanged.
+
+### Added
+- Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146), the semantic 11%-white overlay token used only for the `View Logs & Reports` action surface in Settings.
+
+### Verified
+- `flutter analyze`: **0 issues**.
+- `flutter test`: **343 passing, 0 failing**.
+- Physical Android visual checks were explicitly confirmed by the user for this completed redesign. The confirmed scope includes the fixed Home layout/logo; retained four-tab navigation presentation; Settings, Help, and Logs & Reports light surfaces; Settings control hierarchy and truthful System Performance presentation; Detection title, overlay, and two-card controls. No visual requirements remain outstanding for this redesign.
+
+---
+
+## Unreleased — Detection Redesign (PD1–PD3) (2026-09-28)
+
+### Added
+- Added the shared presentation widget [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) (`DetectionActionControls`): one coordinator-driven consolidated lifecycle control plus a physical Quick Scan control, rendered side-by-side in a single non-scrolling row. It owns local physical-pointer hold tracking and horizontal progress from 0% at pointer down through the full three-second hold, and imports no camera/inference/native/service internals.
+- Added the shared presentation widget [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) (`DetectionInformationOverlay`): a compact in-viewport informational overlay of at most two rows, with stable High-priority promotion preserving source order, no confidence/debug/metric values, a dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority treatment, no animations, one manual non-live informational semantics node per row, and pointer transparency.
+
+### Changed
+- Implemented the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) in both engine screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
+- **PD1 (unified composition):** the dominant flexible camera viewport is retained; the top area keeps `Detection Mode`, the coordinator-derived status pill, and the Audio pill; exactly two side-by-side physical controls sit in one row beneath the viewport; and the normal screen no longer scrolls vertically. Removed from the normal UI: the detection card list, empty-state messages, `_GestureHint`, the visual `WarningBanner`, standalone Start/Stop, standalone Pause/Resume, visible Repeat, the standalone correction button, and correction/report actions on detection items. Correction removal is UI-only — [`CorrectionService`](../lib/services/correction_service.dart), its persistence, and the correction sheet remain intact. Ultralytics developer metrics were removed from the normal UI while telemetry collection is retained. The stopped viewport shell and [`GestureSurface`](../lib/widgets/gesture_surface.dart) are retained (Custom already did this; Ultralytics now does too).
+- **PD2 (consolidated lifecycle control):** one coordinator-driven control. Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing and Unavailable disabled. Visible copy: `PAUSE` + `HOLD 3 SEC TO STOP`; `RESUME` + `HOLD 3 SEC TO STOP`; `START` + `HOLD 3 SEC`; `PREPARING`; `UNAVAILABLE`. Progress starts at 0% on pointer down and fills continuously over the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; early release maps to tap; release after the timeout but before three seconds is an abandoned hold with no action; completion dispatches exactly once with a duplicate-dispatch lock; existing engine-owned completion TTS/haptics are reused without duplication. Quick Scan is tap-only, Ready/healthy-fallback only, and disabled during an active physical hold.
+- **PD3 (compact overlay):** a compact in-viewport informational overlay, maximum two rows, stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, hidden outside Ready/healthy fallback.
+
+### Fixed (post-implementation, on-device)
+- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen).
+- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+- **Ultralytics Stop → Start stuck in Preparing:** fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **323 passing**.
+- Behavioral-deviation audit: no unintended deviations. Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
+
+### Non-Blocking Notes
+- **Ultralytics Ready timing semantics:** Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`; the current definition is model/native initialization readiness, not strict pipeline-operational proof.
+- **Post-resume freshness diagnostic limitation:** the epoch diagnostic cannot isolate the first result after Resume.
+- **FlutterJNI teardown fatal:** not reproduced in the latest capture and **not fixed** — dedicated full-app teardown verification is pending.
+- **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
+- **Native CameraX graph churn** during recreation is expected plugin settling, not a proven leak.
+- **Deferred:** strict PD3 result provenance/freshness remains deferred under its existing scope boundary.
+
+---
+
+## Unreleased — Home/Detection Shared Lifecycle State (2026-09-28)
+
+### Added
+- Added a `stopped` runtime state to [`detection_runtime_state.dart`](../lib/models/detection_runtime_state.dart) so an explicit manual stop is distinguishable from `idle` (never started) and `disposed` (teardown). Every exhaustive state mapping (including [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart) and [`status_pill.dart`](../lib/widgets/status_pill.dart)) handles the new state.
+- Added start-intent / entry-start / stop APIs to [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart): a monotonic one-shot start-intent token (silent launch origin versus user-entry origin) plus guarded transition APIs. The coordinator remains the single cross-engine `ChangeNotifier`; it does not own camera/controller instances.
+
+### Changed
+- Promoted [`EngineCoordinator`](../lib/services/engine_coordinator.dart) from a Detect-tab-local runtime observer to the single app-shell-owned, user-facing Detection lifecycle/status source. [`app_shell.dart`](../lib/navigation/app_shell.dart) now constructs exactly one coordinator for the shell lifetime and injects it into Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart); the coordinator is no longer constructed/disposed inside `_EngineDetectionScreenState`.
+- Home and both Detection implementations (Custom [`detection_screen.dart`](../lib/screens/detection_screen.dart) and Ultralytics [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart)) now render visible status (Preparing / Ready / Paused / Stopped / Unavailable) from the same coordinator snapshot via a shared mapping. Engine-local booleans remain only for camera/controller/inference mechanics and no longer select user-facing lifecycle/status content.
+- **Auto-start ON:** app launch keeps Home visible while Detection initializes/starts in the background; the shared status moves Preparing → Ready/Unavailable; opening Detection later reuses the already-initialized cached instance without a second start.
+- **Auto-start OFF:** Detection stays off at launch; a deliberate primary navigation into Detection starts it immediately without changing the persisted `autoStartDetection` preference.
+- **Manual pause/stop is session-scoped:** leaving and re-entering Detection during the retained session does not auto-restart; an explicit resume/start is required. There is no cross-process persistence.
+- Removed the Home `Go to Live Camera` CTA and its callback/import/layout gap without replacement. Home now shows coordinator-derived status and the finalized copy set (`Preparing` / `Ready` / `Paused` / `Stopped` / `Unavailable`).
+- Preserved Home → Detect one-finger LEFT swipe, Detection-local gestures, TTS, haptics, accessibility semantics, cached-page behavior, Settings, system Back, and Logs & Reports.
+
+### Verified
+- `flutter analyze`: no issues.
+- `flutter test`: all **247 tests passed**.
+
+### Needs Verification
+- Changing Auto-start while the app is already running is out of scope and has no defined behavior.
+- Android background/foreground, process death, and camera pre-emption lifecycle behavior is out of scope and unverified.
+- Offstage camera/native startup behavior on a physical device (Auto-start ON background preparation) is **Needs Verification** — it has not been observed end-to-end on a physical Android device.
+
+---
+
+## Unreleased — Primary Gesture Navigation (2026-09-28)
+
+### Added
+- Added a persisted `hideBottomNavigation` preference to [`app_settings.dart`](../lib/models/app_settings.dart) (default `false`, backward-compatible parse for older JSON) with a matching getter/setter on [`settings_service.dart`](../lib/services/settings_service.dart) and a labeled Preferences control in [`settings_screen.dart`](../lib/screens/settings_screen.dart). The control represents the persisted preference, not the effective accessibility override.
+- Added one-finger linear, non-wrapping primary navigation in [`app_shell.dart`](../lib/navigation/app_shell.dart): a body-only, arena-aware horizontal drag layer moves linearly through Home → Detection → Settings → Help and does not modulo-wrap. A boundary attempt stays on the current tab and emits boundary feedback once.
+- Added Detection directional arbitration in [`gesture_controller.dart`](../lib/services/gesture_controller.dart): the first committed directional intent for a one-pointer sequence is locked (horizontal commit prevents a later downward repeat and vice versa), a second pointer before commitment invalidates one-pointer directional classification, and pointer cancellation suppresses every delayed or directional action from that sequence. Existing single-tap, two-finger double-tap, three-finger-tap, and downward-repeat intents are unchanged.
+- Added Detection-owned horizontal navigation: [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) carries a stable relative-navigation callback to both [`detection_screen.dart`](../lib/screens/detection_screen.dart) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), which forward horizontal intents while preserving the existing downward repeat mapping. The viewport-only [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) remains the only raw-pointer implementation.
+- Added light/medium haptic wayfinding at the shell gesture-origin path only: [`lightTick`](../lib/services/haptics_service.dart) on successful relative navigation and [`mediumTick`](../lib/services/haptics_service.dart) on a committed boundary attempt; no haptic on insufficient drag or cancellation, and never `heavyTick` for routine navigation.
+- Added a minimal best-effort, drop-if-busy wayfinding API to [`tts_service.dart`](../lib/services/tts_service.dart) for destination/boundary phrases. It is suppressed when audio is disabled or accessible-navigation mode is on, never interrupts or delays Detection speech, and preserves Detection replay state.
+
+### Changed
+- [`app_shell.dart`](../lib/navigation/app_shell.dart) now derives effective bottom-bar visibility from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf`: the bar is forced visible whenever accessible-navigation mode is active, and the accessibility override is never written back to the persisted preference. When accessibility mode turns off, the persisted preference takes effect again.
+- Gesture-origin wayfinding feedback is emitted only from the horizontal-drag navigation path; direct tab selection (`goToTab`), the Home CTA, and system Back remain feedback-free.
+- Preserved system Back behavior: Back from a non-Home primary tab returns to Home, Back from Home follows the platform's normal route/exit behavior, and a pushed secondary route (Logs & Reports) receives Back first.
+- Preserved Detection lifecycle: ordinary primary navigation does not dispose or recreate the cached Detection page, and no new remount path was added; engine selection, fallback/recovery, and active-engine restart retain their existing generation-key remount behavior.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: passing, including new coverage for the settings preference, Detection directional arbitration, TTS wayfinding policy, shell gesture navigation, the accessibility/bar truth table, Slider ownership, route/Back isolation, and cached-page preservation.
+- Physical-device testing surfaced three unresolved issues (see [`known-issues.md`](known-issues.md)): Detection long/fast swipe without releasing the finger triggers navigation; Detection horizontal navigation only triggers within the camera viewport; and a multi-pointer sequence on Home/Settings/Help (one finger held, second finger added, initial finger released) incorrectly triggers navigation. These are device-observed, unresolved, and pending a root-cause fix.
+
+---
+
+## Unreleased — Detection Screen Visual Redesign (2026-09-10)
+
+### Changed
+- Restyled the two Detection child screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom engine) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics engine) — as a visual-only change per [`detection-screen-plan.md`](detection-screen-plan.md). Both now scope the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) to the Detection subtree with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), and use the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light chrome does not leak into Home, Help, Settings, Logs & Reports, or the shell navigation bar.
+- The camera viewport is now a rounded dark card (`kHomeInk` `#0A0A0A`, `kRadius24`, clipped) sitting on the light chrome. The viewport stack (`FittedBox` → `CustomPaint(BoundingBoxPainter)` → `_GestureHint` → `GestureSurface`) and the `applyBoxFit` overlay math are unchanged; the Ultralytics `YOLOView` native overlay is unchanged. No `LIVE CAMERA` label was added.
+- The header keeps the single `Detection Mode` title using the theme's `titleLarge` (non-bold `w600`, matching the Settings/Help `AppBar` title style) with the `StatusPill` retained as its own live-region element. The `StatusPill` and the `AUDIO ON` pill share one horizontal row, with the audio pill end-aligned right; the Ultralytics performance line and error text remain below that row.
+- The circular audio `IconButton` was replaced by an inline `AUDIO ON` / `AUDIO OFF` pill (a private `_AudioPill` helper colocated in each screen file): `kHomeSurfaceCard` surface, `kRadius20`, `kHomeShadowSoft`, a `kSpace8` leading dot (`kHomeAccentCyan` on / `kHomeInkMuted` off), uppercase `labelMedium` label with `letterSpacing: 0.5`, `kSpace12`/`kSpace6` padding (matching `StatusPill`), and a ≥48dp touch target. The toggle behavior, tooltip text, enabled state, and `ListenableBuilder(listenable: Listenable.merge([_settings, _tts]))` are preserved; the pill exposes a semantic label/role/state ("Audio guidance, on/off").
+- The controls panel now uses `kHomeSurfaceBase` with `kSpace12`/`kSpace8` padding; the five-button `Wrap` is preserved with `kSpace8` spacing/runSpacing and `prominent: true` applied to Pause/Resume and Scan only. The disabled Pause/Resume state and the conditional Correct button are preserved. The panel content is now wrapped in a `SingleChildScrollView` (with the detection list bounded to `maxHeight: 160` and still scrolling internally) so the fixed-height region can never overflow; the gesture-hint text color is now `kHomeInkMuted`.
+- `_GestureHint` (both screens) now uses `kOverlayBlack`, `kRadius20`, and `kSpace14`/`kSpace8`/`kSpace10`; the white text, `Colors.white24` border, bottom-center position, and copy are preserved.
+- Token-consistent restyle of the shared Detection widgets: [`status_pill.dart`](../lib/widgets/status_pill.dart) (`kStatus*` colors, `kRadius20`, `kSpace12`/`kSpace6`), [`warning_banner.dart`](../lib/widgets/warning_banner.dart) (`kWarningRed`, `kRadius12`, `kSpace16`/`kSpace14`/`kSpace12`), [`detection_card.dart`](../lib/widgets/detection_card.dart) (`kHomeSurfaceCard`, `kRadius12`, `kSpace4`/`kSpace12`/`kSpace14`, `kWarningRed` highlight border, `kHomeInkMuted` secondary text), [`priority_badge.dart`](../lib/widgets/priority_badge.dart) (`kWarningRed`/`kMediumAmber`/`kLowGreen`, `kOnAmberDark`, `kRadius6`, `kSpace14`/`kSpace10`/`kSpace8`/`kSpace4`), [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart) (`kHomeSurfaceCard`, `kRadius24`, `kHomeShadowSoft`, `kSpace24`/`kSpace20`/`kSpace12`/`kSpace8`), and [`detection_correction_sheet.dart`](../lib/widgets/detection_correction_sheet.dart) (`kHomeSurfaceCard` via `Material`, `kHomeInk`/`kHomeInkMuted`, `kSpace20`/`kSpace12`/`kSpace16`/`kSpace8`).
+- Restyled the [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) temporary-fallback notice to the light surface (`kHomeSurfaceCard`, `kRadius12`, `kHomeInk`/`kHomeInkMuted`, `kSpace*` padding) for consistency with the light Detection chrome; `liveRegion: true` is preserved.
+- The exact live-region split is preserved: `StatusPill`, `WarningBanner`, `DetectionStatePanel`, and the fallback notice remain live regions; `DetectionCard` remains **not** a live region.
+
+### Added
+- Added a `DetectionScreen` group to [`test/widget_test.dart`](../test/widget_test.dart) covering the plugin-free subtrees (title, `StatusPill`, all five controls, the `AUDIO ON` pill, and no overflow at default scale).
+- Extended [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart) with the audio-pill enabled semantics, the `DetectionCard` non-live-region assertion, and a 200% text-scale no-overflow check.
+
+### Fixed (post-implementation, on-device)
+- **Controls-panel overflow:** the physical SM S9010 (Android 15/API 35) showed a `BOTTOM OVERFLOWED BY 74 PIXELS` banner on the Detection screen. The restyled fixed-height controls region could not fit the two-row five-button `Wrap` plus the gesture-hint text at the 200dp floor. The panel content is now wrapped in a `SingleChildScrollView` (detection list bounded to `maxHeight: 160`, still scrolling internally) so the region can never overflow; the `contentHeight` clamp floor was raised from `200.0` to `260.0` in both screens.
+- **`AUDIO ON` pill padding:** the pill's horizontal padding was reduced from `kSpace16` to `kSpace12`/`kSpace6`, matching the `StatusPill` treatment.
+- **Header alignment:** the `Detection Mode` title now uses the theme's `titleLarge` (non-bold `w600`) instead of the `w800` override, and the header top padding was raised to `kSpace16`, matching the Settings/Help `AppBar` title position. The `StatusPill` and `AUDIO ON` pill now share one horizontal row with the audio pill end-aligned right.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **185 passing**.
+- `flutter build apk --debug`: succeeds; the debug APK installs on the physical SM S9010 (API 35) device.
+- Physical-device verification (SM S9010, `R5CTA03XNZD`, Android 15/API 35): after the post-implementation fixes, the overflow banner is gone, no RenderFlex overflows/exceptions appear, the `AUDIO ON` pill padding matches the status pill, and the header title aligns with the Settings/Help headers.
+
+---
+
+## Unreleased — Logs & Reports Screen Visual Restyle (2026-09-10)
+
+### Added
+- Added a focused widget test file [`test/screens/logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart) (25 tests) covering the real screen, route-local theme scope, all three tabs, exports, correction states, unavailable states, Logs priority semantics, and 200% text-scale no-overflow.
+
+### Changed
+- Restyled the existing pushed Logs & Reports route in [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) as a visual-only change per [`logs-reports-screen-plan.md`](logs-reports-screen-plan.md). The route now scopes the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) locally with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), scoped to the pushed route only and not leaking into the shell navigation bar or other tabs.
+- The route now uses a centered bounded secondary-screen layout (~480 logical px content bound, constraint-derived) with light surfaces/typography from the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change); spacing follows the 6/8/12/16/20/24 scale and existing radius roles.
+- The Overview, Charts, and Logs tabs were restyled while preserving all telemetry/correction/export/chart bindings, truthful unavailable metrics, navigation, scrolling, and accessibility contracts. [`charts.dart`](../lib/widgets/charts.dart) was **not** modified.
+- Fixed the Engine Comparison rows to render as a single horizontal row with the engine label visible on the left and the value right-aligned flush to the trailing edge (corrected an alignment issue, then a label-starvation regression).
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **178 passing**.
+- Physical-device visual QA of the restyled route remains pending.
+
+---
+
+## Unreleased — Settings Screen Visual Redesign (2026-09-10)
+
+### Added
+- Redesigned [`settings_screen.dart`](../lib/screens/settings_screen.dart) as a light, responsive composition that reuses the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light surface is scoped to the Settings subtree only and does not leak into the shell navigation bar or other tabs.
+- Added an optional `TelemetryService? telemetry` parameter to `SettingsScreen`; when supplied, the System Performance card renders `Avg FPS`, `Avg latency (MS)`, and `Avg confidence`, showing `—` when the value is empty or null. No accuracy/precision/recall/F1/mAP/%ACC values are fabricated.
+- Added a Settings semantics group to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart) (8 tests).
+
+### Changed
+- [`settings_screen.dart`](../lib/screens/settings_screen.dart) is now a `StatelessWidget` that wraps the subtree in `Theme(buildHomeTheme())` with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), then `Scaffold`/`AppBar('Settings')` → `ListenableBuilder` → `SafeArea` → `LayoutBuilder` → `Center` → `ConstrainedBox (~480)` → plain `ListView`. The four cards are ordered Preferences, Audio Guidance, Engine & Sensitivity, and System Performance (dark `kHomeInk` #0A0A0A).
+- [`app_shell.dart`](../lib/navigation/app_shell.dart) now forwards `telemetry: widget.telemetry` into the `SettingsScreen` construction (single additive change).
+- Extended the existing `SettingsScreen` group in [`test/widget_test.dart`](../test/widget_test.dart).
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **153 passing**.
+- `flutter build apk --debug`: succeeds.
+
+---
+
+## Unreleased — Help Screen Visual Redesign (2026-09-09)
+
+### Added
+- Redesigned [`help_screen.dart`](../lib/screens/help_screen.dart) as a light, responsive, accessible composition that reuses the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light surface is scoped to the Help subtree only and does not leak into the shell navigation bar or other tabs.
+- Added a Help semantics group to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart) covering the screen-title heading, the four section groups, decorative-icon exclusion, and 200% text-scale no-overflow.
+
+### Changed
+- [`help_screen.dart`](../lib/screens/help_screen.dart) now wraps the Help subtree in `Theme(buildHomeTheme())` with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), matching the Home light surface. The retained `AppBar(title: 'Help & Gestures')` and the four sections and their copy are preserved verbatim.
+- The four `_HelpCard` sections are now light cards on the light surface with `kRadius24` corners, `kHomeShadowSoft` shadows, token-based padding/separation, and the retained 28px section icons (decorative, excluded from semantics). The section title is the semantic heading for each group.
+- The body is a responsive `SafeArea → LayoutBuilder → Center → ConstrainedBox (maxWidth ~480) → ListView` that scrolls at 200% text scale with no overflow.
+- Extended the existing `HelpScreen` group in [`test/widget_test.dart`](../test/widget_test.dart) with the screen title, all four section titles, the four section icons, verbatim body copy, and a light-theme assertion.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **137 passing** (existing suite plus the extended Help widget and semantics tests).
+- `flutter build apk --debug`: succeeds.
+- On-device (physical Android): the light Help surface, card radius/shadow, large-text behavior, TalkBack semantics, and no RenderFlex overflows/exceptions were confirmed.
+
+---
+
+## Unreleased — Home Screen Visual Redesign (2026-09-09)
+
+### Added
+- Added the Home-local light theme [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) (`buildHomeTheme()`), which supplies the light surface, ink, cyan accent, IBM Plex Sans typography, and Home shadow tokens to the Home subtree only. The global dark theme and shell navigation are unchanged.
+- Added the `kHome*` light semantic color tokens to [`app_colors.dart`](../lib/theme/app_colors.dart) and the `kRadius3`/`kRadius14`/`kRadius18`/`kRadius24` radius tokens to [`app_radii.dart`](../lib/theme/app_radii.dart).
+- Added `google_fonts` (^8.2.1) and bundled offline IBM Plex Sans fonts (Regular/Medium/SemiBold/Bold) under `assets/fonts/`; runtime font fetching is disabled in the Home theme builder.
+- Registered `assets/logo.png` as an asset.
+
+### Changed
+- Redesigned [`home_screen.dart`](../lib/screens/home_screen.dart) as a light, responsive composition: a leading preference/status badge (`READY` / `AUTO-START OFF`), a centered decorative logo with a live `EyeCue` wordmark, and a lower instruction region with a truthful headline, supporting copy, the retained `Go to Live Camera` CTA, and a static decorative cyan rail. The layout fills the viewport when short and scrolls at large text scale.
+- Replaced the old `_StatusCard` (which claimed "Detection is already running") with a preference-truthful `_StatusBadge` driven by `settings.autoStartDetection`. The Home subtree uses dark status-bar icons so the time/notifications remain visible on the light surface.
+- Updated [`test/widget_test.dart`](../test/widget_test.dart) Home tests and added a Home semantics group to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart); updated [`test/theme_test.dart`](../test/theme_test.dart) for the light Home text color.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **133 passing**.
+- `flutter build apk --debug`: succeeds.
+- On-device (SM-S9010, Android 15/API 35): Home renders with the light surface, spread layout, reduced logo/font sizes, and visible status bar; user confirmed visually.
+
+---
+
+## Unreleased — Frontend Workspace Scaffolding (2026-09-09)
+
+### Added
+- Added the `lib/theme/` design-token layer: [`app_colors.dart`](../lib/theme/app_colors.dart) (semantic color tokens), [`app_spacing.dart`](../lib/theme/app_spacing.dart) (spacing scale), [`app_radii.dart`](../lib/theme/app_radii.dart) (radius scale), [`app_typography.dart`](../lib/theme/app_typography.dart) (high-contrast `TextTheme` builder), and [`app_theme.dart`](../lib/theme/app_theme.dart) (`buildEyeCueTheme()`).
+- Added `marionette_flutter` (^0.6.0), a debug-only runtime-inspection companion for the Marionette MCP server, initialized in [`main.dart`](../lib/main.dart) via `MarionetteBinding.ensureInitialized()` guarded by `kDebugMode`. It never runs in release builds.
+- Added `design-reference/` at the repository root with `screens/` and `components/` subfolders as the destination for manually-exported Figma screenshots.
+- Added the Figma-to-widget component inventory template (`.roo/rules/docs/component-inventory.md`) with one row per known screen/component and blank screenshot paths pending manual Figma export.
+- Added seven frontend rule files under `.roo/rules/rules-frontend/` (scope boundary, naming convention, design tokens, accessibility, animation, doc-update, verification).
+- Added [`docs/ui-conventions.md`](ui-conventions.md) codifying the naming, token, accessibility, animation, and verification conventions.
+
+### Changed
+- [`main.dart`](../lib/main.dart) now consumes `buildEyeCueTheme()` from [`app_theme.dart`](../lib/theme/app_theme.dart) instead of defining the theme inline; the inline `_buildTheme()` / `_highContrastTextTheme()` were moved into the token layer. No visual output changed.
+- [`docs/architecture.md`](architecture.md) folder structure, component table, and External Dependencies table updated for the new `lib/theme/`, `design-reference/`, and `marionette_flutter`.
+
+### Verified
+- `flutter analyze`: 0 issues.
+- `flutter test`: **127 passing** (theme regression test confirms `EyeCueApp` still renders the Home screen with the extracted theme).
+
+### Notes
+- Whether Marionette attaches to a physical Android device over the Dart VM Service remains **Needs Verification** — no physical device was connected during this scaffolding session.
+- This is workspace scaffolding only; no placeholder screen was converted to a real implementation.
+
+---
+
 ## Unreleased — App-Only Runtime Hardening (2026-09-05)
 
 ### Added

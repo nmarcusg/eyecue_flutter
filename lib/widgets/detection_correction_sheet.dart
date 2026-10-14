@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
 import 'accessible_button.dart';
 
 /// Accessible first-level correction flow for one normalized detection.
@@ -55,93 +57,108 @@ class _DetectionCorrectionSheetState extends State<DetectionCorrectionSheet> {
   Widget build(BuildContext context) {
     final showingLabels = _feedback == CorrectionFeedback.incorrect;
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              showingLabels ? 'Choose the intended label' : 'Report detection',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Semantics(
-              container: true,
-              label: widget.info.semanticLabel,
-              child: ExcludeSemantics(
-                child: Text('Detected ${widget.info.label}.'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (!showingLabels) ...[
-              AccessibleButton(
-                label: 'Correct',
-                icon: Icons.check_circle_outline,
-                onPressed: () => _select(CorrectionFeedback.correct),
-              ),
-              AccessibleButton(
-                label: 'Incorrect',
-                icon: Icons.cancel_outlined,
-                onPressed: () => _select(CorrectionFeedback.incorrect),
-              ),
-              AccessibleButton(
-                label: 'Unsure',
-                icon: Icons.help_outline,
-                onPressed: () => _select(CorrectionFeedback.unsure),
-              ),
-            ] else ...[
-              TextField(
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Search labels',
-                  prefixIcon: Icon(Icons.search),
+      child: Material(
+        color: kHomeSurfaceCard,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            kSpace20,
+            kSpace12,
+            kSpace20,
+            kSpace20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                showingLabels
+                    ? 'Choose the intended label'
+                    : 'Report detection',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: kHomeInk,
+                  fontWeight: FontWeight.w800,
                 ),
-                onChanged: (value) => setState(() => _query = value),
               ),
-              const SizedBox(height: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
-                child: RadioGroup<String>(
-                  groupValue: _correctedLabel,
-                  onChanged: (value) => setState(() => _correctedLabel = value),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _filteredLabels.length,
-                    itemBuilder: (context, index) {
-                      final label = _filteredLabels[index];
-                      return RadioListTile<String>(
-                        title: Text(label),
-                        value: label,
-                      );
-                    },
+              const SizedBox(height: kSpace8),
+              Semantics(
+                container: true,
+                label: widget.info.semanticLabel,
+                child: ExcludeSemantics(
+                  child: Text(
+                    'Detected ${widget.info.label}.',
+                    style: TextStyle(color: kHomeInkMuted),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              AccessibleButton(
-                label: _correctedLabel == null
-                    ? 'Save incorrect report'
-                    : 'Save incorrect report as $_correctedLabel',
-                icon: Icons.save_outlined,
-                onPressed: () => _complete(CorrectionFeedback.incorrect),
-              ),
-              TextButton(
-                onPressed: () => setState(() {
-                  _feedback = null;
-                  _correctedLabel = null;
-                }),
-                child: const Text('Back'),
-              ),
+              const SizedBox(height: kSpace16),
+              if (!showingLabels) ...[
+                AccessibleButton(
+                  label: 'Correct',
+                  icon: Icons.check_circle_outline,
+                  onPressed: () => _select(CorrectionFeedback.correct),
+                ),
+                AccessibleButton(
+                  label: 'Incorrect',
+                  icon: Icons.cancel_outlined,
+                  onPressed: () => _select(CorrectionFeedback.incorrect),
+                ),
+                AccessibleButton(
+                  label: 'Unsure',
+                  icon: Icons.help_outline,
+                  onPressed: () => _select(CorrectionFeedback.unsure),
+                ),
+              ] else ...[
+                TextField(
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Search labels',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: (value) => setState(() => _query = value),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  child: RadioGroup<String>(
+                    groupValue: _correctedLabel,
+                    onChanged: (value) =>
+                        setState(() => _correctedLabel = value),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _filteredLabels.length,
+                      itemBuilder: (context, index) {
+                        final label = _filteredLabels[index];
+                        return RadioListTile<String>(
+                          title: Text(label),
+                          value: label,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                AccessibleButton(
+                  label: _correctedLabel == null
+                      ? 'Save incorrect report'
+                      : 'Save incorrect report as $_correctedLabel',
+                  icon: Icons.save_outlined,
+                  onPressed: () => _complete(CorrectionFeedback.incorrect),
+                ),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _feedback = null;
+                    _correctedLabel = null;
+                  }),
+                  child: const Text('Back'),
+                ),
+              ],
+              if (!showingLabels)
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
             ],
-            if (!showingLabels)
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-          ],
+          ),
         ),
       ),
     );

@@ -72,6 +72,39 @@ preferred-versus-active engine state, one-shot fallback, generation filtering,
 and recovery actions. A temporary fallback does not rewrite the persisted
 preference and cannot cause automatic engine oscillation.
 
+### Shared user-facing Detection lifecycle
+
+The coordinator is also the **single app-shell-owned, user-facing Detection
+lifecycle/status source**. [`app_shell.dart`](../lib/navigation/app_shell.dart)
+constructs exactly one coordinator for the shell lifetime and injects it into
+Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart).
+Home, Custom Detection, and Ultralytics Detection all render visible status
+(**Preparing / Ready / Paused / Stopped / Unavailable**) from the same
+coordinator snapshot via a shared mapping. Engine-local booleans remain only for
+camera/controller/inference mechanics and never select user-facing lifecycle or
+status content.
+
+- **Auto-start ON:** app launch keeps Home visible while Detection
+  initializes/starts in the background; the shared status moves
+  Preparing → Ready/Unavailable; opening Detection later reuses the
+  already-initialized cached instance without a second start.
+- **Auto-start OFF:** Detection stays off at launch; a deliberate primary
+  navigation into Detection starts it immediately without changing the persisted
+  `autoStartDetection` preference.
+- **Manual pause/stop is session-scoped:** leaving and re-entering Detection
+  during the retained session does not auto-restart; an explicit resume/start is
+  required. There is no cross-process persistence.
+- The coordinator gained a monotonic one-shot **start-intent** token (silent
+  launch origin versus user-entry origin) plus entry-start/stop APIs, and
+  [`detection_runtime_state.dart`](../lib/models/detection_runtime_state.dart)
+  gained an explicit `stopped` state distinct from `idle` and `disposed`.
+
+**[Needs Verification]** Offstage camera/native startup behavior on a physical
+device (Auto-start ON background preparation) has not been observed end-to-end.
+Changing Auto-start while the app is already running, and Android
+background/foreground, process death, and camera pre-emption lifecycle behavior,
+are out of scope and unverified.
+
 ## Custom EyeCue Data Flow
 
 1. `CameraController.startImageStream()` delivers `CameraImage` at native FPS (~30)
@@ -107,7 +140,7 @@ eyecue_flutter/
 ├── lib/
 │   ├── main.dart                          # App entry, theme, service wiring
 │   ├── navigation/
-│   │   └── app_shell.dart                 # 4-tab bottom nav (Home/Detect/Settings/Help)
+│   │   └── app_shell.dart                 # 4-tab bottom nav + one-finger gesture navigation
 │   ├── models/
 │   │   ├── detection.dart                 # Detection data class (classId, label, confidence, box)
 │   │   ├── detection_info.dart            # Spatial/priority/proximity user-facing info
@@ -125,11 +158,11 @@ eyecue_flutter/
 │   │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
 │   ├── screens/
-│   │   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
+│   │   ├── home_screen.dart               # Home: branding, coordinator-derived status, wordmark
 │   │   ├── detection_screen.dart          # Detection: assistive UI + Custom pipeline
 │   │   ├── engine_detection_screen.dart   # Engine-selected detection wrapper
 │   │   ├── ultralytics_detection_screen.dart # Native Ultralytics detection screen
-│   │   ├── settings_screen.dart           # Settings: haptics/performance/audio/research
+│   │   ├── settings_screen.dart           # Settings: light Home-theme cards + telemetry metrics
 │   │   ├── help_screen.dart               # Help & Gestures manual
 │   │   └── logs_reports_screen.dart       # Logs & Reports dashboard (Overview/Charts/Logs)
 │   ├── services/
@@ -154,9 +187,11 @@ eyecue_flutter/
 │   └── widgets/
 │       ├── bounding_box_painter.dart      # Detection overlay CustomPainter
 │       ├── gesture_surface.dart           # Transparent gesture capture layer
-│       ├── detection_card.dart            # Object card (class/conf/position/priority)
+│       ├── detection_action_controls.dart # PD2 consolidated lifecycle control + Quick Scan row
+│       ├── detection_information_overlay.dart # PD3 compact two-row in-viewport overlay
+│       ├── detection_card.dart            # Object card (class/conf/position/priority; retained, removed from normal Detection UI)
 │       ├── priority_badge.dart            # HIGH/MEDIUM/LOW badge
-│       ├── warning_banner.dart            # High-priority obstacle banner
+│       ├── warning_banner.dart            # High-priority obstacle banner (retained, removed from normal Detection UI)
 │       ├── status_pill.dart               # Detecting/Paused/Stopped indicator
 │       ├── accessible_button.dart         # Large high-contrast button (48dp+)
 │       ├── detection_state_panel.dart     # Runtime/loading/recovery/error panel
@@ -164,11 +199,19 @@ eyecue_flutter/
 │       ├── charts.dart                    # fl_chart latency/FPS/frequency charts
 │       ├── debug_overlay.dart             # Debug HUD (retained, unused)
 │       └── info_panel.dart                # Old developer metrics panel (unused in primary UI)
+│   └── theme/                             # Design tokens + theme (UI-owned)
+│       ├── app_colors.dart                # Semantic color tokens
+│       ├── app_spacing.dart               # Spacing scale
+│       ├── app_radii.dart                 # Corner-radius scale
+│       ├── app_typography.dart            # High-contrast TextTheme builder
+│       ├── app_theme.dart                 # buildEyeCueTheme() (moved out of main.dart)
+│       └── app_home_theme.dart            # Home-local light theme + IBM Plex Sans + shadows
 ├── tool/                                  # CLI validation tools (unchanged)
-├── assets/                                # Model + labels (+ test image)
+├── assets/                                # Model + labels (+ test image + logo + fonts)
 ├── android/                               # Android platform (the only supported platform)
 ├── test/                                  # Unit + widget tests (navigation, services, widgets)
 ├── docs/                                  # Project documentation
+├── design-reference/                      # Manually-exported Figma screenshots (screens/ + components/)
 ├── pubspec.yaml                           # Dependencies & asset declarations
 ├── chat_spec.md                           # Historical specification (~3100 lines)
 └── auditor.md                             # Comprehensive project audit
@@ -178,16 +221,20 @@ eyecue_flutter/
 
 | Component | File | Responsibility |
 |-----------|------|---------------|
-| App Entry | [`main.dart`](../lib/main.dart) | MaterialApp init, dark high-contrast theme, service wiring |
-| Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route |
-| Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Branding, Auto-Start status card, Go to Live Camera |
-| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority, controls) |
-| Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Vibration / Auto-Start / Low Power / Audio / Logs & Reports |
-| Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Operations + gesture manual |
-| Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | Overview / Charts / Logs dashboard (researcher-facing) |
+| App Entry | [`main.dart`](../lib/main.dart) | MaterialApp init, service wiring, debug-only Marionette binding |
+| App Theme | [`app_theme.dart`](../lib/theme/app_theme.dart) | `buildEyeCueTheme()` — dark high-contrast theme consuming the token files |
+| Design Tokens | [`app_colors.dart`](../lib/theme/app_colors.dart), [`app_spacing.dart`](../lib/theme/app_spacing.dart), [`app_radii.dart`](../lib/theme/app_radii.dart), [`app_typography.dart`](../lib/theme/app_typography.dart) | Semantic color/spacing/radius tokens + high-contrast `TextTheme` builder; includes the `kHome*` light tokens, `kRadius3/14/18/24`, and [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146) for the Settings Logs action surface |
+| Home Theme | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) | Home-local light `ThemeData` (`buildHomeTheme()`), IBM Plex Sans typography, Home shadow tokens, and light component presentation for app bars, navigation, and active Settings controls; scoped to the Home, Help, Settings, Logs & Reports, and Detection subtrees only |
+| Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab light/Home-theme bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route; one-finger linear non-wrapping primary gesture navigation with effective bar visibility derived from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf`; owns the single app-shell-lifetime [`EngineCoordinator`](../lib/services/engine_coordinator.dart) and injects it into Home and Engine Detection. Bar presentation is refreshed only; order, callbacks, selection, cache, and visibility behavior are retained |
+| Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Fixed, non-scrollable normal light Home composition: coordinator-derived status (Preparing/Ready/Paused/Stopped/Unavailable), enlarged fixed decorative logo + live `EyeCue` wordmark, lower instruction region, cyan rail. The `Go to Live Camera` CTA was removed without replacement; Home renders status only and performs no lifecycle action |
+| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority); light Home-theme chrome (`Theme(buildHomeTheme())` + dark status-bar icons) with a dominant rounded dark `kHomeInk` camera viewport, higher-contrast `Detection Mode` title, and an inline `AUDIO ON` pill; renders visible lifecycle/status from the injected coordinator snapshot. PD1–PD3 redesign: the normal screen is a compact header, the dominant viewport (preview + boxes + edge-inset, left-aligned [`DetectionInformationOverlay`](../lib/widgets/detection_information_overlay.dart) + [`GestureSurface`](../lib/widgets/gesture_surface.dart)), and one non-scrolling row of exactly two state-icon, left-aligned physical action cards ([`DetectionActionControls`](../lib/widgets/detection_action_controls.dart)). The normal card list, empty-state copy, gesture hint, visual warning banner, visible Repeat, standalone Start/Stop/Pause/Resume, visible correction/report actions, and Ultralytics developer metrics were removed from the normal UI while their underlying systems remain |
+| Ultralytics Detection Screen | [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | Native `YOLOView` camera/inference pipeline, native controller actions, labels, and native result/metric callbacks; renders the same Detection presentation ownership as Custom (compact header, dominant viewport with the shared edge-inset overlay and gesture surface, one two-card action row). Developer metrics were removed from the normal UI while telemetry collection is retained; the stopped viewport shell and gesture surface are retained. Start-after-stop recreates the native session (native-view epoch in the `YOLOView` key, `_activeNativeEpoch` stale-`onModelLoad` guard, `_startInFlight` duplicate-start guard) because native `stop()` permanently destroys the predictor |
+| Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Light Home-theme composition (`Theme(buildHomeTheme())` + dark status-bar icons) with aligned card typography and active controls, icon-free section presentation, Engine & Sensitivity hierarchy with indented sub-options, and a dark `kHomeInk` System Performance card; optional `TelemetryService? telemetry` renders `Avg FPS` / `Avg latency (MS)` / `Avg confidence` (showing `—` when empty/null) with no fabricated accuracy metrics. Its `View Logs & Reports` action uses [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146) without changing the existing callback |
+| Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Light, responsive operations + gesture manual with icon-free `kRadius24` cards, `kHomeShadowSoft` shadows, and the shared fixed light app-bar/body surface while scrolling |
+| Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | Overview / Charts / Logs dashboard (researcher-facing) with the shared fixed light app-bar/body surface while scrolling; telemetry, exports, and tab behavior remain unchanged |
 | Inference Service | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | Custom-isolate bridge, persistent worker, runtime introspection, preprocessing, model inference, post-processing (argmax + NMS), backend selection, input rotation |
 | Worker Lifecycle | [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart) | Generation-safe Custom-worker start, bounded restart/backoff, healthy-budget reset, terminal failure, and disposal guards |
-| Engine Coordinator | [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart) | Preferred/active engine state, one-shot fallback, stale-generation filtering, and retry actions |
+| Engine Coordinator | [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart) | Single app-shell-owned, user-facing Detection lifecycle/status source: preferred/active engine state, one-shot fallback, stale-generation filtering, retry actions, explicit `stopped` state, and a monotonic one-shot start-intent token (silent launch versus user-entry origin) |
 | Ultralytics Adapter | [`ultralytics_detection_adapter.dart`](../lib/services/ultralytics_detection_adapter.dart) | Maps native YOLO results into the shared `Detection` contract |
 | Shared Assistive Controller | [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart) | Common spatial interpretation, tracking, summaries, TTS, haptics, corrections, telemetry, export, and accessibility state |
 | TTS Service | [`tts_service.dart`](../lib/services/tts_service.dart) | Speech scheduling, cooldown, de-duplication, mute, repeat-last |
@@ -208,7 +255,9 @@ eyecue_flutter/
 | PNG Encoder | [`png_encoder.dart`](../lib/models/png_encoder.dart) | Pure-Dart PNG encoder for forensic image dumps |
 | Forensic Log | [`forensic_log.dart`](../lib/services/forensic_log.dart) | File-based structured diagnostics under `<documents>/debug/run_*` |
 | Detection Model | [`detection.dart`](../lib/models/detection.dart) | Detection data class (classId, confidence, bounding box) |
-| Bounding Box Painter | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Draws detection boxes, labels, and confidence on the camera preview |
+| Bounding Box Painter | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Draws detection boxes, labels, and confidence on the camera preview (unchanged by the PD1–PD3 redesign) |
+| Detection Action Controls | [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) | Shared presentation widget: one coordinator-driven consolidated lifecycle control (Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing/Unavailable disabled) plus a physical Quick Scan control, in one non-scrolling row. Both presentation cards use state icons and left-aligned content. It owns local pointer hold tracking and horizontal progress from 0% at pointer down through the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; completion dispatches exactly once with a duplicate-dispatch lock. Imports no camera/inference/native/service internals |
+| Detection Information Overlay | [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) | Shared presentation widget: compact, bottom edge-inset, left-aligned in-viewport informational overlay of at most two rows with stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, and pointer transparency; hidden outside Ready/healthy fallback |
 | Info Panel | [`info_panel.dart`](../lib/widgets/info_panel.dart) | Old Metrics + Detections tabs — retained, unused in the primary UI |
 | Debug Overlay | [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart) | Debug-only HUD (retained, unused) |
 
@@ -223,6 +272,8 @@ eyecue_flutter/
 | `permission_handler` | ^12.0.3 | Camera permission requests |
 | `path_provider` | ^2.1.4 | File-backed settings persistence ([`settings_service.dart`](../lib/services/settings_service.dart)) + forensic run directories ([`forensic_log.dart`](../lib/services/forensic_log.dart)) |
 | `fl_chart` | ^1.2.0 | Latency/FPS/frequency charts in Logs & Reports ([`charts.dart`](../lib/widgets/charts.dart)) |
+| `marionette_flutter` | ^0.6.0 | Debug-only runtime-inspection companion for the Marionette MCP server; initialized in [`main.dart`](../lib/main.dart) via `MarionetteBinding.ensureInitialized()` guarded by `kDebugMode` — never runs in release builds |
+| `google_fonts` | ^8.2.1 | Offline IBM Plex Sans typography for the Home-local light theme ([`app_home_theme.dart`](../lib/theme/app_home_theme.dart)); fonts bundled under `assets/fonts/`, runtime fetching disabled |
 
 ## AI Pipeline
 
@@ -270,6 +321,7 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 - **No dependency injection framework:** Services are wired in `main.dart` and passed via constructors — simple and sufficient, but not a full DI container.
 - **State management:** plain `ChangeNotifier` services + `setState`; Riverpod remains declared but unused (intentionally — the app does not need a framework).
 - **Engine-specific services:** `InferenceService` remains intentionally coupled to Custom TFLite/camera internals, while Ultralytics is isolated behind its native screen and result adapter. The shared controller and coordinator prevent engine-specific objects from leaking into common assistive behavior.
+- **Single user-facing lifecycle source:** the app-shell-owned [`EngineCoordinator`](../lib/services/engine_coordinator.dart) is the sole authority for user-facing Detection lifecycle/status. Home and both Detection implementations render its snapshot; engine-local booleans govern mechanics only. Auto-start is a startup input and is never written by entry, pause, or stop.
 - **Configuration:** model paths, labels, confidence bounds/default, and NMS IoU are centralized in [`model_config.dart`](../lib/models/model_config.dart). Detection sensitivity is persisted in [`app_settings.dart`](../lib/models/app_settings.dart) and applied by both engines at startup/reload; it is not a per-frame mutation.
 - **Out of scope for the live app:** calibrated distance, validated movement/approach estimation, and accuracy/precision/recall/mAP (require ground truth — see [`thesis-product-status-audit.md`](thesis-product-status-audit.md)).
 - **Release boundary:** final Android identity, explicit SDK policy, production signing, signed AAB validation, broad device coverage, formal benchmark evidence, licence approval, and Play release remain separate gates.

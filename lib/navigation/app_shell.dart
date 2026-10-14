@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/engine_detection_screen.dart';
@@ -6,10 +7,113 @@ import '../screens/home_screen.dart';
 import '../screens/logs_reports_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/correction_service.dart';
+import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
+import '../theme/app_home_theme.dart';
+
+/// Arena-aware, **exactly-one-active-pointer** horizontal drag recognizer.
+///
+/// A standard [HorizontalDragGestureRecognizer] does not expose invalidation
+/// when a second pointer joins an in-progress drag, so this recognizer
+/// structurally enforces the one-finger contract: any second pointer
+/// invalidates the complete physical-drag transaction, even if that pointer
+/// later lifts. It accumulates one horizontal displacement and commits at
+/// most once, in the drag-end callback.
+class _SingleFingerHorizontalDragRecognizer
+    extends HorizontalDragGestureRecognizer {
+  _SingleFingerHorizontalDragRecognizer({
+    required this.onCommit,
+    required this.commitDistance,
+    this.enabled,
+  }) {
+    onStart = _handleStart;
+    onUpdate = _handleUpdate;
+    onEnd = _handleEnd;
+    onCancel = _handleCancel;
+  }
+
+  /// Called once with the committed direction (`-1` left, `+1` right).
+  final void Function(int direction) onCommit;
+
+  /// Minimum absolute accumulated horizontal displacement to commit.
+  final double commitDistance;
+
+  /// Whether the shell may own a horizontal drag at all.
+  ///
+  /// Detection (index 1) owns horizontal navigation inside its own viewport
+  /// through its raw [GestureSurface] `Listener`. That surface does not compete
+  /// in the gesture arena, so if the shell recognizer also accepted the same
+  /// physical swipe it would produce two primary-tab moves. When this returns
+  /// `false` the recognizer never claims the pointer, so Detection is the
+  /// single owner of horizontal navigation inside its viewport.
+  final bool Function()? enabled;
+
+  /// True once a second pointer has joined the current sequence.
+  bool _invalidated = false;
+  double _accumulatedDx = 0;
+
+  /// Pointers currently tracked by this recognizer for the active sequence.
+  final Set<int> _trackedPointers = {};
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    // When the active page owns horizontal navigation (Detection), the shell
+    // must not claim the pointer at all. Rejecting here keeps the recognizer
+    // out of the arena for the whole sequence, so it can never commit a second
+    // navigation for the same physical swipe.
+    if (!(enabled?.call() ?? true)) {
+      resolve(GestureDisposition.rejected);
+      return;
+    }
+    // A second pointer joining invalidates the whole sequence.
+    if (_trackedPointers.isNotEmpty) {
+      _invalidated = true;
+    } else {
+      // First pointer of a new sequence: reset the accumulator.
+      _accumulatedDx = 0;
+    }
+    _trackedPointers.add(event.pointer);
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    _trackedPointers.remove(pointer);
+    _invalidated = false;
+    super.didStopTrackingLastPointer(pointer);
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    _invalidated = false;
+    super.rejectGesture(pointer);
+  }
+
+  void _handleStart(DragStartDetails details) {
+    // The accumulator is reset in addAllowedPointer (before any movement) so
+    // the initial slop movement is not discarded here.
+  }
+
+  void _handleUpdate(DragUpdateDetails details) {
+    _accumulatedDx += details.delta.dx;
+  }
+
+  void _handleEnd(DragEndDetails details) {
+    final dx = _accumulatedDx;
+    _accumulatedDx = 0;
+    if (_invalidated || dx.abs() < commitDistance) return;
+    // Product Decision 2: a left swipe (dx < 0) advances to the next tab and a
+    // right swipe (dx > 0) returns to the previous tab.
+    onCommit(dx < 0 ? 1 : -1);
+  }
+
+  void _handleCancel() {
+    _accumulatedDx = 0;
+  }
+}
 
 /// Root scaffold with the 4-tab bottom navigation (Home, Detect, Settings,
 /// Help). Logs & Reports is pushed as a separate full-screen route from
@@ -28,6 +132,11 @@ class AppShell extends StatefulWidget {
   final List<Widget> Function(BuildContext context, AppShellState shell)?
   pagesOverride;
 
+  /// Test hook — supply a coordinator so tests can observe the shared
+  /// lifecycle/start-intent state the shell owns. Production leaves this null
+  /// and the shell constructs its own instance.
+  final EngineCoordinator? coordinatorOverride;
+
   const AppShell({
     super.key,
     required this.settings,
@@ -36,6 +145,7 @@ class AppShell extends StatefulWidget {
     this.corrections,
     required this.haptics,
     this.pagesOverride,
+    this.coordinatorOverride,
   });
 
   @override
@@ -43,20 +153,66 @@ class AppShell extends StatefulWidget {
 }
 
 class AppShellState extends State<AppShell> {
+  /// Provisional/tunable commit distance for a primary horizontal drag.
+  static const double _primarySwipeCommitDistance = 80.0;
+
+  /// Concise destination names for wayfinding speech.
+  static const List<String> _destinationNames = [
+    'Home',
+    'Detection',
+    'Settings',
+    'Help',
+  ];
+
   int _index = 0;
   final List<bool> _visited = [true, false, false, false];
   final List<Widget?> _pages = List.filled(4, null);
+
+  /// The single app-shell-owned Detection lifecycle/status source.
+  ///
+  /// Home, Custom Detection, and Ultralytics Detection all render their
+  /// user-facing lifecycle status from this one instance. It is created once
+  /// from the already-loaded persisted preferred engine and disposed with the
+  /// shell.
+  late final EngineCoordinator _coordinator =
+      widget.coordinatorOverride ??
+      EngineCoordinator(
+        preferredEngine: widget.settings.inferenceEngine,
+        telemetry: widget.telemetry,
+      );
 
   @override
   void initState() {
     super.initState();
     _syncAudio();
     widget.settings.addListener(_syncAudio);
+    widget.settings.addListener(_handleSettingsChanged);
+    _applyLaunchPolicy();
+  }
+
+  /// Applies the finalized startup policy from the already-loaded preference.
+  ///
+  /// Auto-start ON: mark Detect visited/cached before the first shell build and
+  /// issue one silent launch start intent while Home remains selected. The
+  /// cached engine mounts behind visible Home and initializes in the
+  /// background.
+  ///
+  /// Auto-start OFF: leave Detect unbuilt and the coordinator idle. Detection
+  /// starts only on an intentional entry into the Detect tab.
+  ///
+  /// A persisted Auto-start change while the app is already running is out of
+  /// scope for this task and receives no reactive behavior here.
+  void _applyLaunchPolicy() {
+    if (!widget.settings.autoStartDetection) return;
+    _visited[1] = true;
+    _coordinator.requestStart(StartIntentOrigin.launch);
   }
 
   @override
   void dispose() {
     widget.settings.removeListener(_syncAudio);
+    widget.settings.removeListener(_handleSettingsChanged);
+    _coordinator.disposeCoordinator();
     super.dispose();
   }
 
@@ -64,13 +220,68 @@ class AppShellState extends State<AppShell> {
     widget.tts.setAudioEnabled(widget.settings.audioEnabled);
   }
 
-  /// Switches to a bottom-nav tab (used by Home's "Go to Live Camera" CTA).
+  /// Rebuilds the shell when the persisted hide-bar preference changes.
+  void _handleSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Switches to a bottom-nav tab.
+  ///
+  /// This is the direct, feedback-free path: it is shared by the visible
+  /// navigation bar and Back, neither of which should emit gesture-origin
+  /// wayfinding feedback.
   void goToTab(int index) {
     if (index < 0 || index > 3) return;
     setState(() {
       _visited[index] = true;
       _index = index;
     });
+    _requestEntryStartIfEnteringDetection(index);
+  }
+
+  /// Moves one tab in [direction] (`-1` toward Home, `+1` toward Help).
+  ///
+  /// Linear, non-wrapping: an out-of-range move stays on the current tab and
+  /// emits boundary feedback once. This is the only path that produces
+  /// gesture-origin wayfinding feedback.
+  void navigateRelative(int direction) {
+    if (direction == 0) return;
+    final target = _index + (direction < 0 ? -1 : 1);
+    if (target < 0 || target > 3) {
+      _emitBoundaryFeedback();
+      return;
+    }
+    setState(() {
+      _visited[target] = true;
+      _index = target;
+    });
+    _emitNavigationFeedback(target);
+    _requestEntryStartIfEnteringDetection(target);
+  }
+
+  /// Requests one entry start when the user intentionally enters Detect.
+  ///
+  /// Only the initial [DetectionRuntimeState.idle] state accepts an automatic
+  /// entry start; paused, stopped, busy, ready, fallback, and failed states
+  /// reject it so a retained-session manual pause/stop is never auto-restarted.
+  /// This never writes the persisted Auto-start preference.
+  void _requestEntryStartIfEnteringDetection(int index) {
+    if (index != 1) return;
+    _coordinator.requestEntryStartIfIdle();
+  }
+
+  /// Gesture-origin success feedback: light tick + destination speech.
+  void _emitNavigationFeedback(int target) {
+    widget.haptics.lightTick();
+    if (_accessibleNavigation) return;
+    widget.tts.speakWayfinding(_destinationNames[target]);
+  }
+
+  /// Gesture-origin boundary feedback: medium tick + boundary speech.
+  void _emitBoundaryFeedback() {
+    widget.haptics.mediumTick();
+    if (_accessibleNavigation) return;
+    widget.tts.speakWayfinding('End of navigation');
   }
 
   /// Opens the researcher-facing Logs & Reports screen (from Settings).
@@ -92,10 +303,7 @@ class AppShellState extends State<AppShell> {
     }
     switch (index) {
       case 0:
-        return HomeScreen(
-          settings: widget.settings,
-          onGoToDetection: () => goToTab(1),
-        );
+        return HomeScreen(settings: widget.settings, coordinator: _coordinator);
       case 1:
         return EngineDetectionScreen(
           settings: widget.settings,
@@ -103,11 +311,14 @@ class AppShellState extends State<AppShell> {
           telemetry: widget.telemetry,
           corrections: widget.corrections,
           haptics: widget.haptics,
+          coordinator: _coordinator,
+          onNavigateRelative: navigateRelative,
         );
       case 2:
         return SettingsScreen(
           settings: widget.settings,
           onOpenLogsReports: openLogsReports,
+          telemetry: widget.telemetry,
         );
       case 3:
         return const HelpScreen();
@@ -121,6 +332,17 @@ class AppShellState extends State<AppShell> {
     return _pages[index] ??= _buildPage(index);
   }
 
+  /// Whether Android accessibility navigation is currently active.
+  ///
+  /// Read from the [MediaQuery] aspect so the shell rebuilds when the feature
+  /// changes. This is never written back to the persisted settings.
+  bool get _accessibleNavigation => MediaQuery.accessibleNavigationOf(context);
+
+  /// Effective bottom-bar visibility: the persisted preference, overridden to
+  /// visible while accessibility navigation is active.
+  bool get _effectiveHideBar =>
+      widget.settings.hideBottomNavigation && !_accessibleNavigation;
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -131,37 +353,66 @@ class AppShellState extends State<AppShell> {
         }
       },
       child: Scaffold(
-        body: IndexedStack(
-          index: _index,
-          children: [for (var i = 0; i < 4; i++) _ensurePage(i)],
+        body: RawGestureDetector(
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            _SingleFingerHorizontalDragRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  _SingleFingerHorizontalDragRecognizer
+                >(
+                  () => _SingleFingerHorizontalDragRecognizer(
+                    onCommit: navigateRelative,
+                    commitDistance: _primarySwipeCommitDistance,
+                    // Detection (index 1) owns horizontal navigation inside
+                    // its own viewport via its raw GestureSurface; the shell
+                    // recognizer must not claim the pointer there, or one
+                    // physical swipe would move two primary tabs.
+                    enabled: () => _index != 1,
+                  ),
+                  (recognizer) {},
+                ),
+          },
+          child: IndexedStack(
+            index: _index,
+            children: [for (var i = 0; i < 4; i++) _ensurePage(i)],
+          ),
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: goToTab,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.center_focus_strong_outlined),
-              selectedIcon: Icon(Icons.center_focus_strong_rounded),
-              label: 'Detect',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings_rounded),
-              label: 'Settings',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.help_outline_rounded),
-              selectedIcon: Icon(Icons.help_rounded),
-              label: 'Help',
-            ),
-          ],
-        ),
+        bottomNavigationBar: _effectiveHideBar
+            ? null
+            // Presentation-only refresh: the light/Home-theme bar treatment is
+            // supplied by buildHomeTheme()'s NavigationBarThemeData. Ownership
+            // of the bar (destinations, order, callbacks, selection, visibility)
+            // stays here and is unchanged.
+            : Theme(
+                data: buildHomeTheme(),
+                child: NavigationBar(
+                  selectedIndex: _index,
+                  onDestinationSelected: goToTab,
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home_rounded),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.center_focus_strong_outlined),
+                      selectedIcon: Icon(Icons.center_focus_strong_rounded),
+                      label: 'Detect',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.settings_outlined),
+                      selectedIcon: Icon(Icons.settings_rounded),
+                      label: 'Settings',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.help_outline_rounded),
+                      selectedIcon: Icon(Icons.help_rounded),
+                      label: 'Help',
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }

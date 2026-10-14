@@ -8,6 +8,9 @@ import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_radii.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/accessible_button.dart';
 import 'detection_screen.dart';
 import 'ultralytics_detection_screen.dart';
@@ -19,6 +22,21 @@ class EngineDetectionScreen extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The single app-shell-owned Detection lifecycle/status source.
+  ///
+  /// The shell owns this instance for the shell lifetime; this screen forwards
+  /// engine lifecycle/failure facts to it and delivers its start intent to the
+  /// currently mounted engine. It never constructs or disposes a coordinator.
+  final EngineCoordinator coordinator;
+
+  /// Requests one relative primary-tab move from the shell.
+  ///
+  /// `-1` moves one tab toward Home, `+1` one tab toward Help. The shell owns
+  /// boundary handling and wayfinding feedback; this screen only forwards the
+  /// gesture intent. The callback must have stable identity for the cached
+  /// page lifetime so ordinary navigation never remounts the engine.
+  final void Function(int direction)? onNavigateRelative;
+
   const EngineDetectionScreen({
     super.key,
     required this.settings,
@@ -26,6 +44,8 @@ class EngineDetectionScreen extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    required this.coordinator,
+    this.onNavigateRelative,
   });
 
   @override
@@ -33,10 +53,7 @@ class EngineDetectionScreen extends StatefulWidget {
 }
 
 class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
-  late final EngineCoordinator _coordinator = EngineCoordinator(
-    preferredEngine: widget.settings.inferenceEngine,
-    telemetry: widget.telemetry,
-  );
+  EngineCoordinator get _coordinator => widget.coordinator;
   late double _lastDetectionConfidence = widget.settings.detectionConfidence;
 
   @override
@@ -48,7 +65,6 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
   @override
   void dispose() {
     widget.settings.removeListener(_handleSettingsChanged);
-    _coordinator.disposeCoordinator();
     super.dispose();
   }
 
@@ -101,6 +117,7 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
       builder: (context, _) {
         final selection = _coordinator.selection;
         final generation = _coordinator.mountGeneration;
+        final startIntent = _coordinator.pendingStartIntent;
         final child = switch (selection.activeEngine) {
           InferenceEngine.custom => DetectionScreen(
             key: ValueKey('custom-$generation'),
@@ -109,6 +126,9 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
             telemetry: widget.telemetry,
             corrections: widget.corrections,
             haptics: widget.haptics,
+            coordinator: _coordinator,
+            startIntent: startIntent,
+            onNavigateRelative: widget.onNavigateRelative,
             onRuntimeStateChanged: (state, sourceGeneration) =>
                 _reportState(state, generation, sourceGeneration),
             onFailure: (failure, sourceGeneration) =>
@@ -121,6 +141,9 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
             telemetry: widget.telemetry,
             corrections: widget.corrections,
             haptics: widget.haptics,
+            coordinator: _coordinator,
+            startIntent: startIntent,
+            onNavigateRelative: widget.onNavigateRelative,
             onRuntimeStateChanged: (state, sourceGeneration) =>
                 _reportState(state, generation, sourceGeneration),
             onFailure: (failure, sourceGeneration) =>
@@ -144,9 +167,9 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
   Widget _buildFallbackNotice(BuildContext context, String? reason) {
     final theme = Theme.of(context);
     return Positioned(
-      top: 8,
-      left: 12,
-      right: 12,
+      top: kSpace8,
+      left: kSpace12,
+      right: kSpace12,
       child: SafeArea(
         bottom: false,
         child: Semantics(
@@ -156,9 +179,13 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
               'Temporary fallback. Custom EyeCue is active because '
               '${reason ?? 'the recommended engine is unavailable.'}',
           child: Card(
-            color: theme.colorScheme.tertiaryContainer,
+            color: kHomeSurfaceCard,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(kRadius12),
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(kSpace12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -167,20 +194,18 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
                     'Temporary fallback active',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
-                      color: theme.colorScheme.onTertiaryContainer,
+                      color: kHomeInk,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: kSpace4),
                   Text(
                     'Custom EyeCue is active. ${reason ?? 'The recommended engine is unavailable.'}',
-                    style: TextStyle(
-                      color: theme.colorScheme.onTertiaryContainer,
-                    ),
+                    style: TextStyle(color: kHomeInkMuted),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: kSpace8),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: kSpace8,
+                    runSpacing: kSpace8,
                     children: [
                       AccessibleButton(
                         label: 'Retry Ultralytics',

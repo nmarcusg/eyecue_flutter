@@ -1,16 +1,46 @@
 import 'app_settings.dart';
 
 /// Lifecycle state shared by both camera/inference engines.
+///
+/// This is the single user-facing lifecycle vocabulary. Home, Custom
+/// Detection, and Ultralytics Detection all render their visible status from
+/// this shared state (via the app-shell-owned `EngineCoordinator`); no screen
+/// derives a competing visible status from engine-local booleans.
 enum DetectionRuntimeState {
+  /// Session has not started and no initialization is active. This is the
+  /// Auto-start-OFF, not-started presentation.
   idle,
+
+  /// Camera permission is being requested.
   requestingPermission,
+
+  /// The camera is being initialized/started.
   startingCamera,
+
+  /// The detection model is being loaded.
   loadingModel,
+
+  /// The active engine is genuinely prepared for detection.
   ready,
+
+  /// Detection is active but inference is deliberately paused.
   paused,
+
+  /// A recoverable worker/engine failure is being recovered.
   recovering,
+
+  /// A temporary fallback engine is successfully active after a
+  /// preferred-engine failure. This is a healthy state, not an error.
   fallback,
+
+  /// The current session is unavailable; see the accompanying failure.
   failed,
+
+  /// The user explicitly stopped the current session. Distinct from [idle]
+  /// (never started) and [disposed] (coordinator/application teardown).
+  stopped,
+
+  /// Coordinator/application teardown. Not a user-facing state.
   disposed,
 }
 
@@ -25,6 +55,7 @@ extension DetectionRuntimeStateX on DetectionRuntimeState {
     DetectionRuntimeState.recovering => 'Recovering',
     DetectionRuntimeState.fallback => 'Temporary fallback',
     DetectionRuntimeState.failed => 'Detection unavailable',
+    DetectionRuntimeState.stopped => 'Stopped',
     DetectionRuntimeState.disposed => 'Stopped',
   };
 

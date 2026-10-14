@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:marionette_flutter/marionette_flutter.dart';
 
 import 'models/model_config.dart';
 import 'navigation/app_shell.dart';
@@ -8,9 +10,17 @@ import 'services/haptics_service.dart';
 import 'services/settings_service.dart';
 import 'services/telemetry_service.dart';
 import 'services/tts_service.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Marionette (runtime inspection for AI agents) is a debug-only tool. It
+  // must never run in release builds, so the binding is only swapped in
+  // debug mode; release builds use the standard Flutter binding.
+  if (kDebugMode) {
+    MarionetteBinding.ensureInitialized();
+  } else {
+    WidgetsFlutterBinding.ensureInitialized();
+  }
 
   final settings = SettingsService();
   final tts = TtsService(engine: FlutterTtsEngine());
@@ -69,8 +79,8 @@ class EyeCueApp extends StatelessWidget {
     return MaterialApp(
       title: 'EyeCue',
       debugShowCheckedModeBanner: false,
-      theme: _buildTheme(),
-      darkTheme: _buildTheme(),
+      theme: buildEyeCueTheme(),
+      darkTheme: buildEyeCueTheme(),
       themeMode: ThemeMode.dark,
       home: AppShell(
         settings: settings,
@@ -78,93 +88,6 @@ class EyeCueApp extends StatelessWidget {
         telemetry: telemetry,
         corrections: corrections,
         haptics: haptics,
-      ),
-    );
-  }
-
-  /// High-contrast, dark-mode-friendly, accessibility-first theme.
-  ThemeData _buildTheme() {
-    final base = ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFFFFC107),
-        brightness: Brightness.dark,
-      ),
-    );
-    return base.copyWith(
-      scaffoldBackgroundColor: const Color(0xFF121212),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFF1E1E1E),
-        centerTitle: false,
-      ),
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: const Color(0xFF1E1E1E),
-        indicatorColor: const Color(0xFF3E2C00),
-      ),
-      // Explicit concrete font sizes are required here: the default M3
-      // TextTheme is color-only (fontSize == null; geometry is merged per
-      // locale at render time), so TextTheme.apply(fontSizeFactor:) would
-      // assert. These are the M3 sizes scaled ~1.12x for high-contrast
-      // readability, all in white.
-      textTheme: _highContrastTextTheme(),
-    );
-  }
-
-  /// Concrete high-contrast typography (white text, scaled for readability).
-  TextTheme _highContrastTextTheme() {
-    const white = Colors.white;
-    return const TextTheme(
-      displayLarge: TextStyle(fontSize: 64, color: white),
-      displayMedium: TextStyle(fontSize: 50, color: white),
-      displaySmall: TextStyle(fontSize: 40, color: white),
-      headlineLarge: TextStyle(
-        fontSize: 36,
-        color: white,
-        fontWeight: FontWeight.w600,
-      ),
-      headlineMedium: TextStyle(
-        fontSize: 31,
-        color: white,
-        fontWeight: FontWeight.w600,
-      ),
-      headlineSmall: TextStyle(
-        fontSize: 27,
-        color: white,
-        fontWeight: FontWeight.w600,
-      ),
-      titleLarge: TextStyle(
-        fontSize: 25,
-        color: white,
-        fontWeight: FontWeight.w700,
-      ),
-      titleMedium: TextStyle(
-        fontSize: 18,
-        color: white,
-        fontWeight: FontWeight.w600,
-      ),
-      titleSmall: TextStyle(
-        fontSize: 16,
-        color: white,
-        fontWeight: FontWeight.w600,
-      ),
-      bodyLarge: TextStyle(fontSize: 18, color: white),
-      bodyMedium: TextStyle(fontSize: 16, color: white),
-      bodySmall: TextStyle(fontSize: 13, color: white),
-      labelLarge: TextStyle(
-        fontSize: 16,
-        color: white,
-        fontWeight: FontWeight.w700,
-      ),
-      labelMedium: TextStyle(
-        fontSize: 13,
-        color: white,
-        fontWeight: FontWeight.w600,
-      ),
-      labelSmall: TextStyle(
-        fontSize: 12,
-        color: white,
-        fontWeight: FontWeight.w500,
       ),
     );
   }
