@@ -10,7 +10,24 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 **Stable release: v0.2.2** — The documented release contains the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. Its CPU-only, NHWC inference baseline was validated on the Snapdragon 695 test device.
 
-The current repository also contains a **committed but unreleased dual-engine candidate**. Settings can select the existing Custom EyeCue pipeline or an `ultralytics_yolo` native path; both use the same metadata-enriched `yolov8n_int8_new_metadata.tflite` artifact, authoritative `labels.txt`, and thresholds, then feed EyeCue's assistive layer. The artifact preserves the validated `yolov8n_int8_new.tflite` FlatBuffer byte-for-byte and appends a deterministic `metadata.json` ZIP containing the 80 indexed labels for the native overlay. Regenerate or validate it with `dart run tool/package_ultralytics_metadata.dart` and `dart run tool/package_ultralytics_metadata.dart --check`; details and SHA-256 values are recorded in [`model-assets.md`](docs/model-assets.md). The debug APK builds, installs, and has processed live camera frames in both modes on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Bidirectional switching also passed after a late-isolate-result lifecycle race was fixed. Short unmatched readings suggest that Ultralytics may be faster, but delegate selection and sustained comparative performance are not yet proven; no winner is claimed before controlled paired runs. `flutter analyze` is clean (0 issues) and `flutter test` reports **127 passing tests**.
+The current repository also contains a **committed but unreleased dual-engine candidate**. Settings can select the existing Custom EyeCue pipeline or an `ultralytics_yolo` native path; both use the same metadata-enriched `yolov8n_int8_new_metadata.tflite` artifact, authoritative `labels.txt`, and thresholds, then feed EyeCue's assistive layer. The artifact preserves the validated `yolov8n_int8_new.tflite` FlatBuffer byte-for-byte and appends a deterministic `metadata.json` ZIP containing the 80 indexed labels for the native overlay. Regenerate or validate it with `dart run tool/package_ultralytics_metadata.dart` and `dart run tool/package_ultralytics_metadata.dart --check`; details and SHA-256 values are recorded in [`model-assets.md`](docs/model-assets.md). The debug APK builds, installs, and has processed live camera frames in both modes on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Bidirectional switching also passed after a late-isolate-result race was fixed. Short unmatched readings suggest that Ultralytics may be faster, but delegate selection and sustained comparative performance are not yet proven; no winner is claimed before controlled paired runs.
+
+Historical verification at that revision reported `flutter analyze` clean and **127 passing tests**; dated totals are recorded in [`docs/session-log.md`](docs/session-log.md). Those numbers are **not** current verification.
+
+### Unreleased on-device speech changes (Workstream 1)
+
+The `codex/tts-lifecycle-arbitration` branch replaces the former fire-and-forget TTS scheduler with a **lifecycle-aware safety alert arbiter**:
+
+- one utterance in flight at a time, plus a **single** pending request (higher priority replaces lower; newest replaces oldest at equal priority);
+- accepted-alert history and cooldowns are written **only from a confirmed `onStart`**, never from the moment a decision is made;
+- completion, cancellation, drop and failure are distinct terminal states, each reconciled from a **paired** platform signal (`onComplete` + result `1`, `onCancel` + result `0`);
+- a bounded recovery + quiet-period quarantine handles missing lifecycle signals;
+- `AlertPolicy` keys identity on track ID (label only as a fallback), so two different people are independently eligible;
+- wayfinding (destination/boundary phrases) is advisory: accepted only while the scheduler is truly idle, never queued behind Detection speech, and never replaces the Detection utterance replayed by repeat-last;
+- parked decisions are revalidated semantically before speaking, and a same-track escalation (`stable/unknown` to `approaching`, proximity-band increase, centre entry, or box growth) re-alerts inside the ordinary suppression window;
+- preemption is limited to imminent safety and to a **distinct** equal-priority track that is suddenly approaching; a preemption cooldown plus per-submission guards prevent repeated frames from churning the engine.
+
+**Limits and verification.** `flutter_tts` exposes **no utterance identifier**, so callbacks are correlated by strict serialization and paired signals; the recovery quiet period is a bounded mitigation, not an absolute guarantee against a very late native callback. Alert-latency telemetry (decision/submission/start/completion timestamps, p50/p95/max) is **not implemented**, so the existing per-frame inference timing must not be read as audible-warning latency. Tests exist for this work but have **not** been executed since the relocation; `flutter analyze`, Gradle and builds were not run either. Real Android callback ordering, cancellation timing and total audible-warning latency remain unmeasured on device. EyeCue is **not** proven safe for independent navigation.
 
 Fresh settings default to **Ultralytics**. An explicit persisted **Custom EyeCue** choice is preserved, and Custom remains available as the bounded Advanced/compatibility fallback. Detection sensitivity is also persisted through shared presets or the bounded advanced threshold range; both engines apply the selected value when they start or reload.
 
@@ -117,7 +134,11 @@ lib/
 │   ├── assistive_detection_controller.dart # Shared normalized detection behavior
 │   ├── engine_coordinator.dart         # Preferred/active engine and fallback
 │   ├── ultralytics_detection_adapter.dart # Native result → Detection mapping
-│   ├── tts_service.dart               # TTS queue, cooldown, de-duplication, mute, repeat
+│   ├── tts_service.dart               # Lifecycle-aware speech arbiter: one in-flight
+│   │                                  #   utterance, one pending request, preemption,
+│   │                                  #   wayfinding, repeat-last
+│   ├── alert_policy.dart              # Track-aware risk policy: identity, escalation,
+│   │                                  #   pending-decision revalidation
 │   ├── settings_service.dart          # File-backed persisted settings (JSON)
 │   ├── spatial_analysis_service.dart  # Box → position/priority/proximity (pure)
 │   ├── haptics_service.dart           # HapticFeedback wrapper

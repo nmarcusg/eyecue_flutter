@@ -1,5 +1,12 @@
 # Telemetry export data dictionary
 
+> **Not yet implemented (Workstream 1 scope boundary):** the alert-latency
+> instrumentation described in the TTS workstream plan (decision, submission,
+> start, completion, cancellation and reconciliation timestamps with p50/p95/max
+> summaries) is **not present** in the current schema or exporter. This document
+> describes only what the code records today. Do not infer end-to-end
+> audible-warning latency from the existing per-frame inference timing.
+
 EyeCue exports an image-free snapshot only after an explicit user action from
 Logs & Reports. JSON keeps the same values in nested record arrays. CSV uses one
 stable wide header and a `record_type` column; columns that do not apply to a row

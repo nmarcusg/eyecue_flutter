@@ -2,7 +2,11 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Current suite (2026-09-29):** `flutter test` → **343 passing, 0 failing**; `flutter analyze` → **0 issues**. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows, and the Detection redesign's [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart)), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
+> **Verification status (2026-10-17):** the totals in the next paragraph are **historical**, recorded before the Workstream 1 TTS relocation onto `origin/dev`. After that relocation **no** `flutter test`, `flutter analyze`, Gradle or build command has been run. Treat every passing count below as pre-relocation evidence, not current verification.
+>
+> For the speech layer specifically: tests exist for the serialized scheduler, alert policy, escalation, semantic pending revalidation, preemption/anti-churn, and idle-only wayfinding, but they were **not executed** after relocation. Real Android callback ordering and cancellation latency are unverified on device. `flutter_tts` provides **no utterance identifier**, so callback correlation relies on serialization plus paired signals, with a bounded quiet-period mitigation. Alert-latency telemetry is **not implemented**, and inference timing must not be treated as audible-warning latency. Prompt, correct audible warnings are **not** proven for independent navigation.
+
+> **Historical suite (2026-09-29 — pre-relocation):** at that revision `flutter test` reported **343 passing, 0 failing** and `flutter analyze` reported **0 issues**; these figures do **not** describe the current branch. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows, and the Detection redesign's [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart)), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
 
 ## Unit Testing Strategy
 
@@ -77,7 +81,7 @@
 
 ### Audio Feedback (TTS implemented v0.2.0)
 - [x] TTS speaks detected objects clearly — ✅ implemented (`tts_service.dart`), dedicated on-device audio validation pending
-- [x] TTS does not overlap/spam (cooldown works) — ✅ cooldown + same-label de-duplication implemented
+- [x] TTS does not overlap/spam — ✅ strict serialized speech (one active utterance, one pending slot), track-aware suppression, confirmed-`onStart` commits, semantic escalation/revalidation, and controlled preemption are implemented. Automated tests exist but have **not** been executed since the relocation, and physical Android validation remains pending.
 - [ ] TTS latency from detection to speech is acceptable
 - [ ] TTS works with screen reader (TalkBack) active
 
