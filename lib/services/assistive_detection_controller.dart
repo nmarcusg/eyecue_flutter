@@ -67,6 +67,10 @@ class AssistiveDetectionController extends ChangeNotifier {
       );
     }
     if (announce) {
+      // Deliberately not awaited: frames must never block on speech. The
+      // TtsService scheduler is internally serialized (one utterance in
+      // flight, one pending slot), so concurrent frame results cannot race
+      // announcement decisions.
       tts.announceDetections(_detections, tracks: _tracks, engine: engine);
     }
     notifyListeners();
