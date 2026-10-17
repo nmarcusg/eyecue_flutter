@@ -5,6 +5,24 @@
 
 ---
 
+## Unreleased — Lifecycle-Aware TTS Safety Arbitration (Workstream 1)
+
+### Changed
+- Replaced the fire-and-forget TTS path with a serialized scheduler in [`tts_service.dart`](../lib/services/tts_service.dart): exactly one utterance in flight and exactly one pending request (higher priority replaces lower; newest replaces oldest at equal priority).
+- Accepted-alert history, cooldowns, and repeat-last state are now committed **only from a confirmed `onStart`**. A decision that is rejected, dropped, or cancelled before speech begins arms nothing.
+- Completion, cancellation, drop and failure are distinct terminal states reconciled from paired platform signals (`onComplete` + result `1`, `onCancel` + result `0`). Missing signals enter a bounded recovery with a restartable quiet-period quarantine.
+- Label-only suppression was replaced by track-aware identity in the new [`alert_policy.dart`](../lib/services/alert_policy.dart). A different person (different track ID) is independently eligible even when the `person` label was announced moments earlier.
+- Escalation re-alerts within the ordinary same-object window on risk increase, `stable/unknown → approaching`, proximity-band increase, centre-corridor entry, or smoothed-box growth. Parked decisions are revalidated semantically (TTL-aware) before speaking.
+- Added controlled preemption: imminent safety alerts outrank lower priorities, and a distinct suddenly-approaching track may preempt an equal-priority, non-approaching active warning. Both preserve a preemption cooldown and the serialized stop/cancel/reconcile path.
+- Wayfinding (destination/boundary phrases) now runs through the serialized scheduler: accepted only while idle, never queued behind Detection speech, never replacing Detection repeat-last state, with anti-repeat history committed only on confirmed `onStart`.
+- Widget-test fake engines now install lifecycle handlers, emit start before completion, and are disposed after each test.
+
+### Verified
+- **Static checks only.** `dart format` and `git diff --check` are clean; no conflict markers or unmerged paths remain.
+- `flutter analyze`, the full test suite, Gradle, and builds were **not** run after relocating this work onto `origin/dev`. Test totals from earlier revisions are historical, not current verification.
+
+---
+
 ## Unreleased — Presentation-Only Visual Redesign Closeout (2026-09-29)
 
 ### Changed
