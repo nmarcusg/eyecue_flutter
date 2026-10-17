@@ -15,6 +15,12 @@ configurations.configureEach {
 val classicLiteRtAar by configurations.creating
 
 dependencies {
+    // A transitive dependency was resolving WorkManager 2.9.1, whose Room-backed
+    // startup database fails in this optimized release APK. Pin a recent stable
+    // runtime so its matching Room implementation and consumer R8 rules
+    // are packaged together.
+    implementation("androidx.work:work-runtime:2.11.2")
+
     add(classicLiteRtAar.name, "com.google.ai.edge.litert:litert:1.4.0@aar") {
         isTransitive = false
     }

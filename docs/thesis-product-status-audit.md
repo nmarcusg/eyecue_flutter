@@ -6,6 +6,13 @@
 > **Implementation source of truth:** the actual code in `lib/`, `test/`, `pubspec.yaml`, and `android/` — **not** the documentation.
 > **Update note:** The original audit (also 2026-08-16) captured the **pre-v0.2.0** state — a single developer camera screen with no audio, spatial, gesture, or settings layers. Since then the v0.2.x phase landed the thesis-aligned assistive application (v0.2.0), fixed the startup theme assertion (v0.2.1), and fixed the camera viewport + chart overflow (v0.2.2). This revision re-runs the audit against the current v0.2.2 codebase; the original findings are preserved in the project's git history and session log.
 > **This is an audit only.** No code was modified.
+>
+> **TTS superseded notice (2026-10-17):** the speech rows in this audit describe
+> the v0.2.x scheduler (cooldown, same-label de-duplication, urgent bypass).
+> That scheduler has since been replaced by a lifecycle-aware arbiter with
+> track-aware suppression/escalation, confirmed-`onStart` history and controlled
+> preemption ([`architecture.md`](architecture.md#speech-scheduling-workstream-1)).
+> Read those rows as dated evidence, not current behaviour.
 > **Historical snapshot notice (2026-09-01):** This audit's dated v0.2.2
 > conclusions predate the committed-but-unreleased NCHW/XNNPACK candidate and
 > its initial Snapdragon 695 device observation. Do not read its CPU-only,

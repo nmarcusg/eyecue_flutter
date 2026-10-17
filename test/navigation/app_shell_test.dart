@@ -13,15 +13,59 @@ import 'package:eyecue_flutter/widgets/gesture_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Fake engine that models the real lifecycle signal order.
+///
+/// `TtsService.init()` installs all four handlers; `speak()` then models a
+/// successful utterance by emitting start, emitting completion, and resolving
+/// with result `1`. Without the callbacks the serialized scheduler would wait
+/// for reconciliation and leave a start-confirmation timer pending.
 class _FakeTtsEngine implements TtsEngine {
+  VoidCallback? _onStart;
+  VoidCallback? _onComplete;
+  VoidCallback? _onCancel;
+  void Function(dynamic)? _onError;
+
+  /// When set, the next utterance fails deterministically instead of speaking.
+  bool failNext = false;
+
   @override
   Future<void> dispose() async {}
+
   @override
   Future<void> init() async {}
+
   @override
-  Future<void> speak(String text) async {}
+  Future<int> speak(String text) async {
+    if (failNext) {
+      failNext = false;
+      _onError?.call('simulated TTS failure');
+      return 0;
+    }
+    _onStart?.call();
+    _onComplete?.call();
+    return 1;
+  }
+
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    _onCancel?.call();
+  }
+
+  @override
+  Future<void> recover() async {}
+
+  @override
+  void setStartHandler(VoidCallback? callback) => _onStart = callback;
+
+  @override
+  void setCompletionHandler(VoidCallback? callback) => _onComplete = callback;
+
+  @override
+  void setCancelHandler(VoidCallback? callback) => _onCancel = callback;
+
+  @override
+  void setErrorHandler(void Function(dynamic error)? handler) =>
+      _onError = handler;
 }
 
 /// Stub pages so the shell can be tested without a real camera/inference stack.
@@ -45,9 +89,11 @@ void main() {
   late HapticsService haptics;
   late List<String> hapticCalls;
 
-  setUp(() {
+  setUp(() async {
     settings = SettingsService(store: InMemorySettingsStore());
     tts = TtsService(engine: _FakeTtsEngine());
+    // init() installs the lifecycle handlers the scheduler depends on.
+    await tts.init();
     telemetry = TelemetryService();
     hapticCalls = [];
     haptics = HapticsService(
@@ -55,6 +101,10 @@ void main() {
       medium: () async => hapticCalls.add('medium'),
       heavy: () async => hapticCalls.add('heavy'),
     );
+  });
+
+  tearDown(() {
+    tts.dispose();
   });
 
   Widget buildShell({bool accessibleNavigation = false}) {

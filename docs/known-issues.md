@@ -1,13 +1,13 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-09-28 (Detection redesign PD1–PD3)
+> **Last Updated:** 2026-10-17 (Workstream 1 documentation sync; the PD1–PD3 revision date below is historical)
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
 
 ## Current Blockers
 
 ### 🟢 Detection Redesign (PD1–PD3) — Non-Blocking Notes
 
-The Detection redesign (PD1–PD3) is implemented and statically validated (`flutter analyze` 0 issues; `flutter test` **323 passing**), with three runtime repairs applied after physical-device validation (Custom `IntrinsicHeight` layout cascade, Custom post-frame start intent, Ultralytics native-session recreation on start-after-stop). The behavioral-deviation audit found **no unintended deviations** from baseline `f310e73`. The following items are **non-blocking for the redesign** and are recorded for follow-up.
+The Detection redesign (PD1–PD3) is implemented and statically validated (`flutter analyze` 0 issues; `flutter test` **323 passing at the 2026-09-28 revision**), with three runtime repairs applied after physical-device validation (Custom `IntrinsicHeight` layout cascade, Custom post-frame start intent, Ultralytics native-session recreation on start-after-stop). The behavioral-deviation audit found **no unintended deviations** from baseline `f310e73`. That historical result does **not** verify the current Workstream 1 branch, which has not run Flutter tests or the analyzer. The following items are **non-blocking for the redesign** and are recorded for follow-up.
 
 - **Ultralytics Ready timing semantics:** Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`. The current definition is model/native initialization readiness, not strict pipeline-operational proof.
 - **Post-resume freshness diagnostic limitation:** the epoch diagnostic cannot isolate the first result after Resume.
@@ -64,7 +64,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 ## Resolved (previously tracked here)
 
 - ✅ **Engine-switch closed-stream race** — RESOLVED in the unreleased candidate. A late Custom-isolate result could arrive after switching to Ultralytics and attempt to write to a closed result stream. Disposal now marks the service inactive before cancelling/closing resources, ignores late messages, and releases the UI busy gate when a frame is rejected. Both switch directions passed a post-fix device smoke test.
-- ✅ **TTS integration** — RESOLVED v0.2.0. `flutter_tts` is now wired via [`tts_service.dart`](../lib/services/tts_service.dart) (cooldown, de-duplication, urgent bypass, mute, repeat-last). No longer a blocker.
+- 🟡 **TTS scheduling — reworked, device-unverified (Workstream 1).** The v0.2.0 wiring (cooldown + label de-duplication + urgent bypass) has been replaced by a lifecycle-aware arbiter in [`tts_service.dart`](../lib/services/tts_service.dart): one in-flight utterance, one pending request, history committed only on confirmed `onStart`, paired-signal reconciliation, bounded recovery/quiet period, track-aware [`alert_policy.dart`](../lib/services/alert_policy.dart), semantic pending revalidation, controlled preemption, and idle-only wayfinding. **Not resolved:** `flutter_tts` callbacks carry no utterance identifier, real Android callback ordering and cancellation timing are unmeasured, and the relocated suite has not been executed. See [`architecture.md`](architecture.md#speech-scheduling-workstream-1).
 - ✅ **Permission-denied UI** — RESOLVED v0.2.0. [`detection_screen.dart`](../lib/screens/detection_screen.dart) shows a camera-denied state with retry / open-settings. No longer a blocker.
 - ✅ **Boilerplate counter-app test** — RESOLVED v0.2.0. [`test/widget_test.dart`](../test/widget_test.dart) now contains real Home/Settings/Help screen smoke tests; the full suite is 127 passing as of 2026-09-05.
 

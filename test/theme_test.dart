@@ -8,15 +8,58 @@ import 'package:eyecue_flutter/theme/app_home_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Fake engine that models the real lifecycle signal order.
+///
+/// `TtsService.init()` installs all four handlers; `speak()` then models a
+/// successful utterance by emitting start, emitting completion, and resolving
+/// with result `1`.
 class _FakeTtsEngine implements TtsEngine {
+  VoidCallback? _onStart;
+  VoidCallback? _onComplete;
+  VoidCallback? _onCancel;
+  void Function(dynamic)? _onError;
+
+  /// When set, the next utterance fails deterministically instead of speaking.
+  bool failNext = false;
+
   @override
   Future<void> dispose() async {}
+
   @override
   Future<void> init() async {}
+
   @override
-  Future<void> speak(String text) async {}
+  Future<int> speak(String text) async {
+    if (failNext) {
+      failNext = false;
+      _onError?.call('simulated TTS failure');
+      return 0;
+    }
+    _onStart?.call();
+    _onComplete?.call();
+    return 1;
+  }
+
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    _onCancel?.call();
+  }
+
+  @override
+  Future<void> recover() async {}
+
+  @override
+  void setStartHandler(VoidCallback? callback) => _onStart = callback;
+
+  @override
+  void setCompletionHandler(VoidCallback? callback) => _onComplete = callback;
+
+  @override
+  void setCancelHandler(VoidCallback? callback) => _onCancel = callback;
+
+  @override
+  void setErrorHandler(void Function(dynamic error)? handler) =>
+      _onError = handler;
 }
 
 /// Regression test for the startup theme crash:
@@ -28,9 +71,14 @@ void main() {
   testWidgets('EyeCueApp builds the theme and renders the Home screen', (
     tester,
   ) async {
+    final tts = TtsService(engine: _FakeTtsEngine());
+    // init() installs the lifecycle handlers the scheduler depends on.
+    await tts.init();
+    addTearDown(tts.dispose);
+
     final app = EyeCueApp(
       settings: SettingsService(store: InMemorySettingsStore()),
-      tts: TtsService(engine: _FakeTtsEngine()),
+      tts: tts,
       telemetry: TelemetryService(),
       haptics: HapticsService(),
     );

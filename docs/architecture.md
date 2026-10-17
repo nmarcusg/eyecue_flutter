@@ -171,7 +171,9 @@ eyecue_flutter/
 │   │   ├── engine_coordinator.dart         # Preferred/active engine and fallback state
 │   │   ├── assistive_detection_controller.dart # Shared post-detection behavior
 │   │   ├── ultralytics_detection_adapter.dart # Native result → Detection adapter
-│   │   ├── tts_service.dart               # TTS: queue, cooldown, de-duplication, mute, repeat
+│   │   ├── tts_service.dart               # Lifecycle-aware speech arbiter (one in-flight,
+│   │   │                                  #   one pending, preemption, wayfinding, repeat)
+│   │   ├── alert_policy.dart              # Track-aware alert policy + pending revalidation
 │   │   ├── settings_service.dart          # File-backed persisted settings (JSON)
 │   │   ├── spatial_analysis_service.dart  # Box → position/priority/proximity (pure)
 │   │   ├── haptics_service.dart           # HapticFeedback wrapper
@@ -237,7 +239,8 @@ eyecue_flutter/
 | Engine Coordinator | [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart) | Single app-shell-owned, user-facing Detection lifecycle/status source: preferred/active engine state, one-shot fallback, stale-generation filtering, retry actions, explicit `stopped` state, and a monotonic one-shot start-intent token (silent launch versus user-entry origin) |
 | Ultralytics Adapter | [`ultralytics_detection_adapter.dart`](../lib/services/ultralytics_detection_adapter.dart) | Maps native YOLO results into the shared `Detection` contract |
 | Shared Assistive Controller | [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart) | Common spatial interpretation, tracking, summaries, TTS, haptics, corrections, telemetry, export, and accessibility state |
-| TTS Service | [`tts_service.dart`](../lib/services/tts_service.dart) | Speech scheduling, cooldown, de-duplication, mute, repeat-last |
+| TTS Service | [`tts_service.dart`](../lib/services/tts_service.dart) | Serialized speech scheduler: lifecycle callbacks, one in-flight utterance, one pending request, preemption, wayfinding, mute, repeat-last |
+| Alert Policy | [`alert_policy.dart`](../lib/services/alert_policy.dart) | Track-aware identity, risk/escalation classification, read-only `decide()`, confirmed-start commits, TTL-aware pending revalidation |
 | Settings Service | [`settings_service.dart`](../lib/services/settings_service.dart) | File-backed persisted settings (JSON) |
 | Spatial Analysis | [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart) | Box → position/priority/approximate proximity (pure, outside pipeline) |
 | Haptics Service | [`haptics_service.dart`](../lib/services/haptics_service.dart) | HapticFeedback wrapper respecting Vibration setting |
@@ -325,3 +328,51 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 - **Configuration:** model paths, labels, confidence bounds/default, and NMS IoU are centralized in [`model_config.dart`](../lib/models/model_config.dart). Detection sensitivity is persisted in [`app_settings.dart`](../lib/models/app_settings.dart) and applied by both engines at startup/reload; it is not a per-frame mutation.
 - **Out of scope for the live app:** calibrated distance, validated movement/approach estimation, and accuracy/precision/recall/mAP (require ground truth — see [`thesis-product-status-audit.md`](thesis-product-status-audit.md)).
 - **Release boundary:** final Android identity, explicit SDK policy, production signing, signed AAB validation, broad device coverage, formal benchmark evidence, licence approval, and Play release remain separate gates.
+
+## Speech Scheduling (Workstream 1)
+
+The speech layer is a serialized safety arbiter, not a fire-and-forget speaker. It applies to both engines, because both funnel post-inference results through [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart).
+
+### Lifecycle model
+
+States are `submitted`, `started`, `completed`, `cancelled`, `dropped`, `failed`, `recovering`, `settling` (plus `idle`).
+
+- **Only a confirmed `onStart` commits accepted-alert history** (`AlertPolicy.commitStarted`). A decision alone never mutates suppression, cooldown, or repeat-last state.
+- Terminal outcomes are reconciled from **paired** platform signals: completion requires `onComplete` **and** result `1`; cancellation requires `onCancel` **and** result `0`.
+- A submission that returns result `0` with no start callback and no locally requested stop is classified `dropped`.
+- Missing signals, engine errors and reconciliation timeouts enter a **bounded** recovery: `recover()` is attempted once, then a restartable quiet period quarantines residual callbacks, capped by a maximum settling duration, before the pending slot is drained.
+- **One utterance is in flight and exactly one pending request exists.** Higher priority replaces lower; newest replaces oldest only at equal priority; a lower-priority request never displaces a higher-priority pending one.
+- `flutter_tts` exposes **no utterance identifier**, so correlation is achieved by strict serialization plus signal reconciliation. A very late native callback after the bounded quiet period cannot be mathematically distinguished; this is a documented residual limitation.
+
+### Alert policy
+
+- Identity prefers the tracker's **track ID**; the label is only a fallback when no track exists.
+- A stable object is suppressed after its first accepted announcement. A **new track is independently eligible even when the same label was just announced**, so a second person is never silenced by the first.
+- Escalation re-alerts immediately: risk-tier increase, `stable/unknown` to `approaching`, proximity band increase (`far` to `medium`, `medium` to `near`), entry into the centre corridor, or smoothed-box height growth beyond threshold.
+- Parked decisions are **revalidated semantically** at drain time: no live state (including TTL-expired state) keeps them eligible; a newer accepted state discards them only when that state already covers them; a still-genuine escalation is retained.
+
+### Preemption
+
+- `imminent` safety alerts outrank lower priorities.
+- A **distinct track** that is suddenly approaching may preempt an active warning of **equal** priority when the active warning is not itself approaching. This is a targeted rule, not a general `>=` comparison.
+- Preemption uses the normal serialized sequence: offer into the single pending slot, `stop()`, reconcile both cancellation signals, a single terminal commit, then the reconciler drains.
+- A preemption cooldown limits churn, and repeated frames for the same track during cancellation do not issue additional stops.
+
+### Wayfinding
+
+- Advisory destination/boundary phrases are accepted **only while the scheduler is genuinely idle**; otherwise they are dropped, never parked behind Detection speech.
+- Wayfinding never writes Detection repeat-last state, never arms the Detection cooldown, and commits its own anti-repeat history **only on confirmed `onStart`**.
+- Any incoming Detection decision may interrupt active wayfinding through the same controlled cancellation path.
+
+### Limitations
+
+- `flutter_tts` lifecycle callbacks carry no utterance ID; the quiet-period mitigation is bounded, not absolute.
+- Real Android callback ordering and cancellation timing remain **unverified on device**.
+- Scheduler improvements begin only after detection/tracking produces an alert decision. Camera acquisition, inference, tracking and total audible-warning latency still require device measurement.
+- EyeCue must not be described as proven safe for independent navigation.
+
+### Verification status
+
+- Automated coverage exists for this scheduler ([`tts_service_test.dart`](../test/services/tts_service_test.dart) and [`alert_policy_test.dart`](../test/services/alert_policy_test.dart)) but was **not executed** after the relocation onto `origin/dev`; no result is claimed here.
+- Real Android lifecycle-callback ordering, cancellation latency and audible-warning latency are **unverified on device**.
+- Alert-latency telemetry is **not implemented**. Per-frame inference timing recorded today is an internal measure and must **not** be described as audible-warning latency (see [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md)).
