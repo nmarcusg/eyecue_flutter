@@ -1,5 +1,18 @@
 # EyeCue — Custom vs Ultralytics Test
 
+> **Test totals in this document are historical.** They predate the Workstream 1
+> TTS relocation onto `origin/dev`; that suite has since been restructured and
+> has not been executed. Speech scheduling also changed: both engines now share a
+> serialized lifecycle-aware arbiter rather than cooldown/label de-duplication
+> (see [`architecture.md`](architecture.md#speech-scheduling-workstream-1)). This
+> document remains valid as the **benchmark protocol** and as dated evidence.
+>
+> **Measurement boundary:** alert-latency telemetry is not implemented in this
+> revision. Engine FPS and per-frame inference latency measured here are internal
+> pipeline metrics and must **not** be reported as audible-warning latency; that
+> requires device measurement from frame reception to first audible speech. Real
+> Android callback ordering and cancellation timing also remain unverified.
+
 > **Status:** Unreleased test candidate, 2026-09-01. The Android debug APK builds, installs, and has run both engines on the Snapdragon 695/API 33 target. Bidirectional switching also passed a short smoke test after a lifecycle race was fixed. The controlled comparison is still pending; this document does not claim a winning engine before those runs are completed.
 
 ## What the two modes mean
@@ -68,7 +81,7 @@ A practical release design is to keep both engines, retain the current Ultralyti
 ## Verification completed before controlled benchmarking
 
 - `flutter analyze`: 0 issues.
-- `flutter test`: **127 passing**.
+- `flutter test`: **127 passing** (historical — before the Workstream 1 relocation).
 - Deterministic Custom-worker lifecycle suite: **7 passing**, including bounded retries, stale-generation rejection, busy-gate release, and disposal during backoff.
 - Flatbuffer and PNG validators: passing.
 - Deterministic metadata packaging check: passing; already-packaged input is rejected.

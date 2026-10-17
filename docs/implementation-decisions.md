@@ -150,3 +150,25 @@ This document records important engineering decisions made during the developmen
   - Camera preview is smooth even during inference
   - Lost: existing React Native TTS, accessibility, and UI work (must be reimplemented)
   - Gained: cleaner architecture, GPU overlays via CustomPainter, true multithreading
+
+---
+
+## Speech Scheduling: Lifecycle-Aware Arbitration
+
+- **Decision:** Replace the cooldown/label-deduplication TTS path with a serialized, lifecycle-aware scheduler plus a separate track-aware alert policy.
+- **Date:** 2026-10
+- **Reason:** A device test produced an obstacle warning after the user had already collided. Code review found four contributory defects: (1) label and announcement cooldowns were written *before* speech was attempted, so a rejected utterance still suppressed the next alert; (2) suppression was keyed on the label, so a second person was silenced by a first; (3) announcement decisions were not serialized, allowing concurrent frame results to race; (4) `flutter_tts` returns result `1` only at completion, so a dropped submission could be recorded as success.
+- **Alternatives Considered:**
+  - Keep the existing scheduler and only lengthen/shorten cooldowns — rejected; the defect is ordering and identity, not tuning.
+  - Stop and flush before every urgent alert — rejected; it floods speech, truncates utterances, and does not fix untracked history.
+  - Correlate callbacks by utterance ID — not possible; `flutter_tts` exposes no utterance identifier.
+  - Add a general `>=` priority preemption rule — rejected; it would let repeated frames preempt continuously.
+- **Consequences:**
+  - Accepted-alert history is committed only from a confirmed `onStart`; completion/cancellation require paired platform signals.
+  - Identity is track-based with label fallback, so distinct people are independently eligible.
+  - Exactly one in-flight utterance and one pending request; preemption only for imminent safety and for distinct approaching tracks at equal priority.
+  - Wayfinding is advisory: idle-only acceptance, never queued behind Detection, separate confirmed-start anti-repeat state.
+  - Parked decisions are revalidated semantically (`shouldSpeakPending`) so a newer accepted state discards them only when it already covers them; a genuine escalation is retained. Escalation covers risk tier, `stable/unknown` to `approaching`, proximity-band increase, centre entry, and size growth.
+  - Tests were written for the scheduler and policy but were **not executed** after the relocation onto `origin/dev`; no pass claim is made.
+  - Alert-latency telemetry is **not implemented**; per-frame inference timing must not be presented as audible-warning latency.
+  - Residual limitation: a sufficiently late native callback after the bounded quiet period cannot be distinguished without native utterance IDs. Device callback ordering, cancellation timing and audible-warning latency remain unverified, so EyeCue is **not** proven safe for independent navigation.
