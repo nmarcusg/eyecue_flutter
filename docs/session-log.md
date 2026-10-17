@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-10-17 — Workstream 1: TTS lifecycle arbitration
+
+### Context
+A device test produced an obstacle warning only after the user had already collided. Review traced this to speech scheduling, not to detection: history was committed before speech was attempted, suppression was label-based, and announcement decisions were not serialized.
+
+### Changed
+- Replaced the fire-and-forget TTS path with a serialized scheduler in [`tts_service.dart`](../lib/services/tts_service.dart): one in-flight utterance, one pending request, `Future<int>` results, start/completion/cancel/error handlers, `recover()`, bounded recovery with a restartable quiet period, and paired-signal terminal reconciliation.
+- Added [`alert_policy.dart`](../lib/services/alert_policy.dart): track-preferred identity with label fallback, stable-object suppression, risk/motion/proximity/corridor/height escalation, read-only `decide()`, confirmed-`onStart` commits, TTL expiry, and semantic pending revalidation.
+- Added controlled preemption: imminent safety outranks lower priorities; a distinct approaching track may preempt an equal-priority non-approaching warning; preemption cooldown and anti-churn are preserved.
+- Integrated wayfinding through the scheduler: idle-only acceptance, never queued behind Detection, separate confirmed-start anti-repeat state, and Detection may interrupt it through serialized cancellation.
+- Relocated the work onto `origin/dev` (`71693d4`) plus the WorkManager commit (`74d4649`); widget-test fake engines now install handlers, emit start before completion, and are disposed after each test.
+
+### Verified
+- **Static only:** `dart format` clean, `git diff --check` clean, no conflict markers, no unmerged paths.
+- **Not verified:** no `flutter test`, `flutter analyze`, Gradle or build was run after relocation. Test totals recorded in earlier entries remain historical evidence, not current status.
+
+### Known limitations
+- `flutter_tts` lifecycle callbacks carry no utterance identifier; the quiet-period mitigation is bounded, so a very late native callback cannot be identified.
+- Real Android callback ordering, cancellation timing and audible-warning latency are unmeasured.
+- Scheduler work begins only after detection/tracking produces an alert decision; camera/inference/tracking latency still needs device measurement.
+- EyeCue is not proven safe for independent navigation.
+
+### Next Session
+- Run `flutter analyze` and the full suite on `codex/tts-lifecycle-arbitration`, then review the single Workstream 1 commit.
+
+---
+
 ## 2026-09-29 (25th session) — Presentation-Only Visual Redesign Closeout
 
 ### Objective

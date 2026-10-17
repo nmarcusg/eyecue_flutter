@@ -1,6 +1,10 @@
 # EyeCue — Implementation Progress
 
-> **Last Updated:** 2026-09-29 (presentation-only visual redesign closeout)
+> **Workstream 1 (2026-10-17) — TTS lifecycle arbitration:** implemented on `codex/tts-lifecycle-arbitration` (serialized scheduler, paired-signal reconciliation, bounded recovery/settling, track-aware alert policy, semantic pending revalidation, controlled preemption, idle-only wayfinding) with adapted tests and widget-test fakes. **Verification status: static only** — `dart format` and `git diff --check` are clean; no `flutter test`, `flutter analyze`, Gradle or builds were run after relocation. Dated totals elsewhere in this file are historical.
+>
+> **Reading the milestones below:** every "Current validation" bullet is relative to **its own dated section** and describes the repository at that time. None of them validates the current Workstream 1 branch.
+
+> **Last Updated:** 2026-10-17 (Workstream 1 documentation sync; the milestone dates below are historical)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
 ## Current Unreleased Candidate (2026-09-29) — Presentation-Only Visual Redesign Closeout
@@ -11,7 +15,7 @@
 - ✅ Completed Help card/icon removal and app-bar title styling, and the fixed consistent light app-bar/body surface treatment while Settings, Help, and Logs & Reports scroll.
 - ✅ Completed the Detection presentation update in both engines: stronger `Detection Mode` title contrast; an edge-inset, left-aligned [`DetectionInformationOverlay`](../lib/widgets/detection_information_overlay.dart); and two mockup-inspired [`DetectionActionControls`](../lib/widgets/detection_action_controls.dart) cards with state icons and left-aligned content. Lifecycle, gesture, action, hold/tap, Quick Scan, and semantics behavior are unchanged.
 - ✅ Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146), the semantic 11%-white overlay token used only by the Settings `View Logs & Reports` action surface.
-- ✅ Final validation: `flutter analyze` reports **0 issues**; `flutter test` reports **343 passing, 0 failing**; and the user explicitly confirmed physical Android visual checks across the completed scope. No visual requirements remain outstanding for this redesign.
+- ✅ Final validation at that revision (2026-09-29, before the Workstream 1 relocation): `flutter analyze` reported **0 issues**; `flutter test` reported **343 passing, 0 failing**; and the user explicitly confirmed physical Android visual checks across the completed scope. These totals are historical evidence and do not describe the current Workstream 1 branch.
 - ⚠️ **Needs Verification [inferred-from-codebase]:** Golden-test readiness remains unconfirmed. It was outside this presentation-only closeout and does not invalidate the confirmed physical-device visual checks.
 
 ## Current Unreleased Candidate (2026-09-28) — Detection Redesign (PD1–PD3)
@@ -114,7 +118,7 @@ sections below remain historical release records.
 - ✅ Added the metadata-enriched runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite) to the asset bundle. It is generated from the byte-identical base graph [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite). Direct inspection found FLOAT32 runtime input/output, input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and internal INT8 tensors; runtime classification is *Weight-Quantized*, not full integer I/O.
 - ✅ Updated [`inference_isolate.dart`](../lib/services/inference_isolate.dart) to select NHWC or NCHW from runtime shape metadata, write the matching YUV→RGB layout, and use [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) for layout-aware rotation/mirroring.
 - 🟡 Added an explicit XNNPACK attempt with delegate lifetime retention, recoverable setup/invocation CPU fallback, and backend logging. The exact debug APK now installs on the Snapdragon 695 target and has initial short-run evidence: 65 completed live frames were labelled `XNNPACK`; the calculated latency mean was 164.8 ms (median 157.7 ms, range 150.2–377.3 ms), and app summaries reported approximately 5.7–6.2 inference FPS. The historical native SIGSEGV remains unresolved because a native fault cannot be caught by Dart.
-- ✅ Added 14 tensor-rotation unit tests plus engine-setting, per-engine telemetry, and Ultralytics-adapter coverage; the current repository suite is now **127 passing** and `flutter analyze` reports **0 issues**.
+- ✅ Added 14 tensor-rotation unit tests plus engine-setting, per-engine telemetry, and Ultralytics-adapter coverage; the suite at that revision was **127 passing** and `flutter analyze` reported **0 issues** (historical, pre-Workstream-1).
 - ✅ Extended the flatbuffer validator to cover the new model and verified the generated debug APK contains it.
 - ⚠️ The exact candidate APK installed after storage was cleared. Startup logs confirmed the NCHW/FLOAT32 model metadata and successful explicit XNNPACK interpreter creation. The controlled short run produced no detections across its 65 logged frames, while a separate earlier observation returned one `tv` at 67.9% confidence and 113.7 ms. These are observational results only; formal benchmark, accuracy, thermal, memory, and long-duration stability evidence remains pending.
 - ✅ Added persisted **Custom EyeCue** and **Ultralytics** modes using one model/labels/threshold configuration, with native results adapted into EyeCue's existing spatial, priority, TTS, gesture, and telemetry layers. Logs & Reports separates the two engines.
@@ -124,7 +128,7 @@ sections below remain historical release records.
 - ✅ Added seven deterministic lifecycle tests covering worker exit/respawn, stale generations, busy-gate release, delayed retry, terminal failure, disposal during backoff, and healthy recovery. The explicit `reportWorkerExit` API now carries the generation and typed failure at production exit/error call sites.
 - ✅ Added bounded recovery telemetry/export rows, metadata-packaging input safety, and synchronized CSV data-dictionary coverage.
 - ✅ Added accessibility semantics and 200% text-scale coverage across controls, state panels, charts, detections, correction flows, warnings, and live regions.
-- ✅ Current validation: `flutter analyze` reports 0 issues and `flutter test` reports **127 passing tests**. Android identity/signing, release AAB generation, and device validation remain intentionally blocked on project-owner decisions, credentials, and an available Android device.
+- ✅ Validation at that revision: `flutter analyze` reported 0 issues and `flutter test` reported **127 passing tests** (historical; not applicable to the current Workstream 1 branch). Android identity/signing, release AAB generation, and device validation remain intentionally blocked on project-owner decisions, credentials, and an available Android device.
 
 ## v0.2.2 — UI Layout Fixes (2026-08-16)
 
@@ -153,9 +157,14 @@ sections below remain historical release records.
 - ✅ **Help** ([`help_screen.dart`](../lib/screens/help_screen.dart)): how it works, gestures, confirmation, Android tips
 - ✅ **Logs & Reports** ([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart)): Overview / Charts / Logs tabs
 
-### Audio Guidance (100% of the UI-phase TTS)
+### Audio Guidance (100% of the UI-phase TTS — historical; superseded by Workstream 1)
 
-- ✅ [`tts_service.dart`](../lib/services/tts_service.dart): `flutter_tts` wired via injectable `TtsEngine`; mute state, cooldown, same-label de-duplication, urgent (high-priority) bypass, repeat-last
+> The bullets below describe the v0.2.x implementation. The active scheduler is
+> lifecycle-aware: serialized speech, track-aware suppression/escalation,
+> confirmed-`onStart` history, and controlled preemption — see
+> [`architecture.md`](architecture.md#speech-scheduling-workstream-1).
+
+- ✅ [`tts_service.dart`](../lib/services/tts_service.dart): at that revision, `flutter_tts` was wired via an injectable `TtsEngine` with mute state, cooldown, same-label de-duplication, urgent (high-priority) bypass, and repeat-last (historical description)
 - ✅ Detection announcements, start/stop/pause/resume/scan announcements, quick-scan summary
 - ✅ Phrasing includes relative position + approximate proximity
 

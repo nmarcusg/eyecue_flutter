@@ -19,7 +19,7 @@ class SceneSummaryService {
     Iterable<TrackedDetection> tracks = const [],
   }) {
     final allDetections = detections.toList(growable: false);
-    final candidates = _rank(allDetections, tracks: tracks);
+    final candidates = rankCandidates(allDetections, tracks: tracks);
     if (candidates.isEmpty) return 'Alert. No objects detected.';
     final info = candidates.first.info;
     final motion = _confirmedMotion(candidates.first.track);
@@ -40,10 +40,10 @@ class SceneSummaryService {
     Iterable<DetectionInfo> detections, {
     Iterable<TrackedDetection> tracks = const [],
   }) {
-    final ranked = _rank(detections, tracks: tracks);
+    final ranked = rankCandidates(detections, tracks: tracks);
     if (ranked.isEmpty) return 'Quick scan. No objects detected.';
 
-    final groups = <RelativePosition, List<_Candidate>>{
+    final groups = <RelativePosition, List<RankedCandidate>>{
       RelativePosition.left: [],
       RelativePosition.center: [],
       RelativePosition.right: [],
@@ -75,7 +75,32 @@ class SceneSummaryService {
     return _limit('Quick scan. ${parts.join('. ')}.');
   }
 
-  List<_Candidate> _rank(
+  /// Short, information-first phrase for an immediate safety alert.
+  ///
+  /// Urgent speech must convey the hazard before the qualifiers, so it never
+  /// begins with "Alert." or "high priority obstacle". Detailed wording stays
+  /// available through [alert] and [quickScan].
+  String urgentAlert(DetectionInfo info, {TrackedDetection? track}) {
+    final motion = _confirmedMotion(track);
+    final position = info.position == RelativePosition.center
+        ? ''
+        : ', ${info.positionLabel}';
+    if (info.proximity == ProximityBand.near) {
+      return _limit('${info.label} very close$position.');
+    }
+    if (motion == 'approaching') {
+      return _limit(
+        '${info.label} approaching${position.isEmpty ? ' ahead' : position}.',
+      );
+    }
+    return _limit('${info.label}${position.isEmpty ? ' ahead' : position}.');
+  }
+
+  /// Single authoritative ranking used by both alert suppression and speech.
+  ///
+  /// Ordering: priority, then motion, then proximity, then confidence, then
+  /// label. Callers must not implement their own ordering.
+  List<RankedCandidate> rankCandidates(
     Iterable<DetectionInfo> detections, {
     Iterable<TrackedDetection> tracks = const [],
   }) {
@@ -85,7 +110,7 @@ class SceneSummaryService {
     }
     final candidates = detections
         .map(
-          (info) => _Candidate(
+          (info) => RankedCandidate(
             info,
             tracksByDetection[_detectionKey(info.detection)],
           ),
@@ -155,9 +180,10 @@ class SceneSummaryService {
   }
 }
 
-class _Candidate {
+/// A detection paired with the track that matched it, when one exists.
+class RankedCandidate {
   final DetectionInfo info;
   final TrackedDetection? track;
 
-  const _Candidate(this.info, this.track);
+  const RankedCandidate(this.info, this.track);
 }
