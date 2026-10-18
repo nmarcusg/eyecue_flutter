@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection_correction.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
@@ -89,6 +90,31 @@ void main() {
         confidenceThreshold: 0.4,
       ),
     );
+    service.recordAlertLifecycle(
+      AlertLifecycleRecord(
+        origin: AlertOrigin.detection,
+        engine: InferenceEngine.ultralytics,
+        requestedAt: timestamp,
+        submittedAt: timestamp.add(const Duration(milliseconds: 100)),
+        alertStartedAt: timestamp.add(const Duration(milliseconds: 150)),
+        terminalAt: timestamp.add(const Duration(seconds: 1)),
+        terminalState: AlertTerminalState.completed,
+        terminalCause: null,
+        hadStarted: true,
+        reconciledAt: timestamp.add(const Duration(seconds: 1)),
+        frameNumber: 7,
+        resultReceivedAt: timestamp.add(const Duration(milliseconds: 80)),
+        detectionAcceptedAt: timestamp.add(const Duration(milliseconds: 90)),
+      ),
+    );
+    service.recordAlertCounters(
+      const AlertCounters(
+        dropped: 1,
+        muted: 2,
+        rejectedByReason: {'lowConfidence': 3},
+      ),
+    );
+    addTearDown(service.dispose);
     return service;
   }
 
@@ -105,7 +131,7 @@ void main() {
     final session = decoded['session'] as Map<String, dynamic>;
     final failure = (decoded['failures'] as List).single as Map;
 
-    expect(decoded['schemaVersion'], 1);
+    expect(decoded['schemaVersion'], 2);
     expect(decoded['appVersion'], '1.2.3+4');
     expect(session['id'], 'session-test');
     expect(decoded['settings']['detectionConfidence'], 0.4);
@@ -118,6 +144,38 @@ void main() {
       (decoded['recoveries'] as List).single.containsKey('technicalDetail'),
       isFalse,
     );
+
+    final lifecycle = (decoded['alertLifecycle'] as List).single as Map;
+    expect(lifecycle['engine'], 'ultralytics');
+    expect(lifecycle['terminalState'], 'completed');
+    final counters = decoded['alertCounters'] as Map<String, dynamic>;
+    expect(counters['dropped'], 1);
+    expect((counters['rejectedByReason'] as Map)['lowConfidence'], 3);
+    final summaries = decoded['alertSummaries'] as List;
+    expect(summaries, hasLength(8));
+    expect(
+      (summaries.first as Map).keys,
+      containsAll([
+        'engine',
+        'interval',
+        'label',
+        'p50Ms',
+        'p95Ms',
+        'maxMs',
+        'sampleCount',
+      ]),
+    );
+    // The new lifecycle payload stays image-free and detail-free.
+    for (final key in [
+      'box',
+      'image',
+      'technicalDetail',
+      'utterance',
+      'deviceId',
+      'path',
+    ]) {
+      expect(lifecycle.containsKey(key), isFalse);
+    }
     expect(jsonText, endsWith('\n'));
   });
 
@@ -136,6 +194,80 @@ void main() {
     expect(restored.fallbacks, hasLength(1));
     expect(restored.recoveries, hasLength(1));
     expect(restored.corrections, hasLength(1));
+    expect(restored.alertLifecycle, hasLength(1));
+    expect(restored.alertCounters['dropped'], 1);
+    expect(restored.alertSummaries, hasLength(8));
+  });
+
+  test('schema-v1 JSON parses with safe empty alert defaults', () {
+    final restored = TelemetryExport.fromJson({
+      'schemaVersion': 1,
+      'exportedAt': timestamp.toUtc().toIso8601String(),
+      'appVersion': '1.0.0+1',
+      'session': {
+        'id': 'legacy-session',
+        'start': timestamp.toUtc().toIso8601String(),
+        'durationMs': 0,
+      },
+      'settings': <String, dynamic>{},
+      'samples': <dynamic>[],
+      'detections': <dynamic>[],
+      'failures': <dynamic>[],
+      'fallbacks': <dynamic>[],
+      'recoveries': <dynamic>[],
+      'corrections': <dynamic>[],
+    });
+
+    expect(restored.sessionId, 'legacy-session');
+    expect(restored.alertLifecycle, isEmpty);
+    expect(restored.alertSummaries, isEmpty);
+    expect(restored.alertCounters['dropped'], 0);
+    expect(restored.alertCounters['rejectedByReason'], isEmpty);
+    expect(TelemetryExport.schemaVersion, 2);
+  });
+
+  test('schema-v2 JSON round-trips alert payloads exactly', () {
+    final service = TelemetryExportService(clock: () => timestamp);
+    final original = service.snapshot(telemetry: telemetry());
+    final restored = TelemetryExport.fromJson(
+      jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
+    );
+
+    expect(restored.toJson(), original.toJson());
+  });
+
+  test('CSV adds lifecycle, counter, and summary rows without loss', () {
+    final service = TelemetryExportService(clock: () => timestamp);
+    final csv = service.toCsv(telemetry: telemetry());
+    final header = csv.split('\n').first;
+
+    for (final column in [
+      'origin',
+      'terminal_state',
+      'analysis_received_at',
+      'p50_ms',
+      'p95_ms',
+      'max_ms',
+      'sample_count',
+      'counter_name',
+      'counter_value',
+    ]) {
+      expect(header, contains(column));
+    }
+    expect(csv, contains('"alert_lifecycle"'));
+    expect(csv, contains('"alert_counter"'));
+    expect(csv, contains('"alert_summary"'));
+    expect(csv, contains('"rejectedByReason"'));
+    expect(csv, contains('"lowConfidence"'));
+    expect(csv, contains('app-side / post-inference'));
+    // Existing row types remain present alongside the additive rows.
+    expect(csv, contains('"detection"'));
+    expect(csv, contains('"sample"'));
+    expect(csv, contains('"correction"'));
+    // Privacy: no exception detail or internal paths in the alert payloads.
+    expect(csv, isNot(contains('technicalDetail')));
+    expect(csv, isNot(contains('/private/path')));
+    expect(csv, isNot(contains('internal detail')));
   });
 
   test('CSV quotes punctuation, quotes, and Unicode safely', () {
@@ -166,7 +298,7 @@ void main() {
 
     expect(await jsonFile.exists(), isTrue);
     expect(await csvFile.exists(), isTrue);
-    expect(await jsonFile.readAsString(), contains('"schemaVersion": 1'));
+    expect(await jsonFile.readAsString(), contains('"schemaVersion": 2'));
     expect(await csvFile.readAsString(), contains('record_type'));
   });
 }
