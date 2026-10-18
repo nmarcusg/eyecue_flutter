@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/telemetry_export.dart';
 import 'telemetry_service.dart';
@@ -32,6 +33,16 @@ class TelemetryExportService {
       fallbacks: telemetry.fallbacks.map((record) => record.toJson()),
       recoveries: telemetry.recoveries.map((record) => record.toJson()),
       corrections: telemetry.corrections.map((record) => record.toJson()),
+      alertLifecycle: telemetry.alertRecords.map((record) => record.toJson()),
+      alertCounters: telemetry.alertCounters.toJson(),
+      alertSummaries: [
+        for (final engine in InferenceEngine.values)
+          for (final interval in AlertLatencyInterval.values)
+            _summaryJson(
+              telemetry.alertLatencySummary(engine, interval),
+              interval,
+            ),
+      ],
     );
   }
 
@@ -78,6 +89,28 @@ class TelemetryExportService {
       'record_id',
       'feedback',
       'corrected_label',
+      'origin',
+      'requested_at',
+      'submitted_at',
+      'alert_started_at',
+      'terminal_at',
+      'terminal_state',
+      'terminal_cause',
+      'had_started',
+      'reconciled_at',
+      'frame_number',
+      'analysis_received_at',
+      'inference_started_at',
+      'inference_completed_at',
+      'result_received_at',
+      'detection_accepted_at',
+      'interval',
+      'p50_ms',
+      'p95_ms',
+      'max_ms',
+      'sample_count',
+      'counter_name',
+      'counter_value',
     ];
 
     List<Object?> row(Map<String, dynamic> values) => [
@@ -169,6 +202,60 @@ class TelemetryExportService {
           'label': (correction['detection'] as Map?)?['label'],
           'confidence': (correction['detection'] as Map?)?['confidence'],
         }),
+      for (final lifecycle in export.alertLifecycle)
+        row({
+          'record_type': 'alert_lifecycle',
+          'schema_version': TelemetryExport.schemaVersion,
+          'timestamp': lifecycle['terminalAt'],
+          'engine': lifecycle['engine'],
+          'origin': lifecycle['origin'],
+          'requested_at': lifecycle['requestedAt'],
+          'submitted_at': lifecycle['submittedAt'],
+          'alert_started_at': lifecycle['alertStartedAt'],
+          'terminal_at': lifecycle['terminalAt'],
+          'terminal_state': lifecycle['terminalState'],
+          'terminal_cause': lifecycle['terminalCause'],
+          'had_started': lifecycle['hadStarted'],
+          'reconciled_at': lifecycle['reconciledAt'],
+          'frame_number': lifecycle['frameNumber'],
+          'analysis_received_at': lifecycle['analysisReceivedAt'],
+          'inference_started_at': lifecycle['inferenceStartedAt'],
+          'inference_completed_at': lifecycle['inferenceCompletedAt'],
+          'result_received_at': lifecycle['resultReceivedAt'],
+          'detection_accepted_at': lifecycle['detectionAcceptedAt'],
+        }),
+      for (final entry in export.alertCounters.entries)
+        if (entry.key != 'rejectedByReason')
+          row({
+            'record_type': 'alert_counter',
+            'schema_version': TelemetryExport.schemaVersion,
+            'counter_name': entry.key,
+            'counter_value': entry.value,
+          }),
+      // Rejected-by-reason is a nested map; one stable key/value row per reason
+      // avoids exporting an internal map's toString().
+      for (final entry
+          in (export.alertCounters['rejectedByReason'] as Map? ?? const {})
+              .entries)
+        row({
+          'record_type': 'alert_counter',
+          'schema_version': TelemetryExport.schemaVersion,
+          'counter_name': 'rejectedByReason',
+          'reason': entry.key,
+          'counter_value': entry.value,
+        }),
+      for (final summary in export.alertSummaries)
+        row({
+          'record_type': 'alert_summary',
+          'schema_version': TelemetryExport.schemaVersion,
+          'engine': summary['engine'],
+          'interval': summary['interval'],
+          'label': summary['label'],
+          'p50_ms': summary['p50Ms'],
+          'p95_ms': summary['p95Ms'],
+          'max_ms': summary['maxMs'],
+          'sample_count': summary['sampleCount'],
+        }),
     ];
     return '${[_csvRow(header), for (final row in rows) _csvRow(row)].join('\n')}\n';
   }
@@ -204,6 +291,19 @@ class TelemetryExportService {
     final value = _clock().toUtc().toIso8601String();
     return value.replaceAll(RegExp(r'[^0-9]'), '').substring(0, 14);
   }
+
+  static Map<String, dynamic> _summaryJson(
+    AlertLatencySummary summary,
+    AlertLatencyInterval interval,
+  ) => {
+    'engine': summary.engine.name,
+    'interval': interval.name,
+    'label': interval.label(summary.engine),
+    'p50Ms': summary.p50Ms,
+    'p95Ms': summary.p95Ms,
+    'maxMs': summary.maxMs,
+    'sampleCount': summary.sampleCount,
+  };
 
   static Map<String, dynamic> _failureJson(TelemetryFailureRecord record) {
     final failure = record.failure;

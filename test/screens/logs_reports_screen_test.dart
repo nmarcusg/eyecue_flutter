@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_correction.dart';
@@ -87,6 +88,48 @@ TelemetryService buildTelemetry({
       120,
       engine: engine,
     );
+    final analysis = DateTime.utc(2026, 1, 1, 12, 0, 0);
+    service.recordAlertLifecycle(
+      AlertLifecycleRecord(
+        origin: AlertOrigin.detection,
+        engine: InferenceEngine.custom,
+        requestedAt: analysis,
+        submittedAt: analysis.add(const Duration(milliseconds: 20)),
+        alertStartedAt: analysis.add(const Duration(milliseconds: 50)),
+        terminalAt: analysis.add(const Duration(seconds: 1)),
+        terminalState: AlertTerminalState.completed,
+        terminalCause: null,
+        hadStarted: true,
+        reconciledAt: analysis.add(const Duration(seconds: 1)),
+        frameNumber: 1,
+        analysisReceivedAt: analysis,
+        detectionAcceptedAt: analysis.add(const Duration(milliseconds: 10)),
+      ),
+    );
+    service.recordAlertLifecycle(
+      AlertLifecycleRecord(
+        origin: AlertOrigin.detection,
+        engine: InferenceEngine.ultralytics,
+        requestedAt: analysis,
+        submittedAt: analysis.add(const Duration(milliseconds: 110)),
+        alertStartedAt: analysis.add(const Duration(milliseconds: 130)),
+        terminalAt: analysis.add(const Duration(seconds: 1)),
+        terminalState: AlertTerminalState.completed,
+        terminalCause: null,
+        hadStarted: true,
+        reconciledAt: analysis.add(const Duration(seconds: 1)),
+        frameNumber: 2,
+        resultReceivedAt: analysis.add(const Duration(milliseconds: 100)),
+        detectionAcceptedAt: analysis.add(const Duration(milliseconds: 105)),
+      ),
+    );
+    service.recordAlertCounters(
+      const AlertCounters(
+        dropped: 1,
+        muted: 2,
+        rejectedByReason: {'lowConfidence': 3},
+      ),
+    );
   }
   return service;
 }
@@ -146,6 +189,9 @@ Future<void> pumpLogsScreen(
     ),
   );
   await tester.pump();
+  // Flush the bounded 250 ms counter publication window so no fake-async timer
+  // remains pending when the test ends.
+  await tester.pump(const Duration(milliseconds: 300));
 }
 
 /// Selects a tab by its visible label.
@@ -248,8 +294,8 @@ void main() {
       // Avg FPS and Avg Latency empty values.
       expect(find.text('0.0'), findsOneWidget);
       expect(find.text('0.0 ms'), findsOneWidget);
-      // Both engine summaries are empty.
-      expect(find.text('No samples'), findsNWidgets(2));
+      // Both engine summaries and all eight alert intervals are empty.
+      expect(find.text('No samples'), findsNWidgets(10));
       // Avg confidence shows the em dash when there are no records.
       expect(find.text('—'), findsOneWidget);
     });
@@ -264,6 +310,187 @@ void main() {
       expect(find.text('8.0 FPS · 120.0 ms · 1 frames'), findsOneWidget);
       // Avg confidence is a percentage, not an em dash.
       expect(find.text('82%'), findsOneWidget);
+    });
+  });
+
+  group('alert latency reporting', () {
+    testWidgets('empty alert intervals render No samples without percentiles', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTelemetry());
+
+      expect(find.text('Alert Latency'), findsOneWidget);
+      expect(find.text('Alert latency and scheduler health'), findsOneWidget);
+      expect(find.text('Scheduler health'), findsOneWidget);
+      // All eight required interval labels stay visible when empty.
+      expect(
+        find.text('Analysis received → detection accepted'),
+        findsOneWidget,
+      );
+      expect(find.text('Result received → detection accepted'), findsOneWidget);
+      expect(find.text('Detection accepted → alert started'), findsNWidgets(2));
+      expect(find.text('Alert submitted → alert started'), findsNWidgets(2));
+      expect(find.text('Analysis received → alert started'), findsOneWidget);
+      expect(
+        find.text(
+          'Result received → alert started (app-side / post-inference)',
+        ),
+        findsOneWidget,
+      );
+      // No fabricated observed latency is rendered for empty distributions.
+      expect(find.textContaining('p50'), findsNothing);
+      expect(find.textContaining('max 0'), findsNothing);
+      expect(find.textContaining('n 0'), findsNothing);
+    });
+
+    testWidgets('populated alert intervals render p50, p95, max, and count', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTelemetry(populated: true));
+
+      expect(find.textContaining('n 1'), findsNWidgets(8));
+      expect(
+        find.text('p50 10.0 ms · p95 10.0 ms · max 10.0 ms · n 1'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('p50 40.0 ms · p95 40.0 ms · max 40.0 ms · n 1'),
+        findsOneWidget,
+      );
+      // Custom submitted-to-start and Ultralytics result-to-start share 30 ms.
+      expect(
+        find.text('p50 30.0 ms · p95 30.0 ms · max 30.0 ms · n 1'),
+        findsNWidgets(2),
+      );
+      expect(
+        find.text('p50 50.0 ms · p95 50.0 ms · max 50.0 ms · n 1'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('p50 5.0 ms · p95 5.0 ms · max 5.0 ms · n 1'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('p50 25.0 ms · p95 25.0 ms · max 25.0 ms · n 1'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('p50 20.0 ms · p95 20.0 ms · max 20.0 ms · n 1'),
+        findsOneWidget,
+      );
+      // Only the empty Custom engine-comparison card remains sample-less.
+      expect(find.text('No samples'), findsOneWidget);
+    });
+
+    testWidgets(
+      'open alert latency section refreshes after the publish window',
+      (tester) async {
+        final telemetry = buildTelemetry();
+        await pumpLogsScreen(tester, telemetry: telemetry);
+
+        // The section is already open and truthfully empty.
+        expect(find.text('No samples'), findsNWidgets(10));
+        expect(find.text('Rejected: lowConfidence'), findsNothing);
+
+        // The counter snapshot is authoritative immediately, but the open UI
+        // only sees it once the bounded trailing publication window elapses.
+        telemetry.recordAlertCounters(
+          const AlertCounters(
+            dropped: 7,
+            rejectedByReason: {'lowConfidence': 3},
+          ),
+        );
+        expect(telemetry.alertCounters.dropped, 7);
+        expect(find.text('7'), findsNothing);
+
+        await tester.pump(const Duration(milliseconds: 250));
+
+        expect(find.text('7'), findsOneWidget);
+        expect(find.text('Rejected: lowConfidence'), findsOneWidget);
+        expect(find.text('3'), findsOneWidget);
+
+        // A later lifecycle delta must also refresh the open distributions.
+        final analysis = DateTime.utc(2026, 1, 1, 12, 0, 0);
+        telemetry.recordAlertLifecycle(
+          AlertLifecycleRecord(
+            origin: AlertOrigin.detection,
+            engine: InferenceEngine.custom,
+            requestedAt: analysis,
+            submittedAt: analysis.add(const Duration(milliseconds: 20)),
+            alertStartedAt: analysis.add(const Duration(milliseconds: 50)),
+            terminalAt: analysis.add(const Duration(seconds: 1)),
+            terminalState: AlertTerminalState.completed,
+            terminalCause: null,
+            hadStarted: true,
+            reconciledAt: analysis.add(const Duration(seconds: 1)),
+            frameNumber: 9,
+            analysisReceivedAt: analysis,
+            detectionAcceptedAt: analysis.add(const Duration(milliseconds: 10)),
+          ),
+        );
+        expect(find.textContaining('n 1'), findsNothing);
+
+        await tester.pump();
+
+        expect(
+          find.text('p50 10.0 ms · p95 10.0 ms · max 10.0 ms · n 1'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('scheduler health renders required counters and reasons', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTelemetry(populated: true));
+
+      expect(find.text('Dropped'), findsOneWidget);
+      expect(find.text('Cancelled before start'), findsOneWidget);
+      expect(find.text('Cancelled after start'), findsOneWidget);
+      expect(find.text('Failed before start'), findsOneWidget);
+      expect(find.text('Failed after start'), findsOneWidget);
+      expect(find.text('Reconciliation timeout'), findsOneWidget);
+      expect(find.text('Watchdog recovery'), findsOneWidget);
+      expect(find.text('Quiet-period cap reached'), findsOneWidget);
+      expect(find.text('Recovery failed'), findsOneWidget);
+      expect(find.text('Quarantined callback'), findsOneWidget);
+      expect(find.text('Late callback ignored'), findsOneWidget);
+      expect(find.text('Callback order violation'), findsOneWidget);
+      expect(find.text('Preemption requested'), findsOneWidget);
+      expect(find.text('Confirmed preempted'), findsOneWidget);
+      expect(find.text('Superseded (all alert types)'), findsOneWidget);
+      expect(find.text('Muted (all alert types)'), findsOneWidget);
+      expect(find.text('Stale decision'), findsOneWidget);
+      expect(find.text('Rejected after recovery'), findsOneWidget);
+      expect(find.text('Rejected: lowConfidence'), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+    });
+
+    testWidgets('alert latency group exposes accessible semantic labels', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpLogsScreen(
+          tester,
+          telemetry: buildTelemetry(populated: true),
+        );
+
+        expect(
+          find.semantics
+              .byLabel(RegExp(r'^Alert latency and scheduler health'))
+              .evaluate(),
+          isNotEmpty,
+        );
+        expect(
+          find.semantics
+              .byLabel(RegExp('app-side / post-inference'))
+              .evaluate(),
+          isNotEmpty,
+        );
+      } finally {
+        handle.dispose();
+      }
     });
   });
 
@@ -538,6 +765,20 @@ void main() {
   });
 
   group('large text layout', () {
+    testWidgets('Alert Latency has no overflow at 200 percent text scale', (
+      tester,
+    ) async {
+      // The tall default surface builds the whole Overview, including the
+      // counter rows below the fold on a phone-sized viewport.
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(populated: true),
+        textScale: 2.0,
+      );
+      expect(find.text('Alert Latency'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('Overview has no overflow at 200 percent text scale', (
       tester,
     ) async {

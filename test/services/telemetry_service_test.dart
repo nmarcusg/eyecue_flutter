@@ -110,6 +110,9 @@ void main() {
       DateTime? submittedAt,
       DateTime? startedAt,
       DateTime? terminalAt,
+      DateTime? analysisReceivedAt,
+      DateTime? resultReceivedAt,
+      DateTime? detectionAcceptedAt,
     }) {
       final submitted = submittedAt ?? now;
       final terminal = terminalAt ?? now.add(const Duration(seconds: 1));
@@ -124,6 +127,9 @@ void main() {
         terminalCause: null,
         hadStarted: startedAt != null,
         reconciledAt: terminal,
+        analysisReceivedAt: analysisReceivedAt,
+        resultReceivedAt: resultReceivedAt,
+        detectionAcceptedAt: detectionAcceptedAt,
       );
     }
 
@@ -182,11 +188,12 @@ void main() {
           startedAt: base.add(const Duration(milliseconds: 40)),
         ),
       );
-      // Not detection-origin: never enters an engine summary.
+      // Not detection-origin but engine-matching: only the origin guard can
+      // exclude it, so this stays falsifiable on its own.
       telemetry.recordAlertLifecycle(
         alert(
           origin: AlertOrigin.wayfinding,
-          engine: null,
+          engine: InferenceEngine.custom,
           submittedAt: base,
           startedAt: base.add(const Duration(milliseconds: 10)),
         ),
@@ -221,6 +228,217 @@ void main() {
       );
       expect(ultralytics.sampleCount, 1);
       expect(ultralytics.maxMs, 40);
+    });
+
+    test('custom intervals use analysis receipt anchors', () {
+      final base = now.add(const Duration(seconds: 2));
+      telemetry.recordAlertLifecycle(
+        alert(
+          analysisReceivedAt: base,
+          detectionAcceptedAt: base.add(const Duration(milliseconds: 10)),
+          submittedAt: base.add(const Duration(milliseconds: 20)),
+          startedAt: base.add(const Duration(milliseconds: 50)),
+        ),
+      );
+
+      final receivedToAccepted = telemetry.alertLatencySummary(
+        InferenceEngine.custom,
+        AlertLatencyInterval.receivedToAccepted,
+      );
+      final acceptedToStarted = telemetry.alertLatencySummary(
+        InferenceEngine.custom,
+        AlertLatencyInterval.acceptedToStarted,
+      );
+      final submittedToStarted = telemetry.alertLatencySummary(
+        InferenceEngine.custom,
+        AlertLatencyInterval.submittedToStarted,
+      );
+      final receivedToStarted = telemetry.alertLatencySummary(
+        InferenceEngine.custom,
+        AlertLatencyInterval.receivedToStarted,
+      );
+
+      expect(receivedToAccepted.p50Ms, 10);
+      expect(acceptedToStarted.p50Ms, 40);
+      expect(submittedToStarted.p50Ms, 30);
+      expect(receivedToStarted.p50Ms, 50);
+      for (final summary in [
+        receivedToAccepted,
+        acceptedToStarted,
+        submittedToStarted,
+        receivedToStarted,
+      ]) {
+        expect(summary.sampleCount, 1);
+        expect(summary.p95Ms, summary.maxMs);
+      }
+
+      // The preserved public method keeps submitted -> started meaning.
+      final delegated = telemetry.alertSubmittedToStartedSummary(
+        InferenceEngine.custom,
+      );
+      expect(delegated.sampleCount, 1);
+      expect(delegated.p50Ms, 30);
+    });
+
+    test('ultralytics intervals use result receipt, not custom anchors', () {
+      final result = now.add(const Duration(milliseconds: 100));
+      telemetry.recordAlertLifecycle(
+        alert(
+          engine: InferenceEngine.ultralytics,
+          analysisReceivedAt: now,
+          resultReceivedAt: result,
+          detectionAcceptedAt: result.add(const Duration(milliseconds: 5)),
+          submittedAt: result.add(const Duration(milliseconds: 8)),
+          startedAt: result.add(const Duration(milliseconds: 20)),
+        ),
+      );
+
+      expect(
+        telemetry
+            .alertLatencySummary(
+              InferenceEngine.ultralytics,
+              AlertLatencyInterval.receivedToAccepted,
+            )
+            .p50Ms,
+        5,
+      );
+      expect(
+        telemetry
+            .alertLatencySummary(
+              InferenceEngine.ultralytics,
+              AlertLatencyInterval.acceptedToStarted,
+            )
+            .p50Ms,
+        15,
+      );
+      expect(
+        telemetry
+            .alertLatencySummary(
+              InferenceEngine.ultralytics,
+              AlertLatencyInterval.submittedToStarted,
+            )
+            .p50Ms,
+        12,
+      );
+      expect(
+        telemetry
+            .alertLatencySummary(
+              InferenceEngine.ultralytics,
+              AlertLatencyInterval.receivedToStarted,
+            )
+            .p50Ms,
+        20,
+      );
+      // The Custom-only analysis anchor never defines a Custom summary.
+      expect(
+        telemetry
+            .alertLatencySummary(
+              InferenceEngine.custom,
+              AlertLatencyInterval.receivedToStarted,
+            )
+            .sampleCount,
+        0,
+      );
+    });
+
+    test(
+      'interval summaries exclude null, negative, and non-detection pairs',
+      () {
+        final base = now.add(const Duration(seconds: 3));
+        // Valid 10 ms and a valid 0 ms pair.
+        telemetry.recordAlertLifecycle(
+          alert(
+            analysisReceivedAt: base,
+            detectionAcceptedAt: base.add(const Duration(milliseconds: 10)),
+            submittedAt: base,
+            startedAt: base.add(const Duration(milliseconds: 10)),
+          ),
+        );
+        telemetry.recordAlertLifecycle(
+          alert(
+            analysisReceivedAt: base,
+            detectionAcceptedAt: base,
+            submittedAt: base,
+            startedAt: base,
+          ),
+        );
+        // Non-detection origin with every endpoint present and a matching
+        // engine, so only the origin guard excludes it.
+        telemetry.recordAlertLifecycle(
+          alert(
+            origin: AlertOrigin.quickScan,
+            engine: InferenceEngine.custom,
+            analysisReceivedAt: base,
+            detectionAcceptedAt: base.add(const Duration(milliseconds: 5)),
+            submittedAt: base,
+            startedAt: base.add(const Duration(milliseconds: 5)),
+          ),
+        );
+        // Detection origin but engine-null.
+        telemetry.recordAlertLifecycle(
+          alert(
+            engine: null,
+            analysisReceivedAt: base,
+            detectionAcceptedAt: base.add(const Duration(milliseconds: 5)),
+            submittedAt: base,
+            startedAt: base.add(const Duration(milliseconds: 5)),
+          ),
+        );
+        // Reversed analysis -> accepted interval is excluded individually.
+        telemetry.recordAlertLifecycle(
+          alert(
+            analysisReceivedAt: base.add(const Duration(milliseconds: 10)),
+            detectionAcceptedAt: base,
+            submittedAt: base,
+            startedAt: base.add(const Duration(milliseconds: 5)),
+          ),
+        );
+        // Missing analysis start: contributes to later intervals only.
+        telemetry.recordAlertLifecycle(
+          alert(
+            detectionAcceptedAt: base,
+            submittedAt: base,
+            startedAt: base.add(const Duration(milliseconds: 7)),
+          ),
+        );
+
+        final receivedToAccepted = telemetry.alertLatencySummary(
+          InferenceEngine.custom,
+          AlertLatencyInterval.receivedToAccepted,
+        );
+        expect(receivedToAccepted.sampleCount, 2);
+        // Nearest rank keeps the valid 0 ms sample rather than dropping it.
+        expect(receivedToAccepted.p50Ms, 0);
+        expect(receivedToAccepted.p95Ms, 10);
+        expect(receivedToAccepted.maxMs, 10);
+
+        final acceptedToStarted = telemetry.alertLatencySummary(
+          InferenceEngine.custom,
+          AlertLatencyInterval.acceptedToStarted,
+        );
+        expect(acceptedToStarted.sampleCount, 4);
+        expect(acceptedToStarted.maxMs, 7);
+      },
+    );
+
+    test('nearest-rank percentiles, max, and count across samples', () {
+      final base = now.add(const Duration(seconds: 4));
+      for (final ms in [60, 10, 20]) {
+        telemetry.recordAlertLifecycle(
+          alert(
+            submittedAt: base,
+            startedAt: base.add(Duration(milliseconds: ms)),
+          ),
+        );
+      }
+      final summary = telemetry.alertLatencySummary(
+        InferenceEngine.custom,
+        AlertLatencyInterval.submittedToStarted,
+      );
+      expect(summary.sampleCount, 3);
+      expect(summary.p50Ms, 20);
+      expect(summary.p95Ms, 60);
+      expect(summary.maxMs, 60);
     });
 
     test('counter snapshots replace instead of accumulating', () {
