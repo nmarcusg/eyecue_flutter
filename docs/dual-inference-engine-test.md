@@ -7,11 +7,14 @@
 > (see [`architecture.md`](architecture.md#speech-scheduling-workstream-1)). This
 > document remains valid as the **benchmark protocol** and as dated evidence.
 >
-> **Measurement boundary:** alert-latency telemetry is not implemented in this
-> revision. Engine FPS and per-frame inference latency measured here are internal
-> pipeline metrics and must **not** be reported as audible-warning latency; that
-> requires device measurement from frame reception to first audible speech. Real
-> Android callback ordering and cancellation timing also remain unverified.
+> **Measurement boundary:** alert-latency telemetry now exists in the unreleased
+> Workstream 2 candidate (bounded lifecycle records, scheduler counters, and
+> eight engine/interval summaries), but this protocol still measures only engine
+> FPS and per-frame inference latency. Those are internal pipeline metrics and
+> must **not** be reported as audible-warning latency; the Ultralytics alert
+> interval covers the `app-side / post-inference` path only. Physical latency
+> from frame reception to first audible speech requires device measurement, and
+> real Android callback ordering and cancellation timing remain unverified.
 
 > **Status:** Unreleased test candidate, 2026-09-01. The Android debug APK builds, installs, and has run both engines on the Snapdragon 695/API 33 target. Bidirectional switching also passed a short smoke test after a lifecycle race was fixed. The controlled comparison is still pending; this document does not claim a winning engine before those runs are completed.
 

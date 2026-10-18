@@ -5,6 +5,21 @@
 
 ---
 
+## Unreleased — Alert-Latency Telemetry (Workstream 2)
+
+### Added
+- Bounded alert-lifecycle telemetry in [`alert_lifecycle.dart`](../lib/models/alert_lifecycle.dart) and [`telemetry_service.dart`](../lib/services/telemetry_service.dart): one event-delta record per terminal TTS submission (capped at 500) plus a replace-only cumulative scheduler-counter snapshot.
+- Custom frame anchors (analysis received, worker inference start/completion, result receipt, detection accepted) correlated through the shared assistive controller and TTS request. Ultralytics records only result receipt and later app-side anchors; pre-result fields stay null.
+- Eight detection-origin alert-latency summaries — four intervals per engine — using nearest-rank p50/p95/max/count, with null or negative endpoints excluded and zero-duration samples retained.
+- Additive schema-v2 export in [`telemetry_export.dart`](../lib/models/telemetry_export.dart) and [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart): `alertLifecycle`, `alertCounters`, and `alertSummaries` JSON payloads plus `alert_lifecycle`, `alert_counter`, and `alert_summary` CSV rows. Schema-v1 input still parses with empty alert collections.
+- Logs & Reports Overview section `Alert latency and scheduler health` showing every interval and scheduler counter, with `No samples` for empty distributions.
+
+### Verified
+- **Static only.** Owning tests were written but not executed; `flutter analyze`, the test suite, Gradle, builds, and emulator/device runs were not performed.
+- Physical audible-warning latency remains unmeasured. The Ultralytics interval is `app-side / post-inference`, not full inference or end-to-end latency, and no performance, safety, or release-readiness claim is made.
+
+---
+
 ## Unreleased — Lifecycle-Aware TTS Safety Arbitration (Workstream 1)
 
 ### Changed

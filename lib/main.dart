@@ -23,8 +23,12 @@ Future<void> main() async {
   }
 
   final settings = SettingsService();
-  final tts = TtsService(engine: FlutterTtsEngine());
   final telemetry = TelemetryService();
+  final tts = TtsService(
+    engine: FlutterTtsEngine(),
+    onAlertLifecycle: telemetry.recordAlertLifecycle,
+    onAlertCounters: telemetry.recordAlertCounters,
+  );
   final labels = await _loadLabels();
   final corrections = CorrectionService(labels: labels);
   final haptics = HapticsService(isEnabled: () => settings.vibrationFeedback);

@@ -7,6 +7,7 @@ import 'dart:ui' show ImageByteFormat, instantiateImageCodec;
 import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:tflite_flutter/tflite_flutter.dart';
+import '../models/alert_lifecycle.dart';
 import '../models/box_transform.dart';
 import '../models/app_settings.dart';
 import '../models/detection.dart';
@@ -112,6 +113,13 @@ class InferenceService {
   /// Frame number of the most recently processed result.
   int _lastFrameNumber = 0;
   int get lastFrameNumber => _lastFrameNumber;
+
+  /// One-outstanding-frame timing snapshot for the next result publication.
+  final FrameLatencySlot _frameLatency = FrameLatencySlot();
+
+  /// Consumes the snapshot installed immediately before the published result.
+  /// Returns null unless a complete snapshot is waiting; a second read is null.
+  FrameLatency? takeLastFrameLatency() => _frameLatency.take();
 
   /// Counter for frames sent to the isolate (monotonically increasing).
   int _sentFrameCount = 0;
@@ -293,13 +301,35 @@ class InferenceService {
     if (message is! Map) return;
     final type = message['type'];
     if (type == 'result') {
+      final resultReceivedAt = DateTime.now();
       final detections = (message['detections'] as List).cast<Detection>();
       _lastLatencyMs = (message['latencyMs'] as num).toDouble();
       _lastFrameNumber = message['frameNumber'] as int;
+      final analysisReceivedAt = _dateFromMicros(
+        message['analysisReceivedAtMicros'],
+      );
+      if (analysisReceivedAt == null) {
+        _frameLatency.clear();
+      } else {
+        _frameLatency.install(
+          FrameLatency(
+            frameNumber: _lastFrameNumber,
+            analysisReceivedAt: analysisReceivedAt,
+            inferenceStartedAt: _dateFromMicros(
+              message['inferenceStartedAtMicros'],
+            ),
+            inferenceCompletedAt: _dateFromMicros(
+              message['inferenceCompletedAtMicros'],
+            ),
+            resultReceivedAt: resultReceivedAt,
+          ),
+        );
+      }
       if (!_resultsController.isClosed) _resultsController.add(detections);
       return;
     }
     if (type == 'error') {
+      _frameLatency.clear();
       final error = message['error'].toString();
       final stackTrace = message['stackTrace']?.toString() ?? '';
       debugPrint('[Error] Isolate error: $error\n$stackTrace');
@@ -337,6 +367,7 @@ class InferenceService {
 
   void _handleWorkerPortError(int generation, dynamic message) {
     if (!_workerLifecycle.acceptsGeneration(generation)) return;
+    _frameLatency.clear();
     final parts = message is List ? message : [message, ''];
     final error = parts.isNotEmpty ? parts.first.toString() : 'Worker error';
     final stack = parts.length > 1 ? parts[1].toString() : '';
@@ -355,6 +386,7 @@ class InferenceService {
 
   void _handleWorkerExit(int generation) {
     if (!_workerLifecycle.acceptsGeneration(generation)) return;
+    _frameLatency.clear();
     _workerLifecycle.reportWorkerExit(
       generation,
       _failure(
@@ -367,9 +399,13 @@ class InferenceService {
     );
   }
 
+  static DateTime? _dateFromMicros(dynamic micros) =>
+      micros is int ? DateTime.fromMicrosecondsSinceEpoch(micros) : null;
+
   /// Invalidates and closes only the current worker's resources. The public
   /// result/error streams stay open so a replacement worker can use them.
   Future<void> _stopWorkerResources({required bool kill}) async {
+    _frameLatency.clear();
     final isolate = _isolate;
     _isolate = null;
     _sendPort = null;
@@ -484,6 +520,7 @@ class InferenceService {
     required Uint8List vPlane,
     required int width,
     required int height,
+    required DateTime analysisReceivedAt,
     double cameraFps = 0.0,
     int droppedFrames = 0,
     // Plane geometry (bytesPerRow / bytesPerPixel). 0/1 fall back to the
@@ -505,7 +542,10 @@ class InferenceService {
     String lensFacing = 'back',
   }) {
     final sendPort = _sendPort;
-    if (_disposed || sendPort == null) return false;
+    if (_disposed || sendPort == null) {
+      _frameLatency.clear();
+      return false;
+    }
     _sentFrameCount++;
     sendPort.send({
       'y': yPlane,
@@ -514,6 +554,7 @@ class InferenceService {
       'width': width,
       'height': height,
       'frameNumber': _sentFrameCount,
+      'analysisReceivedAtMicros': analysisReceivedAt.microsecondsSinceEpoch,
       // For forensic performance logging only — does not affect inference.
       'cameraFps': cameraFps,
       'droppedFrames': droppedFrames,
@@ -578,7 +619,9 @@ class InferenceService {
       );
 
       // Same entry point as the camera — identical pipeline after this call.
+      // The static image supplies its own truthful receipt time.
       processFrame(
+        analysisReceivedAt: DateTime.now(),
         yPlane: planes.y,
         uPlane: planes.u,
         vPlane: planes.v,
@@ -607,6 +650,7 @@ class InferenceService {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _frameLatency.clear();
     debugPrint('[Service] InferenceService.dispose() — killing isolate');
     _workerLifecycle.dispose();
     ForensicLog.finalize();
@@ -802,6 +846,8 @@ class InferenceService {
           final int srcWidth = data['width'] as int;
           final int srcHeight = data['height'] as int;
           final int frameNumber = (data['frameNumber'] as int?) ?? 0;
+          final int? analysisReceivedAtMicros =
+              data['analysisReceivedAtMicros'] as int?;
           final int yRowStride = (data['yRowStride'] as int?) ?? 0;
           final int yPixelStride = (data['yPixelStride'] as int?) ?? 1;
           final int uRowStride = (data['uRowStride'] as int?) ?? 0;
@@ -936,6 +982,10 @@ class InferenceService {
           // exact row-major element count of the model input.
           final inputForRun = _prepareInputForRun(inputBuffer, metadata);
 
+          // Wall-clock anchor immediately before the first run attempt; the
+          // fallback attempt below is inside the same measured chain.
+          final int inferenceStartedAtMicros =
+              DateTime.now().microsecondsSinceEpoch;
           var backend = xnnDelegate == null ? 'CPU' : 'XNNPACK';
           var stopwatch = Stopwatch()..start();
           try {
@@ -1011,6 +1061,8 @@ class InferenceService {
             }
           }
           stopwatch.stop();
+          final int inferenceCompletedAtMicros =
+              DateTime.now().microsecondsSinceEpoch;
           final double latencyMs = stopwatch.elapsedMicroseconds / 1000.0;
           debugPrint(
             '[Inference] Frame #$frameNumber completed | '
@@ -1104,6 +1156,9 @@ class InferenceService {
             'detections': detections,
             'latencyMs': latencyMs,
             'frameNumber': frameNumber,
+            'analysisReceivedAtMicros': analysisReceivedAtMicros,
+            'inferenceStartedAtMicros': inferenceStartedAtMicros,
+            'inferenceCompletedAtMicros': inferenceCompletedAtMicros,
           });
         }
       } catch (e, stack) {

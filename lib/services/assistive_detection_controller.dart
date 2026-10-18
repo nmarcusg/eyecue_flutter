@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
@@ -42,12 +43,20 @@ class AssistiveDetectionController extends ChangeNotifier {
   List<TrackedDetection> get tracks => List.unmodifiable(_tracks);
 
   /// Accepts normalized post-NMS results from either engine.
+  ///
+  /// [frameLatency] is Custom frame timing. [resultReceivedAt] is the optional
+  /// app-side receipt anchor for engines that expose no pre-result timing.
   List<DetectionInfo> updateDetections(
     List<Detection> detections, {
     double latencyMs = 0,
     bool announce = true,
     DateTime? timestamp,
+    FrameLatency? frameLatency,
+    DateTime? resultReceivedAt,
   }) {
+    // Acceptance anchor: entry, before spatial analysis or tracking work.
+    final acceptedAt = DateTime.now();
+    final timing = frameLatency?.withDetectionAcceptedAt(acceptedAt);
     _detections = SpatialAnalysisService.analyzeAll(detections);
     _tracks = tracker.update(detections, timestamp);
     for (final info in _detections) {
@@ -71,7 +80,16 @@ class AssistiveDetectionController extends ChangeNotifier {
       // TtsService scheduler is internally serialized (one utterance in
       // flight, one pending slot), so concurrent frame results cannot race
       // announcement decisions.
-      tts.announceDetections(_detections, tracks: _tracks, engine: engine);
+      tts.announceDetections(
+        _detections,
+        tracks: _tracks,
+        engine: engine,
+        frameLatency: timing,
+        resultReceivedAt: resultReceivedAt,
+        // Direct acceptance anchor only for calls that carry a result receipt;
+        // everything else stays timing-less rather than inventing an anchor.
+        detectionAcceptedAt: resultReceivedAt == null ? null : acceptedAt,
+      );
     }
     notifyListeners();
     return _detections;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
+import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
@@ -215,6 +216,12 @@ class _OverviewTab extends StatelessWidget {
               ],
             ),
             const SizedBox(height: kSpace24),
+            const _SectionHeading('Alert Latency'),
+            const SizedBox(height: kSpace8),
+            // Non-const on purpose: a const child is retained across the
+            // ListenableBuilder rebuild and would read stale telemetry.
+            _AlertLatencySection(),
+            const SizedBox(height: kSpace24),
             _ExportSection(
               exporting: exporting,
               onExportJson: onExportJson,
@@ -240,6 +247,170 @@ class _OverviewTab extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Compact alert-latency distributions and scheduler health.
+///
+/// Engine groups and interval labels mirror the telemetry contract. Empty
+/// distributions render `No samples`, never a fabricated `0 ms` percentile.
+class _AlertLatencySection extends StatelessWidget {
+  const _AlertLatencySection();
+
+  @override
+  Widget build(BuildContext context) {
+    final telemetry = _of(context);
+    final theme = Theme.of(context);
+    final counters = telemetry.alertCounters;
+    return Semantics(
+      container: true,
+      label: 'Alert latency and scheduler health',
+      child: _LightCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Alert latency and scheduler health',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            for (final engine in InferenceEngine.values) ...[
+              const SizedBox(height: kSpace12),
+              Text(
+                engine.label,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: kSpace4),
+              for (final interval in AlertLatencyInterval.values)
+                _AlertIntervalRow(
+                  label: interval.label(engine),
+                  summary: telemetry.alertLatencySummary(engine, interval),
+                ),
+            ],
+            const SizedBox(height: kSpace16),
+            Text(
+              'Scheduler health',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: kSpace4),
+            _SummaryRow(label: 'Dropped', value: '${counters.dropped}'),
+            _SummaryRow(
+              label: 'Cancelled before start',
+              value: '${counters.cancelledBeforeStart}',
+            ),
+            _SummaryRow(
+              label: 'Cancelled after start',
+              value: '${counters.cancelledAfterStart}',
+            ),
+            _SummaryRow(
+              label: 'Failed before start',
+              value: '${counters.failedBeforeStart}',
+            ),
+            _SummaryRow(
+              label: 'Failed after start',
+              value: '${counters.failedAfterStart}',
+            ),
+            _SummaryRow(
+              label: 'Reconciliation timeout',
+              value: '${counters.reconciliationTimeout}',
+            ),
+            _SummaryRow(
+              label: 'Watchdog recovery',
+              value: '${counters.watchdogRecovery}',
+            ),
+            _SummaryRow(
+              label: 'Quiet-period cap reached',
+              value: '${counters.quietPeriodCapReached}',
+            ),
+            _SummaryRow(
+              label: 'Recovery failed',
+              value: '${counters.recoveryFailed}',
+            ),
+            _SummaryRow(
+              label: 'Quarantined callback',
+              value: '${counters.quarantinedCallback}',
+            ),
+            _SummaryRow(
+              label: 'Late callback ignored',
+              value: '${counters.lateCallbackIgnored}',
+            ),
+            _SummaryRow(
+              label: 'Callback order violation',
+              value: '${counters.callbackOrderViolation}',
+            ),
+            _SummaryRow(
+              label: 'Preemption requested',
+              value: '${counters.preemptionRequested}',
+            ),
+            _SummaryRow(
+              label: 'Confirmed preempted',
+              value: '${counters.preempted}',
+            ),
+            _SummaryRow(
+              label: 'Superseded (all alert types)',
+              value: '${counters.superseded}',
+            ),
+            _SummaryRow(
+              label: 'Muted (all alert types)',
+              value: '${counters.muted}',
+            ),
+            _SummaryRow(
+              label: 'Stale decision',
+              value: '${counters.staleDecision}',
+            ),
+            _SummaryRow(
+              label: 'Rejected after recovery',
+              value: '${counters.rejectedAfterRecovery}',
+            ),
+            for (final entry in counters.rejectedByReason.entries)
+              _SummaryRow(
+                label: 'Rejected: ${entry.key}',
+                value: '${entry.value}',
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AlertIntervalRow extends StatelessWidget {
+  final String label;
+  final AlertLatencySummary summary;
+
+  const _AlertIntervalRow({required this.label, required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final value = summary.sampleCount == 0
+        ? 'No samples'
+        : 'p50 ${_fmt(summary.p50Ms)} ms · p95 ${_fmt(summary.p95Ms)} ms · '
+              'max ${_fmt(summary.maxMs)} ms · n ${summary.sampleCount}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: kSpace4),
+      child: Semantics(
+        container: true,
+        label: '$label: $value',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: theme.textTheme.bodyMedium),
+            Text(
+              value,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
