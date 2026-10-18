@@ -1,6 +1,6 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-10-18 (Workstream 1 TTS lifecycle arbitration — developed on `fix/tts-lifecycle-arbitration` and **merged into `dev` through PR #5 at `665b59b` on 2026-10-17**; still unreleased and not yet re-verified with Flutter tests, analyzer, builds, or physical-device TTS checks)
+> **Last Updated:** 2026-10-19 (WS4 documentation reconciliation; the Workstream 1 TTS lifecycle arbitration described below was developed on `fix/tts-lifecycle-arbitration` and **merged into `dev` through PR #5 at `665b59b` on 2026-10-17**; still unreleased and not yet re-verified with Flutter tests, analyzer, builds, or physical-device TTS checks)
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned app task areas and their acceptance criteria), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
 > **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The repository contains committed but unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
@@ -120,12 +120,12 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 - ✅ Camera initialization with YUV420 format at low resolution
 - ✅ Project documentation system established (`docs/` directory)
 - ✅ Bounding box overlay with `CustomPainter`, coordinate transformation, and front-camera mirroring
-- ✅ Debug instrumentation: structured `debugPrint` logging (`[Service]`/`[Model]`/`[Camera]`/`[Inference]`/`[Detection]`/`[Painter]`/`[Performance]`/`[Error]`) + visual debug overlay (debug builds only)
+- ✅ Debug instrumentation: structured `debugPrint` logging (`[Service]`/`[Model]`/`[Camera]`/`[Inference]`/`[Detection]`/`[Painter]`/`[Performance]`/`[Error]`); the former visual debug overlay (debug builds only) was removed in WS4
 - ✅ Performance logging: 5-second summaries with camera FPS, inference FPS, and avg/min/max latency
 - ✅ Partial isolate error handling: try/catch + error propagation to main isolate
-- ✅ Forensic file-based diagnostics (`ForensicLog`): structured logs + first-frame PNG dumps + auto-diagnosis written under `<documents>/debug/run_*` (replaces console probes)
+- ✅ Forensic file-based diagnostics (`ForensicLog`): structured logs + first-frame PNG dumps + auto-diagnosis written under `<documents>/debug/run_*` (replaces console probes); WS4 gates all file I/O out of release builds while debug/profile keep it
 - ✅ Camera preprocessing repair: geometry-aware YUV420→RGB (rowStride/pixelStride honored; planar I420 + semi-planar NV12/NV21)
 - ✅ Aspect-correct preview: `FittedBox` + painter share `applyBoxFit` math; no stretching/warping
-- ✅ Camera preview UI redesign: strict 3:4 portrait preview + permanent Metrics/Detections info panel
+- ✅ Camera preview UI redesign: strict 3:4 portrait preview + permanent Metrics/Detections info panel (the panel was removed in WS4)
 - ✅ Class-wise NMS (IoU 0.45) + pre-NMS confidence threshold lowered to 0.25 (standard YOLOv8)
 - ✅ **Device-independent orientation** (`BoxTransform`): input tensor rotated/mirrored to upright per runtime metadata; portrait detections 0 → 0.91 on-device; static-image regression byte-identical

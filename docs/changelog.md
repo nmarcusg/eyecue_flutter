@@ -5,6 +5,22 @@
 
 ---
 
+## Unreleased — Waste-Reduction Cleanup (WS4, 2026-10-19)
+
+### Changed
+- `28ffa9c` — removed the static-image diagnostic chain: service/screen branch, decoder-only API, `InputProbe.rgbaToI420`, `pubspec.yaml` declaration, and `assets/test_image.jpg`.
+- `6188974` — deleted verified zero-fan-in probes, debug overlay, info panel, compatibility export wrappers, and unused model/theme declarations.
+- `a466077` — removed the unused `flutter_riverpod` dependency; the tool-regenerated lockfile also normalized ten documented toolchain-forced downgrades under Flutter 3.44.2. This is not a dependency upgrade and no build was validated.
+- `1516dfe` — stopped bundling `assets/yolov8n_int8_new.tflite` and `assets/yolov8n.tflite`; both remain tracked for tools, tests, and history.
+- `7e89461` — C5 changed the existing forensic master switch to `!kReleaseMode`, so forensic file logging is now release-disabled. Debug/profile diagnostics remain, and some eager forensic CPU work still runs before the gated writes.
+- Current documentation and stale source comments were reconciled, and historical investigations now carry retirement/current-status notices instead of rewritten evidence.
+
+### Verified
+- **Static only.** WS4 commits were checked with focused reference searches, exact diff/boundary checks, `git diff --check`, clean status, and preserved-ref/lock checks.
+- No tests, analyzer, dependency resolution (beyond the authorized C3 regeneration), Gradle/build, APK/bundle inspection, emulator/device, or benchmark run was performed. No speed, storage, privacy, or release-readiness improvement is claimed.
+
+---
+
 ## Unreleased — Alert-Latency Telemetry (Workstream 2)
 
 ### Added

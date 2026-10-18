@@ -5,6 +5,15 @@ inference engines. The metadata suffix is packaging-only: the generated file
 starts with the exact bytes of the base FlatBuffer and adds one deterministic
 stored ZIP entry named `metadata.json`.
 
+## Packaging status
+
+`assets/yolov8n_int8_new_metadata.tflite` is the **sole bundled runtime model**
+declared in `pubspec.yaml` (alongside `assets/labels.txt`). C4 removed the
+Flutter bundle declarations for the base graph `assets/yolov8n_int8_new.tflite`
+and the v0.2.2 baseline `assets/yolov8n.tflite`; both remain tracked for tools,
+tests, and historical comparison. The older `assets/yolov8n_int8.tflite` was
+already tracked but unbundled before WS4. None of them are deleted.
+
 ## Artifact record
 
 | Field | Value |

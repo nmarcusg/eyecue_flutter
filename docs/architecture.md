@@ -145,7 +145,6 @@ eyecue_flutter/
 │   │   ├── detection.dart                 # Detection data class (classId, label, confidence, box)
 │   │   ├── detection_info.dart            # Spatial/priority/proximity user-facing info
 │   │   ├── app_settings.dart              # Persisted settings model
-│   │   ├── detection_failure.dart         # Typed inference failure DTO
 │   │   ├── detection_runtime_state.dart   # Shared runtime states and failures
 │   │   ├── inference_lifecycle_event.dart # Worker/engine lifecycle event DTO
 │   │   ├── inference_recovery_policy.dart # Bounded Custom-worker recovery policy
@@ -183,9 +182,7 @@ eyecue_flutter/
 │   │   ├── object_tracker.dart             # Temporal movement tracking
 │   │   ├── scene_summary_service.dart     # Deterministic scene summaries
 │   │   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
-│   │   ├── forensic_log.dart              # File-based structured diagnostics
-│   │   ├── inference_probe.dart           # Parser probe (disabled, removable)
-│   │   └── input_probe.dart               # Input pipeline probe (disabled, removable)
+│   │   └── forensic_log.dart              # File-based structured diagnostics (debug/profile; release-disabled)
 │   └── widgets/
 │       ├── bounding_box_painter.dart      # Detection overlay CustomPainter
 │       ├── gesture_surface.dart           # Transparent gesture capture layer
@@ -198,9 +195,7 @@ eyecue_flutter/
 │       ├── accessible_button.dart         # Large high-contrast button (48dp+)
 │       ├── detection_state_panel.dart     # Runtime/loading/recovery/error panel
 │       ├── detection_correction_sheet.dart # Correction capture sheet
-│       ├── charts.dart                    # fl_chart latency/FPS/frequency charts
-│       ├── debug_overlay.dart             # Debug HUD (retained, unused)
-│       └── info_panel.dart                # Old developer metrics panel (unused in primary UI)
+│       └── charts.dart                    # fl_chart latency/FPS/frequency charts
 │   └── theme/                             # Design tokens + theme (UI-owned)
 │       ├── app_colors.dart                # Semantic color tokens
 │       ├── app_spacing.dart               # Spacing scale
@@ -209,7 +204,7 @@ eyecue_flutter/
 │       ├── app_theme.dart                 # buildEyeCueTheme() (moved out of main.dart)
 │       └── app_home_theme.dart            # Home-local light theme + IBM Plex Sans + shadows
 ├── tool/                                  # CLI validation tools (unchanged)
-├── assets/                                # Model + labels (+ test image + logo + fonts)
+├── assets/                                # Bundled model + labels, retained unbundled models, logo, fonts
 ├── android/                               # Android platform (the only supported platform)
 ├── test/                                  # Unit + widget tests (navigation, services, widgets)
 ├── docs/                                  # Project documentation
@@ -256,13 +251,11 @@ eyecue_flutter/
 | Tensor Rotation | [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) | Pure layout-aware square-tensor rotation/mirroring for NHWC and NCHW buffers |
 | Box Transform | [`box_transform.dart`](../lib/models/box_transform.dart) | Device-independent orientation math (metadata-driven rotation/mirror) |
 | PNG Encoder | [`png_encoder.dart`](../lib/models/png_encoder.dart) | Pure-Dart PNG encoder for forensic image dumps |
-| Forensic Log | [`forensic_log.dart`](../lib/services/forensic_log.dart) | File-based structured diagnostics under `<documents>/debug/run_*` |
+| Forensic Log | [`forensic_log.dart`](../lib/services/forensic_log.dart) | File-based structured diagnostics under `<documents>/debug/run_*`; enabled in debug/profile only, file I/O disabled in release |
 | Detection Model | [`detection.dart`](../lib/models/detection.dart) | Detection data class (classId, confidence, bounding box) |
 | Bounding Box Painter | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Draws detection boxes, labels, and confidence on the camera preview (unchanged by the PD1–PD3 redesign) |
 | Detection Action Controls | [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) | Shared presentation widget: one coordinator-driven consolidated lifecycle control (Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing/Unavailable disabled) plus a physical Quick Scan control, in one non-scrolling row. Both presentation cards use state icons and left-aligned content. It owns local pointer hold tracking and horizontal progress from 0% at pointer down through the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; completion dispatches exactly once with a duplicate-dispatch lock. Imports no camera/inference/native/service internals |
 | Detection Information Overlay | [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) | Shared presentation widget: compact, bottom edge-inset, left-aligned in-viewport informational overlay of at most two rows with stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, and pointer transparency; hidden outside Ready/healthy fallback |
-| Info Panel | [`info_panel.dart`](../lib/widgets/info_panel.dart) | Old Metrics + Detections tabs — retained, unused in the primary UI |
-| Debug Overlay | [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart) | Debug-only HUD (retained, unused) |
 
 ## External Dependencies
 
@@ -271,17 +264,17 @@ eyecue_flutter/
 | `camera` | ^0.12.0+1 | Camera access + YUV420 image stream |
 | `tflite_flutter` | ^0.12.1 | Classic Interpreter FFI used only by Custom EyeCue; Android packaging extracts its 1.4.0 native library beside Ultralytics' LiteRT Next runtime without placing duplicate legacy Java APIs on the classpath |
 | `flutter_tts` | ^4.2.0 | Text-to-speech audio feedback |
-| `flutter_riverpod` | ^3.3.2 | State management (declared, deliberately unused — state uses `ChangeNotifier` + `setState`) |
 | `permission_handler` | ^12.0.3 | Camera permission requests |
-| `path_provider` | ^2.1.4 | File-backed settings persistence ([`settings_service.dart`](../lib/services/settings_service.dart)) + forensic run directories ([`forensic_log.dart`](../lib/services/forensic_log.dart)) |
+| `path_provider` | ^2.1.4 | File-backed settings persistence ([`settings_service.dart`](../lib/services/settings_service.dart)) + debug/profile forensic run directories ([`forensic_log.dart`](../lib/services/forensic_log.dart)) |
 | `fl_chart` | ^1.2.0 | Latency/FPS/frequency charts in Logs & Reports ([`charts.dart`](../lib/widgets/charts.dart)) |
 | `marionette_flutter` | ^0.6.0 | Debug-only runtime-inspection companion for the Marionette MCP server; initialized in [`main.dart`](../lib/main.dart) via `MarionetteBinding.ensureInitialized()` guarded by `kDebugMode` — never runs in release builds |
 | `google_fonts` | ^8.2.1 | Offline IBM Plex Sans typography for the Home-local light theme ([`app_home_theme.dart`](../lib/theme/app_home_theme.dart)); fonts bundled under `assets/fonts/`, runtime fetching disabled |
 
 ## AI Pipeline
 
+- **Bundling:** `assets/yolov8n_int8_new_metadata.tflite` is the sole Flutter-bundled runtime model (with `assets/labels.txt`). The base graph `assets/yolov8n_int8_new.tflite` and the v0.2.2 baseline `assets/yolov8n.tflite` remain tracked for tools, tests, and historical comparison but are not declared as app assets.
 - **Current unreleased candidate:** `assets/yolov8n_int8_new_metadata.tflite` — the deterministic metadata-enriched runtime artifact generated from the byte-identical base graph `assets/yolov8n_int8_new.tflite`. It has **FLOAT32 runtime I/O with internally quantized tensors** (classified *Weight-Quantized*), input `[1, 3, 640, 640]` (NCHW), and output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). The artifact is structurally validated, committed, bundled in the debug APK, and has initial target-device evidence: the exact APK installed successfully and a short live run completed 65 XNNPACK-labelled frames on the Snapdragon 695 phone. The calculated latency mean was 164.8 ms (median 157.7 ms; range 150.2–377.3 ms).
-- **Stable v0.2.2 baseline:** `assets/yolov8n.tflite` — FLOAT32 I/O with INT8 weights, input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`.
+- **Stable v0.2.2 baseline:** `assets/yolov8n.tflite` — FLOAT32 I/O with INT8 weights, input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`; tracked, not bundled.
 - **Model identity:** never assumed from filenames — introspected at runtime into a `ModelMetadata` snapshot.
 - **Preprocessing:** Manual YUV420 → RGB conversion, nearest-neighbor resize, writes matched to the input dtype (normalized float, or quantized via input scale/zeroPoint). Runtime shape selects NHWC interleaved or NCHW planar output order. [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) rotates/mirrors the square tensor to UPRIGHT per orientation metadata.
 - **Inference:** One persistent `Interpreter` instance in a dedicated isolate. The candidate attempts explicit XNNPACK with a retained delegate and retries on CPU after recoverable setup/invocation exceptions. A native SIGSEGV remains uncatchable. Raw `ByteBuffer`s are passed to `interpreter.run()` — no reshape, no input-tensor resizing.
@@ -306,7 +299,7 @@ From this, [`ModelType`](../lib/models/model_metadata.dart) is classified — **
 | FLOAT32 / FLOAT32 | no quantized tensors | FP32 |
 | any | scan unavailable | Unknown (internal tensor precision unavailable) |
 
-The metadata drives every pipeline decision: buffer dtype, whether to quantize input pixels, and whether to dequantize output values. It is shipped to the main isolate, logged at startup, and rendered in the debug overlay. If the runtime metadata ever disagrees with the filename, the runtime metadata wins and the discrepancy is logged.
+The metadata drives every pipeline decision: buffer dtype, whether to quantize input pixels, and whether to dequantize output values. It is shipped to the main isolate and logged at startup. If the runtime metadata ever disagrees with the filename, the runtime metadata wins and the discrepancy is logged.
 
 ## Important Architectural Principles
 
@@ -322,7 +315,7 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 
 - **Bounded Custom-worker recovery:** implemented through [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart), with one immediate retry, one delayed retry, terminal failure, healthy-budget reset, stale-generation guards, and disposal/backoff safety. Native crashes such as SIGSEGV remain uncatchable by Dart and require device-level validation.
 - **No dependency injection framework:** Services are wired in `main.dart` and passed via constructors — simple and sufficient, but not a full DI container.
-- **State management:** plain `ChangeNotifier` services + `setState`; Riverpod remains declared but unused (intentionally — the app does not need a framework).
+- **State management:** plain `ChangeNotifier` services + `setState` with constructor injection; the unused Riverpod dependency was removed in WS4, and no state-management framework is used.
 - **Engine-specific services:** `InferenceService` remains intentionally coupled to Custom TFLite/camera internals, while Ultralytics is isolated behind its native screen and result adapter. The shared controller and coordinator prevent engine-specific objects from leaking into common assistive behavior.
 - **Single user-facing lifecycle source:** the app-shell-owned [`EngineCoordinator`](../lib/services/engine_coordinator.dart) is the sole authority for user-facing Detection lifecycle/status. Home and both Detection implementations render its snapshot; engine-local booleans govern mechanics only. Auto-start is a startup input and is never written by entry, pause, or stop.
 - **Configuration:** model paths, labels, confidence bounds/default, and NMS IoU are centralized in [`model_config.dart`](../lib/models/model_config.dart). Detection sensitivity is persisted in [`app_settings.dart`](../lib/models/app_settings.dart) and applied by both engines at startup/reload; it is not a per-frame mutation.

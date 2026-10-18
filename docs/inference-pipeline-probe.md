@@ -10,6 +10,10 @@
 > orientation changes are reflected in the current implementation; the
 > committed-but-unreleased NCHW/XNNPACK candidate is tracked in
 > [`project-status.md`](project-status.md).
+>
+> **WS4 retirement notice (2026-10-19):** `InferenceProbe` and the static-image
+> path were removed in WS4. This document is historical evidence only; its
+> procedures are no longer runnable as written.
 
 ---
 

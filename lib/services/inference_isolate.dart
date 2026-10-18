@@ -98,13 +98,13 @@ class InferenceService {
   ModelMetadata? _modelMetadata;
   ModelMetadata? get modelMetadata => _modelMetadata;
 
-  /// Reactive notifier so the UI (debug overlay) can react to metadata arrival.
+  /// Reactive notifier so consumers can react to metadata arrival.
   final ValueNotifier<ModelMetadata?> _metadataNotifier =
       ValueNotifier<ModelMetadata?>(null);
   ValueNotifier<ModelMetadata?> get metadataNotifier => _metadataNotifier;
 
   /// Per-frame inference latency in milliseconds, updated each time a
-  /// result arrives from the isolate. Used by the debug overlay.
+  /// result arrives from the isolate.
   double _lastLatencyMs = 0.0;
   double get lastLatencyMs => _lastLatencyMs;
 
@@ -511,8 +511,8 @@ class InferenceService {
     int vPixelStride = 1,
     // Orientation metadata (device-independent; all derived from
     // CameraDescription.sensorOrientation + current device orientation + lens
-    // direction by the caller). Defaults keep the static-image path at
-    // rotation 0 / no mirror — i.e. the identity transform.
+    // direction by the caller). Defaults use the identity transform
+    // (rotation 0 / no mirror).
     int rotationDegrees = 0,
     bool mirror = false,
     int sensorOrientation = -1,
@@ -743,9 +743,6 @@ class InferenceService {
       try {
         receivedCount++;
         if (data is Map<String, dynamic>) {
-          // NOTE: the test image arrives here via the NORMAL frame message
-          // (processFrame) — the same code path as the camera. There is no
-          // separate test-image branch; the only difference is the source.
           final Uint8List yBytes = data['y'] as Uint8List;
           final Uint8List uBytes = data['u'] as Uint8List;
           final Uint8List vBytes = data['v'] as Uint8List;
