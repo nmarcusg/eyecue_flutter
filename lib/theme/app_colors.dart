@@ -56,52 +56,10 @@ const Color kOnAccentWhite = Colors.white;
 /// Dark text used on light/amber surfaces (medium badge foreground).
 const Color kOnAmberDark = Color(0xFF1A1A1A);
 
-/// Chart axis grey.
-const Color kChartAxis = Color(0xFFBDBDBD);
-
-/// Chart benchmark line (latency) red accent.
-const Color kChartBenchmarkRed = Colors.redAccent;
-
-/// Chart benchmark line (FPS) green accent.
-const Color kChartBenchmarkGreen = Colors.greenAccent;
-
-/// Detection box palette (cycled per class by the painter).
-const List<Color> kDetectionPalette = [
-  Color(0xFF00E676), // green
-  Color(0xFFFF9100), // orange
-  Color(0xFF00B0FF), // light blue
-  Color(0xFFFFD600), // yellow
-  Color(0xFFFF1744), // red
-  Color(0xFFD500F9), // purple
-  Color(0xFF76FF03), // lime
-  Color(0xFF00E5FF), // cyan
-];
-
 /// Priority accent colors used in Logs & Reports summary rows.
 const Color kPriorityHigh = Color(0xFFEF5350);
 const Color kPriorityMedium = Color(0xFFFFCA28);
 const Color kPriorityLow = Color(0xFF66BB6A);
-
-/// Debug overlay monospace text green.
-const Color kDebugTextGreen = Color(0xFF00E676);
-
-/// Debug overlay heading / value yellow.
-const Color kDebugYellow = Color(0xFFFFD600);
-
-/// Debug overlay label grey.
-const Color kDebugLabelGrey = Color(0xFFAAAAAA);
-
-/// Debug overlay value grey.
-const Color kDebugValueGrey = Color(0xFFEEEEEE);
-
-/// Debug overlay border (25% white).
-const Color kDebugBorder = Color(0x44FFFFFF);
-
-/// Debug overlay error red.
-const Color kDebugErrorRed = Color(0xFFFF5252);
-
-/// Detection box label shadow (25% black).
-const Color kLabelShadow = Color(0x40000000);
 
 // ---------------------------------------------------------------------------
 // Home-local light semantic color tokens.
@@ -125,9 +83,6 @@ const Color kHomeInk = Color(0xFF0A0A0A);
 
 /// Supporting copy and off-state dot.
 const Color kHomeInkMuted = Color(0xFF667085);
-
-/// Tertiary Home text only if required by the approved composition.
-const Color kHomeInkSubtle = Color(0xFF99A5AA);
 
 /// Ready dot, primary Home accent, active light treatment.
 const Color kHomeAccentCyan = Color(0xFF22C7F2);
