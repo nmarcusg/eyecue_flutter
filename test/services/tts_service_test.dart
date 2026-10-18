@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:eyecue_flutter/models/alert_lifecycle.dart';
+import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/tracked_detection.dart';
@@ -860,5 +862,270 @@ void main() {
       expect(await failed, isFalse);
       expect(local.isSettling, isFalse);
     });
+  });
+
+  group('alert lifecycle telemetry', () {
+    late List<AlertLifecycleRecord> records;
+    late List<AlertCounters> counters;
+    late TtsService instrumented;
+
+    setUp(() async {
+      records = [];
+      counters = [];
+      instrumented = TtsService(
+        engine: engine,
+        clock: () => now,
+        onAlertLifecycle: records.add,
+        onAlertCounters: counters.add,
+        startConfirmationTimeout: const Duration(milliseconds: 60),
+        preemptionConfirmTimeout: const Duration(milliseconds: 40),
+        reconciliationTimeout: const Duration(milliseconds: 40),
+        callbackQuietPeriod: const Duration(milliseconds: 25),
+        maxSettlingDuration: const Duration(milliseconds: 200),
+        recoveryTimeout: const Duration(milliseconds: 100),
+        preemptionCooldown: Duration.zero,
+      );
+      await instrumented.init();
+      addTearDown(instrumented.dispose);
+    });
+
+    test('emits exactly one completed record with a confirmed start', () async {
+      expect(await instrumented.speak('hello'), isTrue);
+
+      final record = records.single;
+      expect(record.origin, AlertOrigin.generic);
+      expect(record.engine, isNull);
+      expect(record.terminalState, AlertTerminalState.completed);
+      expect(record.hadStarted, isTrue);
+      expect(record.alertStartedAt, isNotNull);
+      expect(record.terminalAt.isBefore(record.submittedAt), isFalse);
+      expect(record.alertStartedAt!.isBefore(record.submittedAt), isFalse);
+      expect(record.reconciledAt, record.terminalAt);
+    });
+
+    test('a dropped submission is a single started-less record', () async {
+      engine.mode = FakeMode.drop;
+      expect(await instrumented.speak('dropped'), isFalse);
+
+      final record = records.single;
+      expect(record.terminalState, AlertTerminalState.dropped);
+      expect(record.hadStarted, isFalse);
+      expect(record.alertStartedAt, isNull);
+      expect(record.reconciledAt, record.terminalAt);
+      expect(counters.last.dropped, 1);
+    });
+
+    test(
+      'a cancellation before any start is counted as before-start',
+      () async {
+        engine.mode = FakeMode.manual;
+        final pending = instrumented.speak('cancel me');
+        await pumpEventQueue();
+
+        engine.emitCancel();
+        engine.resolveCurrent(0);
+        await pumpEventQueue();
+
+        final record = records.single;
+        expect(record.terminalState, AlertTerminalState.cancelled);
+        expect(record.hadStarted, isFalse);
+        expect(record.alertStartedAt, isNull);
+        expect(record.reconciledAt, record.terminalAt);
+        expect(counters.last.cancelledBeforeStart, 1);
+        expect(counters.last.cancelledAfterStart, 0);
+        expect(await pending, isFalse);
+      },
+    );
+
+    test('only detection origin carries the inference engine', () async {
+      expect(
+        await instrumented.announceDetections([
+          nearPerson(),
+        ], engine: InferenceEngine.custom),
+        isTrue,
+      );
+      expect(records.single.origin, AlertOrigin.detection);
+      expect(records.single.engine, InferenceEngine.custom);
+
+      now = now.add(const Duration(seconds: 5));
+      expect(await instrumented.speakWayfinding('Settings'), isTrue);
+      expect(records.last.origin, AlertOrigin.wayfinding);
+      expect(records.last.engine, isNull);
+    });
+
+    test('quick scan and repeat-last records stay engine-null', () async {
+      expect(await instrumented.announceQuickScan([info()]), isTrue);
+      expect(records.single.origin, AlertOrigin.quickScan);
+      expect(records.single.engine, isNull);
+
+      now = now.add(const Duration(seconds: 5));
+      expect(await instrumented.repeatLast(), isTrue);
+      expect(records.last.origin, AlertOrigin.repeatLast);
+      expect(records.last.engine, isNull);
+    });
+
+    test('preemption is counted only once cancellation reconciles', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('status');
+      await pumpEventQueue();
+
+      engine.mode = FakeMode.autoComplete;
+      final urgent = instrumented.announceDetections(
+        [nearPerson()],
+        tracks: [trackOf(nearPerson(), id: 21)],
+      );
+      await pumpEventQueue();
+
+      expect(counters.last.preemptionRequested, 1);
+      expect(counters.last.preempted, 0);
+
+      engine.emitCancel();
+      engine.resolveCurrent(0);
+      await pumpEventQueue();
+
+      final cancelled = records.first;
+      expect(cancelled.terminalState, AlertTerminalState.cancelled);
+      expect(cancelled.terminalCause, 'preempted');
+      expect(cancelled.hadStarted, isTrue);
+      expect(cancelled.reconciledAt, cancelled.terminalAt);
+      expect(counters.last.preempted, 1);
+      expect(counters.last.cancelledAfterStart, 1);
+
+      await urgent;
+      await active;
+    });
+
+    test('watchdog failure has no reconciliation and no preemption', () async {
+      engine.mode = FakeMode.manual;
+      final pending = instrumented.speak('silent');
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      final record = records.single;
+      expect(record.terminalState, AlertTerminalState.failed);
+      expect(record.terminalCause, 'startNotConfirmed');
+      expect(record.hadStarted, isFalse);
+      expect(record.reconciledAt, isNull);
+      expect(counters.last.failedBeforeStart, 1);
+      expect(counters.last.watchdogRecovery, 1);
+      expect(counters.last.preempted, 0);
+      expect(await pending, isFalse);
+    });
+
+    test('a partial signal pair records a reconciliation timeout', () async {
+      engine.mode = FakeMode.manual;
+      final pending = instrumented.speak('silent');
+      await pumpEventQueue();
+
+      engine.emitStart();
+      engine.emitComplete();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      final record = records.single;
+      expect(record.terminalState, AlertTerminalState.failed);
+      expect(record.terminalCause, 'reconciliationTimeout');
+      expect(record.hadStarted, isTrue);
+      expect(record.reconciledAt, isNull);
+      expect(counters.last.failedAfterStart, 1);
+      expect(counters.last.reconciliationTimeout, 1);
+      expect(counters.last.watchdogRecovery, 1);
+      expect(await pending, isFalse);
+    });
+
+    test('a late result after the terminal publishes its counter', () async {
+      engine.mode = FakeMode.manual;
+      final pending = instrumented.speak('silent');
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(counters.last.failedBeforeStart, 1);
+      expect(counters.last.lateCallbackIgnored, 0);
+
+      engine.resolveCurrent(0);
+      await pumpEventQueue();
+
+      expect(counters.last.lateCallbackIgnored, 1);
+      expect(await pending, isFalse);
+    });
+
+    test('an engine-error recovery is not a watchdog recovery', () async {
+      engine.mode = FakeMode.manual;
+      final pending = instrumented.speak('boom');
+      await pumpEventQueue();
+
+      engine.emitError();
+      await pumpEventQueue();
+
+      final record = records.single;
+      expect(record.terminalState, AlertTerminalState.failed);
+      expect(record.terminalCause, 'engineError');
+      expect(counters.last.watchdogRecovery, 0);
+      expect(engine.recoverCalls, greaterThan(0));
+      expect(await pending, isFalse);
+    });
+
+    test('muted decisions are counted but never recorded', () async {
+      instrumented.setAudioEnabled(false);
+      expect(await instrumented.speak('hello'), isFalse);
+      expect(
+        await instrumented.announceDetections([
+          nearPerson(),
+        ], engine: InferenceEngine.custom),
+        isFalse,
+      );
+
+      expect(records, isEmpty);
+      expect(counters.last.muted, 2);
+      expect(counters.last.rejectedByReason['muted'], 2);
+    });
+
+    test('same-priority replacement is counted and published once', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+      expect(instrumented.isSpeaking, isTrue);
+
+      final parked = instrumented.speak('parked', urgent: true);
+      final newest = instrumented.speak('newest', urgent: true);
+      await pumpEventQueue();
+
+      // The displaced pending request is counted exactly once, and the
+      // cumulative snapshot is published immediately.
+      expect(await parked, isFalse);
+      expect(instrumented.supersededCount, 1);
+      expect(counters.last.superseded, 1);
+
+      engine.mode = FakeMode.autoComplete;
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      await pumpEventQueue();
+
+      expect(await newest, isTrue);
+      await active;
+    });
+
+    test(
+      'a watchdog failure after a recovery attempt adds no recovery',
+      () async {
+        engine.mode = FakeMode.manual;
+        final first = instrumented.speak('silent');
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+
+        expect(await first, isFalse);
+        expect(counters.last.watchdogRecovery, 1);
+
+        // The single recovery attempt is already consumed, so this watchdog
+        // failure must not count a second watchdog recovery.
+        final second = instrumented.speak('silent again');
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+
+        expect(await second, isFalse);
+        expect(counters.last.failedBeforeStart, 2);
+        expect(counters.last.watchdogRecovery, 1);
+        expect(instrumented.recoveryFailed, isTrue);
+      },
+    );
   });
 }

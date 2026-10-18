@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_info.dart';
 import '../models/tracked_detection.dart';
@@ -142,6 +143,8 @@ class TtsService extends ChangeNotifier {
   TtsService({
     required this.engine,
     DateTime Function()? clock,
+    this.onAlertLifecycle,
+    this.onAlertCounters,
     this.announcementCooldown = const Duration(seconds: 3),
     this.sameLabelCooldown = const Duration(seconds: 6),
     this.wayfindingRepeatCooldown = const Duration(seconds: 2),
@@ -158,6 +161,11 @@ class TtsService extends ChangeNotifier {
 
   final TtsEngine engine;
   final AlertPolicy policy;
+
+  /// Optional alert lifecycle/counter sinks. Null keeps construction
+  /// source-compatible for tests and widget fakes.
+  final void Function(AlertLifecycleRecord record)? onAlertLifecycle;
+  final void Function(AlertCounters counters)? onAlertCounters;
   final SceneSummaryService summaryService = const SceneSummaryService();
 
   /// Minimum gap between accepted non-urgent utterances.
@@ -240,6 +248,19 @@ class TtsService extends ChangeNotifier {
   int _superseded = 0;
   int _staleDecisions = 0;
   int _rejectedAfterRecovery = 0;
+  int _dropped = 0;
+  int _cancelledBeforeStart = 0;
+  int _cancelledAfterStart = 0;
+  int _failedBeforeStart = 0;
+  int _failedAfterStart = 0;
+  int _reconciliationTimeouts = 0;
+  int _watchdogRecoveries = 0;
+  int _quietPeriodCaps = 0;
+  int _recoveryFailures = 0;
+  int _preemptionRequested = 0;
+  int _preempted = 0;
+  int _muted = 0;
+  final Map<String, int> _rejectedByReason = {};
   int _postFailureRecoveries = 0;
   static const int _maxPostFailureRecoveries = 1;
   SpeechState? _lastTerminalState;
@@ -280,7 +301,10 @@ class TtsService extends ChangeNotifier {
   /// [urgent] messages are user-initiated: they never preempt a safety alert;
   /// they wait in the single pending slot instead.
   Future<bool> speak(String text, {bool urgent = false}) {
-    if (!_audioEnabled) return Future<bool>.value(false);
+    if (!_audioEnabled) {
+      _recordRejection(AlertReason.muted);
+      return Future<bool>.value(false);
+    }
     final now = _clock();
     if (!urgent && _lastAnnouncementAt != null) {
       if (now.difference(_lastAnnouncementAt!) < announcementCooldown) {
@@ -311,7 +335,11 @@ class TtsService extends ChangeNotifier {
   /// Any incoming Detection/safety announcement may preempt active wayfinding
   /// through the normal serialized stop/cancel/reconcile path.
   Future<bool> speakWayfinding(String phrase) {
-    if (_disposed || !_audioEnabled) return Future<bool>.value(false);
+    if (_disposed) return Future<bool>.value(false);
+    if (!_audioEnabled) {
+      _recordRejection(AlertReason.muted);
+      return Future<bool>.value(false);
+    }
     if (_active != null ||
         _pending != null ||
         _quarantining ||
@@ -332,6 +360,7 @@ class TtsService extends ChangeNotifier {
         createdAt: now,
         validity: const Duration(seconds: 10),
         wayfinding: true,
+        origin: AlertOrigin.wayfinding,
       ),
     );
   }
@@ -352,7 +381,10 @@ class TtsService extends ChangeNotifier {
       audioEnabled: _audioEnabled,
       force: force,
     );
-    if (!decision.announce) return Future<bool>.value(false);
+    if (!decision.announce) {
+      _recordRejection(decision.reason);
+      return Future<bool>.value(false);
+    }
     return _submit(
       _SpeechRequest(
         text: decision.text,
@@ -361,6 +393,7 @@ class TtsService extends ChangeNotifier {
         validity: decision.validity,
         decision: decision,
         engine: engine,
+        origin: AlertOrigin.detection,
       ),
     );
   }
@@ -369,13 +402,17 @@ class TtsService extends ChangeNotifier {
     List<DetectionInfo> detections, {
     List<TrackedDetection> tracks = const [],
   }) {
-    if (!_audioEnabled) return Future<bool>.value(false);
+    if (!_audioEnabled) {
+      _recordRejection(AlertReason.muted);
+      return Future<bool>.value(false);
+    }
     return _submit(
       _SpeechRequest(
         text: summaryService.quickScan(detections, tracks: tracks),
         priority: AlertPriority.userInitiated,
         createdAt: _clock(),
         validity: const Duration(milliseconds: 1500),
+        origin: AlertOrigin.quickScan,
       ),
     );
   }
@@ -383,13 +420,18 @@ class TtsService extends ChangeNotifier {
   /// Replays the most recent utterance that actually started.
   Future<bool> repeatLast() {
     final text = _lastUtterance;
-    if (text == null || !_audioEnabled) return Future<bool>.value(false);
+    if (text == null) return Future<bool>.value(false);
+    if (!_audioEnabled) {
+      _recordRejection(AlertReason.muted);
+      return Future<bool>.value(false);
+    }
     return _submit(
       _SpeechRequest(
         text: text,
         priority: AlertPriority.userInitiated,
         createdAt: _clock(),
         validity: const Duration(seconds: 10),
+        origin: AlertOrigin.repeatLast,
       ),
     );
   }
@@ -447,6 +489,7 @@ class TtsService extends ChangeNotifier {
           _postFailureRecoveries < _maxPostFailureRecoveries;
       if (!canRetry) {
         _rejectedAfterRecovery++;
+        _publishCounters();
         if (!request.done.isCompleted) request.done.complete(false);
         return request.done.future;
       }
@@ -536,16 +579,20 @@ class TtsService extends ChangeNotifier {
     }
     if (request.priority.index > pending.priority.index) {
       _superseded++;
+      _publishCounters();
       if (!pending.done.isCompleted) pending.done.complete(false);
       _pending = request;
       return;
     }
     if (request.priority.index == pending.priority.index) {
+      _superseded++;
+      _publishCounters();
       if (!pending.done.isCompleted) pending.done.complete(false);
       _pending = request;
       return;
     }
     _superseded++;
+    _publishCounters();
     if (!request.done.isCompleted) request.done.complete(false);
   }
 
@@ -560,6 +607,8 @@ class TtsService extends ChangeNotifier {
     _lastPreemptionAt = now;
     active.preemptionRequested = true;
     active.stopRequested = true;
+    _preemptionRequested++;
+    _publishCounters();
 
     active.preemptionTimer = Timer(preemptionConfirmTimeout, () {
       if (identical(_active, active) && active.terminal == null) {
@@ -597,6 +646,7 @@ class TtsService extends ChangeNotifier {
         .then((value) {
           if (submission.terminal != null) {
             _lateCallbacks++;
+            _publishCounters();
             return;
           }
           submission.resultValue = value;
@@ -617,6 +667,7 @@ class TtsService extends ChangeNotifier {
   void _handleStart() {
     if (_quarantining) {
       _quarantinedCallbacks++;
+      _publishCounters();
       _restartQuietPeriod();
       return;
     }
@@ -631,10 +682,12 @@ class TtsService extends ChangeNotifier {
       } else {
         _lateCallbacks++;
       }
+      _publishCounters();
       return;
     }
     if (active.terminal != null) {
       _orderViolations++;
+      _publishCounters();
       return;
     }
     if (active.didStart) return;
@@ -677,12 +730,14 @@ class TtsService extends ChangeNotifier {
   void _handleComplete() {
     if (_quarantining) {
       _quarantinedCallbacks++;
+      _publishCounters();
       _restartQuietPeriod();
       return;
     }
     final active = _active;
     if (active == null || active.terminal != null) {
       _lateCallbacks++;
+      _publishCounters();
       return;
     }
     active.onCompleteSeen = true;
@@ -692,12 +747,14 @@ class TtsService extends ChangeNotifier {
   void _handleCancel() {
     if (_quarantining) {
       _quarantinedCallbacks++;
+      _publishCounters();
       _restartQuietPeriod();
       return;
     }
     final active = _active;
     if (active == null || active.terminal != null) {
       _lateCallbacks++;
+      _publishCounters();
       return;
     }
     active.onCancelSeen = true;
@@ -707,12 +764,14 @@ class TtsService extends ChangeNotifier {
   void _handleError(dynamic error) {
     if (_quarantining) {
       _quarantinedCallbacks++;
+      _publishCounters();
       _restartQuietPeriod();
       return;
     }
     final active = _active;
     if (active == null || active.terminal != null) {
       _lateCallbacks++;
+      _publishCounters();
       return;
     }
     _fail(active, _CancelCause.engineError);
@@ -807,6 +866,8 @@ class TtsService extends ChangeNotifier {
       }
     }
 
+    _recordAlertTerminal(submission, terminal, cause);
+
     _lastTerminalState = terminal;
     _state = terminal;
     if (identical(_active, submission)) _active = null;
@@ -821,7 +882,14 @@ class TtsService extends ChangeNotifier {
   void _fail(_Submission submission, _CancelCause cause) {
     if (submission.terminal != null) return;
     _terminal(submission, SpeechState.failed, cause, drain: false);
-    unawaited(_enterRecovery());
+    unawaited(
+      _enterRecovery(
+        watchdogTriggered:
+            cause == _CancelCause.startNotConfirmed ||
+            cause == _CancelCause.completionNotConfirmed ||
+            cause == _CancelCause.reconciliationTimeout,
+      ),
+    );
   }
 
   void _drain() {
@@ -842,12 +910,14 @@ class TtsService extends ChangeNotifier {
       // now would double-announce the same object. A decision that still
       // represents an escalation is retained.
       _staleDecisions++;
+      _publishCounters();
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
       return;
     }
     if (!next.isCurrent(_clock())) {
       _superseded++;
+      _publishCounters();
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
       return;
@@ -859,17 +929,21 @@ class TtsService extends ChangeNotifier {
   // Recovery + quiet period
   // ---------------------------------------------------------------------------
 
-  Future<void> _enterRecovery() async {
+  /// [watchdogTriggered] counts a watchdog recovery only when this call really
+  /// starts one; an engine-error recovery is not a watchdog recovery.
+  Future<void> _enterRecovery({bool watchdogTriggered = false}) async {
     if (_disposed) return;
     if (_recovering || _settling) return;
     if (_recoveryAttempts >= 1) {
       _recoveryFailed = true;
+      _recoveryFailures++;
       _state = SpeechState.failed;
       _failPending();
       _notify();
       return;
     }
     _recoveryAttempts++;
+    if (watchdogTriggered) _watchdogRecoveries++;
     _recovering = true;
     _state = SpeechState.recovering;
     _notify();
@@ -887,6 +961,7 @@ class TtsService extends ChangeNotifier {
     if (!recovered) {
       _recovering = false;
       _recoveryFailed = true;
+      _recoveryFailures++;
       _state = SpeechState.failed;
       _failPending();
       _notify();
@@ -900,6 +975,7 @@ class TtsService extends ChangeNotifier {
     _settleCapTimer?.cancel();
     _settleCapTimer = Timer(maxSettlingDuration, () {
       _quietPeriodCapReached = true;
+      _quietPeriodCaps++;
       _finishSettling();
     });
     _restartQuietPeriod();
@@ -951,6 +1027,105 @@ class TtsService extends ChangeNotifier {
   void _notify() {
     if (_disposed) return;
     notifyListeners();
+    _publishCounters();
+  }
+
+  /// One cumulative snapshot per publication. Telemetry replaces its copy, so
+  /// repeating an unchanged snapshot is harmless and never double-counts.
+  void _publishCounters() {
+    if (_disposed) return;
+    final publish = onAlertCounters;
+    if (publish == null) return;
+    publish(
+      AlertCounters(
+        dropped: _dropped,
+        cancelledBeforeStart: _cancelledBeforeStart,
+        cancelledAfterStart: _cancelledAfterStart,
+        failedBeforeStart: _failedBeforeStart,
+        failedAfterStart: _failedAfterStart,
+        reconciliationTimeout: _reconciliationTimeouts,
+        watchdogRecovery: _watchdogRecoveries,
+        quietPeriodCapReached: _quietPeriodCaps,
+        recoveryFailed: _recoveryFailures,
+        quarantinedCallback: _quarantinedCallbacks,
+        lateCallbackIgnored: _lateCallbacks,
+        callbackOrderViolation: _orderViolations,
+        preemptionRequested: _preemptionRequested,
+        preempted: _preempted,
+        superseded: _superseded,
+        muted: _muted,
+        staleDecision: _staleDecisions,
+        rejectedAfterRecovery: _rejectedAfterRecovery,
+        rejectedByReason: Map<String, int>.unmodifiable(_rejectedByReason),
+      ),
+    );
+  }
+
+  /// A decision that never became a submission: counted, never a lifecycle
+  /// record.
+  void _recordRejection(AlertReason reason) {
+    _rejectedByReason[reason.name] = (_rejectedByReason[reason.name] ?? 0) + 1;
+    if (reason == AlertReason.muted) _muted++;
+    _publishCounters();
+  }
+
+  /// Counts and records exactly one terminal outcome per submitted request.
+  void _recordAlertTerminal(
+    _Submission submission,
+    SpeechState terminal,
+    _CancelCause? cause,
+  ) {
+    AlertTerminalState? state;
+    switch (terminal) {
+      case SpeechState.completed:
+        state = AlertTerminalState.completed;
+      case SpeechState.cancelled:
+        state = AlertTerminalState.cancelled;
+        if (submission.didStart) {
+          _cancelledAfterStart++;
+        } else {
+          _cancelledBeforeStart++;
+        }
+      case SpeechState.dropped:
+        state = AlertTerminalState.dropped;
+        _dropped++;
+      case SpeechState.failed:
+        state = AlertTerminalState.failed;
+        if (submission.didStart) {
+          _failedAfterStart++;
+        } else {
+          _failedBeforeStart++;
+        }
+        if (cause == _CancelCause.reconciliationTimeout) {
+          _reconciliationTimeouts++;
+        }
+      default:
+        state = null;
+    }
+    if (state == null) return;
+    if (state == AlertTerminalState.cancelled &&
+        cause == _CancelCause.preempted) {
+      _preempted++;
+    }
+    final publish = onAlertLifecycle;
+    if (publish == null) return;
+    final terminalAt = submission.finishedAt!;
+    publish(
+      AlertLifecycleRecord(
+        origin: submission.request.origin,
+        engine: submission.request.engine,
+        requestedAt: submission.request.createdAt,
+        submittedAt: submission.submittedAt,
+        alertStartedAt: submission.startedAt,
+        terminalAt: terminalAt,
+        terminalState: state,
+        terminalCause: cause?.name,
+        hadStarted: submission.didStart,
+        // Only a paired completion/cancellation or a platform drop has a
+        // truthful reconciliation time; watchdog/error failures do not.
+        reconciledAt: state == AlertTerminalState.failed ? null : terminalAt,
+      ),
+    );
   }
 }
 
@@ -965,6 +1140,10 @@ class _SpeechRequest {
   /// True for advisory navigation feedback. Wayfinding never contributes to
   /// Detection cooldown/history or the repeat-last utterance.
   final bool wayfinding;
+
+  /// Origin of the spoken request; only [AlertOrigin.detection] may carry an
+  /// inference engine.
+  final AlertOrigin origin;
   final Completer<bool> done = Completer<bool>();
 
   _SpeechRequest({
@@ -975,6 +1154,7 @@ class _SpeechRequest {
     this.decision,
     this.engine,
     this.wayfinding = false,
+    this.origin = AlertOrigin.generic,
   });
 
   bool isCurrent(DateTime now) => now.difference(createdAt) <= validity;
