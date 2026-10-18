@@ -28,7 +28,7 @@ A device test produced an obstacle warning only after the user had already colli
 - EyeCue is not proven safe for independent navigation.
 
 ### Next Session
-- Run `flutter analyze` and the full suite on `codex/tts-lifecycle-arbitration`, then review the single Workstream 1 commit.
+- Run `flutter analyze` and the full suite on `codex/tts-lifecycle-arbitration`, then review the single Workstream 1 commit. *(Historical plan recorded on 2026-10-17, before that branch was renamed `fix/tts-lifecycle-arbitration` and merged to `dev` through PR #5 at `665b59b` on 2026-10-17; those checks were still pending after the merge.)*
 
 ---
 

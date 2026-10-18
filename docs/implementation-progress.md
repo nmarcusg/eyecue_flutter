@@ -1,10 +1,10 @@
 # EyeCue — Implementation Progress
 
-> **Workstream 1 (2026-10-17) — TTS lifecycle arbitration:** implemented on `codex/tts-lifecycle-arbitration` (serialized scheduler, paired-signal reconciliation, bounded recovery/settling, track-aware alert policy, semantic pending revalidation, controlled preemption, idle-only wayfinding) with adapted tests and widget-test fakes. **Verification status: static only** — `dart format` and `git diff --check` are clean; no `flutter test`, `flutter analyze`, Gradle or builds were run after relocation. Dated totals elsewhere in this file are historical.
+> **Workstream 1 (2026-10-17) — TTS lifecycle arbitration:** developed on `fix/tts-lifecycle-arbitration` and merged to `dev` through PR #5 at `665b59b` on 2026-10-17, still unreleased (serialized scheduler, paired-signal reconciliation, bounded recovery/settling, track-aware alert policy, semantic pending revalidation, controlled preemption, idle-only wayfinding) with adapted tests and widget-test fakes. **Verification status: static only** — `dart format` and `git diff --check` are clean; no `flutter test`, `flutter analyze`, Gradle or builds have run since the relocation or since the merge, and no physical-device TTS validation was performed. Dated totals elsewhere in this file are historical.
 >
-> **Reading the milestones below:** every "Current validation" bullet is relative to **its own dated section** and describes the repository at that time. None of them validates the current Workstream 1 branch.
+> **Reading the milestones below:** every "Current validation" bullet is relative to **its own dated section** and describes the repository at that time. None of them validates the merged Workstream 1 state.
 
-> **Last Updated:** 2026-10-17 (Workstream 1 documentation sync; the milestone dates below are historical)
+> **Last Updated:** 2026-10-18 (Workstream 1 merge status recorded; the milestone dates below are historical)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
 ## Current Unreleased Candidate (2026-09-29) — Presentation-Only Visual Redesign Closeout
@@ -15,7 +15,7 @@
 - ✅ Completed Help card/icon removal and app-bar title styling, and the fixed consistent light app-bar/body surface treatment while Settings, Help, and Logs & Reports scroll.
 - ✅ Completed the Detection presentation update in both engines: stronger `Detection Mode` title contrast; an edge-inset, left-aligned [`DetectionInformationOverlay`](../lib/widgets/detection_information_overlay.dart); and two mockup-inspired [`DetectionActionControls`](../lib/widgets/detection_action_controls.dart) cards with state icons and left-aligned content. Lifecycle, gesture, action, hold/tap, Quick Scan, and semantics behavior are unchanged.
 - ✅ Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146), the semantic 11%-white overlay token used only by the Settings `View Logs & Reports` action surface.
-- ✅ Final validation at that revision (2026-09-29, before the Workstream 1 relocation): `flutter analyze` reported **0 issues**; `flutter test` reported **343 passing, 0 failing**; and the user explicitly confirmed physical Android visual checks across the completed scope. These totals are historical evidence and do not describe the current Workstream 1 branch.
+- ✅ Final validation at that revision (2026-09-29, before the Workstream 1 relocation): `flutter analyze` reported **0 issues**; `flutter test` reported **343 passing, 0 failing**; and the user explicitly confirmed physical Android visual checks across the completed scope. These totals are historical evidence and do not describe the merged Workstream 1 state.
 - ⚠️ **Needs Verification [inferred-from-codebase]:** Golden-test readiness remains unconfirmed. It was outside this presentation-only closeout and does not invalidate the confirmed physical-device visual checks.
 
 ## Current Unreleased Candidate (2026-09-28) — Detection Redesign (PD1–PD3)
@@ -128,7 +128,7 @@ sections below remain historical release records.
 - ✅ Added seven deterministic lifecycle tests covering worker exit/respawn, stale generations, busy-gate release, delayed retry, terminal failure, disposal during backoff, and healthy recovery. The explicit `reportWorkerExit` API now carries the generation and typed failure at production exit/error call sites.
 - ✅ Added bounded recovery telemetry/export rows, metadata-packaging input safety, and synchronized CSV data-dictionary coverage.
 - ✅ Added accessibility semantics and 200% text-scale coverage across controls, state panels, charts, detections, correction flows, warnings, and live regions.
-- ✅ Validation at that revision: `flutter analyze` reported 0 issues and `flutter test` reported **127 passing tests** (historical; not applicable to the current Workstream 1 branch). Android identity/signing, release AAB generation, and device validation remain intentionally blocked on project-owner decisions, credentials, and an available Android device.
+- ✅ Validation at that revision: `flutter analyze` reported 0 issues and `flutter test` reported **127 passing tests** (historical; not applicable to the merged Workstream 1 state). Android identity/signing, release AAB generation, and device validation remain intentionally blocked on project-owner decisions, credentials, and an available Android device.
 
 ## v0.2.2 — UI Layout Fixes (2026-08-16)
 

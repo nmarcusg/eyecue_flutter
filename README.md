@@ -16,7 +16,7 @@ Historical verification at that revision reported `flutter analyze` clean and **
 
 ### Unreleased on-device speech changes (Workstream 1)
 
-The `codex/tts-lifecycle-arbitration` branch replaces the former fire-and-forget TTS scheduler with a **lifecycle-aware safety alert arbiter**:
+Workstream 1 was developed on `fix/tts-lifecycle-arbitration` and merged to `dev` through PR #5 at `665b59b` on 2026-10-17; it remains unreleased and replaces the former fire-and-forget TTS scheduler with a **lifecycle-aware safety alert arbiter**:
 
 - one utterance in flight at a time, plus a **single** pending request (higher priority replaces lower; newest replaces oldest at equal priority);
 - accepted-alert history and cooldowns are written **only from a confirmed `onStart`**, never from the moment a decision is made;
@@ -27,7 +27,7 @@ The `codex/tts-lifecycle-arbitration` branch replaces the former fire-and-forget
 - parked decisions are revalidated semantically before speaking, and a same-track escalation (`stable/unknown` to `approaching`, proximity-band increase, centre entry, or box growth) re-alerts inside the ordinary suppression window;
 - preemption is limited to imminent safety and to a **distinct** equal-priority track that is suddenly approaching; a preemption cooldown plus per-submission guards prevent repeated frames from churning the engine.
 
-**Limits and verification.** `flutter_tts` exposes **no utterance identifier**, so callbacks are correlated by strict serialization and paired signals; the recovery quiet period is a bounded mitigation, not an absolute guarantee against a very late native callback. Alert-latency telemetry (decision/submission/start/completion timestamps, p50/p95/max) is **not implemented**, so the existing per-frame inference timing must not be read as audible-warning latency. Tests exist for this work but have **not** been executed since the relocation; `flutter analyze`, Gradle and builds were not run either. Real Android callback ordering, cancellation timing and total audible-warning latency remain unmeasured on device. EyeCue is **not** proven safe for independent navigation.
+**Limits and verification.** `flutter_tts` exposes **no utterance identifier**, so callbacks are correlated by strict serialization and paired signals; the recovery quiet period is a bounded mitigation, not an absolute guarantee against a very late native callback. Alert-latency telemetry (decision/submission/start/completion timestamps, p50/p95/max) is **not implemented**, so the existing per-frame inference timing must not be read as audible-warning latency. Tests exist for this work but have **not** been executed since the relocation or since the PR #5 merge; `flutter analyze`, Gradle and builds were not run either, and no physical-device TTS validation was performed after the merge. Real Android callback ordering, cancellation timing and total audible-warning latency remain unmeasured on device. EyeCue is **not** proven safe for independent navigation.
 
 Fresh settings default to **Ultralytics**. An explicit persisted **Custom EyeCue** choice is preserved, and Custom remains available as the bounded Advanced/compatibility fallback. Detection sensitivity is also persisted through shared presets or the bounded advanced threshold range; both engines apply the selected value when they start or reload.
 
