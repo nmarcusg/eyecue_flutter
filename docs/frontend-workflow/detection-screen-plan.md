@@ -9,6 +9,11 @@
 >
 > **Date:** 2026-09-10
 >
+> **WS4 retirement notice (2026-10-19):** `InferenceService.useTestImage` and the
+> static-image diagnostic path referenced in this plan were removed in WS4. Those
+> planning assumptions are retired; the remainder of this plan is point-in-time
+> design evidence.
+>
 > **Source-of-truth order:** current prompt → this plan →
 > [`detection-screen-design-spec.md`](detection-screen-design-spec.md:1) →
 > [`detection-screen-analysis.md`](detection-screen-analysis.md:1) → general

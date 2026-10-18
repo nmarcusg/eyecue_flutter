@@ -13,7 +13,9 @@ import '../models/png_encoder.dart';
 ///
 /// Writes timestamped text logs and PNG image dumps into
 /// `<application_documents>/debug/run_YYYYMMDD_HHMMSS/` so the pipeline can be
-/// diagnosed offline without relying on logcat.
+/// diagnosed offline without relying on logcat. Writes, flushes, and directory
+/// creation happen only in debug/profile builds; release builds gate all file
+/// I/O off via [enabled].
 ///
 /// Files:
 ///   summary.txt       auto-generated diagnosis (every 50 frames + on close)
@@ -28,7 +30,8 @@ import '../models/png_encoder.dart';
 ///
 /// Design rules:
 ///   * Never affects inference behavior — every write is try/catch-guarded.
-///   * Every append flushes synchronously so a crash cannot lose logs.
+///   * When diagnostics are enabled, every append flushes synchronously so a
+///     crash cannot lose logs.
 ///   * Everything is removable (delete this file + its call sites).
 /// ===========================================================================
 class ForensicLog {

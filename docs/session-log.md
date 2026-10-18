@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-10-19 — WS4: waste reduction (C1–C5 accepted, C6 documentation reconciliation)
+
+### Context
+Six ordered atomic commits on local/no-upstream `feat/waste-reduction`, starting from verified merge `94f74d8380d721c8649e7e52fe0faf15127e53e6`.
+
+### Accepted commits
+- `28ffa9cef41d689f33b07f08d2e72cff80765157` — `chore(diagnostics): remove static-image test path`
+- `618897481ffaaa983e97d6dc37c63dc29523eb4b` — `chore: remove verified zero-fan-in code`
+- `a466077ac627c62fa92bd348b5bedc3728dc919d` — `chore(deps): remove unused riverpod`
+- `1516dfe3282341f8917d3ffc81755c5f397f6b30` — `chore(assets): stop bundling tooling-only models`
+- `7e89461583eea847b65ae12b0cd90a84f49681ea` — `fix(diagnostics): disable forensic logging in release`
+
+Each was independently reviewed `PASS_WITH_NOTES` with no P0, P1, or scope-relevant P2. C3's ten lock downgrades are owner-authorized toolchain normalization under Flutter 3.44.2, not a dependency upgrade.
+
+### Changed
+- C6 reconciles current source-of-truth documentation and stale live comments: removed files/dependency are no longer described as active, only `yolov8n_int8_new_metadata.tflite` is described as bundled, release forensic file I/O is described as gated, and historical investigations keep their evidence with added retirement/current-status notices.
+
+### Verified
+- **Static only:** focused repository searches, Markdown/file-link inspection, `git diff --check`, exact file boundary, clean status, lock blob `13bbe15e73850cac2c4ebf3ac070522f7b7bf6ab`, and preserved refs/stashes.
+- No `flutter test`, `flutter analyze`, dependency resolution beyond the single authorized C3 `flutter pub get` used to regenerate the lock, Gradle/build, APK/bundle inspection, emulator/device, benchmark, or network command was run for WS4.
+
+### Deferred / risks
+- Release file I/O is statically gated, but eager forensic CPU calculations remain, profile diagnostics still affect profile measurements, and runtime release behavior is unproven.
+- Automated tests and analyzer were not run; the external IDE/Flutter resolver hazard remains, so `pubspec.lock` must stay at the recorded blob.
+
+---
+
 ## 2026-10-18 — Workstream 2: Alert-latency telemetry and reporting
 
 ### Context

@@ -67,13 +67,17 @@ All project documentation is in the [`docs/`](docs/) directory:
 
 ### Investigations & Diagnosis
 
+These are point-in-time investigation records. Documents whose diagnostic code
+was retired in WS4 carry a retirement notice at the top; their procedures are
+historical evidence, not runnable instructions.
+
 | Document | Purpose |
 |----------|---------|
-| [`camera-path-forensics.md`](docs/camera-path-forensics.md) | Live-camera path forensics — orientation defect isolated & fixed |
-| [`static-image-test.md`](docs/static-image-test.md) | Static-image ground-truth test (camera removed) |
-| [`input-pipeline-investigation.md`](docs/input-pipeline-investigation.md) | "max confidence ≈ 0.05" input-side forensics |
-| [`inference-pipeline-probe.md`](docs/inference-pipeline-probe.md) | "Objects: 0" parser-side forensics (graph-verified) |
-| [`inference-tensor-diagnosis.md`](docs/inference-tensor-diagnosis.md) | Tensor-handling crash diagnosis (reshape/ByteBuffer) |
+| [`camera-path-forensics.md`](docs/camera-path-forensics.md) | Live-camera path forensics — orientation defect isolated & fixed (historical evidence) |
+| [`static-image-test.md`](docs/static-image-test.md) | Static-image ground-truth test (historical; mode, code, and asset removed in WS4) |
+| [`input-pipeline-investigation.md`](docs/input-pipeline-investigation.md) | "max confidence ≈ 0.05" input-side forensics (historical; probe removed in WS4) |
+| [`inference-pipeline-probe.md`](docs/inference-pipeline-probe.md) | "Objects: 0" parser-side forensics (historical; probe removed in WS4) |
+| [`inference-tensor-diagnosis.md`](docs/inference-tensor-diagnosis.md) | Tensor-handling crash diagnosis (historical; current model packaging annotated) |
 | [`phase1-preprocessing-diagnosis.md`](docs/phase1-preprocessing-diagnosis.md) | Preprocessing health after the converter fix |
 | [`painter-coordinate-review.md`](docs/painter-coordinate-review.md) | Painter ↔ preview coordinate-space math review |
 | [`orientation-design-review.md`](docs/orientation-design-review.md) | Orientation architecture design review |
@@ -94,8 +98,8 @@ All project documentation is in the [`docs/`](docs/) directory:
 | Model | YOLOv8n candidate (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) |
 | Camera | `camera` plugin (YUV420, low resolution) |
 | TTS | `flutter_tts` (wired via `TtsService`) |
-| State | `ChangeNotifier` services + `setState` (Riverpod declared, unused) |
-| Reports | `fl_chart` (latency/FPS/frequency charts in Logs & Reports), forensic file logging (active) |
+| State | `ChangeNotifier` services + `setState`; no Riverpod dependency |
+| Reports | `fl_chart` (latency/FPS/frequency charts in Logs & Reports), forensic file logging (debug/profile only; release file I/O disabled) |
 | Platforms | **Android only** (per thesis). iOS, desktop (Windows/macOS/Linux), and web are out of scope — their scaffolding was removed |
 
 ## Project Structure
@@ -109,9 +113,7 @@ lib/
 │   ├── detection.dart                 # Detection data class
 │   ├── detection_info.dart            # Spatial/priority/proximity info
 │   ├── detection_correction.dart      # Versioned correction record
-│   ├── detection_failure.dart         # Typed runtime failure model
 │   ├── detection_runtime_state.dart   # Shared runtime states and failures
-│   ├── engine_runtime_selection.dart  # Preferred/active engine state
 │   ├── inference_lifecycle_event.dart # Worker lifecycle event payload
 │   ├── inference_recovery_policy.dart # Bounded restart policy
 │   ├── app_settings.dart              # Persisted settings model
@@ -148,9 +150,7 @@ lib/
 │   ├── object_tracker.dart             # Cross-frame motion estimates
 │   ├── scene_summary_service.dart      # Deterministic alert/scan summaries
 │   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
-│   ├── forensic_log.dart              # File-based structured diagnostics
-│   ├── inference_probe.dart           # Parser probe (disabled)
-│   └── input_probe.dart               # Input pipeline probe (disabled)
+│   └── forensic_log.dart              # File-based structured diagnostics (non-release)
 └── widgets/
     ├── bounding_box_painter.dart      # Bounding box CustomPainter overlay
     ├── gesture_surface.dart           # Transparent gesture capture layer
@@ -161,9 +161,7 @@ lib/
     ├── accessible_button.dart         # Large high-contrast button (48dp+)
     ├── detection_state_panel.dart      # Shared loading/error/recovery panel
     ├── detection_correction_sheet.dart # Correct/incorrect/unsure workflow
-    ├── charts.dart                    # fl_chart latency/FPS/frequency charts
-    ├── debug_overlay.dart             # Debug HUD (retained, unused)
-    └── info_panel.dart                # Old metrics panel (unused in primary UI)
+    └── charts.dart                    # fl_chart latency/FPS/frequency charts
 
 tool/
 ├── validate_flatbuffer.dart           # CLI: validates the flatbuffer scanner

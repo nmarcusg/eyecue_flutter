@@ -135,6 +135,7 @@ This document records important engineering decisions made during the developmen
   - Documentation distinguishes release behavior from the current committed but unreleased candidate.
   - No XNNPACK speedup, model-quality improvement, full graph delegation, or crash resolution is claimed.
   - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and long-duration device validation remain open. Bounded Custom-worker restart recovery is implemented and covered by deterministic lifecycle tests.
+  - **Current packaging (WS4, 2026-10-19):** `yolov8n_int8_new_metadata.tflite` is the sole Flutter-bundled runtime model, declared alongside `assets/labels.txt`. The base graph and v0.2.2 baseline remain tracked for tools, tests, and historical comparison but are not bundled.
 
 ## Decision 7: Flutter over React Native
 

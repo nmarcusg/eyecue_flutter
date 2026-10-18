@@ -41,10 +41,9 @@ non-UI code. Confirmed from the actual `lib/` tree (not guessed):
 
 **State management approach:** The docs state this is settled — plain `ChangeNotifier`
 services + `setState`, with **no DI framework** (services are wired in `main.dart` and
-passed via constructors). `flutter_riverpod` is declared in `pubspec.yaml` but is
-**deliberately unused** (documented repeatedly in `architecture.md`,
-`implementation-decisions.md`, `known-issues.md`). Per the task instructions, this is
-treated as settled; I do not propose alternatives to it.
+passed via constructors). The previously declared but unused `flutter_riverpod`
+dependency was removed in WS4; no state-management framework is present. Per the task
+instructions, this is treated as settled; I do not propose alternatives to it.
 
 **Service injection pattern:** Services are constructed in `main()` and threaded down
 through `EyeCueApp` → `AppShell` → screens via constructor parameters. Screens receive
@@ -75,10 +74,9 @@ I inspected the actual screen/widget source (not just docs). Findings:
   [`charts.dart`](../lib/widgets/charts.dart),
   [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart),
   [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart).
-- **Built but unused by the primary UI (retained legacy/dev):** [`info_panel.dart`](../lib/widgets/info_panel.dart)
-  and [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart). The docs explicitly state
-  these are "retained, unused in the primary UI." They are dev/metrics panels from the
-  pre-v0.2.0 single-screen era.
+- **Removed legacy/dev widgets:** `info_panel.dart` and `debug_overlay.dart` were dev/metrics
+  panels from the pre-v0.2.0 single-screen era; both were removed in WS4, so the current
+  widget inventory no longer contains them.
 - **Theme:** defined inline in [`main.dart`](../lib/main.dart) (`_buildTheme()` +
   `_highContrastTextTheme()`). Material 3, dark, high-contrast, seed color `0xFFFFC107`
   (amber), scaffold `0xFF121212`, app bar / nav bar `0xFF1E1E1E`. There is **no separate
@@ -203,9 +201,9 @@ high contrast)**, and the **existing dependency set** already listed in the docs
 ### 4.1 State management
 
 **Settled — do not change.** The docs state the decision: plain `ChangeNotifier` services +
-`setState`, constructor injection, no DI framework, `flutter_riverpod` declared but
-deliberately unused. New UI must consume services via constructor injection exactly as the
-existing screens do. No alternative is proposed.
+`setState`, constructor injection, no DI framework, and no Riverpod dependency (the unused
+declaration was removed in WS4). New UI must consume services via constructor injection
+exactly as the existing screens do. No alternative is proposed.
 
 ### 4.2 Component / theming approach
 

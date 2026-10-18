@@ -31,6 +31,14 @@
 > [`implementation-progress.md`](implementation-progress.md). Native crash
 > recovery, formal research evaluation, broad device validation, Android
 > release identity/signing, and Play-release readiness remain open.
+> **WS4 removal notice (2026-10-19):** the unused `info_panel.dart`,
+> `debug_overlay.dart`, `inference_probe.dart`, and `input_probe.dart` files and
+> the `flutter_riverpod` dependency were removed, the static-image diagnostic
+> path was removed, and forensic file I/O is now release-disabled. The
+> metadata-enriched artifact is the sole bundled runtime model; the base graph
+> and v0.2.2 baseline remain tracked but unbundled. Inventory statements below
+> are corrected where they describe current files; dated measurements and
+> conclusions remain historical.
 
 ---
 
@@ -193,12 +201,12 @@ Verified directly from the code (not from docs).
 ### 3.6 Models / widgets / diagnostics
 
 - Models: [`Detection`](../lib/models/detection.dart), [`DetectionInfo`](../lib/models/detection_info.dart), [`AppSettings`](../lib/models/app_settings.dart), [`BoxTransform`](../lib/models/box_transform.dart), [`ModelMetadata`](../lib/models/model_metadata.dart), [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart), [`png_encoder.dart`](../lib/models/png_encoder.dart).
-- Widgets: [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart), [`detection_card.dart`](../lib/widgets/detection_card.dart), [`priority_badge.dart`](../lib/widgets/priority_badge.dart), [`warning_banner.dart`](../lib/widgets/warning_banner.dart), [`status_pill.dart`](../lib/widgets/status_pill.dart), [`accessible_button.dart`](../lib/widgets/accessible_button.dart), [`charts.dart`](../lib/widgets/charts.dart); [`info_panel.dart`](../lib/widgets/info_panel.dart) / [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart) retained but unused by the primary UI.
-- Diagnostics: [`forensic_log.dart`](../lib/services/forensic_log.dart) (file-based structured logs + PNG dumps); [`inference_probe.dart`](../lib/services/inference_probe.dart) / [`input_probe.dart`](../lib/services/input_probe.dart) disabled.
+- Widgets: [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart), [`detection_card.dart`](../lib/widgets/detection_card.dart), [`priority_badge.dart`](../lib/widgets/priority_badge.dart), [`warning_banner.dart`](../lib/widgets/warning_banner.dart), [`status_pill.dart`](../lib/widgets/status_pill.dart), [`accessible_button.dart`](../lib/widgets/accessible_button.dart), [`charts.dart`](../lib/widgets/charts.dart); the unused `info_panel.dart` / `debug_overlay.dart` widgets were removed in WS4.
+- Diagnostics: [`forensic_log.dart`](../lib/services/forensic_log.dart) (file-based structured logs + PNG dumps, debug/profile only; release file I/O disabled); the `inference_probe.dart` / `input_probe.dart` files were removed in WS4.
 
 ### 3.7 Dependencies ([`pubspec.yaml`](../pubspec.yaml))
 
-Used: `camera`, `tflite_flutter`, `ultralytics_yolo`, `permission_handler`, `path_provider` (settings + forensic log), `flutter_tts` (TTS service), `fl_chart` (charts). **Declared but unused:** `flutter_riverpod` only (deliberately — state uses `ChangeNotifier` + `setState`).
+Used: `camera`, `tflite_flutter`, `ultralytics_yolo`, `permission_handler`, `path_provider` (settings + forensic log), `flutter_tts` (TTS service), `fl_chart` (charts). The previously unused `flutter_riverpod` dependency was removed in WS4; state uses `ChangeNotifier` + constructor injection + `setState`.
 
 ### 3.8 Tests
 
@@ -417,7 +425,7 @@ lib/
 │   ├── accessible_button.dart     # ✅ high-contrast controls
 │   ├── gesture_surface.dart       # ✅ gesture capture layer
 │   ├── charts.dart                # ✅ fl_chart wrappers
-│   └── (info_panel.dart, debug_overlay.dart — retained, unused)
+│   └── (info_panel.dart, debug_overlay.dart were removed in WS4)
 ```
 
 **Not yet in place:** a standalone `utterance_builder.dart` (phrasing is currently built inside the TTS/spatial layer), standalone `telemetry_record.dart`, and the in-app correction interface. These are refinements, not structural gaps.
@@ -470,7 +478,7 @@ H:  2% × 0.25 =  0.5
 ### Discrepancy with existing docs
 
 - The original audit (pre-v0.2.0) computed **~30%** and described a single silent developer camera screen. That was accurate for that snapshot; the v0.2.x phase has since implemented the assistive product layer. This revision supersedes the ~30% figure.
-- [`docs/known-issues.md`](known-issues.md) previously listed `path_provider`, `fl_chart`, and `flutter_tts` as unused — **stale**; all three are now used. Only `flutter_riverpod` remains unused (deliberately).
+- [`docs/known-issues.md`](known-issues.md) previously listed `path_provider`, `fl_chart`, and `flutter_tts` as unused — **stale**; all three are now used. The remaining unused `flutter_riverpod` dependency was removed in WS4.
 - [`README.md`](../README.md) and [`docs/project-status.md`](project-status.md) now reflect v0.2.2 (59 tests, 0 analyze issues).
 
 ---
