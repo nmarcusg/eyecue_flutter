@@ -3,7 +3,6 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Rect;
-import 'dart:ui' show ImageByteFormat, instantiateImageCodec;
 import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:tflite_flutter/tflite_flutter.dart';
@@ -20,7 +19,6 @@ import '../models/tensor_rotation.dart';
 import '../models/tflite_flatbuffer.dart';
 import 'forensic_log.dart'; // Structured file-based forensic logging
 import 'inference_worker_lifecycle.dart';
-import 'input_probe.dart'; // TEMPORARY input-pipeline probe (test-image converter)
 
 /// ---------------------------------------------------------------------------
 /// InferenceService
@@ -123,26 +121,6 @@ class InferenceService {
 
   /// Counter for frames sent to the isolate (monotonically increasing).
   int _sentFrameCount = 0;
-
-  /// TEMPORARY (Phase F): decoded test-image display data for the painter.
-  /// Populated by [runTestImage]; only meaningful when [useTestImage].
-  int _testImageWidth = 0;
-  int _testImageHeight = 0;
-  Uint8List? _testImageAssetBytes;
-  int get testImageWidth => _testImageWidth;
-  int get testImageHeight => _testImageHeight;
-  Uint8List? get testImageAssetBytes => _testImageAssetBytes;
-
-  /// TEMPORARY debug mode (Phase F): run ONE inference on a known-good RGB
-  /// asset image instead of the camera stream, to isolate camera acquisition
-  /// from the rest of the pipeline. The asset image is converted to I420 YUV
-  /// planes (the same interface `CameraImage` exposes) and pushed through the
-  /// EXACT same `processFrame()` path the camera uses (YUV→RGB → resize →
-  /// normalize → run → parser → NMS → painter). Flip to `false` to restore the
-  /// camera stream. Remove together with `assets/test_image.jpg`, its pubspec
-  /// entry, and `InputProbe.rgbaToI420`.
-  static const bool useTestImage = false;
-  static const String testImageAsset = 'assets/test_image.jpg';
 
   /// Confidence threshold applied BEFORE Non-Maximum Suppression. Standard
   /// YOLOv8 inference uses conf 0.25 + NMS IoU 0.45 (the graph already
@@ -573,78 +551,6 @@ class InferenceService {
       'lensFacing': lensFacing,
     });
     return true;
-  }
-
-  /// TEMPORARY (Phase F): decode a known-good RGB asset image, convert it to
-  /// I420 YUV planes (the same interface `CameraImage` exposes), and push it
-  /// through the EXACT same `processFrame()` path as the camera. Everything
-  /// downstream — `_convertYUV420toRGB`, resize, normalization,
-  /// `interpreter.run()`, `_parseYolov8Output` (threshold + NMS) — is reused
-  /// byte-for-byte. The only difference is the image source.
-  ///
-  /// The decoded asset bytes + dimensions are also exposed for the camera
-  /// screen so the test image can be displayed with boxes overlaid exactly as
-  /// the camera preview would.
-  Future<void> runTestImage() async {
-    debugPrint('[Service] runTestImage() — loading $testImageAsset');
-    try {
-      await _whenReady;
-      final byteData = await rootBundle.load(testImageAsset);
-      final assetBytes = byteData.buffer.asUint8List();
-
-      final codec = await instantiateImageCodec(assetBytes);
-      final frame = await codec.getNextFrame();
-      final image = frame.image;
-      final w = image.width;
-      final h = image.height;
-      final rgbaData = await image.toByteData(format: ImageByteFormat.rawRgba);
-      image.dispose();
-      codec.dispose();
-      final rgba = rgbaData!.buffer.asUint8List();
-      debugPrint(
-        '[Service] Test image decoded: ${w}x$h rgba=${rgba.length} bytes',
-      );
-
-      // Expose display data for the screen (image + dims for the painter).
-      _testImageWidth = w;
-      _testImageHeight = h;
-      _testImageAssetBytes = assetBytes;
-
-      // Source adapter: RGB → I420 planes (the same YUV_420_888 interface the
-      // camera produces). NO preprocessing is duplicated here.
-      final planes = InputProbe.rgbaToI420(rgba, w, h);
-      debugPrint(
-        '[Service] Test image → I420 planes: '
-        'y=${planes.y.length} u=${planes.u.length} v=${planes.v.length}',
-      );
-
-      // Same entry point as the camera — identical pipeline after this call.
-      // The static image supplies its own truthful receipt time.
-      processFrame(
-        analysisReceivedAt: DateTime.now(),
-        yPlane: planes.y,
-        uPlane: planes.u,
-        vPlane: planes.v,
-        width: w,
-        height: h,
-        cameraFps: 0.0,
-        droppedFrames: 0,
-        // Tightly packed I420 (rowStride == width, pixelStride == 1).
-        yRowStride: w,
-        yPixelStride: 1,
-        uRowStride: (w + 1) ~/ 2,
-        uPixelStride: 1,
-        vRowStride: (w + 1) ~/ 2,
-        vPixelStride: 1,
-      );
-      debugPrint(
-        '[Service] Test image sent via processFrame() — '
-        'pipeline identical to camera stream',
-      );
-    } catch (e, stack) {
-      debugPrint('[Error] Test image failed: $e');
-      debugPrint('[Error] Stack: $stack');
-    }
   }
 
   void dispose() {

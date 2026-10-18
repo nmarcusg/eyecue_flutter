@@ -286,55 +286,6 @@ class InputProbe {
     debugPrint('━━━ [InputProbe F] END ━━━');
   }
 
-  /// -------------------------------------------------------------------------
-  /// PHASE F source adapter — RGBA → I420 (YUV420 planar).
-  ///
-  /// This is the ONLY test-image-specific code. It converts a decoded RGBA
-  /// asset image into the exact same 3-plane YUV420 representation a
-  /// `CameraImage` (YUV_420_888) exposes, so the rest of the pipeline —
-  /// `_convertYUV420toRGB` → resize → normalize → `interpreter.run()` →
-  /// parser → NMS — is reused byte-for-byte with the camera path. No
-  /// preprocessing is duplicated.
-  ///
-  /// Coefficients are the full-range BT.601 pair that exactly inverts the
-  /// converter's math (`R=Y+1.402V'`, `G=Y−0.344U'−0.714V'`, `B=Y+1.772U'`):
-  ///   Y = 0.299R + 0.587G + 0.114B
-  ///   U = (B − Y) / 1.772 + 128
-  ///   V = (R − Y) / 1.402 + 128
-  /// so the RGB → YUV → RGB round-trip is lossless up to ±1 per channel.
-  /// Chroma is 4:2:0 subsampled at even pixel positions (same as YUV_420_888).
-  /// Returns tightly packed planes (rowStride == width, pixelStride == 1),
-  /// exactly the I420 layout `_convertYUV420toRGB` assumes for planar chroma.
-  /// -------------------------------------------------------------------------
-  static ({Uint8List y, Uint8List u, Uint8List v}) rgbaToI420(
-    Uint8List rgba,
-    int w,
-    int h,
-  ) {
-    final yPlane = Uint8List(w * h);
-    final cw = (w + 1) ~/ 2;
-    final ch = (h + 1) ~/ 2;
-    final uPlane = Uint8List(cw * ch);
-    final vPlane = Uint8List(cw * ch);
-
-    for (int j = 0; j < h; j++) {
-      for (int i = 0; i < w; i++) {
-        final o = (j * w + i) * 4;
-        final r = rgba[o].toDouble();
-        final g = rgba[o + 1].toDouble();
-        final b = rgba[o + 2].toDouble();
-        final y = (0.299 * r + 0.587 * g + 0.114 * b).round().clamp(0, 255);
-        yPlane[j * w + i] = y;
-        if ((j & 1) == 0 && (i & 1) == 0) {
-          final ci = (j ~/ 2) * cw + (i ~/ 2);
-          uPlane[ci] = ((b - y) / 1.772 + 128).round().clamp(0, 255);
-          vPlane[ci] = ((r - y) / 1.402 + 128).round().clamp(0, 255);
-        }
-      }
-    }
-    return (y: yPlane, u: uPlane, v: vPlane);
-  }
-
   // -------------------------------------------------------------------------
   // PHASE G — top-k output inspection
   // -------------------------------------------------------------------------

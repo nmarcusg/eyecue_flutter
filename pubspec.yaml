@@ -50,9 +50,6 @@ flutter:
     - assets/yolov8n_int8_new.tflite
     - assets/yolov8n.tflite
     - assets/labels.txt
-    # TEMPORARY (test-image mode): known-good RGB photo of COCO objects.
-    # Remove together with the useTestImage flag.
-    - assets/test_image.jpg
     # Home visual mark (decorative; wordmark stays live text).
     - assets/logo.png
     # Offline IBM Plex Sans fonts for the Home-local light theme.
