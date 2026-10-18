@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-10-18 — Workstream 2: Alert-latency telemetry and reporting
+
+### Context
+Workstream 1 recorded nothing between an alert decision and confirmed speech start, so warning latency could not be separated from inference timing. Workstream 2 adds bounded measurement, export, and reporting for the app-side scheduler path.
+
+### Changed
+- Added bounded alert-lifecycle records and a replace-only cumulative scheduler-counter snapshot in [`telemetry_service.dart`](../lib/services/telemetry_service.dart), with nullable engine/origin and honestly nullable anchors.
+- Correlated Custom frames from analysis receipt through worker inference and result publication; Ultralytics contributes only result receipt and later app-side anchors, so pre-result fields stay null.
+- Added eight detection-origin interval summaries (nearest-rank p50/p95/max/count), additive schema-v2 JSON/CSV export, and the Logs & Reports `Alert latency and scheduler health` section.
+
+### Verified
+- **Static only:** the implementation was reviewed by static inspection and `git diff --check`; no `flutter test`, `flutter analyze`, Gradle, build, emulator, or device command was run.
+- Owning tests were written but not executed, so no passing result is claimed.
+- Physical audible-warning latency remains unmeasured.
+
+### Known limitations
+- The Ultralytics interval is `app-side / post-inference`; it is not full inference or end-to-end latency.
+- A record may contribute to some intervals only, because an unobserved timestamp stays null.
+- No performance, safety, or release-readiness improvement is claimed.
+
+---
+
 ## 2026-10-17 — Workstream 1: TTS lifecycle arbitration
 
 ### Context
