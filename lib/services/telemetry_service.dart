@@ -381,21 +381,49 @@ class TelemetryService extends ChangeNotifier {
 
   /// Detection-origin submitted -> confirmed start distribution for [engine].
   ///
-  /// Engine-null, non-detection, missing-start, and negative intervals are
-  /// excluded rather than displayed.
-  AlertLatencySummary alertSubmittedToStartedSummary(InferenceEngine engine) {
+  /// Preserved public entry point; delegates to the common interval helper.
+  AlertLatencySummary alertSubmittedToStartedSummary(InferenceEngine engine) =>
+      alertLatencySummary(engine, AlertLatencyInterval.submittedToStarted);
+
+  /// One required detection-origin interval distribution for [engine].
+  ///
+  /// Non-detection origins, engine-null records, missing endpoints, and
+  /// negative intervals are excluded rather than displayed. Zero-duration
+  /// intervals are valid samples.
+  AlertLatencySummary alertLatencySummary(
+    InferenceEngine engine,
+    AlertLatencyInterval interval,
+  ) => AlertLatencySummary.fromDurations(
+    engine,
+    _alertDurations(engine, interval),
+  );
+
+  List<double> _alertDurations(
+    InferenceEngine engine,
+    AlertLatencyInterval interval,
+  ) {
     final durations = <double>[];
     for (final record in _alertRecords) {
       if (record.origin != AlertOrigin.detection) continue;
       if (record.engine != engine) continue;
-      final startedAt = record.alertStartedAt;
-      if (startedAt == null) continue;
-      final ms =
-          startedAt.difference(record.submittedAt).inMicroseconds / 1000.0;
+      final start = switch (interval) {
+        AlertLatencyInterval.receivedToAccepted ||
+        AlertLatencyInterval.receivedToStarted =>
+          engine == InferenceEngine.custom
+              ? record.analysisReceivedAt
+              : record.resultReceivedAt,
+        AlertLatencyInterval.acceptedToStarted => record.detectionAcceptedAt,
+        AlertLatencyInterval.submittedToStarted => record.submittedAt,
+      };
+      final end = interval == AlertLatencyInterval.receivedToAccepted
+          ? record.detectionAcceptedAt
+          : record.alertStartedAt;
+      if (start == null || end == null) continue;
+      final ms = end.difference(start).inMicroseconds / 1000.0;
       if (ms < 0) continue;
       durations.add(ms);
     }
-    return AlertLatencySummary.fromDurations(engine, durations);
+    return durations;
   }
 
   @override

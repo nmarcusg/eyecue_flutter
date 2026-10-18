@@ -1,11 +1,13 @@
 import 'dart:collection';
 
+import 'alert_lifecycle.dart';
+
 /// Immutable, machine-readable snapshot of one EyeCue telemetry export.
 ///
 /// The export is deliberately image-free. Camera frames, forensic PNGs, device
 /// identifiers, and internal file paths are not part of this contract.
 class TelemetryExport {
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
 
   final DateTime exportedAt;
   final String appVersion;
@@ -19,6 +21,9 @@ class TelemetryExport {
   final List<Map<String, dynamic>> fallbacks;
   final List<Map<String, dynamic>> recoveries;
   final List<Map<String, dynamic>> corrections;
+  final List<Map<String, dynamic>> alertLifecycle;
+  final Map<String, dynamic> alertCounters;
+  final List<Map<String, dynamic>> alertSummaries;
 
   TelemetryExport({
     required this.exportedAt,
@@ -33,6 +38,9 @@ class TelemetryExport {
     required Iterable<Map<String, dynamic>> fallbacks,
     required Iterable<Map<String, dynamic>> recoveries,
     required Iterable<Map<String, dynamic>> corrections,
+    required Iterable<Map<String, dynamic>> alertLifecycle,
+    required Map<String, dynamic> alertCounters,
+    required Iterable<Map<String, dynamic>> alertSummaries,
   }) : settings = UnmodifiableMapView(Map<String, dynamic>.from(settings)),
        samples = List.unmodifiable(
          samples.map(
@@ -63,6 +71,19 @@ class TelemetryExport {
          corrections.map(
            (row) => UnmodifiableMapView(Map<String, dynamic>.from(row)),
          ),
+       ),
+       alertLifecycle = List.unmodifiable(
+         alertLifecycle.map(
+           (row) => UnmodifiableMapView(Map<String, dynamic>.from(row)),
+         ),
+       ),
+       alertCounters = UnmodifiableMapView(
+         Map<String, dynamic>.from(alertCounters),
+       ),
+       alertSummaries = List.unmodifiable(
+         alertSummaries.map(
+           (row) => UnmodifiableMapView(Map<String, dynamic>.from(row)),
+         ),
        );
 
   Map<String, dynamic> toJson() => {
@@ -81,6 +102,9 @@ class TelemetryExport {
     'fallbacks': fallbacks,
     'recoveries': recoveries,
     'corrections': corrections,
+    'alertLifecycle': alertLifecycle,
+    'alertCounters': alertCounters,
+    'alertSummaries': alertSummaries,
   };
 
   factory TelemetryExport.fromJson(Map<String, dynamic> json) {
@@ -110,6 +134,13 @@ class TelemetryExport {
       fallbacks: rows('fallbacks'),
       recoveries: rows('recoveries'),
       corrections: rows('corrections'),
+      // Schema v1 has no alert payloads; missing keys default to empty
+      // collections and zero/default counters.
+      alertLifecycle: rows('alertLifecycle'),
+      alertCounters: json['alertCounters'] is Map
+          ? (json['alertCounters'] as Map).cast<String, dynamic>()
+          : const AlertCounters().toJson(),
+      alertSummaries: rows('alertSummaries'),
     );
   }
 }
