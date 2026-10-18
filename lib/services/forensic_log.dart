@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kReleaseMode;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/model_metadata.dart';
@@ -32,9 +32,9 @@ import '../models/png_encoder.dart';
 ///   * Everything is removable (delete this file + its call sites).
 /// ===========================================================================
 class ForensicLog {
-  /// Master switch — flip to false (or delete this file) to disable all file
-  /// logging without touching pipeline code.
-  static const bool enabled = true;
+  /// Master switch — disabled in release builds; debug and profile builds keep
+  /// file logging.
+  static const bool enabled = !kReleaseMode;
 
   /// Whether to write first-frame PNG image dumps.
   static const bool dumpImages = true;
