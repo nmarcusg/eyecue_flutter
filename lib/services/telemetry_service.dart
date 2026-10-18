@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'dart:ui' show Rect;
 
+import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
@@ -190,9 +193,15 @@ class TelemetryService extends ChangeNotifier {
   final List<EngineFallbackRecord> _fallbacks = [];
   final List<InferenceRecoveryRecord> _recoveries = [];
   final List<DetectionCorrection> _corrections = [];
+  final List<AlertLifecycleRecord> _alertRecords = [];
 
   static const int _maxRecords = 2000;
   static const int _maxSamples = 500;
+  static const int _maxAlertRecords = 500;
+  static const Duration _counterPublishWindow = Duration(milliseconds: 250);
+
+  AlertCounters _alertCounters = const AlertCounters();
+  Timer? _counterNotifyTimer;
 
   DateTime? _sessionStart;
   int _highPriorityAlerts = 0;
@@ -211,6 +220,11 @@ class TelemetryService extends ChangeNotifier {
   List<InferenceRecoveryRecord> get recoveries =>
       List.unmodifiable(_recoveries);
   List<DetectionCorrection> get corrections => List.unmodifiable(_corrections);
+  List<AlertLifecycleRecord> get alertRecords =>
+      List.unmodifiable(_alertRecords);
+
+  /// Latest cumulative scheduler snapshot; replaced, never accumulated.
+  AlertCounters get alertCounters => _alertCounters;
 
   int get totalDetections => _records.length;
   int get highPriorityAlerts => _highPriorityAlerts;
@@ -341,6 +355,54 @@ class TelemetryService extends ChangeNotifier {
       _corrections.removeRange(0, _corrections.length - 2000);
     }
     notifyListeners();
+  }
+
+  /// One terminal alert delta. Bounded so a long session stays image-free and
+  /// small.
+  void recordAlertLifecycle(AlertLifecycleRecord record) {
+    _alertRecords.add(record);
+    if (_alertRecords.length > _maxAlertRecords) {
+      _alertRecords.removeRange(0, _alertRecords.length - _maxAlertRecords);
+    }
+    notifyListeners();
+  }
+
+  /// Replaces the cumulative snapshot. Rejection counters change on the
+  /// inference hot path, so listener notification is limited to one trailing
+  /// publication per fixed window instead of once per frame; [alertCounters] is
+  /// current immediately and listeners read that latest snapshot when notified.
+  void recordAlertCounters(AlertCounters counters) {
+    _alertCounters = counters;
+    _counterNotifyTimer ??= Timer(_counterPublishWindow, () {
+      _counterNotifyTimer = null;
+      notifyListeners();
+    });
+  }
+
+  /// Detection-origin submitted -> confirmed start distribution for [engine].
+  ///
+  /// Engine-null, non-detection, missing-start, and negative intervals are
+  /// excluded rather than displayed.
+  AlertLatencySummary alertSubmittedToStartedSummary(InferenceEngine engine) {
+    final durations = <double>[];
+    for (final record in _alertRecords) {
+      if (record.origin != AlertOrigin.detection) continue;
+      if (record.engine != engine) continue;
+      final startedAt = record.alertStartedAt;
+      if (startedAt == null) continue;
+      final ms =
+          startedAt.difference(record.submittedAt).inMicroseconds / 1000.0;
+      if (ms < 0) continue;
+      durations.add(ms);
+    }
+    return AlertLatencySummary.fromDurations(engine, durations);
+  }
+
+  @override
+  void dispose() {
+    _counterNotifyTimer?.cancel();
+    _counterNotifyTimer = null;
+    super.dispose();
   }
 
   double get averageLatencyMs {
