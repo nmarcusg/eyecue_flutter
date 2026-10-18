@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
@@ -47,7 +48,10 @@ class AssistiveDetectionController extends ChangeNotifier {
     double latencyMs = 0,
     bool announce = true,
     DateTime? timestamp,
+    FrameLatency? frameLatency,
   }) {
+    // Acceptance anchor: entry, before spatial analysis or tracking work.
+    final timing = frameLatency?.withDetectionAcceptedAt(DateTime.now());
     _detections = SpatialAnalysisService.analyzeAll(detections);
     _tracks = tracker.update(detections, timestamp);
     for (final info in _detections) {
@@ -71,7 +75,12 @@ class AssistiveDetectionController extends ChangeNotifier {
       // TtsService scheduler is internally serialized (one utterance in
       // flight, one pending slot), so concurrent frame results cannot race
       // announcement decisions.
-      tts.announceDetections(_detections, tracks: _tracks, engine: engine);
+      tts.announceDetections(
+        _detections,
+        tracks: _tracks,
+        engine: engine,
+        frameLatency: timing,
+      );
     }
     notifyListeners();
     return _detections;

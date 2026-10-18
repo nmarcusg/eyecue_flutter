@@ -953,6 +953,68 @@ void main() {
       expect(records.last.engine, isNull);
     });
 
+    test('detection record carries Custom frame timing anchors', () async {
+      final analysis = now.subtract(const Duration(milliseconds: 120));
+      final started = now.subtract(const Duration(milliseconds: 100));
+      final completed = now.subtract(const Duration(milliseconds: 80));
+      final received = now.subtract(const Duration(milliseconds: 60));
+      final accepted = now.subtract(const Duration(milliseconds: 50));
+      final timing = FrameLatency(
+        frameNumber: 42,
+        analysisReceivedAt: analysis,
+        inferenceStartedAt: started,
+        inferenceCompletedAt: completed,
+        resultReceivedAt: received,
+        detectionAcceptedAt: accepted,
+      );
+
+      expect(
+        await instrumented.announceDetections(
+          [nearPerson()],
+          engine: InferenceEngine.custom,
+          frameLatency: timing,
+        ),
+        isTrue,
+      );
+
+      final record = records.single;
+      expect(record.frameNumber, 42);
+      expect(record.analysisReceivedAt, analysis);
+      expect(record.inferenceStartedAt, started);
+      expect(record.inferenceCompletedAt, completed);
+      expect(record.resultReceivedAt, received);
+      expect(record.detectionAcceptedAt, accepted);
+      // requestedAt is the alert-request anchor.
+      expect(record.requestedAt, now);
+
+      // Zero-length intervals are valid, so ordering is "not before".
+      expect(record.inferenceStartedAt!.isBefore(analysis), isFalse);
+      expect(record.inferenceCompletedAt!.isBefore(started), isFalse);
+      expect(record.resultReceivedAt!.isBefore(completed), isFalse);
+      expect(record.detectionAcceptedAt!.isBefore(received), isFalse);
+      expect(record.requestedAt.isBefore(accepted), isFalse);
+      expect(record.submittedAt.isBefore(record.requestedAt), isFalse);
+      expect(record.alertStartedAt!.isBefore(record.submittedAt), isFalse);
+      expect(record.terminalAt.isBefore(record.alertStartedAt!), isFalse);
+    });
+
+    test('missing Custom frame timing leaves anchors null', () async {
+      expect(
+        await instrumented.announceDetections([
+          nearPerson(),
+        ], engine: InferenceEngine.custom),
+        isTrue,
+      );
+
+      final record = records.single;
+      expect(record.frameNumber, isNull);
+      expect(record.analysisReceivedAt, isNull);
+      expect(record.inferenceStartedAt, isNull);
+      expect(record.inferenceCompletedAt, isNull);
+      expect(record.resultReceivedAt, isNull);
+      expect(record.detectionAcceptedAt, isNull);
+    });
+
     test('quick scan and repeat-last records stay engine-null', () async {
       expect(await instrumented.announceQuickScan([info()]), isTrue);
       expect(records.single.origin, AlertOrigin.quickScan);

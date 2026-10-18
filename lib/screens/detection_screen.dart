@@ -622,10 +622,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // -------------------------------------------------------------------------
   void _setupInferenceListener() {
     _resultsSubscription = _inferenceService.resultsStream.listen((detections) {
+      // Consume exactly once, immediately: this result's own snapshot only.
+      final frameLatency = _inferenceService.takeLastFrameLatency();
       final latencyMs = _inferenceService.lastLatencyMs;
       final infos = _assistive.updateDetections(
         detections,
         latencyMs: latencyMs,
+        frameLatency: frameLatency,
       );
       _assistive.recordMetrics(
         latencyMs: latencyMs,
@@ -858,6 +861,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
       deviceDegrees: deviceDegrees,
       isFront: isFront,
     );
+    // Truthful receipt time for this exact frame, after every dispatch gate
+    // and immediately before it is handed to the isolate.
+    final analysisReceivedAt = DateTime.now();
     final upright = BoxTransform.uprightDims(
       w: image.width,
       h: image.height,
@@ -872,6 +878,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     final vPlane = planes.length >= 3 ? planes[2].bytes : planes[1].bytes;
 
     final dispatched = _inferenceService.processFrame(
+      analysisReceivedAt: analysisReceivedAt,
       yPlane: yPlane,
       uPlane: uPlane,
       vPlane: vPlane,

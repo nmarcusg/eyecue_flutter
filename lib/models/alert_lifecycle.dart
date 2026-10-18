@@ -10,6 +10,59 @@ enum AlertOrigin { detection, generic, wayfinding, quickScan, repeatLast }
 /// Terminal outcome of one submitted utterance.
 enum AlertTerminalState { completed, cancelled, dropped, failed }
 
+/// Immutable timing snapshot for one accepted Custom camera frame.
+///
+/// The Custom pipeline keeps exactly one frame outstanding, so one snapshot is
+/// installed immediately before its result is published and consumed once by
+/// the matching listener. Timestamps that were never observed stay null.
+class FrameLatency {
+  final int frameNumber;
+  final DateTime analysisReceivedAt;
+  final DateTime? inferenceStartedAt;
+  final DateTime? inferenceCompletedAt;
+  final DateTime? resultReceivedAt;
+
+  /// Filled in when the result is accepted, before spatial/tracking work.
+  final DateTime? detectionAcceptedAt;
+
+  const FrameLatency({
+    required this.frameNumber,
+    required this.analysisReceivedAt,
+    this.inferenceStartedAt,
+    this.inferenceCompletedAt,
+    this.resultReceivedAt,
+    this.detectionAcceptedAt,
+  });
+
+  FrameLatency withDetectionAcceptedAt(DateTime value) => FrameLatency(
+    frameNumber: frameNumber,
+    analysisReceivedAt: analysisReceivedAt,
+    inferenceStartedAt: inferenceStartedAt,
+    inferenceCompletedAt: inferenceCompletedAt,
+    resultReceivedAt: resultReceivedAt,
+    detectionAcceptedAt: value,
+  );
+}
+
+/// Consume-once holder for the one outstanding Custom frame snapshot.
+///
+/// Install immediately before publishing a result; [take] clears. Every
+/// stale-risk path must [clear] so a prior frame/generation can never pair
+/// with a later result.
+class FrameLatencySlot {
+  FrameLatency? _value;
+
+  void install(FrameLatency latency) => _value = latency;
+
+  FrameLatency? take() {
+    final value = _value;
+    _value = null;
+    return value;
+  }
+
+  void clear() => _value = null;
+}
+
 /// One terminal TTS submission as an event delta.
 ///
 /// Contains timing and outcome metadata only: no utterance text, image, box,
@@ -26,6 +79,14 @@ class AlertLifecycleRecord {
   final bool hadStarted;
   final DateTime? reconciledAt;
 
+  /// Custom frame anchors. Null for non-Custom or timing-less requests.
+  final int? frameNumber;
+  final DateTime? analysisReceivedAt;
+  final DateTime? inferenceStartedAt;
+  final DateTime? inferenceCompletedAt;
+  final DateTime? resultReceivedAt;
+  final DateTime? detectionAcceptedAt;
+
   const AlertLifecycleRecord({
     required this.origin,
     required this.engine,
@@ -37,6 +98,12 @@ class AlertLifecycleRecord {
     required this.terminalCause,
     required this.hadStarted,
     required this.reconciledAt,
+    this.frameNumber,
+    this.analysisReceivedAt,
+    this.inferenceStartedAt,
+    this.inferenceCompletedAt,
+    this.resultReceivedAt,
+    this.detectionAcceptedAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +117,12 @@ class AlertLifecycleRecord {
     'terminalCause': terminalCause,
     'hadStarted': hadStarted,
     'reconciledAt': reconciledAt?.toUtc().toIso8601String(),
+    'frameNumber': frameNumber,
+    'analysisReceivedAt': analysisReceivedAt?.toUtc().toIso8601String(),
+    'inferenceStartedAt': inferenceStartedAt?.toUtc().toIso8601String(),
+    'inferenceCompletedAt': inferenceCompletedAt?.toUtc().toIso8601String(),
+    'resultReceivedAt': resultReceivedAt?.toUtc().toIso8601String(),
+    'detectionAcceptedAt': detectionAcceptedAt?.toUtc().toIso8601String(),
   };
 }
 

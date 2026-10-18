@@ -366,13 +366,18 @@ class TtsService extends ChangeNotifier {
   }
 
   /// Announces the current detection set through the risk policy.
+  ///
+  /// [frameLatency] is optional Custom frame timing; missing timing leaves the
+  /// lifecycle record anchors null and never changes speech behavior.
   Future<bool> announceDetections(
     List<DetectionInfo> detections, {
     bool force = false,
     List<TrackedDetection> tracks = const [],
     InferenceEngine? engine,
+    FrameLatency? frameLatency,
   }) {
     if (detections.isEmpty) return Future<bool>.value(false);
+    // Alert-request anchor: entry, before policy evaluation.
     final now = _clock();
     final decision = policy.decide(
       detections: detections,
@@ -394,6 +399,7 @@ class TtsService extends ChangeNotifier {
         decision: decision,
         engine: engine,
         origin: AlertOrigin.detection,
+        frameLatency: frameLatency,
       ),
     );
   }
@@ -1110,6 +1116,7 @@ class TtsService extends ChangeNotifier {
     final publish = onAlertLifecycle;
     if (publish == null) return;
     final terminalAt = submission.finishedAt!;
+    final timing = submission.request.frameLatency;
     publish(
       AlertLifecycleRecord(
         origin: submission.request.origin,
@@ -1124,6 +1131,12 @@ class TtsService extends ChangeNotifier {
         // Only a paired completion/cancellation or a platform drop has a
         // truthful reconciliation time; watchdog/error failures do not.
         reconciledAt: state == AlertTerminalState.failed ? null : terminalAt,
+        frameNumber: timing?.frameNumber,
+        analysisReceivedAt: timing?.analysisReceivedAt,
+        inferenceStartedAt: timing?.inferenceStartedAt,
+        inferenceCompletedAt: timing?.inferenceCompletedAt,
+        resultReceivedAt: timing?.resultReceivedAt,
+        detectionAcceptedAt: timing?.detectionAcceptedAt,
       ),
     );
   }
@@ -1144,6 +1157,9 @@ class _SpeechRequest {
   /// Origin of the spoken request; only [AlertOrigin.detection] may carry an
   /// inference engine.
   final AlertOrigin origin;
+
+  /// Immutable Custom frame timing carried by this exact request.
+  final FrameLatency? frameLatency;
   final Completer<bool> done = Completer<bool>();
 
   _SpeechRequest({
@@ -1155,6 +1171,7 @@ class _SpeechRequest {
     this.engine,
     this.wayfinding = false,
     this.origin = AlertOrigin.generic,
+    this.frameLatency,
   });
 
   bool isCurrent(DateTime now) => now.difference(createdAt) <= validity;
