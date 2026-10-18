@@ -367,14 +367,18 @@ class TtsService extends ChangeNotifier {
 
   /// Announces the current detection set through the risk policy.
   ///
-  /// [frameLatency] is optional Custom frame timing; missing timing leaves the
-  /// lifecycle record anchors null and never changes speech behavior.
+  /// [frameLatency] is optional Custom frame timing; [resultReceivedAt] and
+  /// [detectionAcceptedAt] are optional app-side anchors for engines that
+  /// expose no pre-result timing. Missing timing leaves the lifecycle record
+  /// anchors null and never changes speech behavior.
   Future<bool> announceDetections(
     List<DetectionInfo> detections, {
     bool force = false,
     List<TrackedDetection> tracks = const [],
     InferenceEngine? engine,
     FrameLatency? frameLatency,
+    DateTime? resultReceivedAt,
+    DateTime? detectionAcceptedAt,
   }) {
     if (detections.isEmpty) return Future<bool>.value(false);
     // Alert-request anchor: entry, before policy evaluation.
@@ -400,6 +404,8 @@ class TtsService extends ChangeNotifier {
         engine: engine,
         origin: AlertOrigin.detection,
         frameLatency: frameLatency,
+        resultReceivedAt: resultReceivedAt,
+        detectionAcceptedAt: detectionAcceptedAt,
       ),
     );
   }
@@ -1117,6 +1123,12 @@ class TtsService extends ChangeNotifier {
     if (publish == null) return;
     final terminalAt = submission.finishedAt!;
     final timing = submission.request.frameLatency;
+    // Custom frame anchors win; direct app-side anchors only fill engines with
+    // no pre-result timing. A real value is never replaced by null.
+    final resultReceivedAt =
+        timing?.resultReceivedAt ?? submission.request.resultReceivedAt;
+    final detectionAcceptedAt =
+        timing?.detectionAcceptedAt ?? submission.request.detectionAcceptedAt;
     publish(
       AlertLifecycleRecord(
         origin: submission.request.origin,
@@ -1135,8 +1147,8 @@ class TtsService extends ChangeNotifier {
         analysisReceivedAt: timing?.analysisReceivedAt,
         inferenceStartedAt: timing?.inferenceStartedAt,
         inferenceCompletedAt: timing?.inferenceCompletedAt,
-        resultReceivedAt: timing?.resultReceivedAt,
-        detectionAcceptedAt: timing?.detectionAcceptedAt,
+        resultReceivedAt: resultReceivedAt,
+        detectionAcceptedAt: detectionAcceptedAt,
       ),
     );
   }
@@ -1160,6 +1172,11 @@ class _SpeechRequest {
 
   /// Immutable Custom frame timing carried by this exact request.
   final FrameLatency? frameLatency;
+
+  /// Immutable app-side anchors carried by this exact request; used only when
+  /// [frameLatency] is absent.
+  final DateTime? resultReceivedAt;
+  final DateTime? detectionAcceptedAt;
   final Completer<bool> done = Completer<bool>();
 
   _SpeechRequest({
@@ -1172,6 +1189,8 @@ class _SpeechRequest {
     this.wayfinding = false,
     this.origin = AlertOrigin.generic,
     this.frameLatency,
+    this.resultReceivedAt,
+    this.detectionAcceptedAt,
   });
 
   bool isCurrent(DateTime now) => now.difference(createdAt) <= validity;

@@ -461,6 +461,9 @@ class _UltralyticsDetectionScreenState
 
   void _handleResults(List<YOLOResult> results) {
     if (!_detectionActive || _paused) return;
+    // App-side receipt anchor: this callback is the first observable point.
+    // Pre-result anchors stay unavailable here; metrics are never correlated.
+    final resultReceivedAt = DateTime.now();
     if (!_firstResultLogged) {
       _firstResultLogged = true;
       debugPrint(
@@ -472,6 +475,7 @@ class _UltralyticsDetectionScreenState
     final infos = _assistive.updateDetections(
       detections,
       latencyMs: _inferenceMs,
+      resultReceivedAt: resultReceivedAt,
     );
     // PD3: accept a new overlay snapshot only while the currently observed
     // mapped coordinator outcome is Ready (healthy fallback maps to Ready).

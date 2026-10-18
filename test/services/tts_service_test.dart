@@ -1015,6 +1015,63 @@ void main() {
       expect(record.detectionAcceptedAt, isNull);
     });
 
+    test('direct app-side anchors fill an Ultralytics record', () async {
+      final received = now.subtract(const Duration(milliseconds: 40));
+      final accepted = now.subtract(const Duration(milliseconds: 30));
+      expect(
+        await instrumented.announceDetections(
+          [nearPerson()],
+          engine: InferenceEngine.ultralytics,
+          resultReceivedAt: received,
+          detectionAcceptedAt: accepted,
+        ),
+        isTrue,
+      );
+
+      final record = records.single;
+      expect(record.origin, AlertOrigin.detection);
+      expect(record.engine, InferenceEngine.ultralytics);
+      expect(record.frameNumber, isNull);
+      expect(record.analysisReceivedAt, isNull);
+      expect(record.inferenceStartedAt, isNull);
+      expect(record.inferenceCompletedAt, isNull);
+      expect(record.resultReceivedAt, received);
+      expect(record.detectionAcceptedAt, accepted);
+      // Non-strict ordering: equal timestamps are valid.
+      expect(record.detectionAcceptedAt!.isBefore(received), isFalse);
+      expect(record.requestedAt.isBefore(accepted), isFalse);
+      expect(record.alertStartedAt!.isBefore(record.submittedAt), isFalse);
+    });
+
+    test('Custom frame anchors win over direct app-side anchors', () async {
+      final analysis = now.subtract(const Duration(milliseconds: 120));
+      final received = now.subtract(const Duration(milliseconds: 60));
+      final accepted = now.subtract(const Duration(milliseconds: 50));
+      final timing = FrameLatency(
+        frameNumber: 9,
+        analysisReceivedAt: analysis,
+        resultReceivedAt: received,
+        detectionAcceptedAt: accepted,
+      );
+
+      expect(
+        await instrumented.announceDetections(
+          [nearPerson()],
+          engine: InferenceEngine.custom,
+          frameLatency: timing,
+          resultReceivedAt: now,
+          detectionAcceptedAt: now,
+        ),
+        isTrue,
+      );
+
+      final record = records.single;
+      expect(record.frameNumber, 9);
+      expect(record.analysisReceivedAt, analysis);
+      expect(record.resultReceivedAt, received);
+      expect(record.detectionAcceptedAt, accepted);
+    });
+
     test('quick scan and repeat-last records stay engine-null', () async {
       expect(await instrumented.announceQuickScan([info()]), isTrue);
       expect(records.single.origin, AlertOrigin.quickScan);

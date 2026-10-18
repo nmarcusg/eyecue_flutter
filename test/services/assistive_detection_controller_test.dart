@@ -111,6 +111,33 @@ void main() {
     expect(record.detectionAcceptedAt, isNull);
   });
 
+  test(
+    'app-side result receipt reaches the record without frame anchors',
+    () async {
+      controller = AssistiveDetectionController(
+        engine: InferenceEngine.ultralytics,
+        tts: tts,
+        telemetry: TelemetryService(),
+      );
+      final received = DateTime.utc(2026, 1, 1, 12);
+      controller.updateDetections(nearPerson(), resultReceivedAt: received);
+      await pumpEventQueue();
+
+      final record = records.single;
+      expect(record.origin, AlertOrigin.detection);
+      expect(record.engine, InferenceEngine.ultralytics);
+      expect(record.frameNumber, isNull);
+      expect(record.analysisReceivedAt, isNull);
+      expect(record.inferenceStartedAt, isNull);
+      expect(record.inferenceCompletedAt, isNull);
+      expect(record.resultReceivedAt, received);
+      expect(record.detectionAcceptedAt, isNotNull);
+      // Equal timestamps are valid, so ordering is "not before".
+      expect(record.detectionAcceptedAt!.isBefore(received), isFalse);
+      expect(record.requestedAt.isBefore(record.detectionAcceptedAt!), isFalse);
+    },
+  );
+
   test('empty detections create no alert record', () async {
     controller.updateDetections(const [], frameLatency: frameLatency());
     await pumpEventQueue();
