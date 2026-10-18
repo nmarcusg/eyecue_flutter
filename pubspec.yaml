@@ -19,23 +19,20 @@ dependencies:
   # 3. Audio Feedback
   flutter_tts: ^4.2.0
   
-  # 4. State Management (Keeping Riverpod at 2.6.1 for stability, as 3.x is very new and changes syntax)
-  flutter_riverpod: ^3.3.2
-  
-  # 5. Permissions (Bumped to 12.0.3)
+  # 4. Permissions (Bumped to 12.0.3)
   permission_handler: ^12.0.3
 
-  # 6. Path Provider
+  # 5. Path Provider
   path_provider: ^2.1.4
 
-  # 7. Data Visualization (For your Logs/Reports dashboard)
+  # 6. Data Visualization (For your Logs/Reports dashboard)
   fl_chart: ^1.2.0
 
-  # 8. Alternative native YOLO pipeline (runtime-comparable with custom mode)
+  # 7. Alternative native YOLO pipeline (runtime-comparable with custom mode)
   ultralytics_yolo: 0.6.13
   marionette_flutter: ^0.6.0
 
-  # 9. Offline IBM Plex Sans typography for the Home-local light theme
+  # 8. Offline IBM Plex Sans typography for the Home-local light theme
   google_fonts: ^8.2.1
 
 dev_dependencies:
