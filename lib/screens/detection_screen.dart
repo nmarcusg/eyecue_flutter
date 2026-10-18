@@ -240,12 +240,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     // Subscribe before initialization so no worker lifecycle event is missed.
     _setupInferenceListener();
     _inferenceService.initIsolate();
-    // Camera OR temporary test-image mode.
-    if (InferenceService.useTestImage) {
-      debugPrint('[Camera] TEMPORARY test-image mode — skipping camera');
-      _detectionActive = true;
-      _inferenceService.runTestImage();
-    } else if (widget.startIntent != null) {
+    if (widget.startIntent != null) {
       // The engine no longer reads the Auto-start preference directly. It acts
       // only on the shared start intent issued by the app-shell coordinator.
       //
@@ -686,7 +681,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
         break;
       case InferenceLifecycleEventType.modelLoaded:
         _modelLoaded = true;
-        if (_detectionActive || InferenceService.useTestImage) {
+        if (_detectionActive) {
           _setRuntimeState(
             DetectionRuntimeState.ready,
             sourceGeneration: event.generation,
@@ -985,7 +980,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   // -------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final bool testMode = InferenceService.useTestImage;
     return Theme(
       data: buildHomeTheme(),
       child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -998,7 +992,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
                 // The viewport is the only flexible region; the control row
                 // below derives its height from its content and the minimum
                 // touch targets rather than a fixed percentage allocation.
-                Expanded(child: _buildMainArea(context, testMode)),
+                Expanded(child: _buildMainArea(context)),
                 _buildActionControlsRow(context),
               ],
             ),
@@ -1094,7 +1088,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     );
   }
 
-  Widget _buildMainArea(BuildContext context, bool testMode) {
+  Widget _buildMainArea(BuildContext context) {
     // The visible lifecycle/status panel renders the shared coordinator
     // snapshot, never engine-local runtime state.
     final sharedState = widget.coordinator.state;
@@ -1109,10 +1103,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
     if (_permissionDenied) {
       return _buildPermissionDenied(context);
     }
-    if (!testMode && !_isCameraInitialized) {
+    if (!_isCameraInitialized) {
       return _buildCameraPending(context);
     }
-    return _buildViewport(context, testMode);
+    return _buildViewport(context);
   }
 
   Widget _buildPermissionDenied(BuildContext context) {
@@ -1193,15 +1187,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
     );
   }
 
-  Widget _buildViewport(BuildContext context, bool testMode) {
+  Widget _buildViewport(BuildContext context) {
     final Size frameSize;
-    if (testMode) {
-      final tw = _inferenceService.testImageWidth;
-      final th = _inferenceService.testImageHeight;
-      frameSize = (tw > 0 && th > 0)
-          ? Size(tw.toDouble(), th.toDouble())
-          : const Size(1, 1);
-    } else if (_uprightWidth > 0 && _uprightHeight > 0) {
+    if (_uprightWidth > 0 && _uprightHeight > 0) {
       frameSize = Size(_uprightWidth.toDouble(), _uprightHeight.toDouble());
     } else {
       frameSize = _imageWidth > 0 && _imageHeight > 0
@@ -1230,9 +1218,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
                 child: SizedBox(
                   width: frameSize.width,
                   height: frameSize.height,
-                  child: testMode
-                      ? _buildTestImagePreview()
-                      : CameraPreview(_cameraController!),
+                  child: CameraPreview(_cameraController!),
                 ),
               ),
               // Bounding boxes — same contain fit, so boxes align with the feed.
@@ -1259,19 +1245,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildTestImagePreview() {
-    final bytes = _inferenceService.testImageAssetBytes;
-    if (bytes == null) {
-      return const ColoredBox(color: Colors.black87);
-    }
-    return Image.memory(
-      bytes,
-      fit: BoxFit.fill,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.none,
     );
   }
 }
