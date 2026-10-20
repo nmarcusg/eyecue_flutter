@@ -9,6 +9,7 @@ import '../services/correction_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_export_service.dart';
 import '../services/telemetry_service.dart';
+import '../services/telemetry_upload_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
@@ -31,6 +32,7 @@ class LogsReportsScreen extends StatefulWidget {
   final SettingsService? settings;
   final CorrectionService? corrections;
   final TelemetryExportService? exportService;
+  final TelemetryUploadService? uploadService;
 
   const LogsReportsScreen({
     super.key,
@@ -38,6 +40,7 @@ class LogsReportsScreen extends StatefulWidget {
     this.settings,
     this.corrections,
     this.exportService,
+    this.uploadService,
   });
 
   @override
@@ -47,7 +50,10 @@ class LogsReportsScreen extends StatefulWidget {
 class _LogsReportsScreenState extends State<LogsReportsScreen> {
   late final TelemetryExportService _exportService =
       widget.exportService ?? TelemetryExportService();
+  late final TelemetryUploadService _uploadService =
+      widget.uploadService ?? TelemetryUploadService();
   bool _exporting = false;
+  bool _uploading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +93,9 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
                       exporting: _exporting,
                       onExportJson: () => _export(csv: false),
                       onExportCsv: () => _export(csv: true),
+                      uploading: _uploading,
+                      uploadConfigured: _uploadService.isConfigured,
+                      onUpload: _upload,
                     ),
                     const _ChartsTab(),
                     const _LogsTab(),
@@ -98,6 +107,90 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _upload() async {
+    if (_uploading || !_uploadService.isConfigured) return;
+    final metadata = await _requestUploadMetadata();
+    if (metadata == null || !mounted) return;
+
+    setState(() => _uploading = true);
+    try {
+      final result = await _uploadService.upload(
+        telemetry: widget.telemetry,
+        settings: widget.settings?.settings,
+        metadata: metadata,
+      );
+      if (!mounted) return;
+      _showMessage(
+        result.isSuccess
+            ? 'Session uploaded to the research database.'
+            : result.errorMessage!,
+        isError: !result.isSuccess,
+      );
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<ResearchSessionMetadata?> _requestUploadMetadata() async {
+    final participantController = TextEditingController();
+    final scenarioController = TextEditingController();
+    final metadata = await showDialog<ResearchSessionMetadata>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Upload this session?'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'This manually sends the current image-free session to the '
+                'research database. It does not include camera frames or device IDs. '
+                'Use only a study participant code, never a name or email address.',
+              ),
+              const SizedBox(height: kSpace12),
+              TextField(
+                controller: participantController,
+                maxLength: 64,
+                decoration: const InputDecoration(
+                  labelText: 'Participant code',
+                  hintText: 'P-001',
+                ),
+              ),
+              TextField(
+                controller: scenarioController,
+                maxLength: 80,
+                decoration: const InputDecoration(
+                  labelText: 'Study scenario',
+                  hintText: 'indoor-obstacle-course',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = ResearchSessionMetadata(
+                participantCode: participantController.text,
+                studyScenario: scenarioController.text,
+              );
+              if (!value.isValid) return;
+              Navigator.pop(context, value);
+            },
+            child: const Text('Confirm upload'),
+          ),
+        ],
+      ),
+    );
+    participantController.dispose();
+    scenarioController.dispose();
+    return metadata;
   }
 
   Future<void> _export({required bool csv}) async {
@@ -147,11 +240,17 @@ class _OverviewTab extends StatelessWidget {
   final bool exporting;
   final VoidCallback onExportJson;
   final VoidCallback onExportCsv;
+  final bool uploading;
+  final bool uploadConfigured;
+  final VoidCallback onUpload;
 
   const _OverviewTab({
     required this.exporting,
     required this.onExportJson,
     required this.onExportCsv,
+    required this.uploading,
+    required this.uploadConfigured,
+    required this.onUpload,
   });
 
   @override
@@ -226,6 +325,9 @@ class _OverviewTab extends StatelessWidget {
               exporting: exporting,
               onExportJson: onExportJson,
               onExportCsv: onExportCsv,
+              uploading: uploading,
+              uploadConfigured: uploadConfigured,
+              onUpload: onUpload,
             ),
             const SizedBox(height: kSpace24),
             const _CorrectionSummary(),
@@ -419,11 +521,17 @@ class _ExportSection extends StatelessWidget {
   final bool exporting;
   final VoidCallback onExportJson;
   final VoidCallback onExportCsv;
+  final bool uploading;
+  final bool uploadConfigured;
+  final VoidCallback onUpload;
 
   const _ExportSection({
     required this.exporting,
     required this.onExportJson,
     required this.onExportCsv,
+    required this.uploading,
+    required this.uploadConfigured,
+    required this.onUpload,
   });
 
   @override
@@ -469,6 +577,39 @@ class _ExportSection extends StatelessWidget {
               const SizedBox(height: kSpace8),
               Text(
                 'Saving export…',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: kHomeInkMuted,
+                ),
+              ),
+            ],
+            const SizedBox(height: kSpace16),
+            const Divider(),
+            const SizedBox(height: kSpace12),
+            Text(
+              'Research database upload',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: kSpace4),
+            Text(
+              uploadConfigured
+                  ? 'Manually upload this image-free session after confirming '
+                        'participant consent and the study context.'
+                  : 'Online research upload is not configured in this build. '
+                        'Offline exports remain available.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+            ),
+            const SizedBox(height: kSpace12),
+            AccessibleButton(
+              label: 'Upload session to research database',
+              icon: Icons.cloud_upload_outlined,
+              onPressed: !uploadConfigured || uploading ? null : onUpload,
+            ),
+            if (uploading) ...[
+              const SizedBox(height: kSpace8),
+              Text(
+                'Uploading session…',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: kHomeInkMuted,
                 ),
