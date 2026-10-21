@@ -11,6 +11,9 @@ enum ObjectPriority { high, medium, low }
 /// User-facing horizontal position of a detected object relative to the user.
 enum RelativePosition { left, center, right }
 
+/// Which estimator produced [DetectionInfo.estimatedMeters].
+enum DistanceSource { monocularDepth, boundingBox }
+
 /// Approximate proximity band derived from detection geometry.
 ///
 /// This is an *estimate* based on bounding-box height (a larger, lower box is
@@ -30,11 +33,24 @@ class DetectionInfo {
   final ObjectPriority priority;
   final ProximityBand proximity;
 
+  /// Metric distance when the depth model produced one; `null` for the
+  /// bounding-box heuristic.
+  final double? estimatedMeters;
+
+  /// Which estimator produced [estimatedMeters].
+  final DistanceSource distanceSource;
+
+  /// Spoken/display phrase ("about 3.5 m") when a metric estimate exists.
+  final String? distanceLabel;
+
   const DetectionInfo({
     required this.detection,
     required this.position,
     required this.priority,
     required this.proximity,
+    this.estimatedMeters,
+    this.distanceSource = DistanceSource.boundingBox,
+    this.distanceLabel,
   });
 
   String get label => detection.label;

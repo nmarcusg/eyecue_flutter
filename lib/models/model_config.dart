@@ -11,6 +11,17 @@ abstract final class EyeCueModelConfig {
   static const confidenceThreshold = defaultConfidenceThreshold;
   static const nmsIouThreshold = 0.45;
 
+  /// Official Ultralytics depth model ID. Downloaded by the plugin on first use
+  /// into `<documents>/mobile-standard-v1/`.
+  static const depthModelId = 'yolo26n-depth';
+
+  /// Minimum gap between depth inferences; detection keeps its own cadence.
+  static const depthMinIntervalMs = 500;
+
+  /// A depth map older than this is stale: boxes fall back to bbox distance and
+  /// the heatmap is hidden.
+  static const depthStaleAfterMs = 1000;
+
   /// The validated range shared by the Custom parser and Ultralytics native
   /// engine. Values are applied at engine restart/reload, not per frame.
   static const minConfidenceThreshold = 0.10;
