@@ -18,6 +18,27 @@ enum InferenceEngine {
   bool get isRecommended => this == InferenceEngine.ultralytics;
 }
 
+/// How object distance is estimated.
+///
+/// [monocularDepth] runs the depth model and reports metric estimates.
+/// [boundingBoxApproximation] stops depth inference entirely and keeps the
+/// original box-height heuristic.
+enum DistanceEstimationMode {
+  monocularDepth(
+    'Depth estimate',
+    'Estimate distance in metres with the depth model. Slower but metric.',
+  ),
+  boundingBoxApproximation(
+    'Bounding box',
+    'Approximate distance from box size only. Lightest option.',
+  );
+
+  final String label;
+  final String description;
+
+  const DistanceEstimationMode(this.label, this.description);
+}
+
 /// Plain-language confidence presets exposed by the settings screen.
 enum DetectionSensitivityPreset {
   moreDetections(
@@ -59,12 +80,13 @@ enum DetectionSensitivityPreset {
 /// All values have safe defaults so a missing/corrupt settings file never
 /// breaks startup.
 class AppSettings {
-  // Incremented 1 -> 2 when `detectionConfidence` was added and 2 -> 3 when
-  // `hideBottomNavigation` was added: the established convention is that a new
-  // persisted field bumps the schema version. The parser is field-tolerant and
-  // has no migration branch, so this is a marker only; older JSON that lacks
-  // the field still parses with the safe default.
-  static const int currentSchemaVersion = 3;
+  // Incremented 1 -> 2 when `detectionConfidence` was added, 2 -> 3 when
+  // `hideBottomNavigation` was added, and 3 -> 4 when the distance/overlay
+  // fields were added: the established convention is that a new persisted field
+  // bumps the schema version. The parser is field-tolerant and has no migration
+  // branch, so this is a marker only; older JSON that lacks the field still
+  // parses with the safe default.
+  static const int currentSchemaVersion = 4;
   static const double defaultDetectionConfidence = 0.25;
   static const double minDetectionConfidence = 0.10;
   static const double maxDetectionConfidence = 0.75;
@@ -82,6 +104,16 @@ class AppSettings {
   /// depends on the accessibility-navigation state, which is never written
   /// back here (see `AppShellState`).
   final bool hideBottomNavigation;
+
+  /// Whether native bounding-box overlays are drawn while the depth heatmap is
+  /// hidden. When the heatmap is visible, boxes are painted in Flutter instead.
+  final bool showBoundingBoxes;
+
+  /// Whether the depth heatmap is drawn when [distanceEstimationMode] is
+  /// [DistanceEstimationMode.monocularDepth].
+  final bool showDepthHeatmap;
+
+  final DistanceEstimationMode distanceEstimationMode;
   final int schemaVersion;
 
   const AppSettings({
@@ -92,6 +124,9 @@ class AppSettings {
     this.inferenceEngine = InferenceEngine.ultralytics,
     this.detectionConfidence = defaultDetectionConfidence,
     this.hideBottomNavigation = false,
+    this.showBoundingBoxes = true,
+    this.showDepthHeatmap = true,
+    this.distanceEstimationMode = DistanceEstimationMode.monocularDepth,
     this.schemaVersion = currentSchemaVersion,
   });
 
@@ -103,6 +138,9 @@ class AppSettings {
     InferenceEngine? inferenceEngine,
     double? detectionConfidence,
     bool? hideBottomNavigation,
+    bool? showBoundingBoxes,
+    bool? showDepthHeatmap,
+    DistanceEstimationMode? distanceEstimationMode,
   }) {
     return AppSettings(
       vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
@@ -114,6 +152,10 @@ class AppSettings {
           ? this.detectionConfidence
           : normalizeDetectionConfidence(detectionConfidence),
       hideBottomNavigation: hideBottomNavigation ?? this.hideBottomNavigation,
+      showBoundingBoxes: showBoundingBoxes ?? this.showBoundingBoxes,
+      showDepthHeatmap: showDepthHeatmap ?? this.showDepthHeatmap,
+      distanceEstimationMode:
+          distanceEstimationMode ?? this.distanceEstimationMode,
     );
   }
 
@@ -126,6 +168,9 @@ class AppSettings {
     'inferenceEngine': inferenceEngine.name,
     'detectionConfidence': detectionConfidence,
     'hideBottomNavigation': hideBottomNavigation,
+    'showBoundingBoxes': showBoundingBoxes,
+    'showDepthHeatmap': showDepthHeatmap,
+    'distanceEstimationMode': distanceEstimationMode.name,
   };
 
   /// Parses old and partially written settings without allowing one malformed
@@ -141,6 +186,13 @@ class AppSettings {
           )
         : InferenceEngine.ultralytics;
     final confidence = json['detectionConfidence'];
+    final modeName = json['distanceEstimationMode'];
+    final mode = modeName is String
+        ? DistanceEstimationMode.values.firstWhere(
+            (candidate) => candidate.name == modeName,
+            orElse: () => DistanceEstimationMode.monocularDepth,
+          )
+        : DistanceEstimationMode.monocularDepth;
     return AppSettings(
       vibrationFeedback: _boolOr(json['vibrationFeedback'], true),
       autoStartDetection: _boolOr(json['autoStartDetection'], true),
@@ -153,6 +205,9 @@ class AppSettings {
       // Older persisted JSON lacks this field; default to a visible bar so
       // upgrading users keep the navigation bar they already had.
       hideBottomNavigation: _boolOr(json['hideBottomNavigation'], false),
+      showBoundingBoxes: _boolOr(json['showBoundingBoxes'], true),
+      showDepthHeatmap: _boolOr(json['showDepthHeatmap'], true),
+      distanceEstimationMode: mode,
       schemaVersion: currentSchemaVersion,
     );
   }
@@ -180,7 +235,10 @@ class AppSettings {
       other.audioEnabled == audioEnabled &&
       other.inferenceEngine == inferenceEngine &&
       other.detectionConfidence == detectionConfidence &&
-      other.hideBottomNavigation == hideBottomNavigation;
+      other.hideBottomNavigation == hideBottomNavigation &&
+      other.showBoundingBoxes == showBoundingBoxes &&
+      other.showDepthHeatmap == showDepthHeatmap &&
+      other.distanceEstimationMode == distanceEstimationMode;
 
   @override
   int get hashCode => Object.hash(
@@ -191,5 +249,8 @@ class AppSettings {
     inferenceEngine,
     detectionConfidence,
     hideBottomNavigation,
+    showBoundingBoxes,
+    showDepthHeatmap,
+    distanceEstimationMode,
   );
 }

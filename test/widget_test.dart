@@ -142,7 +142,9 @@ void main() {
       VoidCallback? onOpenLogsReports,
       TelemetryService? telemetry,
     }) async {
-      tester.view.physicalSize = const Size(390 * 3, 2000 * 3);
+      // Tall enough for the full Settings page, including the "Distance &
+      // Overlays" card added by the MDE integration.
+      tester.view.physicalSize = const Size(390 * 3, 3000 * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(

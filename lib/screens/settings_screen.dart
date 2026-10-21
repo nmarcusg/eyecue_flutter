@@ -231,6 +231,80 @@ class SettingsScreen extends StatelessWidget {
                                 _SensitivityControls(settings: settings),
                               ],
                             ),
+                            _SettingsCard(
+                              title: 'Distance & Overlays',
+                              children: [
+                                RadioGroup<DistanceEstimationMode>(
+                                  groupValue: settings.distanceEstimationMode,
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      settings.setDistanceEstimationMode(value);
+                                    }
+                                  },
+                                  child: Column(
+                                    children: [
+                                      for (final option
+                                          in DistanceEstimationMode.values)
+                                        RadioListTile<DistanceEstimationMode>(
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: kSpace16,
+                                              ),
+                                          controlAffinity:
+                                              ListTileControlAffinity.trailing,
+                                          title: Text(option.label),
+                                          subtitle: Text(option.description),
+                                          value: option,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                SwitchListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: kSpace16,
+                                  ),
+                                  title: const Text('Show Bounding Boxes'),
+                                  subtitle: const Text(
+                                    'Draw a box around each detected object',
+                                  ),
+                                  value: settings.showBoundingBoxes,
+                                  onChanged: settings.setShowBoundingBoxes,
+                                ),
+                                SwitchListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: kSpace16,
+                                  ),
+                                  title: const Text('Show Depth Heatmap'),
+                                  subtitle: const Text(
+                                    'Colour the scene by estimated distance',
+                                  ),
+                                  // The preference is preserved while the
+                                  // bounding-box mode is selected; only the
+                                  // control is disabled.
+                                  value: settings.showDepthHeatmap,
+                                  onChanged:
+                                      settings.distanceEstimationMode ==
+                                          DistanceEstimationMode.monocularDepth
+                                      ? settings.setShowDepthHeatmap
+                                      : null,
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    kSpace16,
+                                    kSpace4,
+                                    kSpace16,
+                                    0,
+                                  ),
+                                  child: Text(
+                                    'Distances in metres are estimates from the '
+                                    'depth model and are not calibrated '
+                                    'measurements.',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: kHomeInkMuted),
+                                  ),
+                                ),
+                              ],
+                            ),
                             _SystemPerformanceCard(
                               telemetry: telemetry,
                               onOpenLogsReports: onOpenLogsReports,
