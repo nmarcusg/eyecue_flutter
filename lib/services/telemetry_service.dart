@@ -408,10 +408,7 @@ class TelemetryService extends ChangeNotifier {
       if (record.engine != engine) continue;
       final start = switch (interval) {
         AlertLatencyInterval.receivedToAccepted ||
-        AlertLatencyInterval.receivedToStarted =>
-          engine == InferenceEngine.custom
-              ? record.analysisReceivedAt
-              : record.resultReceivedAt,
+        AlertLatencyInterval.receivedToStarted => record.resultReceivedAt,
         AlertLatencyInterval.acceptedToStarted => record.detectionAcceptedAt,
         AlertLatencyInterval.submittedToStarted => record.submittedAt,
       };

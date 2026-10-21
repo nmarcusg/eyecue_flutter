@@ -1,21 +1,14 @@
+/// The one detection engine. Kept as an enum because telemetry records and
+/// persisted settings carry the value as a stable discriminator.
 enum InferenceEngine {
-  custom,
   ultralytics;
 
-  String get label => switch (this) {
-    InferenceEngine.custom => 'Custom EyeCue',
-    InferenceEngine.ultralytics => 'Ultralytics',
-  };
+  String get label => 'Ultralytics';
 
-  String get description => switch (this) {
-    InferenceEngine.custom =>
-      'Advanced / compatibility fallback. Uses the EyeCue Dart preprocessing, '
-          'parsing, and XNNPACK/CPU path.',
-    InferenceEngine.ultralytics =>
-      'Recommended. Uses the native CameraX and LiteRT GPU-to-CPU path.',
-  };
+  String get description =>
+      'Recommended. Uses the native CameraX and LiteRT GPU-to-CPU path.';
 
-  bool get isRecommended => this == InferenceEngine.ultralytics;
+  bool get isRecommended => true;
 }
 
 /// How object distance is estimated.
@@ -174,9 +167,8 @@ class AppSettings {
   };
 
   /// Parses old and partially written settings without allowing one malformed
-  /// field to discard every other valid preference. Missing engine values use
-  /// the new-install default (Ultralytics); an explicit legacy Custom value is
-  /// preserved.
+  /// field to discard every other valid preference. Missing or unknown engine
+  /// values (including the removed Custom engine) use Ultralytics.
   factory AppSettings.fromJson(Map<String, dynamic> json) {
     final engineName = json['inferenceEngine'];
     final engine = engineName is String

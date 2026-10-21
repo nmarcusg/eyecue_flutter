@@ -92,7 +92,7 @@ TelemetryService buildTelemetry({
     service.recordAlertLifecycle(
       AlertLifecycleRecord(
         origin: AlertOrigin.detection,
-        engine: InferenceEngine.custom,
+        engine: InferenceEngine.ultralytics,
         requestedAt: analysis,
         submittedAt: analysis.add(const Duration(milliseconds: 20)),
         alertStartedAt: analysis.add(const Duration(milliseconds: 50)),
@@ -294,8 +294,8 @@ void main() {
       // Avg FPS and Avg Latency empty values.
       expect(find.text('0.0'), findsOneWidget);
       expect(find.text('0.0 ms'), findsOneWidget);
-      // Both engine summaries and all eight alert intervals are empty.
-      expect(find.text('No samples'), findsNWidgets(10));
+      // The engine summary and all four alert intervals are empty.
+      expect(find.text('No samples'), findsNWidgets(5));
       // Avg confidence shows the em dash when there are no records.
       expect(find.text('—'), findsOneWidget);
     });
@@ -322,15 +322,10 @@ void main() {
       expect(find.text('Alert Latency'), findsOneWidget);
       expect(find.text('Alert latency and scheduler health'), findsOneWidget);
       expect(find.text('Scheduler health'), findsOneWidget);
-      // All eight required interval labels stay visible when empty.
-      expect(
-        find.text('Analysis received → detection accepted'),
-        findsOneWidget,
-      );
+      // All four required interval labels stay visible when empty (one engine).
       expect(find.text('Result received → detection accepted'), findsOneWidget);
-      expect(find.text('Detection accepted → alert started'), findsNWidgets(2));
-      expect(find.text('Alert submitted → alert started'), findsNWidgets(2));
-      expect(find.text('Analysis received → alert started'), findsOneWidget);
+      expect(find.text('Detection accepted → alert started'), findsOneWidget);
+      expect(find.text('Alert submitted → alert started'), findsOneWidget);
       expect(
         find.text(
           'Result received → alert started (app-side / post-inference)',
@@ -348,38 +343,26 @@ void main() {
     ) async {
       await pumpLogsScreen(tester, telemetry: buildTelemetry(populated: true));
 
-      expect(find.textContaining('n 1'), findsNWidgets(8));
-      expect(
-        find.text('p50 10.0 ms · p95 10.0 ms · max 10.0 ms · n 1'),
-        findsOneWidget,
-      );
-      expect(
-        find.text('p50 40.0 ms · p95 40.0 ms · max 40.0 ms · n 1'),
-        findsOneWidget,
-      );
-      // Custom submitted-to-start and Ultralytics result-to-start share 30 ms.
-      expect(
-        find.text('p50 30.0 ms · p95 30.0 ms · max 30.0 ms · n 1'),
-        findsNWidgets(2),
-      );
-      expect(
-        find.text('p50 50.0 ms · p95 50.0 ms · max 50.0 ms · n 1'),
-        findsOneWidget,
-      );
+      // Two intervals have one sample, two aggregate two records.
+      expect(find.textContaining('n 1'), findsNWidgets(2));
       expect(
         find.text('p50 5.0 ms · p95 5.0 ms · max 5.0 ms · n 1'),
         findsOneWidget,
       );
       expect(
-        find.text('p50 25.0 ms · p95 25.0 ms · max 25.0 ms · n 1'),
+        find.text('p50 30.0 ms · p95 30.0 ms · max 30.0 ms · n 1'),
         findsOneWidget,
       );
       expect(
-        find.text('p50 20.0 ms · p95 20.0 ms · max 20.0 ms · n 1'),
+        find.text('p50 25.0 ms · p95 40.0 ms · max 40.0 ms · n 2'),
         findsOneWidget,
       );
-      // Only the empty Custom engine-comparison card remains sample-less.
-      expect(find.text('No samples'), findsOneWidget);
+      expect(
+        find.text('p50 20.0 ms · p95 30.0 ms · max 30.0 ms · n 2'),
+        findsOneWidget,
+      );
+      // Every interval now belongs to the single engine.
+      expect(find.text('No samples'), findsNothing);
     });
 
     testWidgets(
@@ -389,7 +372,7 @@ void main() {
         await pumpLogsScreen(tester, telemetry: telemetry);
 
         // The section is already open and truthfully empty.
-        expect(find.text('No samples'), findsNWidgets(10));
+        expect(find.text('No samples'), findsNWidgets(5));
         expect(find.text('Rejected: lowConfidence'), findsNothing);
 
         // The counter snapshot is authoritative immediately, but the open UI
@@ -414,7 +397,7 @@ void main() {
         telemetry.recordAlertLifecycle(
           AlertLifecycleRecord(
             origin: AlertOrigin.detection,
-            engine: InferenceEngine.custom,
+            engine: InferenceEngine.ultralytics,
             requestedAt: analysis,
             submittedAt: analysis.add(const Duration(milliseconds: 20)),
             alertStartedAt: analysis.add(const Duration(milliseconds: 50)),
@@ -424,7 +407,7 @@ void main() {
             hadStarted: true,
             reconciledAt: analysis.add(const Duration(seconds: 1)),
             frameNumber: 9,
-            analysisReceivedAt: analysis,
+            resultReceivedAt: analysis,
             detectionAcceptedAt: analysis.add(const Duration(milliseconds: 10)),
           ),
         );

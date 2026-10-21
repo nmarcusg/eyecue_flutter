@@ -2,7 +2,6 @@ abstract final class EyeCueModelConfig {
   /// Metadata-enriched copy of the validated graph. The packager preserves the
   /// base FlatBuffer byte-for-byte and appends the Ultralytics label payload.
   static const modelAssetPath = 'assets/yolov8n_int8_new_metadata.tflite';
-  static const baseModelAssetPath = 'assets/yolov8n_int8_new.tflite';
   static const labelsAssetPath = 'assets/labels.txt';
   static const defaultConfidenceThreshold = 0.25;
 

@@ -43,7 +43,7 @@ void main() {
       () => service.add(
         info: info,
         feedback: CorrectionFeedback.incorrect,
-        engine: InferenceEngine.custom,
+        engine: InferenceEngine.ultralytics,
         correctedLabel: 'not-a-label',
         confidenceThreshold: 0.25,
       ),
@@ -59,13 +59,13 @@ void main() {
     final correct = service.add(
       info: info,
       feedback: CorrectionFeedback.correct,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
       confidenceThreshold: 0.25,
     );
     final unsure = service.add(
       info: info,
       feedback: CorrectionFeedback.unsure,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
       confidenceThreshold: 0.25,
     );
 

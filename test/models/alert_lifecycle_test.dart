@@ -62,7 +62,7 @@ void main() {
     final accepted = received.add(const Duration(milliseconds: 5));
     final record = AlertLifecycleRecord(
       origin: AlertOrigin.detection,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
       requestedAt: accepted,
       submittedAt: accepted,
       alertStartedAt: accepted,

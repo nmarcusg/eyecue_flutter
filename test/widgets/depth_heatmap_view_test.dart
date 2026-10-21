@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   Future<void> pumpView(WidgetTester tester, Widget child) => tester.pumpWidget(
-    MaterialApp(home: Scaffold(body: Center(child: child))),
+    MaterialApp(
+      home: Scaffold(body: Center(child: child)),
+    ),
   );
 
   testWidgets('renders nothing without a depth image', (tester) async {
@@ -22,10 +24,7 @@ void main() {
     final ui.Image image = (await tester.runAsync(
       () => createTestImage(width: 40, height: 20),
     ))!;
-    await pumpView(
-      tester,
-      DepthHeatmapView(image: image, rotationDegrees: 90),
-    );
+    await pumpView(tester, DepthHeatmapView(image: image, rotationDegrees: 90));
 
     expect(find.byType(RawImage), findsOneWidget);
     expect(find.byType(IgnorePointer), findsWidgets);
@@ -52,10 +51,7 @@ void main() {
     final ui.Image image = (await tester.runAsync(
       () => createTestImage(width: 20, height: 20),
     ))!;
-    await pumpView(
-      tester,
-      DepthHeatmapView(image: image, rotationDegrees: 0),
-    );
+    await pumpView(tester, DepthHeatmapView(image: image, rotationDegrees: 0));
     expect(find.byType(ExcludeSemantics), findsWidgets);
     handle.dispose();
   });

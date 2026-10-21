@@ -171,7 +171,6 @@ void main() {
       expect(find.text('Vibration Feedback'), findsOneWidget);
       expect(find.text('Auto-Start on Open'), findsOneWidget);
       expect(find.text('Low Power Mode'), findsOneWidget);
-      expect(find.text('Custom EyeCue'), findsOneWidget);
       expect(find.text('Ultralytics'), findsOneWidget);
       expect(find.text('Audio / Voice Guidance'), findsOneWidget);
       expect(find.text('View Logs & Reports'), findsOneWidget);
@@ -243,24 +242,24 @@ void main() {
       expect(audioChildLeft, audioParentLeft);
     });
 
-    testWidgets('Custom EyeCue aligns with the parent title and only its '
+    testWidgets('engine row aligns with the parent title and only the '
         'sensitivity sub-options are indented', (tester) async {
       await pumpSettings(tester, service: settings());
 
-      // The Custom EyeCue option is a direct child row, so its text leading
-      // edge matches the parent section title's leading edge (kSpace16).
+      // The engine option is a direct child row, so its text leading edge
+      // matches the parent section title's leading edge (kSpace16).
       final parentLeft = tester
           .getTopLeft(find.text('Engine & Sensitivity'))
           .dx;
-      final customLeft = tester.getTopLeft(find.text('Custom EyeCue')).dx;
-      expect(customLeft, parentLeft);
+      final engineLeft = tester.getTopLeft(find.text('Ultralytics')).dx;
+      expect(engineLeft, parentLeft);
 
-      // The sensitivity presets are sub-options of Custom EyeCue, so their
-      // text is indented to the right of the parent row.
+      // The sensitivity presets are sub-options, so their text is indented to
+      // the right of the parent row.
       final moreDetectionsLeft = tester
           .getTopLeft(find.text('More detections'))
           .dx;
-      expect(moreDetectionsLeft, greaterThan(customLeft));
+      expect(moreDetectionsLeft, greaterThan(engineLeft));
 
       // The sub-option radios stay vertically aligned with each other.
       final balancedLeft = tester.getTopLeft(find.text('Balanced')).dx;

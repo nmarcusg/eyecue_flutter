@@ -4,7 +4,7 @@ import 'dart:typed_data';
 /// ---------------------------------------------------------------------------
 /// TFLite flatbuffer introspection (pure Dart, no Flutter / no FFI).
 ///
-/// The TFLite runtime API (`tflite_flutter`) only exposes **input and output**
+/// The classic TFLite Dart runtime API only exposes **input and output**
 /// tensors. To learn the *internal* tensor precision — e.g. whether a model
 /// with FLOAT32 I/O actually carries quantized INT8/INT16 weights — we walk the
 /// raw `.tflite` flatbuffer ourselves.
@@ -18,7 +18,7 @@ import 'dart:typed_data';
 /// Flatbuffer `TensorType` enum codes as declared in the TFLite `schema.fbs`.
 ///
 /// Note: these codes differ from the C-API `TfLiteType` numbering used by
-/// `tflite_flutter` (e.g. flatbuffer `FLOAT32 = 0` while `TfLiteType
+/// the classic runtime (e.g. flatbuffer `FLOAT32 = 0` while `TfLiteType
 /// kTfLiteFloat32 = 1`), so they are declared independently here.
 class TfliteFlatTensorType {
   static const int float32 = 0;
@@ -185,7 +185,7 @@ Map<int, int>? scanTfliteTensorTypeCounts(Uint8List modelBytes) {
 ///
 /// Used when a model's input/output tensor is FLOAT16: the app pre/post
 /// processes in float32 and converts the byte buffer at the run boundary,
-/// because `tflite_flutter` copies raw bytes verbatim for ByteBuffer I/O.
+/// because the classic runtime copies raw bytes verbatim for ByteBuffer I/O.
 /// ---------------------------------------------------------------------------
 
 /// Converts a `Float32List` to little-endian float16 bytes.
