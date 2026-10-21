@@ -13,7 +13,8 @@ import 'dart:typed_data';
 
 import 'package:eyecue_flutter/models/tflite_flatbuffer.dart';
 
-const _defaultInput = 'assets/yolov8n_int8_new.tflite';
+// The base (metadata-free) graph is no longer vendored; pass it explicitly.
+const _defaultInput = '';
 const _defaultOutput = 'assets/yolov8n_int8_new_metadata.tflite';
 const _defaultLabels = 'assets/labels.txt';
 const _defaultReport = 'docs/model-assets.md';
@@ -667,6 +668,11 @@ class _Options {
       throw FormatException('Unknown argument: $argument');
     }
 
+    if (inputPath.isEmpty) {
+      throw FormatException(
+        'Pass --input=<base .tflite graph> (the base artifact is not vendored).',
+      );
+    }
     if (File(inputPath).absolute.path == File(outputPath).absolute.path) {
       throw FormatException(
         'Input and output must be different paths so the base artifact stays available.',

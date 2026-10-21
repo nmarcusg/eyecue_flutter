@@ -10,13 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # 1. Camera (Bumped to 0.12.0+1)
+  # 1. Camera (used for availableCameras() sensor metadata)
   camera: ^0.12.0+1
-  
-  # 2. Machine Learning (classic Interpreter API)
-  tflite_flutter: ^0.12.1
-  
-  # 3. Audio Feedback
+
+  # 2. Audio Feedback
   flutter_tts: ^4.2.0
   
   # 4. State Management (Keeping Riverpod at 2.6.1 for stability, as 3.x is very new and changes syntax)
@@ -47,12 +44,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/yolov8n_int8_new_metadata.tflite
-    - assets/yolov8n_int8_new.tflite
-    - assets/yolov8n.tflite
     - assets/labels.txt
-    # TEMPORARY (test-image mode): known-good RGB photo of COCO objects.
-    # Remove together with the useTestImage flag.
-    - assets/test_image.jpg
     # Home visual mark (decorative; wordmark stays live text).
     - assets/logo.png
     # Offline IBM Plex Sans fonts for the Home-local light theme.

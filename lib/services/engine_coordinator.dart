@@ -6,19 +6,17 @@ import 'telemetry_service.dart';
 
 /// The five user-facing Detection lifecycle outcomes.
 ///
-/// Home, Custom Detection, and Ultralytics Detection all select one of these
-/// from the same coordinator snapshot. This is presentation logic, not a second
-/// lifecycle model: no renderer may read `autoStartDetection`, local camera
-/// booleans, engine-specific flags, or detection results to choose one.
+/// Home and the Detection screen select one of these from the same coordinator
+/// snapshot. This is presentation logic, not a second lifecycle model: no
+/// renderer may read `autoStartDetection`, local camera booleans, engine-specific
+/// flags, or detection results to choose one.
 enum DetectionStatusOutcome { preparing, ready, paused, stopped, unavailable }
 
 /// Maps a shared [DetectionRuntimeState] to the single user-facing outcome.
 ///
-/// A healthy temporary [DetectionRuntimeState.fallback] maps to [ready] because
-/// it represents an active engine that reached healthy readiness; it is not a
-/// fifth status. [DetectionRuntimeState.disposed] has no user-visible mapping
-/// during normal retained-session operation and is treated as [preparing] only
-/// so the mapping stays total; no status surface is expected to observe it.
+/// [DetectionRuntimeState.disposed] has no user-visible mapping during normal
+/// retained-session operation and is treated as [preparing] only so the mapping
+/// stays total; no status surface is expected to observe it.
 DetectionStatusOutcome detectionStatusOutcomeFor(DetectionRuntimeState state) =>
     switch (state) {
       DetectionRuntimeState.idle => DetectionStatusOutcome.preparing,
@@ -42,11 +40,11 @@ DetectionStatusOutcome detectionStatusOutcomeFor(DetectionRuntimeState state) =>
 /// Detection from the initial [DetectionRuntimeState.idle] state.
 enum StartIntentOrigin { launch, entry }
 
-/// A one-shot, monotonic request to start the currently selected engine.
+/// A one-shot, monotonic request to start the selected engine.
 ///
-/// The coordinator owns the token; a mounted engine consumes it exactly once
+/// The coordinator owns the token; the mounted engine consumes it exactly once
 /// by matching [token] against the value it last consumed. This prevents a
-/// pre-mount request from being lost and lets each engine ignore an
+/// pre-mount request from being lost and lets the engine ignore an
 /// already-consumed request.
 class StartIntent {
   const StartIntent({required this.token, required this.origin});
@@ -61,35 +59,22 @@ class StartIntent {
   String toString() => 'StartIntent(token: $token, origin: ${origin.name})';
 }
 
-/// Coordinates the selected engine without changing the persisted setting.
+/// Owns the single Detection lifecycle/status snapshot for Home and Detection.
 ///
-/// Ultralytics is the recommended engine. A terminal failure in that engine may
-/// activate Custom once for the current session, while permission denial is
-/// kept as a user decision and never triggers an engine switch. The coordinator
-/// is intentionally independent of camera objects; screens report lifecycle
-/// events and are mounted/unmounted by [EngineDetectionScreen].
-///
-/// The coordinator is the single user-facing Detection lifecycle/status source
-/// for Home, Custom Detection, and Ultralytics Detection. It is owned by the
-/// app shell for the shell lifetime and injected into Home and Engine
-/// Detection. Engine-local booleans may remain for camera/controller/inference
-/// mechanics, but no screen derives visible lifecycle status from them.
+/// There is one engine, so this is a lifecycle coordinator rather than an
+/// engine selector: screens report lifecycle/failure facts and the shell injects
+/// the instance into Home and the Detection screen.
 class EngineCoordinator extends ChangeNotifier {
-  EngineCoordinator({required InferenceEngine preferredEngine, this.telemetry})
-    : _preferredEngine = preferredEngine,
-      _activeEngine = preferredEngine;
+  EngineCoordinator({
+    InferenceEngine preferredEngine = InferenceEngine.ultralytics,
+    this.telemetry,
+  }) : _engine = preferredEngine;
 
   final TelemetryService? telemetry;
 
-  InferenceEngine _preferredEngine;
-  InferenceEngine _activeEngine;
+  final InferenceEngine _engine;
   DetectionRuntimeState _state = DetectionRuntimeState.idle;
   DetectionFailure? _failure;
-  String? _fallbackReason;
-  bool _canRetryPreferred = false;
-  bool _temporaryFallback = false;
-  bool _fallbackNoticeVisible = false;
-  int _automaticFallbackCount = 0;
   int _mountGeneration = 0;
   final Map<int, int> _latestWorkerGenerationByMount = {};
   bool _disposed = false;
@@ -101,26 +86,21 @@ class EngineCoordinator extends ChangeNotifier {
   /// The most recently issued start intent, or null when none is pending.
   StartIntent? _pendingStartIntent;
 
-  InferenceEngine get preferredEngine => _preferredEngine;
-  InferenceEngine get activeEngine => _activeEngine;
+  InferenceEngine get preferredEngine => _engine;
+  InferenceEngine get activeEngine => _engine;
   DetectionRuntimeState get state => _state;
   DetectionFailure? get failure => _failure;
   int get mountGeneration => _mountGeneration;
-  bool get fallbackNoticeVisible =>
-      _temporaryFallback && _fallbackNoticeVisible;
 
   /// The most recently issued start intent, or null when none is pending.
-  ///
-  /// Engines observe this and consume it once by comparing [StartIntent.token]
-  /// with the token they last consumed.
   StartIntent? get pendingStartIntent => _pendingStartIntent;
 
   EngineRuntimeSelection get selection => EngineRuntimeSelection(
-    preferredEngine: _preferredEngine,
-    activeEngine: _activeEngine,
-    fallbackReason: _fallbackReason,
-    canRetryPreferred: _canRetryPreferred,
-    isTemporaryFallback: _temporaryFallback,
+    preferredEngine: _engine,
+    activeEngine: _engine,
+    fallbackReason: null,
+    canRetryPreferred: false,
+    isTemporaryFallback: false,
   );
 
   /// Issues a one-shot start intent and returns it.
@@ -138,9 +118,8 @@ class EngineCoordinator extends ChangeNotifier {
   /// Whether an automatic entry start should be issued for the current state.
   ///
   /// Only the initial [DetectionRuntimeState.idle] state accepts an automatic
-  /// entry start. Paused, stopped, busy, ready, fallback, and failed states
-  /// reject it: resume, start, retry, and fallback remain explicit
-  /// Detection-local actions.
+  /// entry start. Paused, stopped, busy, ready, and failed states reject it:
+  /// resume, start, and retry remain explicit Detection-local actions.
   bool get acceptsEntryStart => _state == DetectionRuntimeState.idle;
 
   /// Requests an entry start only when the current state is initial idle.
@@ -150,22 +129,6 @@ class EngineCoordinator extends ChangeNotifier {
   StartIntent? requestEntryStartIfIdle() {
     if (_disposed || !acceptsEntryStart) return null;
     return requestStart(StartIntentOrigin.entry);
-  }
-
-  /// Applies an explicit user preference change. This is the only operation
-  /// that changes the preferred engine; temporary fallback never does.
-  void setPreferredEngine(InferenceEngine engine) {
-    if (_disposed || _preferredEngine == engine) return;
-    _preferredEngine = engine;
-    _activeEngine = engine;
-    _automaticFallbackCount = 0;
-    _failure = null;
-    _fallbackReason = null;
-    _canRetryPreferred = false;
-    _temporaryFallback = false;
-    _fallbackNoticeVisible = false;
-    _remount();
-    _publish(DetectionRuntimeState.idle);
   }
 
   void reportState(
@@ -184,11 +147,7 @@ class EngineCoordinator extends ChangeNotifier {
     if (_disposed) return;
     if (!_acceptsGeneration(generation, sourceGeneration)) return;
     _failure = null;
-    _publish(
-      _temporaryFallback
-          ? DetectionRuntimeState.fallback
-          : DetectionRuntimeState.ready,
-    );
+    _publish(DetectionRuntimeState.ready);
   }
 
   void reportPaused({int? generation, int? sourceGeneration}) => reportState(
@@ -209,9 +168,8 @@ class EngineCoordinator extends ChangeNotifier {
     sourceGeneration: sourceGeneration,
   );
 
-  /// Reports a typed failure and returns whether the active engine should be
-  /// remounted. The first eligible preferred-Ultralytics failure activates
-  /// Custom exactly once.
+  /// Reports a typed failure. There is no second engine to fall back to, so the
+  /// caller keeps the failure surfaced and retries explicitly.
   bool reportFailure(
     DetectionFailure failure, {
     int? generation,
@@ -221,91 +179,18 @@ class EngineCoordinator extends ChangeNotifier {
     if (!_acceptsGeneration(generation, sourceGeneration)) return false;
     _failure = failure;
     telemetry?.recordFailure(failure);
-
-    if (failure.category == DetectionFailureCategory.permissionDenied) {
-      _canRetryPreferred = failure.recoverable;
-      _publish(DetectionRuntimeState.failed);
-      return false;
-    }
-
-    final canFallback =
-        _preferredEngine == InferenceEngine.ultralytics &&
-        _activeEngine == InferenceEngine.ultralytics &&
-        _automaticFallbackCount == 0 &&
-        _isFallbackEligible(failure.category);
-    if (canFallback) {
-      _automaticFallbackCount++;
-      _activeEngine = InferenceEngine.custom;
-      _fallbackReason = failure.userMessage;
-      _canRetryPreferred = true;
-      _temporaryFallback = true;
-      _fallbackNoticeVisible = true;
-      telemetry?.recordFallback(
-        preferredEngine: _preferredEngine,
-        activeEngine: _activeEngine,
-        reason: failure.userMessage,
-      );
-      _remount();
-      _publish(DetectionRuntimeState.fallback);
-      return true;
-    }
-
-    _canRetryPreferred = failure.recoverable;
     _publish(DetectionRuntimeState.failed);
     return false;
   }
 
-  /// Explicitly returns to the persisted preferred engine. The caller should
-  /// remount the screen; automatic fallback is not attempted again until the
-  /// next fresh session or an explicit preference change.
-  bool retryPreferred() {
-    if (_disposed || !_canRetryPreferred) return false;
-    _activeEngine = _preferredEngine;
-    _failure = null;
-    _fallbackReason = null;
-    _canRetryPreferred = false;
-    _temporaryFallback = false;
-    _fallbackNoticeVisible = false;
-    _remount();
-    _publish(DetectionRuntimeState.startingCamera);
-    return true;
-  }
-
-  /// Recreates the active engine without changing the preferred engine or
-  /// fallback budget. This is used for settings that are applied to a newly
-  /// mounted camera/model instance, such as detection confidence.
+  /// Recreates the active engine without changing the selection. This is used
+  /// for settings that are applied to a newly mounted camera/model instance,
+  /// such as detection confidence.
   bool restartActiveEngine() {
     if (_disposed) return false;
     _failure = null;
     _remount();
-    _publish(
-      _temporaryFallback
-          ? DetectionRuntimeState.fallback
-          : DetectionRuntimeState.startingCamera,
-    );
-    return true;
-  }
-
-  /// Keeps Custom active after the user has acknowledged the fallback.
-  bool useCustomForNow() {
-    if (_disposed) return false;
-    if (_activeEngine == InferenceEngine.custom) {
-      _failure = null;
-      _canRetryPreferred = true;
-      _temporaryFallback = true;
-      _fallbackReason ??= 'The recommended engine is unavailable.';
-      _fallbackNoticeVisible = false;
-      _publish(DetectionRuntimeState.fallback);
-      return true;
-    }
-    _activeEngine = InferenceEngine.custom;
-    _failure = null;
-    _fallbackReason ??= 'The recommended engine is unavailable.';
-    _canRetryPreferred = true;
-    _temporaryFallback = true;
-    _fallbackNoticeVisible = false;
-    _remount();
-    _publish(DetectionRuntimeState.fallback);
+    _publish(DetectionRuntimeState.startingCamera);
     return true;
   }
 
@@ -318,14 +203,6 @@ class EngineCoordinator extends ChangeNotifier {
     if (_disposed) return;
     _failure = null;
     _publish(DetectionRuntimeState.stopped);
-  }
-
-  /// Acknowledges the fallback explanation without changing the active or
-  /// persisted engine selection.
-  void acknowledgeFallback() {
-    if (_disposed || !_fallbackNoticeVisible) return;
-    _fallbackNoticeVisible = false;
-    notifyListeners();
   }
 
   void disposeCoordinator() {
@@ -343,29 +220,15 @@ class EngineCoordinator extends ChangeNotifier {
     super.dispose();
   }
 
-  static bool _isFallbackEligible(DetectionFailureCategory category) =>
-      switch (category) {
-        DetectionFailureCategory.modelLoading ||
-        DetectionFailureCategory.cameraInitialization ||
-        DetectionFailureCategory.cameraBind ||
-        DetectionFailureCategory.nativeInitialization ||
-        DetectionFailureCategory.inference ||
-        DetectionFailureCategory.workerExited ||
-        DetectionFailureCategory.timeout => true,
-        DetectionFailureCategory.permissionDenied ||
-        DetectionFailureCategory.unavailable ||
-        DetectionFailureCategory.unknown => false,
-      };
-
   void _remount() {
     _mountGeneration++;
     _latestWorkerGenerationByMount.clear();
   }
 
   /// [generation] identifies the mounted child screen. [sourceGeneration]
-  /// identifies a Custom inference worker within that screen. They are
-  /// deliberately independent: remounting can reuse worker generation values,
-  /// and a worker restart must not be treated as a new child mount.
+  /// identifies a native worker within that screen. They are deliberately
+  /// independent: remounting can reuse worker generation values, and a worker
+  /// restart must not be treated as a new child mount.
   bool _acceptsGeneration(int? generation, int? sourceGeneration) {
     if (generation != null && generation != _mountGeneration) return false;
     if (sourceGeneration == null) return true;

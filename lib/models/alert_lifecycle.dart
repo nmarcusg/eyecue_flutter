@@ -198,8 +198,8 @@ class AlertCounters {
 
 /// Stable identity of one required alert-latency interval.
 ///
-/// The start anchor for the "received" intervals is engine-specific:
-/// analysis receipt for Custom and result receipt for Ultralytics.
+/// The start anchor for the "received" intervals is the app-side result
+/// receipt, which is the first observable point for the native engine.
 enum AlertLatencyInterval {
   receivedToAccepted,
   acceptedToStarted,
@@ -208,17 +208,13 @@ enum AlertLatencyInterval {
 
   String label(InferenceEngine engine) => switch (this) {
     AlertLatencyInterval.receivedToAccepted =>
-      engine == InferenceEngine.custom
-          ? 'Analysis received → detection accepted'
-          : 'Result received → detection accepted',
+      'Result received → detection accepted',
     AlertLatencyInterval.acceptedToStarted =>
       'Detection accepted → alert started',
     AlertLatencyInterval.submittedToStarted =>
       'Alert submitted → alert started',
     AlertLatencyInterval.receivedToStarted =>
-      engine == InferenceEngine.custom
-          ? 'Analysis received → alert started'
-          : 'Result received → alert started (app-side / post-inference)',
+      'Result received → alert started (app-side / post-inference)',
   };
 }
 

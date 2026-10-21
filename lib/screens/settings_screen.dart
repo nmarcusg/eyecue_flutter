@@ -170,7 +170,7 @@ class SettingsScreen extends StatelessWidget {
                                           ),
                                         ),
                                         subtitle: Text(
-                                          'Use the recommended native engine for normal detection.',
+                                          'The native engine used for detection.',
                                         ),
                                       ),
                                       RadioListTile<InferenceEngine>(
@@ -189,41 +189,6 @@ class SettingsScreen extends StatelessWidget {
                                               .description,
                                         ),
                                         value: InferenceEngine.ultralytics,
-                                      ),
-                                      const ListTile(
-                                        contentPadding: EdgeInsets.symmetric(
-                                          horizontal: kSpace16,
-                                        ),
-                                        title: Text(
-                                          'Advanced / compatibility',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          'Custom EyeCue is slower and retained for recovery and testing.',
-                                        ),
-                                      ),
-                                      // The Custom EyeCue option is a direct
-                                      // child row of the section, so it shares
-                                      // the parent title's leading edge
-                                      // (kSpace16) like the other direct child
-                                      // rows. Only its sensitivity sub-options
-                                      // are indented (see _SensitivityControls).
-                                      RadioListTile<InferenceEngine>(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: kSpace16,
-                                            ),
-                                        controlAffinity:
-                                            ListTileControlAffinity.trailing,
-                                        title: Text(
-                                          InferenceEngine.custom.label,
-                                        ),
-                                        subtitle: Text(
-                                          InferenceEngine.custom.description,
-                                        ),
-                                        value: InferenceEngine.custom,
                                       ),
                                     ],
                                   ),
@@ -369,9 +334,9 @@ class _SensitivityControlsState extends State<_SensitivityControls> {
           },
           child: Column(
             children: [
-              // The sensitivity presets are sub-options of the Custom EyeCue
-              // engine option, so their text is indented to the right of the
-              // parent row using the existing spacing token. The indent is
+              // The sensitivity presets are sub-options of the engine option,
+              // so their text is indented to the right of the parent row using
+              // the existing spacing token. The indent is
               // applied through contentPadding (not a wrapping Padding) so the
               // trailing radio controls keep the same horizontal position as
               // the other radios and stay vertically aligned with each other.

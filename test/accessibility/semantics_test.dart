@@ -42,14 +42,14 @@ List<RuntimeSample> sampleRuntimeSamples() {
       latencyMs: 30,
       inferenceFps: 10,
       objectCount: 1,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     ),
     RuntimeSample(
       timestamp: DateTime(2026, 1, 1, 0, 0, 1),
       latencyMs: 50,
       inferenceFps: 20,
       objectCount: 2,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     ),
   ];
 }
@@ -768,7 +768,6 @@ void main() {
         // a selected state and a tap action from the widget itself.
         for (final label in const [
           'Ultralytics',
-          'Custom EyeCue',
           'More detections',
           'Balanced',
           'Fewer false alerts',
