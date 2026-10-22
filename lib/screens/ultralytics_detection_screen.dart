@@ -448,12 +448,24 @@ class _UltralyticsDetectionScreenState
     if (mounted) setState(() {});
   }
 
+  /// Runs only while a live depth map can go stale (detection active, not
+  /// paused, MDE on).
   void _startFreshnessTimer() {
     _freshnessTimer?.cancel();
+    _freshnessTimer = null;
+    if (!_detectionActive || _paused || !_mdeEnabled) return;
     _freshnessTimer = Timer.periodic(
       const Duration(milliseconds: 500),
-      (_) => _applyOverlayVisibility(),
+      (_) => _refreshOverlayFreshness(),
     );
+  }
+
+  /// Hides a heatmap whose map went stale while no detection frame arrived to
+  /// rebuild the viewport for it.
+  void _refreshOverlayFreshness() {
+    final before = _heatmapVisible;
+    _applyOverlayVisibility();
+    if (before != _heatmapVisible && mounted) setState(() {});
   }
 
   Future<void> _loadLabels() async {
@@ -489,6 +501,7 @@ class _UltralyticsDetectionScreenState
       _depth.retry();
       _resolveRotation();
     }
+    _startFreshnessTimer();
     _applyOverlayVisibility();
     if (mounted) setState(() {});
   }
@@ -639,6 +652,7 @@ class _UltralyticsDetectionScreenState
     // Stop the depth cadence and drop queued frames while paused.
     _depth.stop();
     if (mounted) setState(() => _paused = true);
+    _startFreshnessTimer();
     _setRuntimeState(DetectionRuntimeState.paused);
     await _tts.speak('Detection paused', urgent: true);
   }
@@ -647,8 +661,8 @@ class _UltralyticsDetectionScreenState
     if (!_detectionActive || !_paused) return;
     await _haptics.lightTick();
     await _controller.resume();
-    _startFreshnessTimer();
     if (mounted) setState(() => _paused = false);
+    _startFreshnessTimer();
     _setRuntimeState(DetectionRuntimeState.ready);
     await _tts.speak('Detection resumed', urgent: true);
   }
