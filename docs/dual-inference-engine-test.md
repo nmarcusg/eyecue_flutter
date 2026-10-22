@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # EyeCue — Custom vs Ultralytics Test
 
 > **Test totals in this document are historical.** They predate the Workstream 1

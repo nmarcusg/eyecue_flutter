@@ -1,15 +1,38 @@
 # Model assets
 
-This record describes the metadata-enriched TFLite artifact used by both EyeCue
-inference engines. The metadata suffix is packaging-only: the generated file
-starts with the exact bytes of the base FlatBuffer and adds one deterministic
-stored ZIP entry named `metadata.json`.
+This record describes the metadata-enriched TFLite artifact used by the single
+Ultralytics detection engine, and the depth model used for optional metric
+distance. The metadata suffix is packaging-only: the generated file starts with
+the exact bytes of the base FlatBuffer and adds one deterministic stored ZIP
+entry named `metadata.json`.
+
+The base (metadata-free) graph is **no longer vendored**; it must be supplied
+explicitly when regenerating:
+
+```
+dart run tool/package_ultralytics_metadata.dart --input=<base>.tflite
+dart run tool/package_ultralytics_metadata.dart --check --input=<base>.tflite
+```
+
+## Depth model (metric distance)
+
+| Field | Value |
+|---|---|
+| Model ID | `yolo26n-depth` |
+| Android artifact | `yolo26n-depth_w8a32.tflite` |
+| Source | plugin-pinned GitHub release `v0.6.6` |
+| Cache | `<app documents>/mobile-standard-v1/` |
+| Loaded by | `MonocularDepthEstimator` (second `YOLO` instance, `YOLOTask.depth`) |
+| Vendored in repo | no (downloaded on first use; offline degrades to bbox distance) |
+
+Depth values are metres as produced by the model; they are **uncalibrated**.
+See [`mde-integration.md`](mde-integration.md).
 
 ## Artifact record
 
 | Field | Value |
 |---|---|
-| Base graph | [`assets/yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite) |
+| Base graph | not vendored (supply with `--input`) |
 | Runtime artifact | [`assets/yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite) |
 | Labels source | [`assets/labels.txt`](../assets/labels.txt) |
 | Packaging status | generated |

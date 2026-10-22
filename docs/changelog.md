@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-10-21 — Monocular depth estimation; single engine
+
+### Added
+- Optional metric distance from the official `yolo26n-depth` model, run as a
+  second `ultralytics_yolo` instance on the streamed analysis JPEG; see
+  [`mde-integration.md`](mde-integration.md).
+- `DistanceEstimationMode` (`monocularDepth` default, `boundingBoxApproximation`)
+  plus independent `showBoundingBoxes` / `showDepthHeatmap` preferences and the
+  Settings "Distance & Overlays" card; settings schema `3 → 4`.
+- Pure depth helpers ([`depth_distance_service.dart`](../lib/services/depth_distance_service.dart)),
+  the scheduler/estimator ([`monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart)),
+  and the rotated centre-crop heatmap widget
+  ([`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart)).
+- Metric distance on `DetectionInfo` (`estimatedMeters`, `distanceSource`,
+  `distanceLabel`) mapped onto the existing proximity bands; speech says
+  "about N m" when a metric estimate exists.
+- Non-blocking degraded path (model load failure, offline, stale map, geometry
+  change, GPU failure after one CPU retry) with a banner and retry.
+
+### Removed
+- The Custom EyeCue engine and its Dart/TFLite runtime, `tflite_flutter`, the
+  Gradle classic-LiteRT native-library workaround, the `yolov8n` base/INT8
+  assets, the forensic tooling, and the two-engine coordinator fallback APIs.
+- `InferenceEngine.custom`; a persisted legacy value now loads as
+  `ultralytics`.
+
+### Verified
+- `dart format` clean; `flutter analyze` shows only 4 pre-existing issues;
+  `flutter test` **452 passing, 1 pre-existing failure**; `flutter build apk
+  --release` succeeds (82.9 MB, no `libtensorflowlite_jni.so` in the APK).
+- **No device run.** Depth accuracy, on-device latency/FPS, thermal behaviour
+  and the manual matrix in [`mde-integration.md`](mde-integration.md) remain
+  unverified.
+
+---
+
 ## Unreleased — Alert-Latency Telemetry (Workstream 2)
 
 ### Added
