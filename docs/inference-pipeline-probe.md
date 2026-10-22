@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Inference Pipeline Probe — "Objects: 0" Forensic Investigation
 
 > **Status:** Historical investigation record. No pipeline behavior was changed

@@ -1,7 +1,30 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-10-17 (Workstream 1 documentation sync; the PD1–PD3 revision date below is historical)
-> See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
+> **Last Updated:** 2026-10-21 (MDE integration; the PD1–PD3 and dual-engine notes below are historical)
+> See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
+
+## Monocular depth estimation (MDE)
+
+- **Metres are uncalibrated estimates.** The depth model was not calibrated per
+  phone or lens. Research-grade distance measurement requires calibration and is
+  out of scope.
+- **Device rotation is approximated.** The plugin exposes no rotation angle to
+  Dart and Flutter reports only portrait/landscape, so `deviceDegrees` is
+  `0`/`90`. A 180° turn and landscape-left vs landscape-right cannot be mapped;
+  if the rotation cannot be resolved the app runs degraded (bbox distance, no
+  heatmap).
+- **First depth use needs network.** `yolo26n-depth` is downloaded on first use
+  into `<documents>/mobile-standard-v1/`. Offline first run degrades to the
+  bounding-box estimator; it never blocks detection.
+- **Unmeasured on device.** Depth latency, achieved cadence, thermal impact,
+  detection FPS and depth accuracy have not been measured; the 500 ms interval
+  is a configured floor, not an observed rate.
+- **Stale depth hides the heatmap.** Maps older than 1000 ms or produced for a
+  different geometry are discarded for presentation and distance fall back to
+  the box-height heuristic.
+- **Box/heatmap switches are presentation only.** Hiding boxes does not stop
+  detection; hiding the heatmap does not stop depth inference; only
+  `boundingBoxApproximation` stops it.
 
 ## Current Blockers
 
