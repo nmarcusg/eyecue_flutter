@@ -103,10 +103,8 @@ class MonocularDepthEstimator {
   }) {
     if (_disposed || _modelLoadFailed) return;
     if (jpeg.isEmpty || uprightWidth <= 0 || uprightHeight <= 0) return;
-    if (_pendingJpeg != null && _pendingRotation != rotationDegrees) {
-      // Geometry changed before the queued frame ran: drop the old one.
-      _pendingJpeg = null;
-    }
+    // The slot is replaced as a unit, so a queued frame is always paired with
+    // the geometry it was submitted with.
     _pendingJpeg = jpeg;
     _pendingTimestampMs = timestampMs;
     _pendingRotation = rotationDegrees;
@@ -228,9 +226,12 @@ class MonocularDepthEstimator {
   }
 
   /// Re-arms a previously failed model load (used by the degraded retry).
+  ///
+  /// A loaded instance keeps its accelerator: a CPU instance stays CPU, so the
+  /// retry cannot relabel it as GPU without reloading.
   void retry() {
     _modelLoadFailed = false;
-    _useGpu = true;
+    if (_yolo == null) _useGpu = true;
     state.value = _yolo == null ? DepthRunState.idle : DepthRunState.ready;
   }
 
