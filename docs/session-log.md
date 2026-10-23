@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-10-23 — CADENCE-C7 documentation of configurable model cadence
+
+### Context
+Documentation for the configurable inference cadence work (settings, policy,
+runtime wiring, telemetry schema 3, manual-upload permission) on
+`feat/granular-inference-cadence` above `b4d306e`. No `lib/` behaviour, test
+assertion, telemetry schema, export key, manifest permission, Supabase function
+or settings value was changed.
+
+### Changed
+- README, architecture, MDE integration, telemetry data dictionary and
+  model-assets records now describe the single Ultralytics engine, the two
+  bundled models, the cadence settings/policy and export schema 3.
+- Stale statements (Custom engine availability, depth download, schema v2,
+  `CAMERA`-only manifest, unexecuted tests) were corrected or explicitly marked
+  historical.
+- `tool/package_ultralytics_metadata.dart` no longer overwrites
+  `docs/model-assets.md` by default; the document is hand-maintained and the
+  tool writes a report only with an explicit `--report=<path>`.
+
+### Verified
+- `flutter analyze --no-pub`: 4 pre-existing issues.
+- `flutter test --no-pub`: 527 passing, 1 failing
+  (`tts_service_test.dart` reconciliation timeout, pre-existing on `dev@94f74d8`).
+- No build, device or measurement was run; no cadence/FPS claim is made.
+
+---
+
 ## 2026-10-21 — MDE integration and Custom engine removal
 
 ### Context
@@ -96,6 +124,9 @@ Workstream 1 recorded nothing between an alert decision and confirmed speech sta
 ### Verified
 - **Static only:** the implementation was reviewed by static inspection and `git diff --check`; no `flutter test`, `flutter analyze`, Gradle, build, emulator, or device command was run.
 - Owning tests were written but not executed, so no passing result is claimed.
+- **Later (2026-10-23):** the Custom engine was removed on 2026-10-21, leaving the
+  four Ultralytics summaries; the export schema is now 3 and the suite has since
+  run (527 passing, 1 known pre-existing failure).
 - Physical audible-warning latency remains unmeasured.
 
 ### Known limitations

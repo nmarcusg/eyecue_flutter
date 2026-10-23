@@ -9,9 +9,9 @@
 > (see [`architecture.md`](architecture.md#speech-scheduling-workstream-1)). This
 > document remains valid as the **benchmark protocol** and as dated evidence.
 >
-> **Measurement boundary:** alert-latency telemetry now exists in the unreleased
-> Workstream 2 candidate (bounded lifecycle records, scheduler counters, and
-> eight engine/interval summaries), but this protocol still measures only engine
+> **Measurement boundary:** alert-latency telemetry now exists (bounded lifecycle
+> records, scheduler counters, and four Ultralytics interval summaries), but this
+> protocol still measures only engine
 > FPS and per-frame inference latency. Those are internal pipeline metrics and
 > must **not** be reported as audible-warning latency; the Ultralytics alert
 > interval covers the `app-side / post-inference` path only. Physical latency

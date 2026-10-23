@@ -112,6 +112,10 @@ duplicate labels and requires exactly 80 entries, so class index 41 resolves to
 Regenerate or validate with:
 
 ```text
-dart run tool/package_ultralytics_metadata.dart
-dart run tool/package_ultralytics_metadata.dart --check
+dart run tool/package_ultralytics_metadata.dart --input=<base>.tflite
+dart run tool/package_ultralytics_metadata.dart --check --input=<base>.tflite
 ```
+
+This document is hand-maintained. The packaging tool now only writes an optional
+measurement report when `--report=<path>` is passed explicitly, so running it
+never replaces the depth and packaging sections above.

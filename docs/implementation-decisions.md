@@ -4,6 +4,8 @@
 
 This document records important engineering decisions made during the development of EyeCue. Each entry captures the decision, context, alternatives considered, and consequences.
 
+> **Historical scope:** Decisions 1–10 and the Custom-engine discussion describe the Dart/TFLite pipeline removed on 2026-10-21. They are retained as the rationale record for that work, not as current runtime documentation.
+
 ---
 
 ## Decision 1: Persistent Inference Isolate
@@ -170,6 +172,6 @@ This document records important engineering decisions made during the developmen
   - Exactly one in-flight utterance and one pending request; preemption only for imminent safety and for distinct approaching tracks at equal priority.
   - Wayfinding is advisory: idle-only acceptance, never queued behind Detection, separate confirmed-start anti-repeat state.
   - Parked decisions are revalidated semantically (`shouldSpeakPending`) so a newer accepted state discards them only when it already covers them; a genuine escalation is retained. Escalation covers risk tier, `stable/unknown` to `approaching`, proximity-band increase, centre entry, and size growth.
-  - Tests were written for the scheduler and policy but were **not executed** after the relocation onto `origin/dev`; no pass claim is made.
-  - Alert-latency telemetry was added in the unreleased Workstream 2 candidate (bounded lifecycle records, cumulative scheduler counters, eight engine/interval summaries, schema-v2 export); the Ultralytics interval is `app-side / post-inference` only, per-frame inference timing must not be presented as audible-warning latency, and the owning tests were written but not executed.
+  - The scheduler and policy tests run in the current suite (`flutter test --no-pub`: 527 passing, 1 known pre-existing failure).
+  - Alert-latency telemetry is implemented (bounded lifecycle records, cumulative scheduler counters, four Ultralytics interval summaries, schema-3 export); the Ultralytics interval is `app-side / post-inference` only, per-frame inference timing must not be presented as audible-warning latency, and the owning tests run in the current suite.
   - Residual limitation: a sufficiently late native callback after the bounded quiet period cannot be distinguished without native utterance IDs. Device callback ordering, cancellation timing and audible-warning latency remain unverified, so EyeCue is **not** proven safe for independent navigation.

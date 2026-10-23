@@ -82,6 +82,40 @@ YOLOView (detect)  ──onStreamingData──▶ detections + upright dims + JP
 Details, the settings × behaviour matrix, licences and unmeasured performance:
 [`mde-integration.md`](mde-integration.md).
 
+### Inference cadence
+
+Detection and depth share one camera session and two bundled models:
+
+- **Engine and models:** one `ultralytics_yolo` detection pipeline plus the
+  optional `yolo26n-depth` instance. Both ship as Flutter assets
+  (`assets/yolov8n_int8_new_metadata.tflite`,
+  `assets/yolo26n-depth_w8a32.tflite`); no model, label or metadata is
+  downloaded at runtime.
+- **Detection cadence:** the streaming config's `inferenceFrequency` is set from
+  the resolved detector rate (`null` means Automatic, the previous uncapped
+  native behaviour). A settings change re-applies it through
+  `setStreamingConfig` without remounting the native view; only a change to the
+  effective rate or to `includeOriginalImage` triggers the live re-apply.
+- **Depth cadence:** [`MonocularDepthEstimator.configure`](../lib/services/monocular_depth_estimator.dart)
+  re-arms exactly one latest-frame timer with one pending slot and one in-flight
+  request. It never fires from the detection callback, so a slow depth pass
+  drops frames instead of queueing them.
+- **Policy:** [`InferenceCadence.resolve`](../lib/services/inference_cadence.dart)
+  is pure and derives effective values without rewriting the stored request.
+  Detection is Automatic (default) or 1–30 Hz; depth is 2–10 Hz (default 2 Hz,
+  the earlier 500 ms floor). Low power mode caps detection at 4 Hz and depth at
+  2 Hz; a numeric detector rate also caps depth (source-limited); the
+  bounding-box distance mode disables depth work entirely.
+- **Requested is not observed:** the stored targets are requests, not throughput
+  guarantees. Each runtime sample exports the requested and effective rates, the
+  low-power/source-limit flags, and the measured depth cadence and latency.
+  Telemetry export schema is **3**.
+- **Network:** the main manifest declares `CAMERA` and `INTERNET`; `INTERNET`
+  exists only for the optional manual research-telemetry upload. Detection and
+  depth never use it.
+
+No FPS, cadence or latency figure is claimed without a device run.
+
 ### Historical: dual-engine boundary (removed 2026-10-21)
 
 EyeCue deliberately retains two independent inference pipelines:
@@ -110,7 +144,7 @@ The coordinator is also the **single app-shell-owned, user-facing Detection
 lifecycle/status source**. [`app_shell.dart`](../lib/navigation/app_shell.dart)
 constructs exactly one coordinator for the shell lifetime and injects it into
 Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart).
-Home, Custom Detection, and Ultralytics Detection all render visible status
+Home and the Detection screen render visible status
 (**Preparing / Ready / Paused / Stopped / Unavailable**) from the same
 coordinator snapshot via a shared mapping. Engine-local booleans remain only for
 camera/controller/inference mechanics and never select user-facing lifecycle or
@@ -162,10 +196,18 @@ are out of scope and unverified.
    approximate-proximity, tracking, TTS, haptic, correction, telemetry, and
    accessibility behavior as the Custom path.
 4. Engine-specific lifecycle and failure events are reported to the
-   coordinator; a recoverable Ultralytics startup failure can trigger the
-   bounded one-shot Custom fallback without changing the saved preference.
+   coordinator, which surfaces the shared unavailable/error state. The former
+   one-shot Custom fallback no longer exists because only one engine remains.
 
 ## Folder Structure
+
+> **Historical entries:** the tree and component table below still list the files
+> of the removed Custom engine (`detection_screen.dart`,
+> `inference_isolate.dart`, `inference_worker_lifecycle.dart`,
+> `model_metadata.dart`, `tensor_rotation.dart`, `png_encoder.dart`,
+> `forensic_log.dart`) and the dependencies that served it. The current runtime
+> is the single Ultralytics pipeline described in
+> [Inference cadence](#inference-cadence); `lib/` is authoritative.
 
 ```
 eyecue_flutter/
@@ -304,6 +346,11 @@ eyecue_flutter/
 
 ## AI Pipeline
 
+> **Historical (Custom engine, removed 2026-10-21).** The current detection path
+> is the bundled metadata-enriched artifact described in
+> [Inference cadence](#inference-cadence); the Dart/TFLite preprocessing and
+> post-processing below no longer run.
+
 - **Bundling:** `assets/yolov8n_int8_new_metadata.tflite` is the sole Flutter-bundled runtime model (with `assets/labels.txt`). The base graph `assets/yolov8n_int8_new.tflite` and the v0.2.2 baseline `assets/yolov8n.tflite` remain tracked for tools, tests, and historical comparison but are not declared as app assets.
 - **Current unreleased candidate:** `assets/yolov8n_int8_new_metadata.tflite` — the deterministic metadata-enriched runtime artifact generated from the byte-identical base graph `assets/yolov8n_int8_new.tflite`. It has **FLOAT32 runtime I/O with internally quantized tensors** (classified *Weight-Quantized*), input `[1, 3, 640, 640]` (NCHW), and output `[1, 84, 8400]` (84 = 4 box coords + 80 COCO classes, 8400 anchors). The artifact is structurally validated, committed, bundled in the debug APK, and has initial target-device evidence: the exact APK installed successfully and a short live run completed 65 XNNPACK-labelled frames on the Snapdragon 695 phone. The calculated latency mean was 164.8 ms (median 157.7 ms; range 150.2–377.3 ms).
 - **Stable v0.2.2 baseline:** `assets/yolov8n.tflite` — FLOAT32 I/O with INT8 weights, input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`; tracked, not bundled.
@@ -315,6 +362,10 @@ eyecue_flutter/
 - **Ultralytics path:** `YOLOView` uses the same metadata-enriched runtime artifact and authoritative COCO labels through the native CameraX/LiteRT pipeline. Its native callbacks are normalized by the adapter before entering the shared assistive layer. Delegate selection and long-duration native stability still require device evidence.
 
 ## Runtime Model Introspection
+
+> **Historical (Custom engine, removed 2026-10-21).** The Ultralytics plugin
+> performs its own preprocessing and post-processing and exposes no
+> `Interpreter` or tensor metadata to Dart.
 
 The app is **self-describing**: after `Interpreter.fromBuffer()`, the isolate builds an immutable [`ModelMetadata`](../lib/models/model_metadata.dart) from:
 
@@ -333,7 +384,7 @@ From this, [`ModelType`](../lib/models/model_metadata.dart) is classified — **
 
 The metadata drives every pipeline decision: buffer dtype, whether to quantize input pixels, and whether to dequantize output values. It is shipped to the main isolate and logged at startup. If the runtime metadata ever disagrees with the filename, the runtime metadata wins and the discrepancy is logged.
 
-## Important Architectural Principles
+## Historical Architectural Principles (Custom engine, removed 2026-10-21)
 
 1. **Persistent Custom Inference Isolate:** The Custom engine uses one `Isolate.spawn()` at startup and one `Interpreter` instance for the active service lifetime. It never creates/destroys an interpreter per frame; the Ultralytics engine retains its independent native runtime.
 2. **Frame Dropping:** Boolean `_isInferring` gate drops frames when the inference worker is busy. No queueing — deterministic latency. The gate is released on isolate errors so the pipeline can recover.
@@ -356,7 +407,7 @@ The metadata drives every pipeline decision: buffer dtype, whether to quantize i
 
 ## Speech Scheduling (Workstream 1)
 
-The speech layer is a serialized safety arbiter, not a fire-and-forget speaker. It applies to both engines, because both funnel post-inference results through [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart).
+The speech layer is a serialized safety arbiter, not a fire-and-forget speaker. Detection results enter it through [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart).
 
 ### Lifecycle model
 
@@ -398,6 +449,6 @@ States are `submitted`, `started`, `completed`, `cancelled`, `dropped`, `failed`
 
 ### Verification status
 
-- Automated coverage exists for this scheduler ([`tts_service_test.dart`](../test/services/tts_service_test.dart) and [`alert_policy_test.dart`](../test/services/alert_policy_test.dart)) but was **not executed** after the relocation onto `origin/dev`; no result is claimed here.
+- Automated coverage exists for this scheduler ([`tts_service_test.dart`](../test/services/tts_service_test.dart) and [`alert_policy_test.dart`](../test/services/alert_policy_test.dart)); the suite runs on this branch (`flutter test --no-pub`: 527 passing, 1 known pre-existing `tts_service_test` failure).
 - Real Android lifecycle-callback ordering, cancellation latency and audible-warning latency are **unverified on device**.
-- Alert-latency telemetry is implemented in the unreleased Workstream 2 candidate: bounded lifecycle records, cumulative scheduler counters, and eight Custom/Ultralytics interval summaries exported in schema v2 (see [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md)). It records app-side scheduler signals only; the Ultralytics interval is `app-side / post-inference`, and physical audible-warning latency remains **unmeasured on device**. Its tests were written but **not executed**, so per-frame inference timing must **not** be described as speech latency.
+- Alert-latency telemetry is implemented as bounded lifecycle records, cumulative scheduler counters, and four Ultralytics interval summaries exported in schema 3 (see [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md)). It records app-side scheduler signals only; the Ultralytics interval is `app-side / post-inference`, and physical audible-warning latency remains **unmeasured on device**. The suite runs on this branch (`flutter test --no-pub`: 527 passing, 1 known pre-existing `tts_service_test` failure), so per-frame inference timing must still **not** be described as speech latency.

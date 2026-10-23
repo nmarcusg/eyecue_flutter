@@ -4,10 +4,18 @@
 >
 > **Reading the milestones below:** every "Current validation" bullet is relative to **its own dated section** and describes the repository at that time. None of them validates the merged Workstream 1 state.
 >
-> **Workstream 2 (unreleased, `feat/alert-latency-telemetry`):** alert-latency instrumentation and reporting are implemented — bounded lifecycle records (500), replace-only cumulative scheduler counters, Custom frame anchors versus Ultralytics app-side anchors, eight detection-origin summaries with nearest-rank p50/p95/max/count, schema-v2 JSON/CSV export, and a Logs & Reports section. **Verification status: static only** — owning tests were written but not executed; no analyzer, Gradle, build, emulator/device, or physical audible-latency validation ran. The Ultralytics interval is `app-side / post-inference`, never full inference or end-to-end latency. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
+> **Workstream 2 (unreleased):** alert-latency instrumentation and reporting are implemented — bounded lifecycle records (500), replace-only cumulative scheduler counters, Ultralytics app-side anchors (the Custom engine was removed on 2026-10-21), four detection-origin Ultralytics summaries with nearest-rank p50/p95/max/count, schema-3 JSON/CSV export, and a Logs & Reports section. **Verification status: static suite run** — `flutter analyze --no-pub` shows 4 pre-existing issues and `flutter test --no-pub` gives 527 passing / 1 known pre-existing failure; no build, device, or physical audible-latency validation ran. The Ultralytics interval is `app-side / post-inference`, never full inference or end-to-end latency. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 
-> **Last Updated:** 2026-10-19 (WS4 documentation reconciliation; the Workstream and milestone dates below are historical)
+> **Last Updated:** 2026-10-23 (inference cadence documentation; the Workstream and milestone dates below are historical)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
+
+## Current Unreleased Candidate (2026-10-23) — Configurable Inference Cadence
+
+- ✅ Added persisted detector cadence (Automatic default, or 1–30 Hz) and depth cadence (2–10 Hz, default 2 Hz), settings schema `4 → 5`, with sliders in the Settings "Inference Cadence" card.
+- ✅ Added the pure [`InferenceCadence.resolve`](../lib/services/inference_cadence.dart) policy: low power caps 4 Hz detection / 2 Hz depth, a numeric detector rate caps depth (source-limited), and bounding-box distance mode disables depth.
+- ✅ Detector cadence is applied via `YOLOStreamingConfig.inferenceFrequency` and live re-applied with `setStreamingConfig`; depth cadence re-arms the single latest-frame scheduler.
+- ✅ Telemetry schema **3** adds per-sample requested/effective rates, automatic/low-power/source-limited flags, and observed depth cadence/latency; the manual Supabase upload carries them without a migration.
+- ✅ Current validation: `flutter analyze --no-pub` shows the 4 pre-existing issues and `flutter test --no-pub` gives **527 passing, 1 known pre-existing failure**. No build, device run or cadence measurement was performed.
 
 ## Current Unreleased Candidate (2026-09-29) — Presentation-Only Visual Redesign Closeout
 
