@@ -47,6 +47,15 @@ void main() {
       objectCount: 1,
       engine: InferenceEngine.ultralytics,
       confidenceThreshold: 0.4,
+      requestedDetectionHz: 8,
+      effectiveDetectionHz: 5,
+      requestedDepthHz: 4,
+      effectiveDepthHz: 2,
+      depthObservedHz: 1.5,
+      depthLatencyMs: 90,
+      depthStatus: 'gpu',
+      lowPowerClamped: true,
+      sourceLimited: true,
     );
     service.recordFailure(
       DetectionFailure(
@@ -131,7 +140,7 @@ void main() {
     final session = decoded['session'] as Map<String, dynamic>;
     final failure = (decoded['failures'] as List).single as Map;
 
-    expect(decoded['schemaVersion'], 2);
+    expect(decoded['schemaVersion'], 3);
     expect(decoded['appVersion'], '1.2.3+4');
     expect(session['id'], 'session-test');
     expect(decoded['settings']['detectionConfidence'], 0.4);
@@ -223,7 +232,7 @@ void main() {
     expect(restored.alertSummaries, isEmpty);
     expect(restored.alertCounters['dropped'], 0);
     expect(restored.alertCounters['rejectedByReason'], isEmpty);
-    expect(TelemetryExport.schemaVersion, 2);
+    expect(TelemetryExport.schemaVersion, 3);
   });
 
   test('schema-v2 JSON round-trips alert payloads exactly', () {
@@ -282,6 +291,134 @@ void main() {
     expect(csv, isNot(contains('/private/path should not export')));
   });
 
+  test('sample JSON rows carry the ten inference cadence keys', () {
+    final service = TelemetryExportService(clock: () => timestamp);
+    final decoded = jsonDecode(service.toJson(telemetry: telemetry())) as Map;
+    final sample = (decoded['samples'] as List).single as Map;
+
+    expect(sample['requestedDetectionHz'], 8);
+    expect(sample['detectionCadenceAutomatic'], isFalse);
+    expect(sample['effectiveDetectionHz'], 5);
+    expect(sample['requestedDepthHz'], 4);
+    expect(sample['effectiveDepthHz'], 2);
+    expect(sample['depthObservedHz'], 1.5);
+    expect(sample['depthLatencyMs'], 90);
+    expect(sample['depthStatus'], 'gpu');
+    expect(sample['lowPowerClamped'], isTrue);
+    expect(sample['sourceLimited'], isTrue);
+  });
+
+  test('automatic and unobserved cadence values stay null, never zero', () {
+    final service = TelemetryService(
+      clock: () => timestamp,
+      sessionId: 'automatic-session',
+    );
+    addTearDown(service.dispose);
+    service.recordSample(
+      latencyMs: 10,
+      inferenceFps: 5,
+      objectCount: 0,
+      engine: InferenceEngine.ultralytics,
+      detectionCadenceAutomatic: true,
+    );
+
+    final exporter = TelemetryExportService(clock: () => timestamp);
+    final decoded = jsonDecode(exporter.toJson(telemetry: service)) as Map;
+    final sample = (decoded['samples'] as List).single as Map;
+
+    expect(sample['requestedDetectionHz'], isNull);
+    expect(sample['detectionCadenceAutomatic'], isTrue);
+    expect(sample['effectiveDetectionHz'], isNull);
+    expect(sample['depthObservedHz'], isNull);
+    expect(sample['depthLatencyMs'], isNull);
+    expect(sample['depthStatus'], isNull);
+
+    // The same absent values are empty CSV cells, not zeros.
+    final header = exporter
+        .toCsv(telemetry: service)
+        .split('\n')
+        .first
+        .split(',');
+    final sampleRow = exporter
+        .toCsv(telemetry: service)
+        .split('\n')
+        .firstWhere((line) => line.startsWith('"sample"'))
+        .split(',');
+    for (final column in [
+      'requested_detection_hz',
+      'effective_detection_hz',
+      'depth_observed_hz',
+      'depth_latency_ms',
+      'depth_status',
+    ]) {
+      expect(sampleRow[header.indexOf('"$column"')], '""');
+    }
+  });
+
+  test('CSV appends cadence columns and keeps rows aligned', () {
+    final service = TelemetryExportService(clock: () => timestamp);
+    final lines = service.toCsv(telemetry: telemetry()).split('\n');
+    final header = lines.first.split(',');
+    final sampleRow = lines
+        .firstWhere((line) => line.startsWith('"sample"'))
+        .split(',');
+    int column(String name) => header.indexOf('"$name"');
+
+    for (final name in [
+      'requested_detection_hz',
+      'detection_cadence_automatic',
+      'effective_detection_hz',
+      'requested_depth_hz',
+      'effective_depth_hz',
+      'depth_observed_hz',
+      'depth_latency_ms',
+      'depth_status',
+      'low_power_clamped',
+      'source_limited',
+    ]) {
+      expect(column(name), isNot(-1));
+    }
+    expect(sampleRow, hasLength(header.length));
+    expect(sampleRow[column('requested_detection_hz')], '"8"');
+    expect(sampleRow[column('detection_cadence_automatic')], '"false"');
+    expect(sampleRow[column('effective_depth_hz')], '"2"');
+    expect(sampleRow[column('depth_status')], '"gpu"');
+    expect(sampleRow[column('low_power_clamped')], '"true"');
+
+    // Other record types leave every cadence column empty.
+    final failureRow = lines
+        .firstWhere((line) => line.startsWith('"failure"'))
+        .split(',');
+    expect(failureRow, hasLength(header.length));
+    expect(failureRow[column('requested_detection_hz')], '""');
+    expect(failureRow[column('depth_status')], '""');
+  });
+
+  test('a v2-shaped sample without cadence keys exports cleanly', () {
+    final v2Sample = <String, dynamic>{
+      'timestamp': timestamp.toUtc().toIso8601String(),
+      'latencyMs': 42.5,
+      'inferenceFps': 15.0,
+      'objectCount': 1,
+      'engine': 'ultralytics',
+      'confidenceThreshold': 0.4,
+    };
+    final restored = TelemetryExport.fromJson({
+      'schemaVersion': 2,
+      'exportedAt': timestamp.toUtc().toIso8601String(),
+      'appVersion': '2.0.0+2',
+      'session': {'id': 'v2-session', 'start': null, 'durationMs': 0},
+      'settings': <String, dynamic>{},
+      'samples': [v2Sample],
+    });
+
+    expect(restored.samples.single['requestedDetectionHz'], isNull);
+    expect(restored.samples.single['depthStatus'], isNull);
+    // Unchanged rows re-serialize without synthesizing cadence values.
+    expect(restored.toJson()['samples'], [v2Sample]);
+    expect(() => jsonEncode(restored.toJson()), returnsNormally);
+  });
+
   test('writes JSON and CSV to an explicitly supplied directory', () async {
     final directory = await Directory.systemTemp.createTemp('eyecue-export-');
     addTearDown(() => directory.delete(recursive: true));
@@ -298,7 +435,7 @@ void main() {
 
     expect(await jsonFile.exists(), isTrue);
     expect(await csvFile.exists(), isTrue);
-    expect(await jsonFile.readAsString(), contains('"schemaVersion": 2'));
+    expect(await jsonFile.readAsString(), contains('"schemaVersion": 3'));
     expect(await csvFile.readAsString(), contains('record_type'));
   });
 }

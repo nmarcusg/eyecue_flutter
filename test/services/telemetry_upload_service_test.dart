@@ -53,7 +53,7 @@ void main() {
       expect(payload['consent'], {'manualSessionUpload': true});
       expect(payload['study'], metadata.toJson());
       final export = payload['telemetry'] as Map<String, dynamic>;
-      expect(export['schemaVersion'], 2);
+      expect(export['schemaVersion'], 3);
       expect(export.containsKey('images'), isFalse);
       expect(export.containsKey('deviceId'), isFalse);
     },

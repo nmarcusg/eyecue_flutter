@@ -73,6 +73,79 @@ void main() {
     expect(telemetry.averageInferenceFps, 7.5);
   });
 
+  test('stores and serializes the inference cadence configuration', () {
+    telemetry.recordSample(
+      latencyMs: 100,
+      inferenceFps: 10,
+      objectCount: 1,
+      engine: InferenceEngine.ultralytics,
+      requestedDetectionHz: 8,
+      effectiveDetectionHz: 5,
+      requestedDepthHz: 4,
+      effectiveDepthHz: 2,
+      depthObservedHz: 1.5,
+      depthLatencyMs: 90,
+      depthStatus: 'gpu',
+      lowPowerClamped: true,
+      sourceLimited: true,
+    );
+
+    final sample = telemetry.samples.single;
+    expect(sample.requestedDetectionHz, 8);
+    expect(sample.detectionCadenceAutomatic, isFalse);
+    expect(sample.effectiveDetectionHz, 5);
+    expect(sample.requestedDepthHz, 4);
+    expect(sample.effectiveDepthHz, 2);
+    expect(sample.depthObservedHz, 1.5);
+    expect(sample.depthLatencyMs, 90);
+    expect(sample.depthStatus, 'gpu');
+    expect(sample.lowPowerClamped, isTrue);
+    expect(sample.sourceLimited, isTrue);
+
+    final json = sample.toJson();
+    expect(json['requestedDetectionHz'], 8);
+    expect(json['detectionCadenceAutomatic'], isFalse);
+    expect(json['effectiveDetectionHz'], 5);
+    expect(json['requestedDepthHz'], 4);
+    expect(json['effectiveDepthHz'], 2);
+    expect(json['depthObservedHz'], 1.5);
+    expect(json['depthLatencyMs'], 90);
+    expect(json['depthStatus'], 'gpu');
+    expect(json['lowPowerClamped'], isTrue);
+    expect(json['sourceLimited'], isTrue);
+  });
+
+  test('old recordSample call sites keep automatic/unknown as null', () {
+    telemetry.recordSample(
+      latencyMs: 100,
+      inferenceFps: 10,
+      objectCount: 1,
+      engine: InferenceEngine.ultralytics,
+    );
+
+    final json = telemetry.samples.single.toJson();
+    expect(json['requestedDetectionHz'], isNull);
+    expect(json['detectionCadenceAutomatic'], isFalse);
+    expect(json['effectiveDetectionHz'], isNull);
+    expect(json['depthObservedHz'], isNull);
+    expect(json['depthLatencyMs'], isNull);
+    expect(json['depthStatus'], isNull);
+  });
+
+  test('keeps only the newest 500 samples', () {
+    for (var i = 0; i < 520; i++) {
+      telemetry.recordSample(
+        latencyMs: i.toDouble(),
+        inferenceFps: 10,
+        objectCount: 1,
+        engine: InferenceEngine.ultralytics,
+      );
+    }
+    expect(telemetry.samples, hasLength(500));
+    expect(telemetry.samples.first.latencyMs, 20);
+    expect(telemetry.samples.last.latencyMs, 519);
+  });
+
   test('detection frequency buckets per minute', () {
     telemetry.recordDetection(
       detInfo('person', 0),

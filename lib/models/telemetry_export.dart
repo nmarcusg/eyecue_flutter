@@ -7,7 +7,7 @@ import 'alert_lifecycle.dart';
 /// The export is deliberately image-free. Camera frames, forensic PNGs, device
 /// identifiers, and internal file paths are not part of this contract.
 class TelemetryExport {
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
 
   final DateTime exportedAt;
   final String appVersion;

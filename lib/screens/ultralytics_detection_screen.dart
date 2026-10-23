@@ -142,6 +142,26 @@ YOLOStreamingConfig buildStreamingConfig({
   required bool mdeEnabled,
 }) => (hz: cadence.effectiveDetectionHz, includeOriginalImage: mdeEnabled);
 
+/// Depth status recorded with a telemetry sample.
+///
+/// `disabled` wins when depth work is off; the model state then decides
+/// `degraded`/`loading`; a loaded model reports `gpu` or `cpu`. Pure so the
+/// mapping is testable without native models.
+@visibleForTesting
+String depthStatusFor({
+  required bool mdeEnabled,
+  required DepthRunState state,
+  required String? accelerator,
+}) {
+  if (!mdeEnabled) return 'disabled';
+  if (state == DepthRunState.degraded) return 'degraded';
+  if (state == DepthRunState.loading) return 'loading';
+  final accel = accelerator;
+  // No model instance yet, so the accelerator is not known.
+  if (accel == null) return 'loading';
+  return accel == 'gpu' ? 'gpu' : 'cpu';
+}
+
 class UltralyticsDetectionScreen extends StatefulWidget {
   final SettingsService settings;
   final TtsService tts;
@@ -873,7 +893,27 @@ class _UltralyticsDetectionScreenState
     if (mounted) {
       setState(() => _inferenceMs = inferenceMs);
     }
-    _assistive.recordMetrics(latencyMs: inferenceMs, inferenceFps: metrics.fps);
+    final mdeEnabled = _mdeEnabled;
+    _assistive.recordMetrics(
+      latencyMs: inferenceMs,
+      inferenceFps: metrics.fps,
+      cadence: CadenceSample(
+        requestedDetectionHz: _cadence.requestedDetectionHz,
+        detectionCadenceAutomatic: _cadence.requestedDetectionHz == null,
+        effectiveDetectionHz: _cadence.effectiveDetectionHz,
+        requestedDepthHz: _cadence.requestedDepthHz,
+        effectiveDepthHz: _cadence.effectiveDepthHz,
+        depthObservedHz: mdeEnabled ? _depth.observedHz : null,
+        depthLatencyMs: mdeEnabled ? _depth.lastLatencyMs : null,
+        depthStatus: depthStatusFor(
+          mdeEnabled: mdeEnabled,
+          state: _depth.state.value,
+          accelerator: _depth.accelerator,
+        ),
+        lowPowerClamped: _cadence.lowPowerClamped,
+        sourceLimited: _cadence.sourceLimited,
+      ),
+    );
   }
 
   Future<void> _quickScan() async {

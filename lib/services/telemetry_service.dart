@@ -76,6 +76,28 @@ class RuntimeSample {
   final InferenceEngine engine;
   final double confidenceThreshold;
 
+  /// Stored detector target; `null` means Automatic.
+  final int? requestedDetectionHz;
+
+  /// Whether the detector target is Automatic rather than a stored number.
+  final bool detectionCadenceAutomatic;
+
+  /// Cadence the detector may actually run at; `null` means uncapped.
+  final int? effectiveDetectionHz;
+  final int requestedDepthHz;
+  final int effectiveDepthHz;
+
+  /// Observed depth completion cadence; `null` while no frame is measured.
+  final double? depthObservedHz;
+
+  /// Wall-clock milliseconds of the last depth inference; `null` when absent.
+  final int? depthLatencyMs;
+
+  /// `disabled`, `loading`, `gpu`, `cpu`, or `degraded`; `null` when absent.
+  final String? depthStatus;
+  final bool lowPowerClamped;
+  final bool sourceLimited;
+
   const RuntimeSample({
     required this.timestamp,
     required this.latencyMs,
@@ -83,6 +105,16 @@ class RuntimeSample {
     required this.objectCount,
     required this.engine,
     this.confidenceThreshold = 0.25,
+    this.requestedDetectionHz,
+    this.detectionCadenceAutomatic = false,
+    this.effectiveDetectionHz,
+    this.requestedDepthHz = 0,
+    this.effectiveDepthHz = 0,
+    this.depthObservedHz,
+    this.depthLatencyMs,
+    this.depthStatus,
+    this.lowPowerClamped = false,
+    this.sourceLimited = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -92,7 +124,48 @@ class RuntimeSample {
     'objectCount': objectCount,
     'engine': engine.name,
     'confidenceThreshold': confidenceThreshold,
+    'requestedDetectionHz': requestedDetectionHz,
+    'detectionCadenceAutomatic': detectionCadenceAutomatic,
+    'effectiveDetectionHz': effectiveDetectionHz,
+    'requestedDepthHz': requestedDepthHz,
+    'effectiveDepthHz': effectiveDepthHz,
+    'depthObservedHz': depthObservedHz,
+    'depthLatencyMs': depthLatencyMs,
+    'depthStatus': depthStatus,
+    'lowPowerClamped': lowPowerClamped,
+    'sourceLimited': sourceLimited,
   };
+}
+
+/// Inference cadence configuration at sample time.
+///
+/// Passed from the detection screen to the telemetry service so a sample can
+/// explain the cadence that was actually in force. It is a value object, not a
+/// new layer: every field is copied into [RuntimeSample].
+class CadenceSample {
+  final int? requestedDetectionHz;
+  final bool detectionCadenceAutomatic;
+  final int? effectiveDetectionHz;
+  final int requestedDepthHz;
+  final int effectiveDepthHz;
+  final double? depthObservedHz;
+  final int? depthLatencyMs;
+  final String? depthStatus;
+  final bool lowPowerClamped;
+  final bool sourceLimited;
+
+  const CadenceSample({
+    this.requestedDetectionHz,
+    this.detectionCadenceAutomatic = false,
+    this.effectiveDetectionHz,
+    this.requestedDepthHz = 0,
+    this.effectiveDepthHz = 0,
+    this.depthObservedHz,
+    this.depthLatencyMs,
+    this.depthStatus,
+    this.lowPowerClamped = false,
+    this.sourceLimited = false,
+  });
 }
 
 /// A typed runtime failure retained for the export without exposing exception
@@ -274,6 +347,16 @@ class TelemetryService extends ChangeNotifier {
     required int objectCount,
     required InferenceEngine engine,
     double confidenceThreshold = 0.25,
+    int? requestedDetectionHz,
+    bool detectionCadenceAutomatic = false,
+    int? effectiveDetectionHz,
+    int requestedDepthHz = 0,
+    int effectiveDepthHz = 0,
+    double? depthObservedHz,
+    int? depthLatencyMs,
+    String? depthStatus,
+    bool lowPowerClamped = false,
+    bool sourceLimited = false,
   }) {
     _framesProcessed++;
     _samples.add(
@@ -284,6 +367,16 @@ class TelemetryService extends ChangeNotifier {
         objectCount: objectCount,
         engine: engine,
         confidenceThreshold: confidenceThreshold,
+        requestedDetectionHz: requestedDetectionHz,
+        detectionCadenceAutomatic: detectionCadenceAutomatic,
+        effectiveDetectionHz: effectiveDetectionHz,
+        requestedDepthHz: requestedDepthHz,
+        effectiveDepthHz: effectiveDepthHz,
+        depthObservedHz: depthObservedHz,
+        depthLatencyMs: depthLatencyMs,
+        depthStatus: depthStatus,
+        lowPowerClamped: lowPowerClamped,
+        sourceLimited: sourceLimited,
       ),
     );
     if (_samples.length > _maxSamples) {
