@@ -45,6 +45,11 @@ class InferenceCadence {
   /// The depth target exceeds the numeric detector cadence that feeds it.
   final bool sourceLimited;
 
+  /// Scheduling interval for depth inference; `null` when depth work is off.
+  Duration? get depthInterval => depthEnabled && effectiveDepthHz > 0
+      ? Duration(milliseconds: (1000 / effectiveDepthHz).round())
+      : null;
+
   static InferenceCadence resolve({
     required int? requestedDetectionHz,
     required int requestedDepthHz,

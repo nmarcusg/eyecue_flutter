@@ -55,15 +55,16 @@ typedef DepthPredictor =
 /// frames the detection stream delivers.
 ///
 /// cadence: latest-frame-wins with a single pending slot, one in-flight
-/// request, and a 500 ms timer that only starts a predict while idle.
+/// request, and a periodic timer that only starts a predict while idle.
 class MonocularDepthEstimator {
   MonocularDepthEstimator({
     this.onFrame,
     DepthPredictor? predictor,
     this.heatmapBuilder,
     this.modelId = EyeCueModelConfig.depthModelAssetPath,
-    this.minIntervalMs = EyeCueModelConfig.depthMinIntervalMs,
-  }) : _predict = predictor;
+    int minIntervalMs = EyeCueModelConfig.depthMinIntervalMs,
+  }) : _predict = predictor,
+       _intervalMs = minIntervalMs;
 
   /// Bundled asset path of the depth model, resolved by the plugin's
   /// `YOLOModelResolver` through the same asset path detection already uses.
@@ -73,8 +74,19 @@ class MonocularDepthEstimator {
   /// exists. A future model swap must therefore use a NEW filename, or devices
   /// keep loading the stale cached copy.
   final String modelId;
-  final int minIntervalMs;
   final void Function(DepthFrame frame)? onFrame;
+
+  /// Guard range applied by [configure]: a zero or sub-frame period would spin
+  /// the scheduler, and a minute-long period would stall depth entirely.
+  static const int minIntervalFloorMs = 50;
+  static const int minIntervalCeilingMs = 5000;
+
+  static const double _observedHzAlpha = 0.3;
+
+  static int _clampInterval(int ms) =>
+      ms.clamp(minIntervalFloorMs, minIntervalCeilingMs);
+
+  int _intervalMs;
 
   final ValueNotifier<DepthRunState> state = ValueNotifier(DepthRunState.idle);
   final ValueNotifier<DepthFrame?> frame = ValueNotifier(null);
@@ -90,6 +102,10 @@ class MonocularDepthEstimator {
   bool _loggedFirstFrame = false;
 
   Timer? _timer;
+  int? _lastLatencyMs;
+  double? _observedHz;
+  int? _lastCompletionMs;
+  final Stopwatch _clock = Stopwatch()..start();
   Uint8List? _pendingJpeg;
   int _pendingTimestampMs = 0;
   int _pendingRotation = 0;
@@ -104,6 +120,37 @@ class MonocularDepthEstimator {
 
   @visibleForTesting
   bool get debugRunning => _running;
+
+  @visibleForTesting
+  int get debugMinIntervalMs => _intervalMs;
+
+  @visibleForTesting
+  bool get debugTimerActive => _timer != null;
+
+  /// Wall-clock milliseconds of the last completed predict. Survives [stop].
+  int? get lastLatencyMs => _lastLatencyMs;
+
+  /// EMA of the observed completion cadence. Survives [stop].
+  double? get observedHz => _observedHz;
+
+  /// Accelerator of a loaded model instance; null while none exists.
+  String? get accelerator => _yolo == null ? null : (_useGpu ? 'gpu' : 'cpu');
+
+  /// Applies a new interval to the live scheduler.
+  ///
+  /// A queued frame and an in-flight request survive: only the periodic timer
+  /// is replaced, exactly once, and a stopped scheduler stays lazy until the
+  /// next [submitFrame].
+  void configure({required int minIntervalMs}) {
+    final clamped = _clampInterval(minIntervalMs);
+    if (clamped == _intervalMs) return;
+    _intervalMs = clamped;
+    final timer = _timer;
+    if (timer == null) return;
+    timer.cancel();
+    _timer = null;
+    _ensureTimer();
+  }
 
   /// Offers the newest analysis frame. Older pending frames are dropped.
   void submitFrame(
@@ -127,7 +174,7 @@ class MonocularDepthEstimator {
 
   void _ensureTimer() {
     _timer ??= Timer.periodic(
-      Duration(milliseconds: minIntervalMs),
+      Duration(milliseconds: _intervalMs),
       (_) => _drain(),
     );
   }
@@ -145,6 +192,7 @@ class MonocularDepthEstimator {
     final stopwatch = Stopwatch()..start();
     try {
       final result = await _run(jpeg);
+      _recordCompletion(stopwatch.elapsedMilliseconds);
       if (_disposed) return;
       final depthMap = YOLODetectionResults.fromMap(result).depthMap;
       if (depthMap == null || depthMap.values.isEmpty) {
@@ -184,6 +232,23 @@ class MonocularDepthEstimator {
     } finally {
       _running = false;
     }
+  }
+
+  /// Records completion latency and the observed cadence (EMA, first sample
+  /// seeded directly). Bounded storage: two ints and one double.
+  void _recordCompletion(int latencyMs) {
+    final now = _clock.elapsedMilliseconds;
+    final previous = _lastCompletionMs;
+    _lastCompletionMs = now;
+    _lastLatencyMs = latencyMs;
+    if (previous == null) return;
+    final delta = now - previous;
+    if (delta <= 0) return;
+    final sample = 1000 / delta;
+    final ema = _observedHz;
+    _observedHz = ema == null
+        ? sample
+        : ema + (sample - ema) * _observedHzAlpha;
   }
 
   /// Runs the predictor once, retrying once on CPU when the GPU instance

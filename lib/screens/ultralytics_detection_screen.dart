@@ -379,6 +379,17 @@ class _UltralyticsDetectionScreenState
     includeOriginalImage: _mdeEnabled,
   );
 
+  /// Applies the resolved depth cadence to the estimator, or stops it when the
+  /// current mode does no depth work.
+  void _applyDepthCadence() {
+    final interval = _cadence.depthInterval;
+    if (interval == null) {
+      _depth.stop();
+      return;
+    }
+    _depth.configure(minIntervalMs: interval.inMilliseconds);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -546,6 +557,7 @@ class _UltralyticsDetectionScreenState
       _depth.retry();
       _resolveRotation();
     }
+    _applyDepthCadence();
     _startFreshnessTimer();
     _applyOverlayVisibility();
     if (mounted) setState(() {});
@@ -636,6 +648,7 @@ class _UltralyticsDetectionScreenState
       if (_mdeEnabled) {
         await _resolveRotation();
         _depth.retry();
+        _applyDepthCadence();
       }
       _startFreshnessTimer();
       _applyOverlayVisibility();
