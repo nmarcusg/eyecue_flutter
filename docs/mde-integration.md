@@ -81,9 +81,14 @@ the detection stream rather than every camera frame.
 |---|---|
 | Official id | `yolo26n-depth` |
 | Artifact | [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite), bundled |
+| Format | `FlatBuffer (TFL3)` + appended **deflated** zip entry `metadata.json` (563 bytes): `task: depth`, `imgsz` 640×640, `w8a32`, `names {"0":"depth"}`, AGPL-3.0, version `8.4.104` |
 | Source | official Ultralytics export from the pinned plugin release `v0.6.6` |
 | Load | lazy, on the first submitted frame |
 | Accelerator | GPU first, one CPU retry, then degraded |
+
+The metadata entry is deflated, so a raw byte grep misses it; `inspectModel` and
+`YOLOFileUtils.loadModelLabels` decompress it normally. The estimator still
+passes `YOLOTask.depth` explicitly instead of relying on it.
 
 ### Why the model is bundled
 
@@ -144,6 +149,11 @@ and accelerator choice — so an on-device failure is never silent.
 6. Smooth with an EMA `α = 0.4` keyed by the tracker identity matched from the
    previous frame (`DepthSmoother`). The raw map is never overwritten; only the
    reported estimate is smoothed.
+
+The heatmap is a **display-only downsample**: the RGBA buffer is built on a grid
+whose longest side is ≤ 320 px (stride 1/2/4/8, nearest-neighbour), so a
+640×480 map costs ~77k pixels per update instead of ~307k. Distance sampling
+above still reads the full-resolution map.
 
 `shortcut:` the inset-median heuristic is uncalibrated — lens calibration and
 per-device intrinsics are out of scope.
