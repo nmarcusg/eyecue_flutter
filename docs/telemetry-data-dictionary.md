@@ -40,9 +40,9 @@ are empty.
 | `requested_detection_hz` | Stored detector target | Hz, or empty when the target is Automatic |
 | `detection_cadence_automatic` | Detector target is Automatic, not a stored number | Boolean |
 | `effective_detection_hz` | Detector cadence actually allowed at sample time | Hz, or empty when uncapped |
-| `requested_depth_hz` | Stored depth target | Hz |
-| `effective_depth_hz` | Depth cadence actually allowed at sample time; `0` when depth work is off | Hz |
-| `depth_observed_hz` | Observed depth completion cadence | Hz, or empty when not yet measured |
+| `requested_depth_hz` | Stored depth target | Hz, or empty when unknown |
+| `effective_depth_hz` | Depth cadence actually allowed at sample time; `0` when depth work is off | Hz, or empty when unknown |
+| `depth_observed_hz` | Observed depth completion cadence: a stop-surviving EMA that includes idle gaps; unsettled for the first samples after a resume | Hz, or empty when not yet measured |
 | `depth_latency_ms` | Last completed depth inference | Milliseconds, or empty when not yet measured |
 | `depth_status` | Depth model state | `disabled`, `loading`, `gpu`, `cpu`, `degraded`, or empty |
 | `low_power_clamped` | Low power mode lowered the stored target | Boolean |
@@ -50,12 +50,18 @@ are empty.
 
 - `requested_detection_hz` empty means Automatic; it is never a fabricated
   default rate. `effective_detection_hz` empty means uncapped.
+- `requested_depth_hz` and `effective_depth_hz` are empty when the sample
+  predates cadence telemetry. Empty means unknown, never `0`.
 - `depth_observed_hz`, `depth_latency_ms`, and `depth_status` are empty when the
   sample predates cadence telemetry or the engine never observed a value. Empty
   means unknown, never `0`.
+- `depth_observed_hz` is an exponential moving average that survives detection
+  stops and includes idle gaps, so it is not a steady-state throughput figure
+  and is unsettled for the first samples after a resume.
 - `depth_status` reports `disabled` when distance estimation is off, otherwise
   the model state (`loading`/`degraded`) or the accelerator of the loaded model
-  (`gpu`/`cpu`).
+  (`gpu`/`cpu`). `loading` also covers an enabled estimator that has not started
+  yet.
 - Cadence values are frozen into each sample when it is recorded: a settings
   change is attributed from the next sample onward.
 

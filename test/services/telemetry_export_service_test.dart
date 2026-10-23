@@ -329,6 +329,8 @@ void main() {
     expect(sample['requestedDetectionHz'], isNull);
     expect(sample['detectionCadenceAutomatic'], isTrue);
     expect(sample['effectiveDetectionHz'], isNull);
+    expect(sample['requestedDepthHz'], isNull);
+    expect(sample['effectiveDepthHz'], isNull);
     expect(sample['depthObservedHz'], isNull);
     expect(sample['depthLatencyMs'], isNull);
     expect(sample['depthStatus'], isNull);
@@ -347,6 +349,8 @@ void main() {
     for (final column in [
       'requested_detection_hz',
       'effective_detection_hz',
+      'requested_depth_hz',
+      'effective_depth_hz',
       'depth_observed_hz',
       'depth_latency_ms',
       'depth_status',

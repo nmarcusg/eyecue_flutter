@@ -84,8 +84,12 @@ class RuntimeSample {
 
   /// Cadence the detector may actually run at; `null` means uncapped.
   final int? effectiveDetectionHz;
-  final int requestedDepthHz;
-  final int effectiveDepthHz;
+
+  /// Stored depth target; `null` when no cadence data was supplied.
+  final int? requestedDepthHz;
+
+  /// Depth cadence allowed at sample time; `null` when unknown.
+  final int? effectiveDepthHz;
 
   /// Observed depth completion cadence; `null` while no frame is measured.
   final double? depthObservedHz;
@@ -108,8 +112,8 @@ class RuntimeSample {
     this.requestedDetectionHz,
     this.detectionCadenceAutomatic = false,
     this.effectiveDetectionHz,
-    this.requestedDepthHz = 0,
-    this.effectiveDepthHz = 0,
+    this.requestedDepthHz,
+    this.effectiveDepthHz,
     this.depthObservedHz,
     this.depthLatencyMs,
     this.depthStatus,
@@ -146,8 +150,8 @@ class CadenceSample {
   final int? requestedDetectionHz;
   final bool detectionCadenceAutomatic;
   final int? effectiveDetectionHz;
-  final int requestedDepthHz;
-  final int effectiveDepthHz;
+  final int? requestedDepthHz;
+  final int? effectiveDepthHz;
   final double? depthObservedHz;
   final int? depthLatencyMs;
   final String? depthStatus;
@@ -158,8 +162,8 @@ class CadenceSample {
     this.requestedDetectionHz,
     this.detectionCadenceAutomatic = false,
     this.effectiveDetectionHz,
-    this.requestedDepthHz = 0,
-    this.effectiveDepthHz = 0,
+    this.requestedDepthHz,
+    this.effectiveDepthHz,
     this.depthObservedHz,
     this.depthLatencyMs,
     this.depthStatus,
@@ -350,8 +354,8 @@ class TelemetryService extends ChangeNotifier {
     int? requestedDetectionHz,
     bool detectionCadenceAutomatic = false,
     int? effectiveDetectionHz,
-    int requestedDepthHz = 0,
-    int effectiveDepthHz = 0,
+    int? requestedDepthHz,
+    int? effectiveDepthHz,
     double? depthObservedHz,
     int? depthLatencyMs,
     String? depthStatus,
