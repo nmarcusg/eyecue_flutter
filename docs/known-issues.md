@@ -108,7 +108,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 | 🟡 P1 | Dual LiteRT packaging bridge must be revalidated whenever either inference package or the Android toolchain changes | [`build.gradle.kts`](../android/app/build.gradle.kts) |
 | 🟡 P1 | Ultralytics' native overlay still needs device-level revalidation with the current metadata-enriched artifact; EyeCue's own adapted cards/TTS resolve labels correctly from `labels.txt` | Model metadata / Ultralytics overlay |
 | 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` (historical; Custom engine removed) | [`detection_screen.dart`](../lib/screens/detection_screen.dart) (frame dispatch) |
-| 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear (historical; Custom engine removed) | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
+| 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear (historical; Custom engine removed) | `inference_isolate.dart` (deleted with the Custom engine on 2026-10-21) |
 | 🟢 P3 | Package name is `com.example.eyecue_flutter` instead of specified `com.eyecue` | [`build.gradle.kts:7`](../android/app/build.gradle.kts:7) |
 | 🟢 P3 | `minSdkVersion` relies on the Flutter default (24) — thesis targets Android 10 / API 29; not set explicitly | [`build.gradle.kts:18`](../android/app/build.gradle.kts:18) |
 | 🟢 P3 | Release build still signs with the debug keystore | [`build.gradle.kts`](../android/app/build.gradle.kts) |
@@ -126,7 +126,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 | ~~Camera frames never rotated to device orientation~~ | ✅ **FIXED (2026-08-01, v0.1.7)** — `BoxTransform` rotates/mirrors the input tensor to upright; portrait detections 0 → 0.91 on-device. See [`docs/orientation-implementation.md`](orientation-implementation.md). Back-landscape re-validation + front-camera runs still pending. |
 | ~~YUV420→RGB ignored rowStride/pixelStride~~ | ✅ **FIXED (2026-08-01, v0.1.4)** — converter honors real plane geometry; planar I420 + semi-planar NV12/NV21 verified on-device. See [`docs/camera-path-forensics.md`](camera-path-forensics.md). |
 | YUV conversion uses non-standard coefficients | Slight color shift in RGB output. Does not affect detection accuracy but could impact future visual-only features. |
-| `dynamic` type for the input buffer (historical; Custom engine removed) | [`inference_isolate.dart:392`](../lib/services/inference_isolate.dart:392) loses type safety. Could use a sealed/branched type per model dtype. |
+| `dynamic` type for the input buffer (historical; Custom engine removed) | `inference_isolate.dart:392` (deleted with the Custom engine on 2026-10-21) loses type safety. Could use a sealed/branched type per model dtype. |
 | ~~Broadcast stream with single listener~~ | ✅ **NO LONGER AN ISSUE (v0.2.0)** — the broadcast `resultsStream` now has multiple listeners (UI + TTS + telemetry), so broadcast is justified. |
 
 ## Planned Fixes (by Milestone)
