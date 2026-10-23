@@ -1,17 +1,17 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-10-19 (WS4 documentation reconciliation; the Workstream 1 TTS lifecycle arbitration described below was developed on `fix/tts-lifecycle-arbitration` and **merged into `dev` through PR #5 at `665b59b` on 2026-10-17**; still unreleased and not yet re-verified with Flutter tests, analyzer, builds, or physical-device TTS checks)
+> **Last Updated:** 2026-10-23 (inference cadence documentation; the Workstream 1 TTS lifecycle arbitration described below was developed on `fix/tts-lifecycle-arbitration` and **merged into `dev` through PR #5 at `665b59b` on 2026-10-17**; still unreleased and not yet re-verified with Flutter tests, analyzer, builds, or physical-device TTS checks)
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned app task areas and their acceptance criteria), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
 > **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The repository contains committed but unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
 >
 > **Unreleased speech work (2026-10-17, merged to `dev` through PR #5 at `665b59b`):** the TTS layer is now a lifecycle-aware arbiter (one in-flight utterance, one pending request, confirmed-`onStart` history, paired-signal reconciliation, bounded recovery, track-aware [`alert_policy.dart`](../lib/services/alert_policy.dart), controlled preemption, idle-only wayfinding). Status: **implemented and statically checked only** — no Flutter tests, analyzer, builds, or physical-device TTS checks were run after relocating onto `origin/dev` or after the merge. Device callback ordering, cancellation timing and audible-warning latency remain unmeasured. See [`architecture.md`](architecture.md#speech-scheduling-workstream-1).
 >
-> **Unreleased telemetry work (Workstream 2, on `feat/alert-latency-telemetry` above `5e965ae`):** the speech scheduler now emits one bounded alert-lifecycle record per terminal submission (event deltas, capped at 500) plus a replace-only cumulative scheduler-counter snapshot. Custom frames carry analysis/inference/result anchors; Ultralytics carries only result receipt and later app-side anchors. Logs & Reports shows eight detection-origin intervals (four per engine) with nearest-rank p50/p95/max/count and an honest `No samples` state, and exports are schema v2 with additive `alertLifecycle`, `alertCounters`, and `alertSummaries` payloads. Status: **implemented and static-checked only** — tests were written but not executed, and no analyzer, Gradle, build, emulator/device, or physical audible-latency validation occurred. The Ultralytics interval is `app-side / post-inference`, not full inference or end-to-end latency, and no performance, safety, or release-readiness improvement is claimed. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
+> **Unreleased telemetry work (Workstream 2, on `feat/alert-latency-telemetry` above `5e965ae`):** the speech scheduler now emits one bounded alert-lifecycle record per terminal submission (event deltas, capped at 500) plus a replace-only cumulative scheduler-counter snapshot. New records carry result receipt and later app-side anchors (the Custom engine was removed on 2026-10-21). Logs & Reports shows four detection-origin Ultralytics intervals with nearest-rank p50/p95/max/count and an honest `No samples` state, and exports are schema 3 with additive `alertLifecycle`, `alertCounters`, `alertSummaries`, and per-sample cadence payloads. Status: **implemented and statically tested** — `flutter analyze --no-pub` shows 4 pre-existing issues and `flutter test --no-pub` gives 527 passing / 1 known pre-existing failure; no build, device, or physical audible-latency validation occurred. The Ultralytics interval is `app-side / post-inference`, not full inference or end-to-end latency, and no performance, safety, or release-readiness improvement is claimed. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 
 ## Overall Progress
 
-**ML/inference pipeline:** stable v0.2.2 baseline is ~80% complete and on-device validated; the current dual-engine candidate is statically/build validated and both modes have initial one-device smoke evidence, but neither is formally compared or release-validated.
+**ML/inference pipeline:** stable v0.2.2 baseline is ~80% complete and on-device validated; the current single-engine (Ultralytics detection + bundled depth) candidate is statically validated and its suite runs; earlier dual-engine smoke evidence is historical and the current pipeline is not formally benchmarked or release-validated.
 **Thesis product (app as a whole):** ~70% (range 65–75%) — see the [thesis-product-status-audit](thesis-product-status-audit.md) for the weighted breakdown (re-scored after the v0.2.x assistive-UI phase; the earlier ~30% measured the pre-assistive-UI state, and the historical "~60%" measured only the ML/debug pipeline).
 
 ## What Changed (v0.2.x — Assistive Application UI)
@@ -20,7 +20,7 @@ The app is no longer a single developer camera screen. It now has the thesis-ali
 
 - **Navigation:** 4-tab bottom bar — Home, Detect, Settings, Help ([`app_shell.dart`](../lib/navigation/app_shell.dart)); Logs & Reports pushed from Settings.
 - **Home:** branding, coordinator-derived status (Preparing/Ready/Paused/Stopped/Unavailable), live `EyeCue` wordmark. The `Go to Live Camera` CTA was removed without replacement (unreleased candidate).
-- **Detection:** the validated camera/inference pipeline preserved, now with an assistive UI — status pill, audio mute, and thesis gestures (two-finger double-tap start/stop, single tap pause/resume, three-finger scan, swipe-down repeat) with haptic + TTS confirmation. The unreleased candidate adds a persisted Custom EyeCue / Ultralytics engine selector; both feed EyeCue's spatial, priority, TTS, and telemetry layers. The unreleased Detection redesign (PD1–PD3) consolidates the normal screen into a dominant camera viewport, a compact two-row in-viewport information overlay, and exactly two side-by-side physical controls (one coordinator-driven lifecycle control plus Quick Scan); the normal card list, warning banner, gesture hint, visible Repeat, standalone Start/Stop/Pause/Resume, visible correction/report actions, and Ultralytics developer metrics were removed from the normal UI while their underlying systems remain.
+- **Detection:** the validated camera/inference pipeline preserved, now with an assistive UI — status pill, audio mute, and thesis gestures (two-finger double-tap start/stop, single tap pause/resume, three-finger scan, swipe-down repeat) with haptic + TTS confirmation. The unreleased candidate adds configurable detection and depth cadence; the single Ultralytics engine feeds EyeCue's spatial, priority, TTS, and telemetry layers. The unreleased Detection redesign (PD1–PD3) consolidates the normal screen into a dominant camera viewport, a compact two-row in-viewport information overlay, and exactly two side-by-side physical controls (one coordinator-driven lifecycle control plus Quick Scan); the normal card list, warning banner, gesture hint, visible Repeat, standalone Start/Stop/Pause/Resume, visible correction/report actions, and Ultralytics developer metrics were removed from the normal UI while their underlying systems remain.
 - **TTS audio feedback:** implemented ([`tts_service.dart`](../lib/services/tts_service.dart)) — lifecycle-aware scheduler with one active utterance and one pending request, history committed only on a confirmed `onStart`, paired-signal reconciliation, track-aware suppression/escalation in [`alert_policy.dart`](../lib/services/alert_policy.dart), controlled preemption, idle-only wayfinding, repeat-last and mute state. `flutter_tts` remains the platform engine.
 - **Settings:** persisted preferences — Vibration, Auto-Start, Low Power Mode (dispatch throttle), Audio guidance, inference engine, Logs & Reports ([`settings_service.dart`](../lib/services/settings_service.dart)).
 - **Help:** how it works, gestures, confirmation feedback, Android usage tips.
@@ -46,6 +46,8 @@ This candidate must remain labelled **unreleased and initially device-observed**
 
 ## Current Milestone
 
+> Rows describing the Custom engine and its isolate recovery are historical: the Custom engine was removed on 2026-10-21.
+
 **Milestone 2: "Research-Ready"** (extends the v0.1 "Audible MVP" work — audio + assistive UI now landed)
 
 | Task | Status |
@@ -56,7 +58,7 @@ This candidate must remain labelled **unreleased and initially device-observed**
 | Persisted settings (vibration, auto-start, low-power, audio) | ✅ Implemented (v0.2.0) |
 | Spatial position (left/center/right) + priority classification | ✅ Implemented (heuristic proximity band) (v0.2.0) |
 | Runtime telemetry + charts (latency/FPS/frequency) | ✅ Implemented (v0.2.0) |
-| Persisted Custom/Ultralytics test selector + per-engine reports | ✅ Implemented (unreleased candidate) |
+| Configurable detection/depth inference cadence + per-sample telemetry | ✅ Implemented (unreleased candidate, 2026-10-23) |
 | Error handling in isolate | ✅ Implemented — typed errors, generation filtering, bounded worker recovery, and terminal failure state |
 | Permission-denied UI | ✅ Implemented (v0.2.0 — camera-denied screen with retry/open-settings) |
 | Isolate restart recovery | ✅ Implemented — injectable coordinator, immediate/delayed bounded retries, stale-event guards, healthy-budget reset, and disposal safety |
@@ -75,7 +77,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 1. **Extend candidate device validation** — repeat the target-device run for a controlled duration, collect fallback/crash evidence, and measure detections without treating the short observation as a release benchmark.
 2. **Re-validate orientation on-device** — candidate NCHW portrait/landscape and front-camera runs, plus the deferred stable-baseline cases.
-3. **Run the controlled dual-engine benchmark** — compare Custom EyeCue and Ultralytics on the same device, model, scene, settings, duration, and thermal starting state using [`dual-inference-engine-test.md`](dual-inference-engine-test.md); do not infer performance from static inspection or a short observational run.
+3. ~~**Run the controlled dual-engine benchmark**~~ — obsolete: the Custom engine was removed on 2026-10-21. Measure the single Ultralytics pipeline plus bundled depth instead, without inferring performance from static inspection or a short observational run.
 4. **Complete the v0.2.x UI validation** — gestures, TTS, mute toggle, settings persistence, and Logs & Reports charts.
 5. **Validate the Home/Detection shared lifecycle on a physical device** — confirm Auto-start ON background preparation, Auto-start OFF entry start, and matching shared status across Home and both Detection implementations (currently **Needs Verification**).
 6. **Close out the Detection redesign non-blocking items** — dedicated full-app teardown verification for the FlutterJNI fatal (not fixed), and the deferred strict PD3 result provenance/freshness work under its existing scope boundary.
@@ -93,7 +95,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 | 6 | ~~Isolate restart recovery~~ | ✅ Complete — bounded, generation-safe Custom-worker lifecycle |
 | 7 | Orientation re-validation (back landscape + front camera) | 🟡 High |
 | 8 | Formal FPS/latency benchmark + accuracy evaluation | 🟡 High |
-| 9 | Controlled Custom EyeCue vs Ultralytics device comparison | 🔴 Critical |
+| 9 | ~~Controlled Custom EyeCue vs Ultralytics comparison~~ (obsolete: Custom removed 2026-10-21) | — |
 
 ## Recent Accomplishments
 

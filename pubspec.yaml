@@ -42,7 +42,8 @@ flutter:
   assets:
     - assets/yolov8n_int8_new_metadata.tflite
     # Official Ultralytics depth model (yolo26n-depth, w8a32, v0.6.6). Bundled
-    # so MDE runs offline without the INTERNET permission.
+    # so MDE runs offline; the manifest's INTERNET permission is only for the
+    # optional manual telemetry upload.
     - assets/yolo26n-depth_w8a32.tflite
     - assets/labels.txt
     # Home visual mark (decorative; wordmark stays live text).

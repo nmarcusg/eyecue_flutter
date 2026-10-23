@@ -2,12 +2,14 @@
 
 > **Status:** export schema version 3 (unreleased Workstream 2 candidate). The
 > exporter records bounded alert-lifecycle records, a cumulative scheduler
-> counter snapshot, eight alert-latency summaries, and the inference cadence
-> configuration in addition to the per-frame inference data described below.
-> All alert timings come from the app's own speech-scheduler signals, so they
-> describe the app-side path only; physical audible-warning latency at the
-> speaker is **not** measured. The owning tests were written but not executed,
-> and no analyzer, build, or device run has validated this instrumentation.
+> counter snapshot, four Ultralytics alert-latency summaries, and the inference
+> cadence configuration in addition to the per-frame inference data described
+> below. All alert timings come from the app's own speech-scheduler signals, so
+> they describe the app-side path only; physical audible-warning latency at the
+> speaker is **not** measured. The suite runs on this branch
+> (`flutter test --no-pub`: 527 passing, 1 known pre-existing failure;
+> `flutter analyze --no-pub`: 4 pre-existing issues); no build or device run has
+> validated this instrumentation.
 
 EyeCue exports an image-free snapshot only after an explicit user action from
 Logs & Reports. JSON keeps the same values in nested record arrays. CSV uses one
@@ -25,7 +27,7 @@ are empty.
 | `session_id` | In-memory session identifier | Opaque session string; metadata/correction rows |
 | `session_start` | Session start time | UTC ISO-8601 timestamp; metadata rows only |
 | `session_duration_ms` | Session duration at export | Milliseconds; metadata rows only |
-| `engine` | Engine that produced a record | `custom` or `ultralytics` |
+| `engine` | Engine that produced a record | `ultralytics` (single engine) |
 
 ## Runtime samples
 
@@ -111,7 +113,7 @@ not a lifetime total.
 | CSV column | Meaning | Units / values |
 |---|---|---|
 | `origin` | What produced the request | `detection`, `generic`, `wayfinding`, `quickScan`, or `repeatLast` |
-| `engine` | Inference engine for detection alerts | `custom`, `ultralytics`, or empty |
+| `engine` | Inference engine for detection alerts | `ultralytics`, or empty; legacy exports may contain `custom` |
 | `requested_at` | Alert-policy request time | UTC ISO-8601 |
 | `submitted_at` | Submission to the speech engine | UTC ISO-8601 |
 | `alert_started_at` | Confirmed native `onStart` | UTC ISO-8601 or empty |
@@ -134,10 +136,11 @@ not a lifetime total.
 - `reconciled_at` is truthful rather than optimistic: it carries the terminal
   time only for paired completion, cancellation, or platform drop. Watchdog and
   error failures leave it empty.
-- Custom records carry `frame_number` and the analysis/inference/result
-  anchors. Ultralytics records carry only `result_received_at` and later
-  app-side anchors; pre-result analysis and inference anchors stay empty because
-  the plugin exposes no per-result identity for them.
+- New records are Ultralytics-only: they carry `result_received_at` and later
+  app-side anchors, while pre-result analysis and inference anchors stay empty
+  because the plugin exposes no per-result identity for them. The
+  `frame_number` and analysis/inference columns remain in the schema for legacy
+  Custom exports; the Custom engine was removed on 2026-10-21.
 - Any anchor that was never observed is empty. A record can contribute to some
   intervals and not others; empty is not zero.
 
@@ -175,23 +178,23 @@ values must never be added across rows or exports.
 
 ## Alert summaries
 
-`alert_summary` CSV rows (JSON `alertSummaries`) contain eight rows: four
-intervals for each inference engine.
+`alert_summary` CSV rows (JSON `alertSummaries`) contain four rows, one per
+interval, for the single Ultralytics engine.
 
 | CSV column | Meaning |
 |---|---|
-| `engine` | `custom` or `ultralytics` |
+| `engine` | `ultralytics` |
 | `interval` | `receivedToAccepted`, `acceptedToStarted`, `submittedToStarted`, or `receivedToStarted` |
 | `label` | Human-readable interval label; the Ultralytics variants name the app-side boundary |
 | `p50_ms`, `p95_ms`, `max_ms` | Nearest-rank percentile and maximum, in milliseconds |
 | `sample_count` | Number of retained records that qualified |
 
-| Interval | Custom start → end | Ultralytics start → end |
-|---|---|---|
-| `receivedToAccepted` | `analysis_received_at` → `detection_accepted_at` | `result_received_at` → `detection_accepted_at` |
-| `acceptedToStarted` | `detection_accepted_at` → `alert_started_at` | `detection_accepted_at` → `alert_started_at` |
-| `submittedToStarted` | `submitted_at` → `alert_started_at` | `submitted_at` → `alert_started_at` |
-| `receivedToStarted` | `analysis_received_at` → `alert_started_at` | `result_received_at` → `alert_started_at` |
+| Interval | Start → end |
+|---|---|
+| `receivedToAccepted` | `result_received_at` → `detection_accepted_at` |
+| `acceptedToStarted` | `detection_accepted_at` → `alert_started_at` |
+| `submittedToStarted` | `submitted_at` → `alert_started_at` |
+| `receivedToStarted` | `result_received_at` → `alert_started_at` |
 
 - Samples are detection-origin records whose `engine` exactly matches the row
   and whose two endpoints are both present. Negative intervals are excluded;
@@ -200,11 +203,12 @@ intervals for each inference engine.
   `ceil(0.50 × n)`, `p95` = rank `ceil(0.95 × n)`, and `max` is the last sorted
   value. When nothing qualifies, `sample_count` is `0` and all values are `0`;
   Logs & Reports then shows `No samples` instead of a percentile.
-- Custom anchors start at analysis receipt after the app's pause/busy/low-power
-  gates and run through worker inference and result publication. Ultralytics has
-  no pre-result anchors, so its `receivedToStarted` label is exactly
+- Ultralytics work has no pre-result anchors, so `receivedToStarted` starts at
+  result receipt; its label is exactly
   `Result received → alert started (app-side / post-inference)`. It is never
-  full inference latency and never end-to-end latency.
+  full inference latency and never end-to-end latency. Legacy Custom records
+  (removed engine) started at analysis receipt after the app's pause/busy gates
+  and ran through worker inference and result publication.
 
 ## Privacy and retention
 

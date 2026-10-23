@@ -1,11 +1,12 @@
 # EyeCue — Monocular Depth Estimation (MDE) Integration
 
-> **Status:** Implemented on branch `codex/mde-integration` (worktree
-> `/home/nico/repos/eyecue_flutter-mde`, base `dev@94f74d8`). Statically
-> verified (`dart format`, `flutter analyze`, `flutter test`) and a release APK
-> builds. **No Android device was attached**, so depth accuracy, on-device
-> latency, thermal behaviour and the manual matrix below are **unverified on
-> hardware**. Metres are estimates, not measurements.
+> **Status:** Implemented and carried on `feat/granular-inference-cadence` above
+> the integrated MDE line. Verified on this branch with `flutter analyze --no-pub`
+> (4 pre-existing issues) and `flutter test --no-pub` (527 passing, 1 pre-existing
+> failure). No release build, device run or measurement has been performed on
+> this branch, so depth accuracy, on-device latency, thermal behaviour and the
+> manual matrix below are **unverified on hardware**. Metres are estimates, not
+> measurements.
 
 ## What changed
 
@@ -23,8 +24,10 @@ Two independent user preferences control presentation, plus one mode control:
 - **Show depth heatmap** (default on; the switch is disabled and its value kept
   while the mode is `boundingBoxApproximation`).
 
-Settings schema version `3 → 4`; the parser is field-tolerant, so older JSON
-loads with the defaults and unknown modes fall back to `monocularDepth`.
+Settings schema version is `5`: the distance/overlay work added the `3 → 4`
+fields and the inference-cadence work added `4 → 5` (`detectionTargetHz`,
+`depthTargetHz`). The parser is field-tolerant, so older JSON loads with the
+defaults and unknown modes fall back to `monocularDepth`.
 
 ## Architecture and data flow
 
@@ -46,7 +49,7 @@ loads with the defaults and unknown modes fall back to `monocularDepth`.
  YOLODetectionResults   inset 12% → sensor box       second YOLO instance
  → Detection[]          → median over map values     (YOLOTask.depth,
         │               → EMA α=0.4 per trackId       useMultiInstance: true)
-        │                      │                       500 ms, latest-wins
+        │                      │                       configured cadence, latest-wins
         ▼                      ▼                           │
  SpatialAnalysisService  estimatedMeters                 ▼
  (band, priority, pos)        │                    DepthFrame + heatmap
@@ -99,13 +102,15 @@ asset, exactly like the detection model, and is loaded through the same
 
 The previous design passed the official model id and let the plugin download
 `yolo26n-depth_w8a32.tflite` on first use into
-`<documents>/mobile-standard-v1/`. That can never work in a release build: the
-release manifest declares only `CAMERA`, because `INTERNET` exists solely in the
-debug and profile manifests. The download therefore failed, the model load threw,
-the estimator degraded, and depth never ran — while detection kept working
-because its model is bundled. Bundling removes the network dependency entirely
-instead of widening permissions, so the assistive path also works with no
-connectivity and no `INTERNET` permission.
+`<documents>/mobile-standard-v1/`. That could never work in a release build: at
+the time the release manifest declared only `CAMERA` (`INTERNET` existed solely
+in the debug and profile manifests), so the download failed, the model load
+threw, the estimator degraded, and depth never ran — while detection kept
+working because its model was bundled. Bundling removes the network dependency
+entirely instead of widening permissions, so the assistive path also works with
+no connectivity. The main manifest now declares `INTERNET` as well, but only for
+the optional manual research-telemetry upload; detection and depth still make no
+network requests.
 
 `shortcut:` the plugin copies an asset once into the documents dir keyed by
 filename, and `_copyFlutterAssetToDocuments` returns early when that file
@@ -158,9 +163,31 @@ above still reads the full-resolution map.
 `shortcut:` the inset-median heuristic is uncalibrated — lens calibration and
 per-device intrinsics are out of scope.
 
+## Cadence settings
+
+| Setting | Type | Default | Range |
+|---|---|---|---|
+| Detection target | `int?` (`null` = Automatic) | Automatic (uncapped native behaviour) | 1–30 Hz |
+| Depth target | `int` | 2 Hz | 2–10 Hz |
+
+`InferenceCadence.resolve` is pure and returns effective values without
+rewriting the stored requests:
+
+- Automatic keeps the detector uncapped; a numeric target is passed to
+  `inferenceFrequency`.
+- Low power mode caps detection at **4 Hz** and depth at **2 Hz**, and reports
+  `lowPowerClamped` so the UI and telemetry can explain the clamp.
+- A numeric detector target also caps depth (`sourceLimited`): depth cannot run
+  faster than the frames that feed it.
+- `boundingBoxApproximation` disables depth work (`effectiveDepthHz = 0`).
+
+**Requested is not observed.** The two targets are requests. `depth_observed_hz`
+and `depth_latency_ms` are the measured values, and the observed figure is an
+EMA that includes idle gaps, so it is not a steady-state throughput claim.
+
 ## Cadence, staleness and fallback
 
-- Depth runs at most every **500 ms** (`EyeCueModelConfig.depthMinIntervalMs`),
+- Depth cadence follows the resolved depth target (default 2 Hz, see above),
   with **one** pending frame slot and **one** in-flight request. A newer frame
   replaces the pending one; nothing is ever queued or awaited from the
   detection callback.
@@ -208,44 +235,27 @@ boxes as before. Hiding boxes is not "detection off"; hiding the heatmap is not
 
 ## Verification performed
 
-Commands run in `/home/nico/repos/eyecue_flutter-mde`:
+Commands run in `/home/nico/repos/eyecue_flutter-cadence` on
+`feat/granular-inference-cadence` (2026-10-23):
 
 | Command | Result |
 |---|---|
-| `dart format --output=none --set-exit-if-changed lib test tool` | clean — `Formatted 98 files (0 changed)`, exit 0 |
-| `flutter analyze` | 4 issues, all pre-existing on `dev@94f74d8` (2 warnings, 2 info); no new issues |
-| `flutter test` | **452 passing, 1 failing**; the failure (`tts_service_test.dart` → "a partial signal pair records a reconciliation timeout") fails identically on `dev@94f74d8` before this branch |
-| `flutter build apk --release` | success — `build/app/outputs/flutter-apk/app-release.apk`, 82.9 MB (82,882,016 bytes) |
+| `flutter analyze --no-pub` | 4 issues, all pre-existing (unused field in `alert_policy.dart`, `onError` return type in `tts_service.dart`, two unnecessary test imports); no new issues |
+| `flutter test --no-pub` | **527 passing, 1 failing**; the failure (`tts_service_test.dart` → "a partial signal pair records a reconciliation timeout") fails identically on `dev@94f74d8` |
 
-### Release build output (verbatim tail)
-
-```
-Running Gradle task 'assembleRelease'...
-WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): flutter_tts, ultralytics_yolo
-Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
-...
-Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 5864 bytes (99.6% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
-Running Gradle task 'assembleRelease'...                          147.1s
-✓ Built build/app/outputs/flutter-apk/app-release.apk (82.9MB)
-```
-
-The re-run reused the Gradle cache from the first cold build in this worktree
-(627.6 s); the artifact size is unchanged. The packaged `lib/` contains
-`libLiteRt.so` and `libultralytics.so` and no `libtensorflowlite_jni.so`, so the
-removed classic-LiteRT extraction is not shipping anything.
-
-The build emitted **no R8/WorkManager missing-class or startup warnings**; the
-`androidx.work:work-runtime:2.11.2` pin is retained. Build success does not
-prove runtime startup — that remains a device check (below).
+Earlier MDE-branch evidence (452 passing / 1 failing and an 82.9 MB release APK)
+is historical: it belongs to `/home/nico/repos/eyecue_flutter-mde` at base
+`dev@94f74d8` and does not verify this merged branch. No release build was run
+here, and the packaged library set was not re-inspected.
 
 ### Measured vs unmeasured performance
 
 | Metric | Status |
 |---|---|
-| `dart format` / `flutter analyze` / `flutter test` / `flutter build apk --release` | **Measured** (above) |
-| APK size | **Measured**: 82.9 MB release |
+| `flutter analyze --no-pub` / `flutter test --no-pub` | **Measured** (above) |
+| APK size | **Not measured on this branch**; the historical MDE-branch release APK was 82.9 MB |
 | Detection FPS / inference latency | **Not measured on this branch** (no device). Do not reuse older numbers. |
-| Depth inference latency / cadence achieved | **Not measured**. The 500 ms interval is a configured floor, not an observed rate. |
+| Depth inference latency / cadence achieved | **Not measured**. The cadence target is a request, not an observed rate. |
 | Depth accuracy (metres) | **Not measured.** Uncalibrated model output. |
 | Thermal / battery impact | **Not measured.** |
 
@@ -256,13 +266,13 @@ invention; each remains unmeasured until a device run is recorded.
 
 1. Build and install: `flutter build apk --release && adb install -r
    build/app/outputs/flutter-apk/app-release.apk`.
-2. First run **online**: start detection, confirm the depth notice never
-   appears, then look for `[Depth] Display rotation resolved: …` in logcat.
+2. First run (no network needed): start detection, confirm the depth notice
+   never appears, then look for `[Depth] Display rotation resolved: …` in logcat.
 3. Hold a chair ~1 m, ~3 m and ~6 m away in portrait: speech should say
    "about …" and the band should move near → medium → far.
 4. Rotate to landscape: boxes must stay aligned and depth must not drift.
-5. Airplane mode, clear app data, start detection: expect the degraded banner
-   and bbox distances; detection keeps running.
+5. Airplane mode, clear app data, start detection: depth must still initialise
+   from the bundled asset (no degraded banner); detection keeps running.
 6. Settings → Distance & Overlays: switch to "Bounding box"; depth inference
    stops (no depth logs), heatmap disappears, heatmap switch is disabled but
    keeps its value; switch back and it returns.
@@ -278,10 +288,10 @@ invention; each remains unmeasured until a device run is recorded.
 | Component | License |
 |---|---|
 | `ultralytics_yolo` Flutter plugin | AGPL-3.0 |
-| YOLO26n detection and `yolo26n-depth` weights | AGPL-3.0 |
+| YOLOv8n detection and YOLO26n-depth weights | AGPL-3.0 |
 | LiteRT / TFLite runtime (used by the plugin) | Apache-2.0 |
 | `camera` / `camera_android_camerax` | BSD-3-Clause |
-| Flutter, Dart, `flutter_tts`, `permission_handler`, `path_provider`, `fl_chart`, `google_fonts`, `flutter_riverpod` | BSD-3-Clause / MIT / Apache-2.0 as published |
+| Flutter, Dart, `flutter_tts`, `permission_handler`, `path_provider`, `fl_chart`, `google_fonts` | BSD-3-Clause / MIT / Apache-2.0 as published |
 
 **AGPL compatibility:** EyeCue links `ultralytics_yolo` and ships AGPL-3.0
 YOLO26n weights. Distributing the app (or a derivative) therefore requires

@@ -26,7 +26,7 @@ Before writing any code, complete these steps in order:
 
 ### Code Quality
 
-- Follow existing patterns in the codebase (e.g., [`inference_isolate.dart`](../lib/services/inference_isolate.dart) static method pattern).
+- Follow existing patterns in the codebase (e.g., the pure service pattern in [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart), or [`inference_cadence.dart`](../lib/services/inference_cadence.dart) for a side-effect-free policy).
 - Add error handling for all new code paths.
 - Prefer explicit types over `dynamic` or `var` where the type is not obvious.
 - Keep methods focused and small. Extract helpers when a method exceeds ~30 lines.

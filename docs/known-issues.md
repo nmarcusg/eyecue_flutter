@@ -1,6 +1,6 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-10-21 (MDE integration; the WS4 cleanup and the PD1–PD3/dual-engine notes below are historical)
+> **Last Updated:** 2026-10-23 (inference cadence documentation; the WS4 cleanup, the PD1–PD3 redesign and the Custom-engine sections below are historical)
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
 
 ## Monocular depth estimation (MDE)
@@ -15,15 +15,17 @@
   heatmap).
 - **Resolved — the depth model could never be downloaded in a release build.**
   The previously shipped build passed the official `yolo26n-depth` id and relied
-  on the plugin's first-use download, but release manifests declare only
-  `CAMERA` (`INTERNET` exists only in the debug/profile manifests), so the load
-  always failed and depth silently ran degraded. The model is now bundled as
-  [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite);
-  no `INTERNET` permission is needed. Previously installed release APKs must be
-  replaced to pick this up.
+  on the plugin's first-use download, but the release manifests of that time
+  declared only `CAMERA` (`INTERNET` existed only in the debug/profile
+  manifests), so the load always failed and depth silently ran degraded. The
+  model is now bundled as
+  [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite).
+  The main manifest now also declares `INTERNET`, but only for the optional
+  manual telemetry upload; depth and detection make no network request.
+  Previously installed release APKs must be replaced to pick this up.
 - **Unmeasured on device.** Depth latency, achieved cadence, thermal impact,
-  detection FPS and depth accuracy have not been measured; the 500 ms interval
-  is a configured floor, not an observed rate.
+  detection FPS and depth accuracy have not been measured; the 2 Hz default
+  (500 ms) is a configured target, not an observed rate.
 - **Stale depth hides the heatmap.** Maps older than 1000 ms or produced for a
   different geometry are discarded for presentation and distance fall back to
   the box-height heuristic.
@@ -74,7 +76,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 - **Planned Fix:** Complete the paired protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md), cover representative Android/API/chipset classes, resolve the native numeric-label presentation issue, confirm delegate selection, and resolve the distribution-licence choice before release.
 - **Status:** **Build and one-device smoke test passed; controlled performance, compatibility, and distribution validation pending.**
 
-### 🔴 XNNPACK SIGSEGV / Candidate Device Validation (Critical)
+### 🔴 XNNPACK SIGSEGV / Candidate Device Validation (historical — Custom engine removed 2026-10-21)
 
 - **Description:** The stable v0.2.2 path keeps XNNPACK disabled because the older YOLOv8n model previously caused a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU). The current committed but unreleased runtime artifact `yolov8n_int8_new_metadata.tflite` (generated from the byte-identical `yolov8n_int8_new.tflite` base graph) attempts explicit XNNPACK and has FLOAT32 runtime I/O with an NCHW input.
 - **Location:** [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — interpreter creation / inference path.
@@ -83,7 +85,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 - **Planned Fix:** Extend the controlled target-device run, capture fallback/native-crash evidence, and run the official TFLite benchmark tool for the old CPU baseline, the candidate, and safe NNAPI/GPU alternatives where available. Add ground-truth accuracy, thermal, and memory measurements before selecting a release backend.
 - **Status:** **Partially device-observed but unresolved.** The candidate's short XNNPACK run is evidence of initial compatibility, not proof of speedup, long-term stability, full graph delegation, or crash resolution.
 
-### ✅ Custom Worker Recovery (Resolved in App-Only Candidate)
+### ✅ Custom Worker Recovery (historical — Custom engine removed 2026-10-21)
 
 - **Description:** The Custom worker now uses a pure injectable lifecycle coordinator with monotonic generations, typed worker-exit/error handling, bounded immediate/delayed retries, terminal failure, healthy-operation budget reset, and disposal-safe backoff.
 - **Location:** [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart) and [`inference_isolate.dart`](../lib/services/inference_isolate.dart)
@@ -105,8 +107,8 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 | 🟡 P1 | `flutter_tts` and `ultralytics_yolo` still apply the legacy Kotlin Gradle plugin mechanism; current builds pass, but a future Flutter toolchain will reject it | Upstream plugins / Android build |
 | 🟡 P1 | Dual LiteRT packaging bridge must be revalidated whenever either inference package or the Android toolchain changes | [`build.gradle.kts`](../android/app/build.gradle.kts) |
 | 🟡 P1 | Ultralytics' native overlay still needs device-level revalidation with the current metadata-enriched artifact; EyeCue's own adapted cards/TTS resolve labels correctly from `labels.txt` | Model metadata / Ultralytics overlay |
-| 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` | [`detection_screen.dart`](../lib/screens/detection_screen.dart) (frame dispatch) |
-| 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
+| 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` (historical; Custom engine removed) | [`detection_screen.dart`](../lib/screens/detection_screen.dart) (frame dispatch) |
+| 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear (historical; Custom engine removed) | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) |
 | 🟢 P3 | Package name is `com.example.eyecue_flutter` instead of specified `com.eyecue` | [`build.gradle.kts:7`](../android/app/build.gradle.kts:7) |
 | 🟢 P3 | `minSdkVersion` relies on the Flutter default (24) — thesis targets Android 10 / API 29; not set explicitly | [`build.gradle.kts:18`](../android/app/build.gradle.kts:18) |
 | 🟢 P3 | Release build still signs with the debug keystore | [`build.gradle.kts`](../android/app/build.gradle.kts) |
@@ -124,7 +126,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 | ~~Camera frames never rotated to device orientation~~ | ✅ **FIXED (2026-08-01, v0.1.7)** — `BoxTransform` rotates/mirrors the input tensor to upright; portrait detections 0 → 0.91 on-device. See [`docs/orientation-implementation.md`](orientation-implementation.md). Back-landscape re-validation + front-camera runs still pending. |
 | ~~YUV420→RGB ignored rowStride/pixelStride~~ | ✅ **FIXED (2026-08-01, v0.1.4)** — converter honors real plane geometry; planar I420 + semi-planar NV12/NV21 verified on-device. See [`docs/camera-path-forensics.md`](camera-path-forensics.md). |
 | YUV conversion uses non-standard coefficients | Slight color shift in RGB output. Does not affect detection accuracy but could impact future visual-only features. |
-| `dynamic` type for the input buffer | [`inference_isolate.dart:392`](../lib/services/inference_isolate.dart:392) loses type safety. Could use a sealed/branched type per model dtype. |
+| `dynamic` type for the input buffer (historical; Custom engine removed) | [`inference_isolate.dart:392`](../lib/services/inference_isolate.dart:392) loses type safety. Could use a sealed/branched type per model dtype. |
 | ~~Broadcast stream with single listener~~ | ✅ **NO LONGER AN ISSUE (v0.2.0)** — the broadcast `resultsStream` now has multiple listeners (UI + TTS + telemetry), so broadcast is justified. |
 
 ## Planned Fixes (by Milestone)

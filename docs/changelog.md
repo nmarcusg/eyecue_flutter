@@ -5,7 +5,37 @@
 
 ---
 
+## Unreleased — Configurable inference cadence (2026-10-23)
+
+### Added
+- Persisted **Inference Cadence** settings: detector target Automatic (default)
+  or 1–30 Hz, and depth target 2–10 Hz (default 2 Hz). Settings schema `4 → 5`.
+- Pure [`InferenceCadence.resolve`](../lib/services/inference_cadence.dart)
+  policy: low power caps detection at 4 Hz and depth at 2 Hz, a numeric detector
+  rate also caps depth (source-limited), and bounding-box distance mode disables
+  depth work.
+- Detector cadence is applied through `YOLOStreamingConfig.inferenceFrequency`
+  and re-applied live with `setStreamingConfig`; depth cadence re-arms the single
+  latest-frame scheduler without queueing.
+- Telemetry schema **3** adds per-sample cadence fields (requested/effective
+  rates, automatic flag, low-power and source-limit flags, observed depth
+  cadence and latency), carried through the manual Supabase upload; no migration
+  is needed.
+- `INTERNET` is declared in the main manifest for that optional manual upload
+  only. Both detection and depth models remain bundled; nothing is downloaded.
+
+### Verified
+- `flutter analyze --no-pub`: 4 pre-existing issues; `flutter test --no-pub`:
+  527 passing, 1 pre-existing `tts_service_test` failure. No build, device or
+  performance measurement was run, so no cadence/FPS figure is claimed.
+
+---
+
 ## 2026-10-22 — MDE depth model bundled
+
+> **Later change (2026-10-23):** the main manifest now also declares `INTERNET`,
+> but only for the optional manual telemetry upload. The depth model remains
+> bundled and no model is downloaded.
 
 ### Fixed
 - Depth could not run in a release build. The estimator passed the official
@@ -58,8 +88,9 @@
 
 ### Verified
 - `dart format` clean; `flutter analyze` shows only 4 pre-existing issues;
-  `flutter test` **452 passing, 1 pre-existing failure**; `flutter build apk
-  --release` succeeds (82.9 MB, no `libtensorflowlite_jni.so` in the APK).
+  `flutter test` **452 passing, 1 pre-existing failure** (the
+  2026-10-21 revision total); `flutter build apk --release` succeeds (82.9 MB,
+  no `libtensorflowlite_jni.so` in the APK).
 - **No device run.** Depth accuracy, on-device latency/FPS, thermal behaviour
   and the manual matrix in [`mde-integration.md`](mde-integration.md) remain
   unverified.
@@ -83,6 +114,11 @@
 ---
 
 ## Unreleased — Alert-Latency Telemetry (Workstream 2)
+
+> **Later changes:** the Custom engine was removed on 2026-10-21, so only the
+> four Ultralytics summaries carry samples; the export schema is now **3** after
+> the cadence telemetry, and the suite has since run (527 passing, 1 known
+> pre-existing failure).
 
 ### Added
 - Bounded alert-lifecycle telemetry in [`alert_lifecycle.dart`](../lib/models/alert_lifecycle.dart) and [`telemetry_service.dart`](../lib/services/telemetry_service.dart): one event-delta record per terminal TTS submission (capped at 500) plus a replace-only cumulative scheduler-counter snapshot.

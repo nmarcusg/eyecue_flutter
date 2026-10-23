@@ -1,8 +1,11 @@
 // Development utility: append deterministic Ultralytics metadata to a TFLite
 // artifact without changing the FlatBuffer bytes that contain the model graph.
 //
-// Run from the repository root:
-//   dart run tool/package_ultralytics_metadata.dart
+// Run from the repository root (the base graph is not vendored):
+//   dart run tool/package_ultralytics_metadata.dart --input=<base>.tflite
+//
+// docs/model-assets.md is hand-maintained. A measurement report is written only
+// when --report=<path> is passed explicitly.
 //
 // The generated artifact is a normal TFLite FlatBuffer followed by a complete
 // ZIP archive containing `metadata.json`.  This is the format consumed by
@@ -17,7 +20,6 @@ import 'package:eyecue_flutter/models/tflite_flatbuffer.dart';
 const _defaultInput = '';
 const _defaultOutput = 'assets/yolov8n_int8_new_metadata.tflite';
 const _defaultLabels = 'assets/labels.txt';
-const _defaultReport = 'docs/model-assets.md';
 const _expectedLabelCount = 80;
 const _metadataEntryName = 'metadata.json';
 
@@ -340,8 +342,8 @@ String _buildReport({
 
   return '''# Model assets
 
-This record describes the metadata-enriched TFLite artifact used by both EyeCue
-inference engines. The metadata suffix is packaging-only: the generated file
+This record describes the metadata-enriched TFLite artifact used by the
+Ultralytics detection engine. The metadata suffix is packaging-only: the generated file
 starts with the exact bytes of the base FlatBuffer and adds one deterministic
 stored ZIP entry named `metadata.json`.
 
@@ -388,8 +390,8 @@ duplicate labels and requires exactly 80 entries, so class index 41 resolves to
 Regenerate or validate with:
 
 ```text
-dart run tool/package_ultralytics_metadata.dart
-dart run tool/package_ultralytics_metadata.dart --check
+dart run tool/package_ultralytics_metadata.dart --input=<base>.tflite
+dart run tool/package_ultralytics_metadata.dart --check --input=<base>.tflite
 ```
 ''';
 }
@@ -624,7 +626,7 @@ class _Options {
     var inputPath = _defaultInput;
     var outputPath = _defaultOutput;
     var labelsPath = _defaultLabels;
-    String? reportPath = _defaultReport;
+    String? reportPath;
     var checkOnly = false;
 
     for (var index = 0; index < args.length; index++) {
