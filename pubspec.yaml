@@ -44,6 +44,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/yolov8n_int8_new_metadata.tflite
+    # Official Ultralytics depth model (yolo26n-depth, w8a32, v0.6.6). Bundled
+    # so MDE runs offline without the INTERNET permission.
+    - assets/yolo26n-depth_w8a32.tflite
     - assets/labels.txt
     # Home visual mark (decorative; wordmark stays live text).
     - assets/logo.png

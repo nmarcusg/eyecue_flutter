@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-10-22 — MDE depth model bundled
+
+### Fixed
+- Depth could not run in a release build. The estimator passed the official
+  `yolo26n-depth` id, so the plugin downloaded the model on first use, but
+  release manifests declare only `CAMERA` (`INTERNET` exists only in the
+  debug/profile manifests). The load always failed, the estimator degraded, and
+  the screen showed the degraded banner while detection kept working.
+- `yolo26n-depth_w8a32.tflite` is now a bundled asset
+  ([`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite)),
+  loaded through the same asset path detection already uses. MDE is fully
+  offline and needs no `INTERNET` permission.
+
+### Added
+- One-shot `[Depth]` diagnostics: the requested model path and `useGpu` before
+  loading, the error string on load failure, and the first frame's map size,
+  depth range, elapsed milliseconds and accelerator choice.
+
+### Verified
+- Static only: `dart format`, `flutter analyze`, `flutter test` and
+  `flutter build apk --release`. **No device run** — the heatmap, metric
+  distances and on-device latency remain unverified.
+
+---
+
 ## 2026-10-21 — Monocular depth estimation; single engine
 
 ### Added

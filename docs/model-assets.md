@@ -18,12 +18,27 @@ dart run tool/package_ultralytics_metadata.dart --check --input=<base>.tflite
 
 | Field | Value |
 |---|---|
-| Model ID | `yolo26n-depth` |
-| Android artifact | `yolo26n-depth_w8a32.tflite` |
-| Source | plugin-pinned GitHub release `v0.6.6` |
-| Cache | `<app documents>/mobile-standard-v1/` |
+| Official id | `yolo26n-depth` |
+| Runtime artifact | [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite) |
+| Base source | official `yolo26n-depth_w8a32.tflite` from the pinned `yolo-flutter-app` GitHub release `v0.6.6`, copied unchanged |
+| Size | 5,474,749 bytes |
+| SHA-256 | `8c7f242c2a8c339c6721863e103e17e026cbd784c9a3d031a8e902660c364311` |
+| Task | `depth`; output `[1,1,640,640]`, input `[1,3,640,640]` (`imgsz` 640×640) |
+| Quantization | `w8a32` (per the published export name) |
+| License | AGPL-3.0 (Ultralytics weights) |
+| Provenance | bundled, not generated locally — no packaging step and no appended metadata suffix |
 | Loaded by | `MonocularDepthEstimator` (second `YOLO` instance, `YOLOTask.depth`) |
-| Vendored in repo | no (downloaded on first use; offline degrades to bbox distance) |
+
+The artifact ships byte-for-byte as published. Unlike the detection model it
+carries **no** appended `metadata.json` (its only flatbuffer metadata entries are
+the generic `min_runtime_version` and `keep_stablehlo_constant`), so the plugin's
+`inspectModel` reports an empty task and `MonocularDepthEstimator` passes
+`YOLOTask.depth` explicitly instead of relying on metadata.
+
+Both runtime models are bundled assets now, so the app requires **no `INTERNET`
+permission** and depth works on the first run while offline. The earlier
+download-on-first-use path could never succeed in a release build: release
+manifests declare only `CAMERA`.
 
 Depth values are metres as produced by the model; they are **uncalibrated**.
 See [`mde-integration.md`](mde-integration.md).

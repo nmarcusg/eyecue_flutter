@@ -56,13 +56,18 @@ void main() {
     expect(hits, isEmpty, reason: hits.join('\n'));
   });
 
-  test('only the metadata-enriched detection model asset is vendored', () {
-    final assets = Directory('assets')
-        .listSync()
-        .whereType<File>()
-        .map((file) => file.uri.pathSegments.last)
-        .where((name) => name.endsWith('.tflite'))
-        .toList();
-    expect(assets, ['yolov8n_int8_new_metadata.tflite']);
+  test('only the two runtime model assets are vendored', () {
+    final assets =
+        Directory('assets')
+            .listSync()
+            .whereType<File>()
+            .map((file) => file.uri.pathSegments.last)
+            .where((name) => name.endsWith('.tflite'))
+            .toList()
+          ..sort();
+    expect(assets, [
+      'yolo26n-depth_w8a32.tflite',
+      'yolov8n_int8_new_metadata.tflite',
+    ]);
   });
 }
