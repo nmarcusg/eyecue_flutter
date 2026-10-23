@@ -33,6 +33,35 @@ void main() {
     expect(bytes.length, isNot(detection.length));
   });
 
+  test('depth artifact appends a zip metadata entry', () {
+    final bytes = File(assetPath).readAsBytesSync();
+    // FlatBuffer + appended ZIP entry named metadata.json. The entry is
+    // DEFLATED, so a plaintext byte grep cannot see the JSON — these are the
+    // structural markers that prove the suffix is there.
+    const localHeader = [0x50, 0x4B, 0x03, 0x04];
+    const endOfCentralDirectory = [0x50, 0x4B, 0x05, 0x06];
+
+    bool contains(List<int> signature, int from, int to) {
+      for (var i = from; i + signature.length <= to; i++) {
+        var match = true;
+        for (var j = 0; j < signature.length; j++) {
+          if (bytes[i + j] != signature[j]) {
+            match = false;
+            break;
+          }
+        }
+        if (match) return true;
+      }
+      return false;
+    }
+
+    expect(contains(localHeader, 0, bytes.length), isTrue);
+    expect(
+      contains(endOfCentralDirectory, bytes.length - 64 * 1024, bytes.length),
+      isTrue,
+    );
+  });
+
   test('pubspec declares the depth asset and the constant matches it', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec, contains('- $assetPath'));

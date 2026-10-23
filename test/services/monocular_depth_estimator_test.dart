@@ -23,6 +23,9 @@ void main() {
     final seen = <int>[];
     final estimator = MonocularDepthEstimator(
       minIntervalMs: 10,
+      // Synchronous fake: the real heatmap decode (decodeImageFromPixels) can
+      // take ~1 s under load and would make the cadence assertion racy.
+      heatmapBuilder: (_) async => null,
       predictor: (jpeg, useGpu) async {
         seen.add(jpeg.first);
         await gate.future;
@@ -51,7 +54,9 @@ void main() {
     gate.complete();
     await Future<void>.delayed(const Duration(milliseconds: 60));
     expect(seen, [1, 4]);
+    expect(estimator.debugPendingFrames, 0);
     expect(estimator.frame.value?.rotationDegrees, 90);
+    expect(estimator.frame.value?.heatmap, isNull);
     expect(estimator.state.value, DepthRunState.ready);
 
     estimator.dispose();
@@ -108,5 +113,27 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('heatmap stride keeps the longest side at or below 320 px', () {
+    expect(MonocularDepthEstimator.heatmapStrideFor(640, 480), 2);
+    expect(MonocularDepthEstimator.heatmapStrideFor(320, 240), 1);
+    expect(MonocularDepthEstimator.heatmapStrideFor(1280, 960), 4);
+    expect(MonocularDepthEstimator.heatmapStrideFor(2560, 1920), 8);
+  });
+
+  test('heatmap buffer uses the downsampled grid', () {
+    final map = YOLODepthMap(
+      values: Float32List(640 * 480),
+      width: 640,
+      height: 480,
+      minDepth: 0,
+      maxDepth: 1,
+    );
+    final buffer = MonocularDepthEstimator.buildHeatmapPixels(map);
+    const stride = 2;
+    expect(buffer.width, (640 / stride).ceil());
+    expect(buffer.height, (480 / stride).ceil());
+    expect(buffer.pixels.length, buffer.width * buffer.height * 4);
   });
 }

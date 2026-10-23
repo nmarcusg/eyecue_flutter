@@ -60,6 +60,7 @@ class MonocularDepthEstimator {
   MonocularDepthEstimator({
     this.onFrame,
     DepthPredictor? predictor,
+    this.heatmapBuilder,
     this.modelId = EyeCueModelConfig.depthModelAssetPath,
     this.minIntervalMs = EyeCueModelConfig.depthMinIntervalMs,
   }) : _predict = predictor;
@@ -79,6 +80,9 @@ class MonocularDepthEstimator {
   final ValueNotifier<DepthFrame?> frame = ValueNotifier(null);
 
   final DepthPredictor? _predict;
+
+  /// Test seam: defaults to the real colourisation/decode path.
+  final Future<ui.Image?> Function(YOLODepthMap map)? heatmapBuilder;
 
   YOLO? _yolo;
   bool _useGpu = true;
@@ -147,7 +151,7 @@ class MonocularDepthEstimator {
         _degrade();
         return;
       }
-      final heatmap = await _buildHeatmap(depthMap);
+      final heatmap = await (heatmapBuilder ?? _buildHeatmap)(depthMap);
       if (_disposed) {
         heatmap?.dispose();
         return;
@@ -268,31 +272,64 @@ class MonocularDepthEstimator {
     }
   }
 
-  Future<ui.Image?> _buildHeatmap(YOLODepthMap map) async {
-    final width = map.width;
-    final height = map.height;
-    if (width <= 0 || height <= 0) return null;
+  /// Smallest integer stride (1, 2, 4, 8) that keeps the longest side at or
+  /// below 320 px. Everything beyond 8 still returns 8.
+  static int heatmapStrideFor(int width, int height) {
+    final longest = width > height ? width : height;
+    for (final stride in const [1, 2, 4, 8]) {
+      if (longest / stride <= 320) return stride;
+    }
+    return 8;
+  }
+
+  /// RGBA bytes of the downsampled heatmap. Distance sampling keeps using the
+  /// full-resolution [map]; only this display overlay is reduced.
+  @visibleForTesting
+  static ({int width, int height, Uint8List pixels}) buildHeatmapPixels(
+    YOLODepthMap map,
+  ) {
+    final sourceWidth = map.width;
+    final sourceHeight = map.height;
+    final stride = heatmapStrideFor(sourceWidth, sourceHeight);
+    final width = (sourceWidth / stride).ceil();
+    final height = (sourceHeight / stride).ceil();
     final pixels = Uint8List(width * height * 4);
     final min = map.minDepth;
     final max = map.maxDepth;
     final span = max - min;
-    for (var i = 0; i < width * height; i++) {
-      final value = i < map.values.length ? map.values[i] : double.nan;
-      final t = !value.isFinite || span <= 0
-          ? 0.0
-          : ((value - min) / span).clamp(0.0, 1.0);
-      final (r, g, b) = _colourAt(t);
-      final offset = i * 4;
-      pixels[offset] = r;
-      pixels[offset + 1] = g;
-      pixels[offset + 2] = b;
-      pixels[offset + 3] = 140;
+    for (var y = 0; y < height; y++) {
+      final sourceY = y * stride < sourceHeight ? y * stride : sourceHeight - 1;
+      final row = y * width;
+      for (var x = 0; x < width; x++) {
+        final sourceX = x * stride < sourceWidth ? x * stride : sourceWidth - 1;
+        final index = sourceY * sourceWidth + sourceX;
+        final value = index < map.values.length
+            ? map.values[index]
+            : double.nan;
+        final t = !value.isFinite || span <= 0
+            ? 0.0
+            : ((value - min) / span).clamp(0.0, 1.0);
+        final (r, g, b) = _colourAt(t);
+        // Nearest-neighbour is fine: this is a decorative overlay, not a
+        // measurement surface.
+        final offset = (row + x) * 4;
+        pixels[offset] = r;
+        pixels[offset + 1] = g;
+        pixels[offset + 2] = b;
+        pixels[offset + 3] = 140;
+      }
     }
+    return (width: width, height: height, pixels: pixels);
+  }
+
+  Future<ui.Image?> _buildHeatmap(YOLODepthMap map) async {
+    if (map.width <= 0 || map.height <= 0) return null;
+    final buffer = buildHeatmapPixels(map);
     final completer = Completer<ui.Image?>();
     ui.decodeImageFromPixels(
-      pixels,
-      width,
-      height,
+      buffer.pixels,
+      buffer.width,
+      buffer.height,
       ui.PixelFormat.rgba8888,
       completer.complete,
     );

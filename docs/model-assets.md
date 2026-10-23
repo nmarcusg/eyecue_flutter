@@ -24,16 +24,29 @@ dart run tool/package_ultralytics_metadata.dart --check --input=<base>.tflite
 | Size | 5,474,749 bytes |
 | SHA-256 | `8c7f242c2a8c339c6721863e103e17e026cbd784c9a3d031a8e902660c364311` |
 | Task | `depth`; output `[1,1,640,640]`, input `[1,3,640,640]` (`imgsz` 640×640) |
-| Quantization | `w8a32` (per the published export name) |
+| Quantization | `w8a32` (declared in `metadata.json` as `args.quantize`) |
 | License | AGPL-3.0 (Ultralytics weights) |
-| Provenance | bundled, not generated locally — no packaging step and no appended metadata suffix |
+| Provenance | bundled, not generated locally — the published file already ends with its own metadata suffix |
 | Loaded by | `MonocularDepthEstimator` (second `YOLO` instance, `YOLOTask.depth`) |
 
-The artifact ships byte-for-byte as published. Unlike the detection model it
-carries **no** appended `metadata.json` (its only flatbuffer metadata entries are
-the generic `min_runtime_version` and `keep_stablehlo_constant`), so the plugin's
-`inspectModel` reports an empty task and `MonocularDepthEstimator` passes
-`YOLOTask.depth` explicitly instead of relying on metadata.
+The artifact is `FlatBuffer (TFL3)` **plus an appended deflated zip entry**
+`metadata.json` (563 bytes):
+
+```json
+{"description": "Ultralytics YOLO26n-depth-log model ...", "task": "depth",
+ "head": "Depth", "imgsz": [640, 640], "names": {"0": "depth"},
+ "args": {..., "quantize": "w8a32"}, "end2end": false,
+ "license": "AGPL-3.0 License (https://ultralytics.com/license)", "version": "8.4.104"}
+```
+
+The entry is **deflated**, so a raw byte/text grep over the file does not find
+the JSON — that is why the earlier record wrongly reported "no metadata". Both
+`unzip -l` and `unzip -p <artifact> metadata.json` show it, and the plugin's
+`inspectModel` and `YOLOFileUtils.loadModelLabels` decompress it normally.
+
+`MonocularDepthEstimator` still passes `YOLOTask.depth` explicitly rather than
+depending on the resolved task, so a metadata regression cannot silently change
+the task.
 
 Both runtime models are bundled assets now, so the app requires **no `INTERNET`
 permission** and depth works on the first run while offline. The earlier
