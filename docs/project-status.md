@@ -79,7 +79,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Next Objective
 
-1. **Extend candidate device validation** — repeat the target-device run for a controlled duration, collect fallback/crash evidence, and measure detections without treating the short observation as a release benchmark.
+1. ~~**Extend candidate device validation**~~ — obsolete: it targeted the removed Custom-engine NCHW/XNNPACK candidate and its CPU fallback (removed 2026-10-21), not the current Ultralytics pipeline; the short observation was never a release benchmark.
 2. **Re-validate orientation on-device** — candidate NCHW portrait/landscape and front-camera runs, plus the deferred stable-baseline cases.
 3. ~~**Run the controlled dual-engine benchmark**~~ — obsolete: the Custom engine was removed on 2026-10-21. Measure the single Ultralytics pipeline plus bundled depth instead, without inferring performance from static inspection or a short observational run.
 4. **Complete the v0.2.x UI validation** — gestures, TTS, mute toggle, settings persistence, and Logs & Reports charts.
@@ -94,7 +94,7 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 | 1 | On-device validation of gestures + TTS + settings persistence | 🔴 Critical |
 | 2 | ~~Implement TTS audio feedback~~ | ✅ Complete (v0.2.0) |
 | 3 | ~~Add permission-denied and error UI states~~ | ✅ Complete — permission UI plus typed runtime/recovery states |
-| 4 | Extend XNNPACK candidate validation safely and retain a working CPU fallback | 🔴 Critical |
+| 4 | ~~Extend XNNPACK candidate validation safely and retain a working CPU fallback~~ (obsolete: XNNPACK and its CPU fallback belonged to the Custom engine removed 2026-10-21) | — |
 | 5 | ~~Implement thesis gesture controls~~ | ✅ Complete (v0.2.0) |
 | 6 | ~~Isolate restart recovery~~ | ✅ Complete — bounded, generation-safe Custom-worker lifecycle |
 | 7 | Orientation re-validation (back landscape + front camera) | 🟡 High |
