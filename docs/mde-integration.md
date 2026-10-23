@@ -79,16 +79,38 @@ the detection stream rather than every camera frame.
 
 | Item | Value |
 |---|---|
-| Model ID | `yolo26n-depth` |
-| Artifact | `yolo26n-depth_w8a32.tflite` |
-| Source | pinned plugin release `v0.6.6` (GitHub release asset) |
-| Cache | `<app documents>/mobile-standard-v1/` |
+| Official id | `yolo26n-depth` |
+| Artifact | [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite), bundled |
+| Source | official Ultralytics export from the pinned plugin release `v0.6.6` |
 | Load | lazy, on the first submitted frame |
 | Accelerator | GPU first, one CPU retry, then degraded |
 
-First use needs network. Offline first run fails the model load, sets the
-degraded state and keeps detection working with the bounding-box estimator; the
-app never blocks on the download and never retries blindly.
+### Why the model is bundled
+
+Distribution is **offline-first**: the artifact ships in the APK as a Flutter
+asset, exactly like the detection model, and is loaded through the same
+`YOLOModelResolver` → `_copyFlutterAssetToDocuments` → `inspectModel` → native
+`loadModel` path that detection already proves on device.
+
+The previous design passed the official model id and let the plugin download
+`yolo26n-depth_w8a32.tflite` on first use into
+`<documents>/mobile-standard-v1/`. That can never work in a release build: the
+release manifest declares only `CAMERA`, because `INTERNET` exists solely in the
+debug and profile manifests. The download therefore failed, the model load threw,
+the estimator degraded, and depth never ran — while detection kept working
+because its model is bundled. Bundling removes the network dependency entirely
+instead of widening permissions, so the assistive path also works with no
+connectivity and no `INTERNET` permission.
+
+`shortcut:` the plugin copies an asset once into the documents dir keyed by
+filename, and `_copyFlutterAssetToDocuments` returns early when that file
+already exists. A future model swap must therefore ship a **new filename**, or
+devices keep loading the stale cached copy.
+
+A model that still fails to load now logs `[Depth] loading model: <path>
+(useGpu=<bool>)` and `[Depth] model load failed: <error>` before degrading, and
+the first successful frame logs its map size, depth range, elapsed milliseconds
+and accelerator choice — so an on-device failure is never silent.
 
 ## Coordinates
 

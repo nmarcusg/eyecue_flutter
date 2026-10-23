@@ -60,10 +60,17 @@ class MonocularDepthEstimator {
   MonocularDepthEstimator({
     this.onFrame,
     DepthPredictor? predictor,
-    this.modelId = EyeCueModelConfig.depthModelId,
+    this.modelId = EyeCueModelConfig.depthModelAssetPath,
     this.minIntervalMs = EyeCueModelConfig.depthMinIntervalMs,
   }) : _predict = predictor;
 
+  /// Bundled asset path of the depth model, resolved by the plugin's
+  /// `YOLOModelResolver` through the same asset path detection already uses.
+  ///
+  /// shortcut: the plugin copies an asset once into the documents dir keyed by
+  /// filename, and `_copyFlutterAssetToDocuments` returns early when that file
+  /// exists. A future model swap must therefore use a NEW filename, or devices
+  /// keep loading the stale cached copy.
   final String modelId;
   final int minIntervalMs;
   final void Function(DepthFrame frame)? onFrame;
@@ -76,6 +83,7 @@ class MonocularDepthEstimator {
   YOLO? _yolo;
   bool _useGpu = true;
   bool _modelLoadFailed = false;
+  bool _loggedFirstFrame = false;
 
   Timer? _timer;
   Uint8List? _pendingJpeg;
@@ -130,6 +138,7 @@ class MonocularDepthEstimator {
     final submittedAt = _pendingTimestampMs;
     _pendingJpeg = null;
     _running = true;
+    final stopwatch = Stopwatch()..start();
     try {
       final result = await _run(jpeg);
       if (_disposed) return;
@@ -154,6 +163,15 @@ class MonocularDepthEstimator {
       final previous = frame.value;
       frame.value = next;
       previous?.heatmap?.dispose();
+      if (!_loggedFirstFrame) {
+        _loggedFirstFrame = true;
+        debugPrint(
+          '[Depth] first frame ${depthMap.width}x${depthMap.height} '
+          'minDepth=${depthMap.minDepth.toStringAsFixed(2)} '
+          'maxDepth=${depthMap.maxDepth.toStringAsFixed(2)} '
+          'in ${stopwatch.elapsedMilliseconds} ms (useGpu=$_useGpu)',
+        );
+      }
       state.value = DepthRunState.ready;
       onFrame?.call(next);
     } catch (error) {
@@ -184,6 +202,7 @@ class MonocularDepthEstimator {
     if (existing != null && _useGpu == useGpu) return existing;
     await _disposeModel();
     state.value = DepthRunState.loading;
+    debugPrint('[Depth] loading model: $modelId (useGpu=$useGpu)');
     final yolo = YOLO(
       modelPath: modelId,
       task: YOLOTask.depth,
@@ -194,7 +213,8 @@ class MonocularDepthEstimator {
       final ok = await yolo.loadModel();
       if (!ok) throw StateError('depth model did not load');
     } catch (error) {
-      // Usually the first-use download failed (offline). Never retry blindly.
+      // A missing/incompatible bundled asset will not fix itself on retry.
+      debugPrint('[Depth] model load failed: $error');
       _modelLoadFailed = true;
       try {
         await yolo.dispose();
@@ -216,6 +236,7 @@ class MonocularDepthEstimator {
     _timer?.cancel();
     _timer = null;
     _pendingJpeg = null;
+    _loggedFirstFrame = false;
   }
 
   /// Drops the current frame and heatmap image.
@@ -231,6 +252,7 @@ class MonocularDepthEstimator {
   /// retry cannot relabel it as GPU without reloading.
   void retry() {
     _modelLoadFailed = false;
+    _loggedFirstFrame = false;
     if (_yolo == null) _useGpu = true;
     state.value = _yolo == null ? DepthRunState.idle : DepthRunState.ready;
   }

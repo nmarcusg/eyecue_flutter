@@ -13,9 +13,14 @@
   `0`/`90`. A 180° turn and landscape-left vs landscape-right cannot be mapped;
   if the rotation cannot be resolved the app runs degraded (bbox distance, no
   heatmap).
-- **First depth use needs network.** `yolo26n-depth` is downloaded on first use
-  into `<documents>/mobile-standard-v1/`. Offline first run degrades to the
-  bounding-box estimator; it never blocks detection.
+- **Resolved — the depth model could never be downloaded in a release build.**
+  The previously shipped build passed the official `yolo26n-depth` id and relied
+  on the plugin's first-use download, but release manifests declare only
+  `CAMERA` (`INTERNET` exists only in the debug/profile manifests), so the load
+  always failed and depth silently ran degraded. The model is now bundled as
+  [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite);
+  no `INTERNET` permission is needed. Previously installed release APKs must be
+  replaced to pick this up.
 - **Unmeasured on device.** Depth latency, achieved cadence, thermal impact,
   detection FPS and depth accuracy have not been measured; the 500 ms interval
   is a configured floor, not an observed rate.

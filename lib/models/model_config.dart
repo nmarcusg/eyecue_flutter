@@ -10,9 +10,10 @@ abstract final class EyeCueModelConfig {
   static const confidenceThreshold = defaultConfidenceThreshold;
   static const nmsIouThreshold = 0.45;
 
-  /// Official Ultralytics depth model ID. Downloaded by the plugin on first use
-  /// into `<documents>/mobile-standard-v1/`.
-  static const depthModelId = 'yolo26n-depth';
+  /// Bundled official Ultralytics depth model (id `yolo26n-depth`, w8a32 LiteRT
+  /// export, release v0.6.6). Bundled rather than downloaded so MDE works
+  /// offline and without the INTERNET permission.
+  static const depthModelAssetPath = 'assets/yolo26n-depth_w8a32.tflite';
 
   /// Minimum gap between depth inferences; detection keeps its own cadence.
   static const depthMinIntervalMs = 500;
