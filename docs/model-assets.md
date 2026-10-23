@@ -48,10 +48,11 @@ the JSON — that is why the earlier record wrongly reported "no metadata". Both
 depending on the resolved task, so a metadata regression cannot silently change
 the task.
 
-Both runtime models are bundled assets now, so the app requires **no `INTERNET`
-permission** and depth works on the first run while offline. The earlier
-download-on-first-use path could never succeed in a release build: release
-manifests declare only `CAMERA`.
+Both runtime models are bundled assets, so detection and depth load offline on
+the first run. Release manifests declare `CAMERA` and `INTERNET`; the latter was
+added only for the optional manual research-telemetry upload. No model, label,
+or metadata is fetched at runtime — depth works offline and the earlier
+download-on-first-use path is gone.
 
 Depth values are metres as produced by the model; they are **uncalibrated**.
 See [`mde-integration.md`](mde-integration.md).
