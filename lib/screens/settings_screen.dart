@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import '../models/app_settings.dart';
+import '../services/inference_cadence.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../theme/app_colors.dart';
@@ -270,6 +271,12 @@ class SettingsScreen extends StatelessWidget {
                                 ),
                               ],
                             ),
+                            _SettingsCard(
+                              title: 'Inference Cadence',
+                              children: [
+                                _InferenceCadenceControls(settings: settings),
+                              ],
+                            ),
                             _SystemPerformanceCard(
                               telemetry: telemetry,
                               onOpenLogsReports: onOpenLogsReports,
@@ -403,6 +410,202 @@ class _SensitivityControlsState extends State<_SensitivityControls> {
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Detection and depth cadence targets.
+///
+/// Sliders keep a local draft while dragging (like [_SensitivityControls]) so a
+/// drag does not persist on every tick, while the persisted value stays the
+/// single source of truth when the setting changes elsewhere.
+class _InferenceCadenceControls extends StatefulWidget {
+  final SettingsService settings;
+
+  const _InferenceCadenceControls({required this.settings});
+
+  @override
+  State<_InferenceCadenceControls> createState() =>
+      _InferenceCadenceControlsState();
+}
+
+class _InferenceCadenceControlsState extends State<_InferenceCadenceControls> {
+  /// Target applied when Automatic is switched off.
+  static const int _manualDetectionHz = 15;
+
+  late double _detectionDraft =
+      (widget.settings.detectionTargetHz ?? _manualDetectionHz).toDouble();
+  late double _depthDraft = widget.settings.depthTargetHz.toDouble();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.settings.addListener(_handleSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.settings.removeListener(_handleSettingsChanged);
+    super.dispose();
+  }
+
+  void _handleSettingsChanged() {
+    final settings = widget.settings;
+    final detection = (settings.detectionTargetHz ?? _manualDetectionHz)
+        .toDouble();
+    final depth = settings.depthTargetHz.toDouble();
+    if (!mounted || (detection == _detectionDraft && depth == _depthDraft)) {
+      return;
+    }
+    setState(() {
+      _detectionDraft = detection;
+      _depthDraft = depth;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final captionStyle = theme.textTheme.bodySmall?.copyWith(
+      color: kHomeInkMuted,
+    );
+    final settings = widget.settings;
+    final automatic = settings.detectionTargetHz == null;
+    final depthDisabled =
+        settings.distanceEstimationMode ==
+        DistanceEstimationMode.boundingBoxApproximation;
+    final cadence = InferenceCadence.resolve(
+      requestedDetectionHz: settings.detectionTargetHz,
+      requestedDepthHz: settings.depthTargetHz,
+      lowPowerMode: settings.lowPowerMode,
+      distanceEstimationMode: settings.distanceEstimationMode,
+    );
+    final detectionHz = _detectionDraft.round();
+    final depthHz = _depthDraft.round();
+    final lowPowerCaps = <String>[
+      if (cadence.lowPowerClamped &&
+          (settings.detectionTargetHz == null ||
+              settings.detectionTargetHz! >
+                  InferenceCadence.lowPowerDetectionCapHz))
+        'detection to ${cadence.effectiveDetectionHz} Hz',
+      if (cadence.lowPowerClamped &&
+          cadence.depthEnabled &&
+          settings.depthTargetHz > InferenceCadence.lowPowerDepthCapHz)
+        'depth to ${cadence.effectiveDepthHz} Hz',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: kSpace16),
+          title: const Text('Automatic detector cadence'),
+          subtitle: Text(
+            automatic
+                ? 'Runs as fast as the device allows.'
+                : 'Target: $detectionHz Hz',
+          ),
+          value: automatic,
+          onChanged: (value) =>
+              settings.setDetectionTargetHz(value ? null : _manualDetectionHz),
+        ),
+        Semantics(
+          container: true,
+          label: 'Detector cadence target, $detectionHz Hz',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, 0),
+                child: Text(
+                  'Detector cadence target: $detectionHz Hz',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+              Slider(
+                key: const ValueKey('cadenceDetectionSlider'),
+                min: AppSettings.minDetectionTargetHz.toDouble(),
+                max: AppSettings.maxDetectionTargetHz.toDouble(),
+                divisions:
+                    AppSettings.maxDetectionTargetHz -
+                    AppSettings.minDetectionTargetHz,
+                value: _detectionDraft,
+                label: '$detectionHz Hz',
+                onChanged: automatic
+                    ? null
+                    : (value) => setState(() => _detectionDraft = value),
+                onChangeEnd: automatic
+                    ? null
+                    : (value) => settings.setDetectionTargetHz(value.round()),
+              ),
+            ],
+          ),
+        ),
+        Semantics(
+          container: true,
+          // The value is preserved while Bounding box mode disables the control.
+          label:
+              'Depth cadence target, $depthHz Hz'
+              '${depthDisabled ? ', disabled in bounding box mode' : ''}',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace16,
+                  kSpace8,
+                  kSpace16,
+                  0,
+                ),
+                child: Text(
+                  'Depth cadence target: $depthHz Hz',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+              Slider(
+                key: const ValueKey('cadenceDepthSlider'),
+                min: AppSettings.minDepthTargetHz.toDouble(),
+                max: AppSettings.maxDepthTargetHz.toDouble(),
+                divisions:
+                    AppSettings.maxDepthTargetHz - AppSettings.minDepthTargetHz,
+                value: _depthDraft,
+                label: '$depthHz Hz',
+                onChanged: depthDisabled
+                    ? null
+                    : (value) => setState(() => _depthDraft = value),
+                onChangeEnd: depthDisabled
+                    ? null
+                    : (value) => settings.setDepthTargetHz(value.round()),
+              ),
+              if (depthDisabled)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, 0),
+                  child: Text(
+                    'Depth inference is off in Bounding box mode. The target is '
+                    'kept for when Depth estimate is selected again.',
+                    style: captionStyle,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(kSpace16, kSpace8, kSpace16, 0),
+          child: Text(
+            'Actual throughput depends on the device; the value is a target, '
+            'not a guaranteed rate.',
+            style: captionStyle,
+          ),
+        ),
+        if (lowPowerCaps.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(kSpace16, kSpace4, kSpace16, 0),
+            child: Text(
+              'Low power mode limits ${lowPowerCaps.join(' and ')}.',
+              style: captionStyle,
+            ),
+          ),
       ],
     );
   }

@@ -76,6 +76,8 @@ class SettingsService extends ChangeNotifier {
   bool get showDepthHeatmap => _settings.showDepthHeatmap;
   DistanceEstimationMode get distanceEstimationMode =>
       _settings.distanceEstimationMode;
+  int? get detectionTargetHz => _settings.detectionTargetHz;
+  int get depthTargetHz => _settings.depthTargetHz;
 
   /// Loads persisted settings. Safe to call once at startup; on any failure
   /// (missing/corrupt file) the defaults are kept.
@@ -120,6 +122,13 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setDistanceEstimationMode(DistanceEstimationMode value) =>
       _update(_settings.copyWith(distanceEstimationMode: value));
+
+  /// `null` selects Automatic (native uncapped cadence).
+  Future<void> setDetectionTargetHz(int? value) =>
+      _update(_settings.copyWith(detectionTargetHz: value));
+
+  Future<void> setDepthTargetHz(int value) =>
+      _update(_settings.copyWith(depthTargetHz: value));
 
   Future<void> _update(AppSettings next) async {
     if (next == _settings) return;

@@ -64,6 +64,43 @@ void main() {
       await service.load();
       expect(service.vibrationFeedback, isTrue);
     });
+
+    test('cadence targets default to Automatic and 2 Hz', () async {
+      final service = SettingsService(store: InMemorySettingsStore());
+      await service.load();
+      expect(service.detectionTargetHz, isNull);
+      expect(service.depthTargetHz, AppSettings.defaultDepthTargetHz);
+      expect(AppSettings.currentSchemaVersion, 5);
+    });
+
+    test('cadence setters update, notify and persist', () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      var notified = 0;
+      service.addListener(() => notified++);
+      await service.setDetectionTargetHz(12);
+      await service.setDepthTargetHz(6);
+      expect(service.detectionTargetHz, 12);
+      expect(service.depthTargetHz, 6);
+      expect(notified, 2);
+
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.detectionTargetHz, 12);
+      expect(reloaded.depthTargetHz, 6);
+    });
+
+    test('detection target persists back to Automatic (null)', () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      await service.setDetectionTargetHz(8);
+      await service.setDetectionTargetHz(null);
+      expect(service.detectionTargetHz, isNull);
+
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.detectionTargetHz, isNull);
+    });
   });
 
   group('AppSettings', () {
@@ -125,6 +162,71 @@ void main() {
         AppSettings.fromJson({'detectionConfidence': 2.0}).detectionConfidence,
         0.75,
       );
+    });
+
+    test('cadence targets round-trip through JSON', () {
+      const a = AppSettings(detectionTargetHz: 7, depthTargetHz: 4);
+      expect(AppSettings.fromJson(a.toJson()), a);
+    });
+
+    test('copyWith clears the detection target without touching the rest', () {
+      const a = AppSettings(detectionTargetHz: 9, depthTargetHz: 3);
+      final cleared = a.copyWith(detectionTargetHz: null);
+      expect(cleared.detectionTargetHz, isNull);
+      expect(cleared.depthTargetHz, 3);
+      // Other copyWith calls must not resurrect the cleared value.
+      final unchanged = cleared.copyWith(audioEnabled: false);
+      expect(unchanged.detectionTargetHz, isNull);
+      expect(unchanged.depthTargetHz, 3);
+    });
+
+    test('legacy and invalid cadence JSON normalizes safely', () {
+      expect(AppSettings.fromJson({}).detectionTargetHz, isNull);
+      expect(AppSettings.fromJson({}).depthTargetHz, 2);
+      expect(
+        AppSettings.fromJson({
+          'schemaVersion': 4,
+          'detectionTargetHz': 31,
+        }).detectionTargetHz,
+        30,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': 12.4}).detectionTargetHz,
+        12,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': 0}).detectionTargetHz,
+        isNull,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': -3}).detectionTargetHz,
+        isNull,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': '12'}).detectionTargetHz,
+        isNull,
+      );
+      expect(
+        AppSettings.fromJson({
+          'detectionTargetHz': double.infinity,
+        }).detectionTargetHz,
+        isNull,
+      );
+      expect(AppSettings.fromJson({'depthTargetHz': 1}).depthTargetHz, 2);
+      expect(AppSettings.fromJson({'depthTargetHz': 99}).depthTargetHz, 10);
+      expect(AppSettings.fromJson({'depthTargetHz': 5.6}).depthTargetHz, 6);
+      expect(
+        AppSettings.fromJson({'depthTargetHz': double.nan}).depthTargetHz,
+        2,
+      );
+    });
+
+    test('public normalizers round and clamp', () {
+      expect(AppSettings.normalizeDetectionTargetHz(null), isNull);
+      expect(AppSettings.normalizeDetectionTargetHz(2.6), 3);
+      expect(AppSettings.normalizeDetectionTargetHz(30.4), 30);
+      expect(AppSettings.normalizeDepthTargetHz(null), 2);
+      expect(AppSettings.normalizeDepthTargetHz(10.6), 10);
     });
   });
 }
