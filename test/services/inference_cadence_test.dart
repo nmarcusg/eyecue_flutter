@@ -108,4 +108,61 @@ void main() {
       expect(cadence.lowPowerClamped, isFalse);
     });
   });
+
+  group('InferenceCadence.depthInterval', () {
+    InferenceCadence cadenceFor({
+      required int depthHz,
+      int? detectionHz,
+      bool lowPower = false,
+      DistanceEstimationMode mode = DistanceEstimationMode.monocularDepth,
+    }) => InferenceCadence.resolve(
+      requestedDetectionHz: detectionHz,
+      requestedDepthHz: depthHz,
+      lowPowerMode: lowPower,
+      distanceEstimationMode: mode,
+    );
+
+    test('2 Hz schedules every 500 ms', () {
+      expect(
+        cadenceFor(depthHz: 2).depthInterval,
+        const Duration(milliseconds: 500),
+      );
+    });
+
+    test('3 Hz schedules every 333 ms', () {
+      expect(
+        cadenceFor(depthHz: 3).depthInterval,
+        const Duration(milliseconds: 333),
+      );
+    });
+
+    test('10 Hz schedules every 100 ms', () {
+      expect(
+        cadenceFor(depthHz: 10).depthInterval,
+        const Duration(milliseconds: 100),
+      );
+    });
+
+    test('a mode without depth work has no interval', () {
+      expect(
+        cadenceFor(
+          depthHz: 6,
+          mode: DistanceEstimationMode.boundingBoxApproximation,
+        ).depthInterval,
+        isNull,
+      );
+    });
+
+    test('a low power clamp flows into the interval', () {
+      final cadence = cadenceFor(depthHz: 10, lowPower: true);
+      expect(cadence.effectiveDepthHz, InferenceCadence.lowPowerDepthCapHz);
+      expect(cadence.depthInterval, const Duration(milliseconds: 500));
+    });
+
+    test('a source-limited target flows into the interval', () {
+      final cadence = cadenceFor(depthHz: 10, detectionHz: 3);
+      expect(cadence.sourceLimited, isTrue);
+      expect(cadence.depthInterval, const Duration(milliseconds: 333));
+    });
+  });
 }
