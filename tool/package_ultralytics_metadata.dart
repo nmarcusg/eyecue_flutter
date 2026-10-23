@@ -635,10 +635,6 @@ class _Options {
         checkOnly = true;
         continue;
       }
-      if (argument == '--no-report') {
-        reportPath = null;
-        continue;
-      }
       final separator = argument.indexOf('=');
       final name = separator == -1
           ? argument
