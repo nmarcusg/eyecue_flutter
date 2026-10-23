@@ -1,13 +1,13 @@
 # Telemetry export data dictionary
 
-> **Status:** export schema version 2 (unreleased Workstream 2 candidate). The
+> **Status:** export schema version 3 (unreleased Workstream 2 candidate). The
 > exporter records bounded alert-lifecycle records, a cumulative scheduler
-> counter snapshot, and eight alert-latency summaries in addition to the
-> per-frame inference data described below. All alert timings come from the
-> app's own speech-scheduler signals, so they describe the app-side path only;
-> physical audible-warning latency at the speaker is **not** measured. The
-> owning tests were written but not executed, and no analyzer, build, or device
-> run has validated this instrumentation.
+> counter snapshot, eight alert-latency summaries, and the inference cadence
+> configuration in addition to the per-frame inference data described below.
+> All alert timings come from the app's own speech-scheduler signals, so they
+> describe the app-side path only; physical audible-warning latency at the
+> speaker is **not** measured. The owning tests were written but not executed,
+> and no analyzer, build, or device run has validated this instrumentation.
 
 EyeCue exports an image-free snapshot only after an explicit user action from
 Logs & Reports. JSON keeps the same values in nested record arrays. CSV uses one
@@ -19,7 +19,7 @@ are empty.
 | CSV column | Meaning | Units / values |
 |---|---|---|
 | `record_type` | Row kind | `metadata`, `sample`, `detection`, `failure`, `fallback`, `recovery`, `correction`, `alert_lifecycle`, `alert_counter`, or `alert_summary` |
-| `schema_version` | Export schema version | Integer; currently `2` |
+| `schema_version` | Export schema version | Integer; currently `3` |
 | `timestamp` | Event or export time | UTC ISO-8601 timestamp |
 | `app_version` | Application version | Version string; metadata rows only |
 | `session_id` | In-memory session identifier | Opaque session string; metadata/correction rows |
@@ -37,6 +37,27 @@ are empty.
 | `inference_fps` | Observed inference rate | Frames per second |
 | `object_count` | Number of normalized detections | Count |
 | `confidence_threshold` | Active pre-NMS confidence threshold | Unit interval, quantized to the app's configured grid |
+| `requested_detection_hz` | Stored detector target | Hz, or empty when the target is Automatic |
+| `detection_cadence_automatic` | Detector target is Automatic, not a stored number | Boolean |
+| `effective_detection_hz` | Detector cadence actually allowed at sample time | Hz, or empty when uncapped |
+| `requested_depth_hz` | Stored depth target | Hz |
+| `effective_depth_hz` | Depth cadence actually allowed at sample time; `0` when depth work is off | Hz |
+| `depth_observed_hz` | Observed depth completion cadence | Hz, or empty when not yet measured |
+| `depth_latency_ms` | Last completed depth inference | Milliseconds, or empty when not yet measured |
+| `depth_status` | Depth model state | `disabled`, `loading`, `gpu`, `cpu`, `degraded`, or empty |
+| `low_power_clamped` | Low power mode lowered the stored target | Boolean |
+| `source_limited` | Depth target exceeds the detector cadence that feeds it | Boolean |
+
+- `requested_detection_hz` empty means Automatic; it is never a fabricated
+  default rate. `effective_detection_hz` empty means uncapped.
+- `depth_observed_hz`, `depth_latency_ms`, and `depth_status` are empty when the
+  sample predates cadence telemetry or the engine never observed a value. Empty
+  means unknown, never `0`.
+- `depth_status` reports `disabled` when distance estimation is off, otherwise
+  the model state (`loading`/`degraded`) or the accelerator of the loaded model
+  (`gpu`/`cpu`).
+- Cadence values are frozen into each sample when it is recorded: a settings
+  change is attributed from the next sample onward.
 
 ## Detections
 
@@ -190,7 +211,9 @@ writes files only when the user selects an export action.
 
 ## Schema compatibility
 
-Schema version 2 only adds keys and rows; no existing key or column changes
+Schema version 3 only adds keys and columns; no existing key or column changes
 meaning. Reading a schema-v1 JSON export yields empty `alertLifecycle` and
-`alertSummaries` lists and the default zero `alertCounters` snapshot, so older
-files stay loadable.
+`alertSummaries` lists and the default zero `alertCounters` snapshot. Reading a
+schema-v1 or schema-v2 sample without the cadence keys yields `null`/empty
+cadence values rather than `0`, so older files stay loadable and “unknown”
+stays distinguishable from “zero”.

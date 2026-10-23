@@ -111,6 +111,16 @@ class TelemetryExportService {
       'sample_count',
       'counter_name',
       'counter_value',
+      'requested_detection_hz',
+      'detection_cadence_automatic',
+      'effective_detection_hz',
+      'requested_depth_hz',
+      'effective_depth_hz',
+      'depth_observed_hz',
+      'depth_latency_ms',
+      'depth_status',
+      'low_power_clamped',
+      'source_limited',
     ];
 
     List<Object?> row(Map<String, dynamic> values) => [
@@ -137,6 +147,17 @@ class TelemetryExportService {
           'inference_fps': sample['inferenceFps'],
           'object_count': sample['objectCount'],
           'confidence_threshold': sample['confidenceThreshold'],
+          // Missing cadence keys stay empty/null, never a fabricated `0`.
+          'requested_detection_hz': sample['requestedDetectionHz'],
+          'detection_cadence_automatic': sample['detectionCadenceAutomatic'],
+          'effective_detection_hz': sample['effectiveDetectionHz'],
+          'requested_depth_hz': sample['requestedDepthHz'],
+          'effective_depth_hz': sample['effectiveDepthHz'],
+          'depth_observed_hz': sample['depthObservedHz'],
+          'depth_latency_ms': sample['depthLatencyMs'],
+          'depth_status': sample['depthStatus'],
+          'low_power_clamped': sample['lowPowerClamped'],
+          'source_limited': sample['sourceLimited'],
         }),
       for (final detection in export.detections)
         row({

@@ -281,6 +281,12 @@ class _OverviewTab extends StatelessWidget {
               ],
             ),
             const SizedBox(height: kSpace24),
+            const _SectionHeading('Inference Cadence'),
+            const SizedBox(height: kSpace8),
+            // Non-const on purpose: a const child is retained across the
+            // ListenableBuilder rebuild and would read a stale sample.
+            _InferenceCadenceSection(),
+            const SizedBox(height: kSpace24),
             const _SectionHeading('Engine Comparison'),
             const SizedBox(height: kSpace8),
             for (final engine in InferenceEngine.values)
@@ -349,6 +355,77 @@ class _OverviewTab extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Compact view of the inference cadence recorded with the latest sample.
+///
+/// Values recorded before cadence telemetry, and single fields the engine never
+/// observed, render `unknown` — never a fabricated zero.
+class _InferenceCadenceSection extends StatelessWidget {
+  const _InferenceCadenceSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final samples = _of(context).samples;
+    final sample = samples.isEmpty ? null : samples.last;
+    if (sample == null) {
+      return _SummaryCard(
+        children: [
+          Text(
+            'No inference sample recorded yet.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+          ),
+        ],
+      );
+    }
+    final requestedDetection = sample.requestedDetectionHz;
+    final effectiveDetection = sample.effectiveDetectionHz;
+    final observedHz = sample.depthObservedHz;
+    final latencyMs = sample.depthLatencyMs;
+    return _SummaryCard(
+      children: [
+        _SummaryRow(
+          label: 'Requested detector rate',
+          value: requestedDetection == null
+              ? 'Automatic'
+              : '$requestedDetection Hz',
+        ),
+        _SummaryRow(
+          label: 'Effective detector rate',
+          value: effectiveDetection == null
+              ? 'uncapped'
+              : '$effectiveDetection Hz',
+        ),
+        _SummaryRow(
+          label: 'Requested depth rate',
+          value: '${sample.requestedDepthHz} Hz',
+        ),
+        _SummaryRow(
+          label: 'Effective depth rate',
+          value: '${sample.effectiveDepthHz} Hz',
+        ),
+        _SummaryRow(
+          label: 'Observed depth rate',
+          value: observedHz == null
+              ? 'unknown'
+              : '${observedHz.toStringAsFixed(1)} Hz',
+        ),
+        _SummaryRow(
+          label: 'Depth latency',
+          value: latencyMs == null ? 'unknown' : '$latencyMs ms',
+        ),
+        _SummaryRow(
+          label: 'Depth status',
+          value: sample.depthStatus ?? 'unknown',
+        ),
+        if (sample.lowPowerClamped)
+          const _SummaryRow(label: 'Low power clamp', value: 'applied'),
+        if (sample.sourceLimited)
+          const _SummaryRow(label: 'Source limited', value: 'applied'),
+      ],
     );
   }
 }

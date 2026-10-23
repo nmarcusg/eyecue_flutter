@@ -101,6 +101,7 @@ class AssistiveDetectionController extends ChangeNotifier {
   void recordMetrics({
     required double latencyMs,
     required double inferenceFps,
+    CadenceSample? cadence,
   }) {
     telemetry.recordSample(
       latencyMs: latencyMs,
@@ -108,6 +109,16 @@ class AssistiveDetectionController extends ChangeNotifier {
       objectCount: _detections.length,
       engine: engine,
       confidenceThreshold: confidenceThreshold,
+      requestedDetectionHz: cadence?.requestedDetectionHz,
+      detectionCadenceAutomatic: cadence?.detectionCadenceAutomatic ?? false,
+      effectiveDetectionHz: cadence?.effectiveDetectionHz,
+      requestedDepthHz: cadence?.requestedDepthHz ?? 0,
+      effectiveDepthHz: cadence?.effectiveDepthHz ?? 0,
+      depthObservedHz: cadence?.depthObservedHz,
+      depthLatencyMs: cadence?.depthLatencyMs,
+      depthStatus: cadence?.depthStatus,
+      lowPowerClamped: cadence?.lowPowerClamped ?? false,
+      sourceLimited: cadence?.sourceLimited ?? false,
     );
   }
 

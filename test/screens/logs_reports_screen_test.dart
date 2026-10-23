@@ -200,6 +200,23 @@ Future<void> selectTab(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
+/// Scrolls the Overview list until [finder] is built and visible.
+///
+/// The Overview is a lazy ListView, so sections below the viewport are not
+/// built until the list is scrolled to them.
+Future<void> scrollOverviewTo(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    300,
+    scrollable: find
+        .descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+}
+
 void main() {
   group('route-local light theme scope', () {
     testWidgets('renders under the local buildHomeTheme() light theme', (
@@ -310,6 +327,63 @@ void main() {
       expect(find.text('8.0 FPS · 120.0 ms · 1 frames'), findsOneWidget);
       // Avg confidence is a percentage, not an em dash.
       expect(find.text('82%'), findsOneWidget);
+    });
+  });
+
+  group('inference cadence block', () {
+    testWidgets('empty telemetry renders the no-sample note', (tester) async {
+      await pumpLogsScreen(tester, telemetry: buildTelemetry());
+
+      expect(find.text('Inference Cadence'), findsOneWidget);
+      expect(find.text('No inference sample recorded yet.'), findsOneWidget);
+    });
+
+    testWidgets('a sample without cadence values renders automatic/unknown', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTelemetry(populated: true));
+
+      expect(find.text('Requested detector rate'), findsOneWidget);
+      expect(find.text('Automatic'), findsOneWidget);
+      expect(find.text('Effective detector rate'), findsOneWidget);
+      expect(find.text('uncapped'), findsOneWidget);
+      // Observed depth rate, depth latency, and depth status were not recorded.
+      expect(find.text('unknown'), findsNWidgets(3));
+      expect(find.text('Low power clamp'), findsNothing);
+      expect(find.text('Source limited'), findsNothing);
+    });
+
+    testWidgets('recorded cadence renders rates, status, and qualifiers', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetry();
+      telemetry.recordSample(
+        latencyMs: 100,
+        inferenceFps: 5,
+        objectCount: 1,
+        engine: InferenceEngine.ultralytics,
+        requestedDetectionHz: 8,
+        effectiveDetectionHz: 5,
+        requestedDepthHz: 4,
+        effectiveDepthHz: 2,
+        depthObservedHz: 1.5,
+        depthLatencyMs: 210,
+        depthStatus: 'gpu',
+        lowPowerClamped: true,
+        sourceLimited: true,
+      );
+      await pumpLogsScreen(tester, telemetry: telemetry);
+
+      expect(find.text('8 Hz'), findsOneWidget);
+      expect(find.text('5 Hz'), findsOneWidget);
+      expect(find.text('4 Hz'), findsOneWidget);
+      expect(find.text('2 Hz'), findsOneWidget);
+      expect(find.text('1.5 Hz'), findsOneWidget);
+      expect(find.text('210 ms'), findsOneWidget);
+      expect(find.text('gpu'), findsOneWidget);
+      expect(find.text('Low power clamp'), findsOneWidget);
+      expect(find.text('Source limited'), findsOneWidget);
+      expect(find.text('applied'), findsNWidgets(2));
     });
   });
 
@@ -637,11 +711,12 @@ void main() {
         telemetry: buildTelemetry(),
         corrections: buildCorrections(),
       );
-
-      expect(
-        find.text('No correction reports have been recorded in this session.'),
-        findsOneWidget,
+      final emptyText = find.text(
+        'No correction reports have been recorded in this session.',
       );
+      await scrollOverviewTo(tester, emptyText);
+
+      expect(emptyText, findsOneWidget);
     });
 
     testWidgets('populated corrections render the record details', (
@@ -652,12 +727,11 @@ void main() {
         telemetry: buildTelemetry(),
         corrections: buildCorrections(populated: true),
       );
+      final correctionRow = find.textContaining('person: Incorrect as bicycle');
+      await scrollOverviewTo(tester, correctionRow);
 
       // Detection label, feedback, corrected label, engine, and threshold.
-      expect(
-        find.textContaining('person: Incorrect as bicycle'),
-        findsOneWidget,
-      );
+      expect(correctionRow, findsOneWidget);
       expect(find.textContaining('Ultralytics'), findsWidgets);
       expect(find.textContaining('threshold 0.25'), findsOneWidget);
     });
@@ -692,6 +766,11 @@ void main() {
       tester,
     ) async {
       await pumpLogsScreen(tester, telemetry: buildTelemetry());
+
+      // The Overview is a lazy ListView. At this viewport the notes at the end
+      // of the list are outside the built extent until the list is scrolled to
+      // them, so scroll instead of weakening the assertions.
+      await scrollOverviewTo(tester, find.text('Usability (SUS)'));
 
       expect(find.text('Model Evaluation Metrics'), findsOneWidget);
       expect(find.text('Usability (SUS)'), findsOneWidget);
@@ -751,13 +830,13 @@ void main() {
     testWidgets('Alert Latency has no overflow at 200 percent text scale', (
       tester,
     ) async {
-      // The tall default surface builds the whole Overview, including the
-      // counter rows below the fold on a phone-sized viewport.
       await pumpLogsScreen(
         tester,
         telemetry: buildTelemetry(populated: true),
         textScale: 2.0,
       );
+      // The section sits below the built extent of the lazy list at this scale.
+      await scrollOverviewTo(tester, find.text('Alert Latency'));
       expect(find.text('Alert Latency'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
