@@ -12,7 +12,8 @@ abstract final class EyeCueModelConfig {
 
   /// Bundled official Ultralytics depth model (id `yolo26n-depth`, w8a32 LiteRT
   /// export, release v0.6.6). Bundled rather than downloaded so MDE works
-  /// offline and without the INTERNET permission.
+  /// offline; the app's `INTERNET` permission exists only for the optional
+  /// manual telemetry upload.
   static const depthModelAssetPath = 'assets/yolo26n-depth_w8a32.tflite';
 
   /// Minimum gap between depth inferences; detection keeps its own cadence.
