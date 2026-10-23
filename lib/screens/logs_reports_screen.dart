@@ -383,6 +383,8 @@ class _InferenceCadenceSection extends StatelessWidget {
     }
     final requestedDetection = sample.requestedDetectionHz;
     final effectiveDetection = sample.effectiveDetectionHz;
+    final requestedDepth = sample.requestedDepthHz;
+    final effectiveDepth = sample.effectiveDepthHz;
     final observedHz = sample.depthObservedHz;
     final latencyMs = sample.depthLatencyMs;
     return _SummaryCard(
@@ -390,7 +392,7 @@ class _InferenceCadenceSection extends StatelessWidget {
         _SummaryRow(
           label: 'Requested detector rate',
           value: requestedDetection == null
-              ? 'Automatic'
+              ? (sample.detectionCadenceAutomatic ? 'Automatic' : 'unknown')
               : '$requestedDetection Hz',
         ),
         _SummaryRow(
@@ -401,11 +403,11 @@ class _InferenceCadenceSection extends StatelessWidget {
         ),
         _SummaryRow(
           label: 'Requested depth rate',
-          value: '${sample.requestedDepthHz} Hz',
+          value: requestedDepth == null ? 'unknown' : '$requestedDepth Hz',
         ),
         _SummaryRow(
           label: 'Effective depth rate',
-          value: '${sample.effectiveDepthHz} Hz',
+          value: effectiveDepth == null ? 'unknown' : '$effectiveDepth Hz',
         ),
         _SummaryRow(
           label: 'Observed depth rate',

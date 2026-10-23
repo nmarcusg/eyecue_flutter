@@ -147,7 +147,6 @@ YOLOStreamingConfig buildStreamingConfig({
 /// `disabled` wins when depth work is off; the model state then decides
 /// `degraded`/`loading`; a loaded model reports `gpu` or `cpu`. Pure so the
 /// mapping is testable without native models.
-@visibleForTesting
 String depthStatusFor({
   required bool mdeEnabled,
   required DepthRunState state,
@@ -894,15 +893,16 @@ class _UltralyticsDetectionScreenState
       setState(() => _inferenceMs = inferenceMs);
     }
     final mdeEnabled = _mdeEnabled;
+    final cadence = _cadence;
     _assistive.recordMetrics(
       latencyMs: inferenceMs,
       inferenceFps: metrics.fps,
       cadence: CadenceSample(
-        requestedDetectionHz: _cadence.requestedDetectionHz,
-        detectionCadenceAutomatic: _cadence.requestedDetectionHz == null,
-        effectiveDetectionHz: _cadence.effectiveDetectionHz,
-        requestedDepthHz: _cadence.requestedDepthHz,
-        effectiveDepthHz: _cadence.effectiveDepthHz,
+        requestedDetectionHz: cadence.requestedDetectionHz,
+        detectionCadenceAutomatic: cadence.requestedDetectionHz == null,
+        effectiveDetectionHz: cadence.effectiveDetectionHz,
+        requestedDepthHz: cadence.requestedDepthHz,
+        effectiveDepthHz: cadence.effectiveDepthHz,
         depthObservedHz: mdeEnabled ? _depth.observedHz : null,
         depthLatencyMs: mdeEnabled ? _depth.lastLatencyMs : null,
         depthStatus: depthStatusFor(

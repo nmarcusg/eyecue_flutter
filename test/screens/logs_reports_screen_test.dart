@@ -338,19 +338,40 @@ void main() {
       expect(find.text('No inference sample recorded yet.'), findsOneWidget);
     });
 
-    testWidgets('a sample without cadence values renders automatic/unknown', (
+    testWidgets('a sample without cadence values renders unknown, never zero', (
       tester,
     ) async {
       await pumpLogsScreen(tester, telemetry: buildTelemetry(populated: true));
 
       expect(find.text('Requested detector rate'), findsOneWidget);
-      expect(find.text('Automatic'), findsOneWidget);
+      // No cadence data at all is unknown; Automatic needs its own flag.
+      expect(find.text('Automatic'), findsNothing);
       expect(find.text('Effective detector rate'), findsOneWidget);
       expect(find.text('uncapped'), findsOneWidget);
-      // Observed depth rate, depth latency, and depth status were not recorded.
-      expect(find.text('unknown'), findsNWidgets(3));
+      // Requested detector, both depth rates, observed rate, latency, status.
+      expect(find.text('unknown'), findsNWidgets(6));
+      expect(find.text('0 Hz'), findsNothing);
       expect(find.text('Low power clamp'), findsNothing);
       expect(find.text('Source limited'), findsNothing);
+    });
+
+    testWidgets('automatic detection with no depth cadence never shows 0 Hz', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetry();
+      telemetry.recordSample(
+        latencyMs: 100,
+        inferenceFps: 5,
+        objectCount: 0,
+        engine: InferenceEngine.ultralytics,
+        detectionCadenceAutomatic: true,
+      );
+      await pumpLogsScreen(tester, telemetry: telemetry);
+
+      expect(find.text('Automatic'), findsOneWidget);
+      // Requested/effective depth rate plus the unobserved depth fields.
+      expect(find.text('unknown'), findsNWidgets(5));
+      expect(find.text('0 Hz'), findsNothing);
     });
 
     testWidgets('recorded cadence renders rates, status, and qualifiers', (

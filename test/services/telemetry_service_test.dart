@@ -127,6 +127,8 @@ void main() {
     expect(json['requestedDetectionHz'], isNull);
     expect(json['detectionCadenceAutomatic'], isFalse);
     expect(json['effectiveDetectionHz'], isNull);
+    expect(json['requestedDepthHz'], isNull);
+    expect(json['effectiveDepthHz'], isNull);
     expect(json['depthObservedHz'], isNull);
     expect(json['depthLatencyMs'], isNull);
     expect(json['depthStatus'], isNull);
