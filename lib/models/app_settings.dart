@@ -74,15 +74,26 @@ enum DetectionSensitivityPreset {
 /// breaks startup.
 class AppSettings {
   // Incremented 1 -> 2 when `detectionConfidence` was added, 2 -> 3 when
-  // `hideBottomNavigation` was added, and 3 -> 4 when the distance/overlay
-  // fields were added: the established convention is that a new persisted field
-  // bumps the schema version. The parser is field-tolerant and has no migration
-  // branch, so this is a marker only; older JSON that lacks the field still
-  // parses with the safe default.
-  static const int currentSchemaVersion = 4;
+  // `hideBottomNavigation` was added, 3 -> 4 when the distance/overlay fields
+  // were added, and 4 -> 5 when the inference cadence targets were added: the
+  // established convention is that a new persisted field bumps the schema
+  // version. The parser is field-tolerant and has no migration branch, so this
+  // is a marker only; older JSON that lacks the field still parses with the safe
+  // default.
+  static const int currentSchemaVersion = 5;
   static const double defaultDetectionConfidence = 0.25;
   static const double minDetectionConfidence = 0.10;
   static const double maxDetectionConfidence = 0.75;
+
+  /// Requested detector cadence bounds. `null` means Automatic (the previous
+  /// uncapped native behaviour).
+  static const int minDetectionTargetHz = 1;
+  static const int maxDetectionTargetHz = 30;
+
+  /// Requested depth cadence bounds. A target, not a guaranteed rate.
+  static const int defaultDepthTargetHz = 2;
+  static const int minDepthTargetHz = 2;
+  static const int maxDepthTargetHz = 10;
 
   final bool vibrationFeedback;
   final bool autoStartDetection;
@@ -107,6 +118,14 @@ class AppSettings {
   final bool showDepthHeatmap;
 
   final DistanceEstimationMode distanceEstimationMode;
+
+  /// Requested detector cadence in Hz. `null` means Automatic, which keeps the
+  /// previous uncapped native cadence.
+  final int? detectionTargetHz;
+
+  /// Requested depth cadence in Hz. A target, not a guaranteed rate.
+  final int depthTargetHz;
+
   final int schemaVersion;
 
   const AppSettings({
@@ -120,8 +139,14 @@ class AppSettings {
     this.showBoundingBoxes = true,
     this.showDepthHeatmap = true,
     this.distanceEstimationMode = DistanceEstimationMode.monocularDepth,
+    this.detectionTargetHz,
+    this.depthTargetHz = defaultDepthTargetHz,
     this.schemaVersion = currentSchemaVersion,
   });
+
+  /// Sentinel so [copyWith] can distinguish "leave the detection target
+  /// unchanged" from "set it back to Automatic (`null`)".
+  static const Object _unset = Object();
 
   AppSettings copyWith({
     bool? vibrationFeedback,
@@ -134,6 +159,8 @@ class AppSettings {
     bool? showBoundingBoxes,
     bool? showDepthHeatmap,
     DistanceEstimationMode? distanceEstimationMode,
+    Object? detectionTargetHz = _unset,
+    int? depthTargetHz,
   }) {
     return AppSettings(
       vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
@@ -149,6 +176,12 @@ class AppSettings {
       showDepthHeatmap: showDepthHeatmap ?? this.showDepthHeatmap,
       distanceEstimationMode:
           distanceEstimationMode ?? this.distanceEstimationMode,
+      detectionTargetHz: identical(detectionTargetHz, _unset)
+          ? this.detectionTargetHz
+          : normalizeDetectionTargetHz(detectionTargetHz),
+      depthTargetHz: depthTargetHz == null
+          ? this.depthTargetHz
+          : normalizeDepthTargetHz(depthTargetHz),
     );
   }
 
@@ -164,6 +197,8 @@ class AppSettings {
     'showBoundingBoxes': showBoundingBoxes,
     'showDepthHeatmap': showDepthHeatmap,
     'distanceEstimationMode': distanceEstimationMode.name,
+    'detectionTargetHz': detectionTargetHz,
+    'depthTargetHz': depthTargetHz,
   };
 
   /// Parses old and partially written settings without allowing one malformed
@@ -200,6 +235,8 @@ class AppSettings {
       showBoundingBoxes: _boolOr(json['showBoundingBoxes'], true),
       showDepthHeatmap: _boolOr(json['showDepthHeatmap'], true),
       distanceEstimationMode: mode,
+      detectionTargetHz: normalizeDetectionTargetHz(json['detectionTargetHz']),
+      depthTargetHz: normalizeDepthTargetHz(json['depthTargetHz']),
       schemaVersion: currentSchemaVersion,
     );
   }
@@ -218,6 +255,21 @@ class AppSettings {
     return (clamped / 0.05).round() * 0.05;
   }
 
+  /// Normalizes a persisted/requested detector cadence. Anything that is not a
+  /// finite positive number means Automatic (`null`); the rest is rounded and
+  /// clamped to the supported slider range.
+  static int? normalizeDetectionTargetHz(Object? value) {
+    if (value is! num || !value.isFinite || value <= 0) return null;
+    return value.round().clamp(minDetectionTargetHz, maxDetectionTargetHz);
+  }
+
+  /// Normalizes a persisted/requested depth cadence. Non-numeric or non-finite
+  /// input falls back to the default; the rest is rounded and clamped.
+  static int normalizeDepthTargetHz(Object? value) {
+    if (value is! num || !value.isFinite) return defaultDepthTargetHz;
+    return value.round().clamp(minDepthTargetHz, maxDepthTargetHz);
+  }
+
   @override
   bool operator ==(Object other) =>
       other is AppSettings &&
@@ -230,7 +282,9 @@ class AppSettings {
       other.hideBottomNavigation == hideBottomNavigation &&
       other.showBoundingBoxes == showBoundingBoxes &&
       other.showDepthHeatmap == showDepthHeatmap &&
-      other.distanceEstimationMode == distanceEstimationMode;
+      other.distanceEstimationMode == distanceEstimationMode &&
+      other.detectionTargetHz == detectionTargetHz &&
+      other.depthTargetHz == depthTargetHz;
 
   @override
   int get hashCode => Object.hash(
@@ -244,5 +298,7 @@ class AppSettings {
     showBoundingBoxes,
     showDepthHeatmap,
     distanceEstimationMode,
+    detectionTargetHz,
+    depthTargetHz,
   );
 }

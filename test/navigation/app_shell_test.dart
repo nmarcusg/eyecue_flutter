@@ -444,7 +444,14 @@ void main() {
         await tester.tap(find.text('Settings'));
         await tester.pumpAndSettle();
 
-        final sliderFinder = find.byType(Slider);
+        // The Settings page now also holds the inference-cadence sliders, so
+        // target the confidence slider by its own range.
+        final sliderFinder = find.byWidgetPredicate(
+          (widget) =>
+              widget is Slider &&
+              widget.min == AppSettings.minDetectionConfidence &&
+              widget.max == AppSettings.maxDetectionConfidence,
+        );
         expect(sliderFinder, findsOneWidget);
 
         // The Settings ListView is long; scroll the real Slider into view so
