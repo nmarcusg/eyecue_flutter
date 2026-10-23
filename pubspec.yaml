@@ -10,13 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # 1. Camera (Bumped to 0.12.0+1)
+  # 1. Camera (used for availableCameras() sensor metadata)
   camera: ^0.12.0+1
-  
-  # 2. Machine Learning (classic Interpreter API)
-  tflite_flutter: ^0.12.1
-  
-  # 3. Audio Feedback
+
+  # 2. Audio Feedback
   flutter_tts: ^4.2.0
   
   # 4. Permissions (Bumped to 12.0.3)
@@ -44,6 +41,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/yolov8n_int8_new_metadata.tflite
+    # Official Ultralytics depth model (yolo26n-depth, w8a32, v0.6.6). Bundled
+    # so MDE runs offline without the INTERNET permission.
+    - assets/yolo26n-depth_w8a32.tflite
     - assets/labels.txt
     # Home visual mark (decorative; wordmark stays live text).
     - assets/logo.png

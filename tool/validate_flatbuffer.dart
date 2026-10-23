@@ -1,14 +1,9 @@
 // Development utility: validates the pure-Dart TFLite flatbuffer scanner
-// (and float16 conversion) against the bundled model files.
+// (and float16 conversion) against the bundled model file.
 //
 // Run: dart run tool/validate_flatbuffer.dart
 //
-// Expected output for assets/yolov8n.tflite:
-//   FLOAT32: 324, INT32: 23, INT8: 62  (409 tensors)
-// Expected output for assets/yolov8n_int8.tflite:
-//   FLOAT32: 324, INT32: 25, INT8: 62  (411 tensors)
-// Expected output for assets/yolov8n_int8_new.tflite and its metadata-enriched
-// runtime copy:
+// Expected output for the metadata-enriched detection model:
 //   FLOAT32: 2, INT32: 90, INT8: 356  (448 tensors)
 import 'dart:io';
 import 'dart:typed_data';
@@ -19,21 +14,6 @@ void main() {
   var failed = false;
 
   final cases = <String, Map<int, int>>{
-    'assets/yolov8n.tflite': {
-      TfliteFlatTensorType.float32: 324,
-      TfliteFlatTensorType.int32: 23,
-      TfliteFlatTensorType.int8: 62,
-    },
-    'assets/yolov8n_int8.tflite': {
-      TfliteFlatTensorType.float32: 324,
-      TfliteFlatTensorType.int32: 25,
-      TfliteFlatTensorType.int8: 62,
-    },
-    'assets/yolov8n_int8_new.tflite': {
-      TfliteFlatTensorType.float32: 2,
-      TfliteFlatTensorType.int32: 90,
-      TfliteFlatTensorType.int8: 356,
-    },
     'assets/yolov8n_int8_new_metadata.tflite': {
       TfliteFlatTensorType.float32: 2,
       TfliteFlatTensorType.int32: 90,

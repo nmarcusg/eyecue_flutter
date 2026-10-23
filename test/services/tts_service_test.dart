@@ -941,11 +941,11 @@ void main() {
       expect(
         await instrumented.announceDetections([
           nearPerson(),
-        ], engine: InferenceEngine.custom),
+        ], engine: InferenceEngine.ultralytics),
         isTrue,
       );
       expect(records.single.origin, AlertOrigin.detection);
-      expect(records.single.engine, InferenceEngine.custom);
+      expect(records.single.engine, InferenceEngine.ultralytics);
 
       now = now.add(const Duration(seconds: 5));
       expect(await instrumented.speakWayfinding('Settings'), isTrue);
@@ -971,7 +971,7 @@ void main() {
       expect(
         await instrumented.announceDetections(
           [nearPerson()],
-          engine: InferenceEngine.custom,
+          engine: InferenceEngine.ultralytics,
           frameLatency: timing,
         ),
         isTrue,
@@ -1002,7 +1002,7 @@ void main() {
       expect(
         await instrumented.announceDetections([
           nearPerson(),
-        ], engine: InferenceEngine.custom),
+        ], engine: InferenceEngine.ultralytics),
         isTrue,
       );
 
@@ -1057,7 +1057,7 @@ void main() {
       expect(
         await instrumented.announceDetections(
           [nearPerson()],
-          engine: InferenceEngine.custom,
+          engine: InferenceEngine.ultralytics,
           frameLatency: timing,
           resultReceivedAt: now,
           detectionAcceptedAt: now,
@@ -1189,7 +1189,7 @@ void main() {
       expect(
         await instrumented.announceDetections([
           nearPerson(),
-        ], engine: InferenceEngine.custom),
+        ], engine: InferenceEngine.ultralytics),
         isFalse,
       );
 

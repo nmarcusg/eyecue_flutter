@@ -10,9 +10,9 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 **Stable release: v0.2.2** — The documented release contains the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. Its CPU-only, NHWC inference baseline was validated on the Snapdragon 695 test device.
 
-The current repository also contains a **committed but unreleased dual-engine candidate**. Settings can select the existing Custom EyeCue pipeline or an `ultralytics_yolo` native path; both use the same metadata-enriched `yolov8n_int8_new_metadata.tflite` artifact, authoritative `labels.txt`, and thresholds, then feed EyeCue's assistive layer. The artifact preserves the validated `yolov8n_int8_new.tflite` FlatBuffer byte-for-byte and appends a deterministic `metadata.json` ZIP containing the 80 indexed labels for the native overlay. Regenerate or validate it with `dart run tool/package_ultralytics_metadata.dart` and `dart run tool/package_ultralytics_metadata.dart --check`; details and SHA-256 values are recorded in [`model-assets.md`](docs/model-assets.md). The debug APK builds, installs, and has processed live camera frames in both modes on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Bidirectional switching also passed after a late-isolate-result race was fixed. Short unmatched readings suggest that Ultralytics may be faster, but delegate selection and sustained comparative performance are not yet proven; no winner is claimed before controlled paired runs.
+The current branch replaces the dual-engine candidate with a **single native detection engine** (`ultralytics_yolo`) plus an **optional monocular-depth model** that estimates metric distance (see [`docs/mde-integration.md`](docs/mde-integration.md)). The Custom EyeCue Dart/TFLite engine, `tflite_flutter` and the Gradle classic-LiteRT workaround were removed. Detection uses the metadata-enriched `yolov8n_int8_new_metadata.tflite` artifact and the authoritative `labels.txt`; the depth model is `yolo26n-depth`, downloaded by the plugin on first use. Distance is an **estimate**, not a calibrated measurement; no FPS, latency or depth-accuracy figure is claimed without a device run.
 
-Historical verification at that revision reported `flutter analyze` clean and **127 passing tests**; dated totals are recorded in [`docs/session-log.md`](docs/session-log.md). Those numbers are **not** current verification.
+Verification on this branch: `dart format` clean, `flutter analyze` reports only 4 pre-existing issues, `flutter test` reports **452 passing and 1 pre-existing failure** (the failing TTS reconciliation test also fails on `dev@94f74d8`), and `flutter build apk --release` produces an 82.9 MB APK. **No Android device was attached**, so runtime behaviour, depth accuracy and performance remain unverified. Dated totals are recorded in [`docs/session-log.md`](docs/session-log.md).
 
 ### Unreleased on-device speech changes (Workstream 1)
 
@@ -52,6 +52,7 @@ All project documentation is in the [`docs/`](docs/) directory:
 |----------|---------|
 | [`project-status.md`](docs/project-status.md) | Current state, blockers, next steps — **read first** |
 | [`architecture.md`](docs/architecture.md) | System design, data flow, component map |
+| [`mde-integration.md`](docs/mde-integration.md) | Monocular depth distance estimation: model, coordinates, cadence, settings matrix, licences |
 | [`implementation-plan.md`](docs/implementation-plan.md) | Roadmap, milestones, feature dependencies |
 | [`app-only-implementation-plan.md`](docs/app-only-implementation-plan.md) | Detailed status and acceptance criteria for the 15 original repository-owned app task areas; runtime work is complete and release engineering remains gated |
 | [`implementation-progress.md`](docs/implementation-progress.md) | Completed/in-progress/remaining work |
@@ -114,28 +115,25 @@ lib/
 │   ├── detection_info.dart            # Spatial/priority/proximity info
 │   ├── detection_correction.dart      # Versioned correction record
 │   ├── detection_runtime_state.dart   # Shared runtime states and failures
-│   ├── inference_lifecycle_event.dart # Worker lifecycle event payload
-│   ├── inference_recovery_policy.dart # Bounded restart policy
-│   ├── app_settings.dart              # Persisted settings model
+│   ├── inference_lifecycle_event.dart # Recovery event payload (telemetry)
+│   ├── app_settings.dart              # Persisted settings (incl. distance/overlays)
 │   ├── box_transform.dart             # Device-independent orientation math
-│   ├── model_metadata.dart            # Runtime model introspection snapshot
-│   ├── tensor_rotation.dart           # NHWC/NCHW square tensor rotation helper
 │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   ├── telemetry_export.dart           # Versioned JSON/CSV export DTOs
-│   ├── tracked_detection.dart          # Timestamped motion state
-│   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
+│   └── tracked_detection.dart          # Timestamped motion state
 ├── screens/
 │   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
-│   ├── detection_screen.dart          # Detection: assistive UI + camera/inference pipeline
+│   ├── engine_detection_screen.dart   # Mounts the single detection engine
+│   ├── ultralytics_detection_screen.dart # Detection UI, streaming data, MDE layers
 │   ├── settings_screen.dart           # Settings: haptics/performance/audio/research
 │   ├── help_screen.dart               # Help & Gestures manual
 │   └── logs_reports_screen.dart       # Logs & Reports dashboard
 ├── services/
-│   ├── inference_isolate.dart         # Isolate bridge + inference + preprocessing
-│   ├── inference_worker_lifecycle.dart # Injectable bounded worker recovery
 │   ├── assistive_detection_controller.dart # Shared normalized detection behavior
-│   ├── engine_coordinator.dart         # Preferred/active engine and fallback
+│   ├── engine_coordinator.dart         # Shared Detection lifecycle/status source
 │   ├── ultralytics_detection_adapter.dart # Native result → Detection mapping
+│   ├── depth_distance_service.dart    # Pure depth sampling, bands, EMA, staleness
+│   ├── monocular_depth_estimator.dart  # Second YOLO instance + 500 ms scheduler
 │   ├── tts_service.dart               # Lifecycle-aware speech arbiter: one in-flight
 │   │                                  #   utterance, one pending request, preemption,
 │   │                                  #   wayfinding, repeat-last
@@ -149,8 +147,7 @@ lib/
 │   ├── correction_service.dart        # Correction capture and records
 │   ├── object_tracker.dart             # Cross-frame motion estimates
 │   ├── scene_summary_service.dart      # Deterministic alert/scan summaries
-│   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
-│   └── forensic_log.dart              # File-based structured diagnostics (non-release)
+│   └── gesture_controller.dart        # Thesis gesture state machine (pure)
 └── widgets/
     ├── bounding_box_painter.dart      # Bounding box CustomPainter overlay
     ├── gesture_surface.dart           # Transparent gesture capture layer
@@ -161,15 +158,14 @@ lib/
     ├── accessible_button.dart         # Large high-contrast button (48dp+)
     ├── detection_state_panel.dart      # Shared loading/error/recovery panel
     ├── detection_correction_sheet.dart # Correct/incorrect/unsure workflow
-    └── charts.dart                    # fl_chart latency/FPS/frequency charts
+    ├── charts.dart                    # fl_chart latency/FPS/frequency charts
+    └── depth_heatmap_view.dart        # Rotated, centre-cropped depth heatmap
 
 tool/
 ├── validate_flatbuffer.dart           # CLI: validates the flatbuffer scanner
-├── validate_png.dart                  # CLI: validates the PNG encoder
-├── dump_graph_tail.py                 # CLI: dumps TFLite graph tail ops
-└── dump_decode_consts.py              # CLI: dumps decode constants
+└── package_ultralytics_metadata.dart  # CLI: appends metadata to a base graph
 ```
 
 ## License
 
-Thesis project — not yet licensed for distribution.
+Thesis project — not yet licensed for distribution beyond its dependencies' terms. `ultralytics_yolo` and the YOLO26n weights are **AGPL-3.0**, so distributing the app requires releasing the complete corresponding source under AGPL-3.0. The third-party notices and the AGPL-compatibility statement are in [`docs/mde-integration.md`](docs/mde-integration.md#third-party-notices).

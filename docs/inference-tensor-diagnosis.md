@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Inference Tensor-Handling Diagnosis
 
 > **Status:** Historical investigation record — no code was modified as part of

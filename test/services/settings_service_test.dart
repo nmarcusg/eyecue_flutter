@@ -104,12 +104,12 @@ void main() {
       expect(settings.inferenceEngine, InferenceEngine.ultralytics);
     });
 
-    test('explicit custom engine remains custom after migration', () {
+    test('a legacy custom engine value migrates to the single engine', () {
       final settings = AppSettings.fromJson({
         'schemaVersion': 1,
         'inferenceEngine': 'custom',
       });
-      expect(settings.inferenceEngine, InferenceEngine.custom);
+      expect(settings.inferenceEngine, InferenceEngine.ultralytics);
     });
 
     test('confidence values are clamped and quantized', () {

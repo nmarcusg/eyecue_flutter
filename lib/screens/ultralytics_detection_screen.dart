@@ -1,17 +1,26 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:camera/camera.dart' show CameraLensDirection, availableCameras;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle, SystemUiOverlayStyle;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:ultralytics_yolo/ultralytics_yolo.dart';
 
 import '../models/app_settings.dart';
+import '../models/box_transform.dart';
+import '../models/detection.dart';
 import '../models/detection_info.dart';
 import '../models/detection_runtime_state.dart';
 import '../models/model_config.dart';
+import '../models/tracked_detection.dart';
 import '../services/assistive_detection_controller.dart';
 import '../services/correction_service.dart';
+import '../services/depth_distance_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
+import '../services/monocular_depth_estimator.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
@@ -21,12 +30,50 @@ import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/accessible_button.dart';
+import '../widgets/bounding_box_painter.dart';
+import '../widgets/depth_heatmap_view.dart';
 import '../widgets/detection_action_controls.dart';
 import '../widgets/detection_correction_sheet.dart';
 import '../widgets/detection_information_overlay.dart';
 import '../widgets/detection_state_panel.dart';
 import '../widgets/gesture_surface.dart';
 import '../widgets/status_pill.dart';
+import '../widgets/warning_banner.dart';
+
+/// Non-blocking notice shown when the depth model cannot provide estimates.
+const String kDepthDegradedMessage =
+    'Depth estimate unavailable. Distance uses the bounding box instead.';
+
+/// Presentation flags for the viewport overlay layers.
+///
+/// Exactly one of the two box renderers is active at a time: native overlays
+/// while the heatmap is hidden, Flutter-painted boxes while it is visible (so
+/// labels stay above the heatmap).
+class DepthOverlayState {
+  const DepthOverlayState({
+    required this.heatmapVisible,
+    required this.flutterBoxes,
+    required this.nativeOverlays,
+  });
+
+  final bool heatmapVisible;
+  final bool flutterBoxes;
+  final bool nativeOverlays;
+
+  static DepthOverlayState resolve({
+    required bool mdeEnabled,
+    required bool showDepthHeatmap,
+    required bool showBoundingBoxes,
+    required bool heatmapFresh,
+  }) {
+    final heatmapVisible = mdeEnabled && showDepthHeatmap && heatmapFresh;
+    return DepthOverlayState(
+      heatmapVisible: heatmapVisible,
+      flutterBoxes: heatmapVisible && showBoundingBoxes,
+      nativeOverlays: showBoundingBoxes && !heatmapVisible,
+    );
+  }
+}
 
 /// Maps a horizontal gesture intent to a relative primary-tab direction.
 ///
@@ -231,15 +278,76 @@ class _UltralyticsDetectionScreenState
   /// acting on the same request twice (e.g. across rebuilds).
   int? _consumedStartIntentToken;
 
+  // --- Monocular depth (MDE) ------------------------------------------------
+  //
+  // MDE is a SECOND model instance fed by the streamed analysis JPEG. It never
+  // blocks detection: sampling uses the latest fresh map and falls back to the
+  // bounding-box estimator whenever the map is missing, stale or mismatched.
+
+  final MonocularDepthEstimator _depth = MonocularDepthEstimator();
+  final DepthSmoother _depthSmoother = DepthSmoother();
+
+  /// Latest detection boxes, retained so the Flutter box layer and the depth
+  /// sampler both read the same frame.
+  List<Detection> _latestDetections = const [];
+
+  /// Tracks from the previous assistive frame, used to key EMA smoothing.
+  List<TrackedDetection> _lastTracks = const [];
+
+  int _uprightWidth = 0;
+  int _uprightHeight = 0;
+  int _rotationDegrees = 0;
+  bool _rotationResolved = false;
+  bool _rotationFailed = false;
+  DistanceEstimationMode _lastDistanceMode =
+      DistanceEstimationMode.monocularDepth;
+  bool _overlaysShown = true;
+  Timer? _freshnessTimer;
+
+  bool get _mdeEnabled =>
+      _settings.distanceEstimationMode == DistanceEstimationMode.monocularDepth;
+
+  DepthFrame? get _depthFrame => _depth.frame.value;
+
+  /// Whether the current depth map is fresh and matches the live geometry.
+  bool get _depthFresh {
+    final frame = _depthFrame;
+    if (frame == null || !_rotationResolved) return false;
+    return !frame.isStaleAt(DateTime.now().millisecondsSinceEpoch) &&
+        frame.matchesGeometry(
+          rotationDegrees: _rotationDegrees,
+          uprightWidth: _uprightWidth,
+          uprightHeight: _uprightHeight,
+        );
+  }
+
+  DepthOverlayState get _overlayState => DepthOverlayState.resolve(
+    mdeEnabled: _mdeEnabled,
+    showDepthHeatmap: _settings.showDepthHeatmap,
+    showBoundingBoxes: _settings.showBoundingBoxes,
+    heatmapFresh: _depthFresh && _depthFrame?.heatmap != null,
+  );
+
+  bool get _heatmapVisible => _overlayState.heatmapVisible;
+
+  bool get _depthDegraded =>
+      _mdeEnabled &&
+      (_depth.state.value == DepthRunState.degraded || _rotationFailed);
+
   YOLOStreamingConfig get _streamingConfig => YOLOStreamingConfig(
     inferenceFrequency: _settings.lowPowerMode ? 4 : null,
+    // Only the depth model needs the analysis JPEG; bbox mode never pays for it.
+    includeOriginalImage: _mdeEnabled,
   );
 
   @override
   void initState() {
     super.initState();
     _lastLowPowerMode = _settings.lowPowerMode;
+    _lastDistanceMode = _settings.distanceEstimationMode;
     _settings.addListener(_handleSettingsChanged);
+    _depth.frame.addListener(_handleDepthFrame);
+    _depth.state.addListener(_handleDepthStateChanged);
     _loadLabels();
     // The engine no longer reads the Auto-start preference directly. It acts
     // only on the shared start intent issued by the app-shell coordinator.
@@ -278,10 +386,86 @@ class _UltralyticsDetectionScreenState
   @override
   void dispose() {
     _settings.removeListener(_handleSettingsChanged);
+    _freshnessTimer?.cancel();
+    _depth.frame.removeListener(_handleDepthFrame);
+    _depth.state.removeListener(_handleDepthStateChanged);
+    _depth.dispose();
     _gestureController.reset();
     _controller.dispose();
     _assistive.dispose();
     super.dispose();
+  }
+
+  /// A new depth map only changes presentation (heatmap + which box layer is
+  /// used); detection frames pick the map up on their own cadence.
+  void _handleDepthFrame() {
+    _applyOverlayVisibility();
+    if (mounted) setState(() {});
+  }
+
+  void _handleDepthStateChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Native overlays render boxes only while the heatmap is hidden; otherwise
+  /// Flutter paints them above the heatmap.
+  void _applyOverlayVisibility() {
+    final show = _overlayState.nativeOverlays;
+    if (_overlaysShown == show) return;
+    _overlaysShown = show;
+    _controller.setShowOverlays(show);
+  }
+
+  /// Resolves the sensor→upright rotation once per session from the camera
+  /// metadata. Failure forces the degraded path (bbox distance, no heatmap).
+  Future<void> _resolveRotation() async {
+    if (_rotationResolved) return;
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) throw StateError('no cameras available');
+      final camera = cameras.firstWhere(
+        (candidate) => candidate.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      // The plugin owns preview rotation and exposes no angle to Dart, so the
+      // device angle is approximated from the current orientation. A 180°
+      // turn is not observable here; only portrait-only use is calibrated.
+      final landscape =
+          mounted &&
+          MediaQuery.maybeOf(context)?.orientation == Orientation.landscape;
+      _rotationDegrees = BoxTransform.displayRotationDegrees(
+        sensorOrientation: camera.sensorOrientation,
+        deviceDegrees: landscape ? 90 : 0,
+        isFront: camera.lensDirection == CameraLensDirection.front,
+      );
+      _rotationResolved = true;
+      _rotationFailed = false;
+      debugPrint('[Depth] Display rotation resolved: $_rotationDegrees°');
+    } catch (error) {
+      debugPrint('[Depth] Camera metadata unavailable: $error');
+      _rotationFailed = true;
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Runs only while a live depth map can go stale (detection active, not
+  /// paused, MDE on).
+  void _startFreshnessTimer() {
+    _freshnessTimer?.cancel();
+    _freshnessTimer = null;
+    if (!_detectionActive || _paused || !_mdeEnabled) return;
+    _freshnessTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _refreshOverlayFreshness(),
+    );
+  }
+
+  /// Hides a heatmap whose map went stale while no detection frame arrived to
+  /// rebuild the viewport for it.
+  void _refreshOverlayFreshness() {
+    final before = _heatmapVisible;
+    _applyOverlayVisibility();
+    if (before != _heatmapVisible && mounted) setState(() {});
   }
 
   Future<void> _loadLabels() async {
@@ -301,9 +485,25 @@ class _UltralyticsDetectionScreenState
   }
 
   void _handleSettingsChanged() {
-    if (_settings.lowPowerMode == _lastLowPowerMode) return;
+    final lowPowerChanged = _settings.lowPowerMode != _lastLowPowerMode;
     _lastLowPowerMode = _settings.lowPowerMode;
-    _controller.setStreamingConfig(_streamingConfig);
+    final modeChanged = _settings.distanceEstimationMode != _lastDistanceMode;
+    _lastDistanceMode = _settings.distanceEstimationMode;
+    if (lowPowerChanged || modeChanged) {
+      _controller.setStreamingConfig(_streamingConfig);
+    }
+    if (modeChanged && !_mdeEnabled) {
+      // Bounding-box mode stops depth inference entirely.
+      _depth.stop();
+      _depth.clearFrame();
+      _depthSmoother.reset();
+    } else if (modeChanged) {
+      _depth.retry();
+      _resolveRotation();
+    }
+    _startFreshnessTimer();
+    _applyOverlayVisibility();
+    if (mounted) setState(() {});
   }
 
   Future<bool> _ensureCameraPermission() async {
@@ -388,6 +588,12 @@ class _UltralyticsDetectionScreenState
       // operational; Ready is published only from the epoch-guarded
       // `onModelLoad` callback.
       _setRuntimeState(DetectionRuntimeState.loadingModel);
+      if (_mdeEnabled) {
+        await _resolveRotation();
+        _depth.retry();
+      }
+      _startFreshnessTimer();
+      _applyOverlayVisibility();
       if (announce) await _tts.speak('Detection started', urgent: true);
     } finally {
       _startInFlight = false;
@@ -409,11 +615,17 @@ class _UltralyticsDetectionScreenState
     // therefore a visual/gesture shell only. A later Start recreates the native
     // session by bumping [_nativeViewEpoch] (see [_startDetection]).
     await _controller.stop();
+    _freshnessTimer?.cancel();
+    _depth.stop();
+    _depth.clearFrame();
+    _depthSmoother.reset();
     if (!mounted) return;
     setState(() {
       _detectionActive = false;
       _paused = false;
       _detectionInfo = const [];
+      _latestDetections = const [];
+      _lastTracks = const [];
       // PD3: clear the displayed overlay snapshot immediately on stop.
       _overlayInfos = const [];
       _inferenceMs = 0;
@@ -437,7 +649,10 @@ class _UltralyticsDetectionScreenState
     if (!_detectionActive || _paused) return;
     await _haptics.lightTick();
     await _controller.pause();
+    // Stop the depth cadence and drop queued frames while paused.
+    _depth.stop();
     if (mounted) setState(() => _paused = true);
+    _startFreshnessTimer();
     _setRuntimeState(DetectionRuntimeState.paused);
     await _tts.speak('Detection paused', urgent: true);
   }
@@ -447,6 +662,7 @@ class _UltralyticsDetectionScreenState
     await _haptics.lightTick();
     await _controller.resume();
     if (mounted) setState(() => _paused = false);
+    _startFreshnessTimer();
     _setRuntimeState(DetectionRuntimeState.ready);
     await _tts.speak('Detection resumed', urgent: true);
   }
@@ -459,11 +675,17 @@ class _UltralyticsDetectionScreenState
     }
   }
 
-  void _handleResults(List<YOLOResult> results) {
+  /// Single entry point for the native stream payload.
+  ///
+  /// `YOLOView` calls either `onStreamingData` OR `onResult` +
+  /// `onPerformanceMetrics`; the streaming payload carries the detections,
+  /// metrics and (MDE only) the analysis JPEG, so this replaces both callbacks.
+  void _handleStreamingData(Map<String, dynamic> data) {
     if (!_detectionActive || _paused) return;
     // App-side receipt anchor: this callback is the first observable point.
     // Pre-result anchors stay unavailable here; metrics are never correlated.
     final resultReceivedAt = DateTime.now();
+    final results = YOLODetectionResults.fromMap(data).detections;
     if (!_firstResultLogged) {
       _firstResultLogged = true;
       debugPrint(
@@ -472,16 +694,29 @@ class _UltralyticsDetectionScreenState
       );
     }
     final detections = UltralyticsDetectionAdapter.convert(results, _labels);
+    final width = data['imageWidth'];
+    final height = data['imageHeight'];
+    if (width is num && height is num) {
+      _uprightWidth = width.toInt();
+      _uprightHeight = height.toInt();
+    }
+    _latestDetections = detections;
+    final meters = _metersFor(detections);
     final infos = _assistive.updateDetections(
       detections,
       latencyMs: _inferenceMs,
       resultReceivedAt: resultReceivedAt,
+      meters: meters,
     );
+    // Track identity for the next frame's EMA smoothing.
+    _lastTracks = _assistive.tracks;
+    _submitDepthFrame(data);
     // PD3: accept a new overlay snapshot only while the currently observed
     // mapped coordinator outcome is Ready (healthy fallback maps to Ready).
     // This is a presentation-local gate; see the [_overlayInfos] doc comment
     // for the residual delayed-result freshness limitation.
     final overlayEligible = _overlayEligible;
+    _applyOverlayVisibility();
     if (mounted) {
       setState(() {
         _detectionInfo = infos;
@@ -490,6 +725,83 @@ class _UltralyticsDetectionScreenState
         }
       });
     }
+    _handleMetrics(YOLOPerformanceMetrics.fromMap(data));
+  }
+
+  /// Metric distance per detection, index-aligned; `null` entries fall back to
+  /// the bounding-box heuristic.
+  List<double?>? _metersFor(List<Detection> detections) {
+    if (!_mdeEnabled) return null;
+    final frame = _depthFrame;
+    if (frame == null || !_depthFresh) return null;
+    return [
+      for (final detection in detections)
+        _smoothedMeters(detection, _sampleMeters(frame.map, detection)),
+    ];
+  }
+
+  double? _sampleMeters(YOLODepthMap map, Detection detection) {
+    final inset = DepthDistanceService.insetBox(detection.box);
+    if (inset.isEmpty) return null;
+    final sensorBox = DepthDistanceService.sensorSpaceBox(
+      inset,
+      _rotationDegrees,
+    );
+    return DepthDistanceService.medianDepthInBox(
+      values: map.values,
+      width: map.width,
+      height: map.height,
+      box: sensorBox,
+    );
+  }
+
+  /// EMA smoothing keyed by the previous frame's tracker identity. Raw depth
+  /// values are never overwritten; only the reported estimate is smoothed.
+  double? _smoothedMeters(Detection detection, double? raw) {
+    if (raw == null) return null;
+    final trackId = _trackIdFor(detection);
+    if (trackId == null) return raw;
+    return _depthSmoother.smooth(trackId, raw);
+  }
+
+  int? _trackIdFor(Detection detection) {
+    final center = detection.box.center;
+    int? bestId;
+    var bestDistance = double.infinity;
+    for (final track in _lastTracks) {
+      if (track.classId != detection.classId) continue;
+      final delta = track.box.center - center;
+      final distance = delta.distanceSquared;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestId = track.trackId;
+      }
+    }
+    // 0.2 normalized distance (~20% of the frame) is the identity window.
+    return bestDistance <= 0.04 ? bestId : null;
+  }
+
+  /// Feeds the analysis JPEG to the depth model. Only delivered stream frames
+  /// carry a JPEG, so this naturally runs at the detection cadence.
+  void _submitDepthFrame(Map<String, dynamic> data) {
+    if (!_mdeEnabled || !_rotationResolved) return;
+    if (_depth.state.value == DepthRunState.degraded) return;
+    final image = data['originalImage'];
+    if (image is! Uint8List || image.isEmpty) return;
+    if (_uprightWidth <= 0 || _uprightHeight <= 0) return;
+    _depth.submitFrame(
+      image,
+      uprightWidth: _uprightWidth,
+      uprightHeight: _uprightHeight,
+      rotationDegrees: _rotationDegrees,
+      timestampMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  void _retryDepth() {
+    _depth.retry();
+    _resolveRotation();
+    if (mounted) setState(() {});
   }
 
   void _handleMetrics(YOLOPerformanceMetrics metrics) {
@@ -782,10 +1094,11 @@ class _UltralyticsDetectionScreenState
     if (!_detectionActive && !_nativeViewMounted) {
       return _buildCameraPending(context);
     }
-    // Rounded dark card around the native YOLOView. The native overlay is
-    // unchanged; only the surrounding container (dark fill + rounded clip) is
-    // added so the light chrome never sits over the camera surface.
-    return Container(
+    // Rounded dark card around the native YOLOView. When the depth heatmap is
+    // hidden the native overlay draws boxes as before; when it is visible the
+    // native overlay is turned off and boxes are painted in Flutter above the
+    // heatmap so labels stay legible.
+    final viewport = Container(
       decoration: BoxDecoration(
         color: kHomeInk,
         borderRadius: BorderRadius.circular(kRadius24),
@@ -807,8 +1120,7 @@ class _UltralyticsDetectionScreenState
             iouThreshold: EyeCueModelConfig.nmsIouThreshold,
             useGpu: true,
             streamingConfig: _streamingConfig,
-            onResult: _handleResults,
-            onPerformanceMetrics: _handleMetrics,
+            onStreamingData: _handleStreamingData,
             onModelLoad: (_, _) {
               // Ignore a stale `onModelLoad` from a previous epoch (e.g. a late
               // callback from the view being torn down) so it is never treated
@@ -845,6 +1157,29 @@ class _UltralyticsDetectionScreenState
               );
             },
           ),
+          // Depth heatmap (decorative, pointer-inert) sits directly above the
+          // native preview and below every box/label layer.
+          if (_heatmapVisible)
+            DepthHeatmapView(
+              image: _depthFrame?.heatmap,
+              rotationDegrees: _rotationDegrees,
+            ),
+          // Flutter box layer, drawn above the heatmap so labels stay readable.
+          if (_overlayState.flutterBoxes)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: BoundingBoxPainter(
+                    detections: _latestDetections,
+                    imageSize: Size(
+                      _uprightWidth.toDouble(),
+                      _uprightHeight.toDouble(),
+                    ),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
           // Compact current-information overlay (PD3). Pointer-inert, so it
           // never consumes raw pointers intended for the gesture surface.
           DetectionInformationOverlay(
@@ -858,6 +1193,26 @@ class _UltralyticsDetectionScreenState
           ),
         ],
       ),
+    );
+    if (!_depthDegraded) return viewport;
+    // Non-blocking degraded notice: detection continues with the bbox
+    // estimator; only the metric estimate is unavailable.
+    return Column(
+      children: [
+        WarningBanner(message: kDepthDegradedMessage),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: kSpace16),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AccessibleButton(
+              label: 'Retry depth estimate',
+              icon: Icons.refresh,
+              onPressed: _retryDepth,
+            ),
+          ),
+        ),
+        Expanded(child: viewport),
+      ],
     );
   }
 

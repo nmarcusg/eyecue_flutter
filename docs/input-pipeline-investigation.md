@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Input Pipeline Investigation — Why max confidence ≈ 0.05
 
 > **Status:** Historical forensic investigation record. No pipeline behavior was

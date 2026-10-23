@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Live-Camera Path Forensic Investigation
 
 > **Status:** COMPLETE — camera path empirically isolated on-device (Android 13,
