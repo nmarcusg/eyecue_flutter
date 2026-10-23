@@ -20,6 +20,7 @@ import '../services/depth_distance_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
+import '../services/inference_cadence.dart';
 import '../services/monocular_depth_estimator.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
@@ -116,6 +117,30 @@ bool shouldRecreateNativeSessionOnStart({
   // Start after a stop: the predictor is gone and must be recreated.
   return true;
 }
+
+/// Builds the native streaming config for a resolved cadence.
+///
+/// `inferenceFrequency` is the detector target in Hz (`null` = Automatic), and
+/// every other streaming limit stays unset so native defaults are preserved.
+/// Pure so the cadence mapping is testable without a platform view.
+@visibleForTesting
+YOLOStreamingConfig buildStreamingConfig({
+  required int? effectiveDetectionHz,
+  required bool includeOriginalImage,
+}) => YOLOStreamingConfig(
+  inferenceFrequency: effectiveDetectionHz,
+  includeOriginalImage: includeOriginalImage,
+);
+
+/// The subset of the streaming config that changes native behaviour.
+///
+/// Only these values justify a live `setStreamingConfig`; a depth-target or
+/// overlay-only change must not touch the native view.
+@visibleForTesting
+({int? hz, bool includeOriginalImage}) streamingConfigKey({
+  required InferenceCadence cadence,
+  required bool mdeEnabled,
+}) => (hz: cadence.effectiveDetectionHz, includeOriginalImage: mdeEnabled);
 
 class UltralyticsDetectionScreen extends StatefulWidget {
   final SettingsService settings;
@@ -264,7 +289,12 @@ class _UltralyticsDetectionScreenState
   bool _paused = false;
   bool _permissionDenied = false;
   bool _starting = false;
-  bool _lastLowPowerMode = false;
+
+  /// Streaming values last applied to the native view.
+  ///
+  /// Only a change here (effective detector Hz or the analysis-JPEG flag)
+  /// warrants a live `setStreamingConfig`.
+  ({int? hz, bool includeOriginalImage})? _lastStreamingConfigKey;
   String? _modelError;
   DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
 
@@ -334,8 +364,17 @@ class _UltralyticsDetectionScreenState
       _mdeEnabled &&
       (_depth.state.value == DepthRunState.degraded || _rotationFailed);
 
-  YOLOStreamingConfig get _streamingConfig => YOLOStreamingConfig(
-    inferenceFrequency: _settings.lowPowerMode ? 4 : null,
+  /// Effective inference cadence, derived on read so it cannot drift from the
+  /// stored settings.
+  InferenceCadence get _cadence => InferenceCadence.resolve(
+    requestedDetectionHz: _settings.detectionTargetHz,
+    requestedDepthHz: _settings.depthTargetHz,
+    lowPowerMode: _settings.lowPowerMode,
+    distanceEstimationMode: _settings.distanceEstimationMode,
+  );
+
+  YOLOStreamingConfig get _streamingConfig => buildStreamingConfig(
+    effectiveDetectionHz: _cadence.effectiveDetectionHz,
     // Only the depth model needs the analysis JPEG; bbox mode never pays for it.
     includeOriginalImage: _mdeEnabled,
   );
@@ -343,7 +382,10 @@ class _UltralyticsDetectionScreenState
   @override
   void initState() {
     super.initState();
-    _lastLowPowerMode = _settings.lowPowerMode;
+    _lastStreamingConfigKey = streamingConfigKey(
+      cadence: _cadence,
+      mdeEnabled: _mdeEnabled,
+    );
     _lastDistanceMode = _settings.distanceEstimationMode;
     _settings.addListener(_handleSettingsChanged);
     _depth.frame.addListener(_handleDepthFrame);
@@ -485,13 +527,16 @@ class _UltralyticsDetectionScreenState
   }
 
   void _handleSettingsChanged() {
-    final lowPowerChanged = _settings.lowPowerMode != _lastLowPowerMode;
-    _lastLowPowerMode = _settings.lowPowerMode;
-    final modeChanged = _settings.distanceEstimationMode != _lastDistanceMode;
-    _lastDistanceMode = _settings.distanceEstimationMode;
-    if (lowPowerChanged || modeChanged) {
+    final streamingKey = streamingConfigKey(
+      cadence: _cadence,
+      mdeEnabled: _mdeEnabled,
+    );
+    if (streamingKey != _lastStreamingConfigKey) {
+      _lastStreamingConfigKey = streamingKey;
       _controller.setStreamingConfig(_streamingConfig);
     }
+    final modeChanged = _settings.distanceEstimationMode != _lastDistanceMode;
+    _lastDistanceMode = _settings.distanceEstimationMode;
     if (modeChanged && !_mdeEnabled) {
       // Bounding-box mode stops depth inference entirely.
       _depth.stop();
