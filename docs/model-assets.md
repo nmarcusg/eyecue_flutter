@@ -60,11 +60,13 @@ See [`mde-integration.md`](mde-integration.md).
 
 `assets/yolov8n_int8_new_metadata.tflite` (detection) and
 `assets/yolo26n-depth_w8a32.tflite` (depth) are the **bundled runtime models**
-declared in `pubspec.yaml` (alongside `assets/labels.txt`). C4 removed the
-Flutter bundle declarations for the base graph `assets/yolov8n_int8_new.tflite`
-and the v0.2.2 baseline `assets/yolov8n.tflite`; both remain tracked for tools,
-tests, and historical comparison. The older `assets/yolov8n_int8.tflite` was
-already tracked but unbundled before WS4. None of them are deleted.
+declared in `pubspec.yaml` (alongside `assets/labels.txt`). Workstream 4 had
+already removed the Flutter bundle declarations for the base graph
+`assets/yolov8n_int8_new.tflite`, the v0.2.2 baseline `assets/yolov8n.tflite`
+and the older `assets/yolov8n_int8.tflite`; the later Custom-engine removal then
+deleted those three files from the repository. They are neither shipped nor
+tracked: regenerate the packaged detection artifact from an externally supplied
+base graph with `--input` (above).
 
 ## Artifact record
 
