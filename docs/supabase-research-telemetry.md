@@ -64,8 +64,19 @@ upload; detection and depth stay bundled and work offline.
 The schema-3 envelope, its forbidden-key guard, and the 2 MB body bound are
 covered by CLI-free Flutter tests that also read the Edge Function source. Local
 database migration and function execution remain **unverified**: the Supabase
-CLI, Docker, and containers are intentionally not installed, so none of this has
-been executed against a live project.
+CLI is not installed, and no local Supabase stack was started or executed, so
+the migration and function behaviour have never run against a live project.
+
+## Payload size
+
+The largest session the app can build is bounded by fixed collection caps. A test
+fills every one of them (2000 detections, 500 samples, 500 alert lifecycle
+records, 200 failures, 100 fallbacks, 200 recoveries, 2000 corrections) and
+measures 1,898,180 bytes, leaving 101,820 bytes (about 5%) of headroom under the
+function's 2,000,000-byte cap. An over-cap payload can still only arise from
+larger-than-capped records, and it fails gracefully: the function rejects it with
+`413 payload_too_large`, the upload fails, and the local telemetry is retained so
+JSON/CSV export still recovers the session.
 
 ## Research handling
 

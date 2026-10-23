@@ -8,10 +8,10 @@ import 'package:eyecue_flutter/services/monocular_depth_estimator.dart';
 /// Guards the bundled depth model wiring.
 ///
 /// MDE used to load the official model id, which the plugin resolved by
-/// downloading it on first use. Release manifests declare no `INTERNET`
-/// permission, so that download could never succeed on device and depth
-/// silently degraded. The model is bundled as an asset now; these checks keep it
-/// that way.
+/// downloading it on first use; a failed download degraded depth silently. Both
+/// models are bundled, so MDE itself needs no network. The app does declare
+/// `INTERNET`, but only for the optional manual telemetry upload, so these
+/// checks keep depth off every model-download path.
 void main() {
   const assetPath = 'assets/yolo26n-depth_w8a32.tflite';
   const fourMb = 4 * 1024 * 1024;

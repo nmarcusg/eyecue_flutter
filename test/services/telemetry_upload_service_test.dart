@@ -193,6 +193,7 @@ void main() {
       expect(captured!.headers['apikey'], 'publishable-key');
       final payload = jsonDecode(captured!.body) as Map<String, dynamic>;
       expect(payload['ingestionSchemaVersion'], 1);
+      expect(payload['submittedAt'], now.toUtc().toIso8601String());
       expect(payload['consent'], {'manualSessionUpload': true});
       expect(payload['study'], metadata.toJson());
       final export = payload['telemetry'] as Map<String, dynamic>;
@@ -314,6 +315,7 @@ void main() {
 
   test('a worst-case envelope stays under the 2 MB ingestion cap', () async {
     final localTelemetry = telemetry();
+    // Fill every bounded collection to its cap.
     for (var i = 0; i < 2000; i++) {
       localTelemetry.recordDetection(
         detInfo('traffic light', 9),
@@ -336,7 +338,48 @@ void main() {
         depthStatus: 'gpu',
         sourceLimited: true,
       );
+    }
+    for (var i = 0; i < 500; i++) {
       localTelemetry.recordAlertLifecycle(alertRecord());
+    }
+    for (var i = 0; i < 200; i++) {
+      localTelemetry.recordFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.inference,
+          safeMessage: 'Detection is unavailable.',
+          technicalDetail: '/private/path should not upload',
+          timestamp: now,
+        ),
+      );
+    }
+    for (var i = 0; i < 100; i++) {
+      localTelemetry.recordFallback(
+        preferredEngine: InferenceEngine.ultralytics,
+        activeEngine: InferenceEngine.ultralytics,
+        reason: 'unavailable',
+      );
+    }
+    for (var i = 0; i < 200; i++) {
+      localTelemetry.recordRecovery(
+        const InferenceLifecycleEvent(
+          type: InferenceLifecycleEventType.recovering,
+          generation: 1,
+        ),
+      );
+    }
+    for (var i = 0; i < 2000; i++) {
+      localTelemetry.recordCorrection(
+        DetectionCorrection(
+          recordId: 'record-$i',
+          timestamp: now,
+          sessionId: 'session-upload-test',
+          engine: InferenceEngine.ultralytics,
+          detection: detInfo('person', 0).detection,
+          feedback: CorrectionFeedback.correct,
+          correctedLabel: 'person',
+          confidenceThreshold: 0.25,
+        ),
+      );
     }
     localTelemetry.recordAlertCounters(
       const AlertCounters(dropped: 1, rejectedByReason: {'cooldown': 2}),
@@ -345,6 +388,8 @@ void main() {
     final request = await capturedUpload(localTelemetry);
     final bytes = utf8.encode(request.body).length;
 
+    // Measured 1_898_180 bytes with every collection at its cap, leaving
+    // 101_820 bytes (about 5%) of headroom under the 2 MB function limit.
     expect(
       bytes,
       lessThan(2000000),
@@ -366,8 +411,18 @@ void main() {
       ),
     );
     expect(source, contains("typeof telemetry.schemaVersion !== 'number'"));
-    expect(source, isNot(contains('schemaVersion !== 2')));
-    expect(source, isNot(contains('schemaVersion === 2')));
+    // The numeric-type guard is the only permitted schemaVersion comparison.
+    // Any literal comparison would start requiring an exact schema and reject
+    // the older exports that must still parse.
+    final withoutTypeGuard = source.replaceAll(
+      "typeof telemetry.schemaVersion !== 'number'",
+      '',
+    );
+    expect(
+      withoutTypeGuard,
+      isNot(matches(RegExp(r'\bschemaVersion\s*(===|!==|==|!=)'))),
+      reason: 'the Edge Function must not require an exact telemetry schema',
+    );
     // The whole telemetry object is stored as JSONB, so schema 3 needs no
     // migration.
     expect(source, contains('payload: telemetry'));
