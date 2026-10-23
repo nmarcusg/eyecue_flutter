@@ -10,7 +10,10 @@ required Dart defines.
 After the researcher confirms the upload, the app sends an ingestion envelope
 containing:
 
-- the existing image-free schema-v2 JSON telemetry snapshot;
+- the existing image-free schema-v3 JSON telemetry snapshot. The inference
+  cadence fields (requested/effective detector and depth Hz, observed depth
+  cadence and latency, depth status, and the clamp/source-limited flags) travel
+  unchanged inside `telemetry`; schema 1 and 2 payloads still parse without them;
 - a pseudonymous participant code (`A-Z`, `a-z`, `0-9`, `_`, `-`, maximum 64
   characters); and
 - a short study scenario label (maximum 80 characters).
@@ -24,6 +27,12 @@ speech/utterance text must not enter this collection. The Edge Function rejects
 those key names before writing to the database. Existing exported detection
 bounding boxes are retained because they are part of the research telemetry
 contract; they should be treated as research data, not public analytics.
+
+The whole `telemetry` object is stored in a JSONB `payload` column, so a new
+telemetry schema version requires **no migration**: schema-3 cadence data is
+stored exactly as sent and older rows keep their original payload. Release
+builds request `android.permission.INTERNET` solely for this optional manual
+upload; detection and depth stay bundled and work offline.
 
 ## Provisioning
 
@@ -49,6 +58,14 @@ contract; they should be treated as research data, not public analytics.
 5. Open the private researcher dashboard, sign in with a researcher account,
    then enter the project URL and publishable key. It reads sessions under RLS
    and writes additive annotations; it does not modify the uploaded payload.
+
+## Verification status
+
+The schema-3 envelope, its forbidden-key guard, and the 2 MB body bound are
+covered by CLI-free Flutter tests that also read the Edge Function source. Local
+database migration and function execution remain **unverified**: the Supabase
+CLI, Docker, and containers are intentionally not installed, so none of this has
+been executed against a live project.
 
 ## Research handling
 
