@@ -32,7 +32,8 @@ class SceneSummaryService {
         : '.';
     return _limit(
       'Alert. ${info.label}$priority, on your ${info.positionLabel}, '
-      'approximately ${info.proximityLabel}$movement.$count',
+      '${info.distanceLabel ?? 'approximately ${info.proximityLabel}'}'
+      '$movement.$count',
     );
   }
 
@@ -60,8 +61,8 @@ class SceneSummaryService {
       for (final candidate in inPosition) {
         final movement = _confirmedMotion(candidate.track);
         labels.add(
-          '${candidate.info.label}, approximately '
-          '${candidate.info.proximityLabel}'
+          '${candidate.info.label}, '
+          '${candidate.info.distanceLabel ?? 'approximately ${candidate.info.proximityLabel}'}'
           '${movement == null ? '' : ', appears to be $movement'}',
         );
       }

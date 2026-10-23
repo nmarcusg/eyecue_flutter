@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Orientation Architecture — Implementation Summary
 
 > **Status:** The stable v0.2.2 orientation path is implemented and on-device

@@ -61,7 +61,7 @@ void main() {
     );
     service.recordFallback(
       preferredEngine: InferenceEngine.ultralytics,
-      activeEngine: InferenceEngine.custom,
+      activeEngine: InferenceEngine.ultralytics,
       reason: 'Native engine unavailable, use Custom.',
     );
     service.recordRecovery(
@@ -73,7 +73,7 @@ void main() {
           category: DetectionFailureCategory.workerExited,
           safeMessage: 'The detection worker stopped unexpectedly.',
           technicalDetail: 'internal detail must not export',
-          engine: InferenceEngine.custom,
+          engine: InferenceEngine.ultralytics,
           timestamp: timestamp,
         ),
       ),
@@ -152,7 +152,7 @@ void main() {
     expect(counters['dropped'], 1);
     expect((counters['rejectedByReason'] as Map)['lowConfidence'], 3);
     final summaries = decoded['alertSummaries'] as List;
-    expect(summaries, hasLength(8));
+    expect(summaries, hasLength(4));
     expect(
       (summaries.first as Map).keys,
       containsAll([
@@ -196,7 +196,7 @@ void main() {
     expect(restored.corrections, hasLength(1));
     expect(restored.alertLifecycle, hasLength(1));
     expect(restored.alertCounters['dropped'], 1);
-    expect(restored.alertSummaries, hasLength(8));
+    expect(restored.alertSummaries, hasLength(4));
   });
 
   test('schema-v1 JSON parses with safe empty alert defaults', () {

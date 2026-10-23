@@ -5,6 +5,67 @@
 
 ---
 
+## 2026-10-22 — MDE depth model bundled
+
+### Fixed
+- Depth could not run in a release build. The estimator passed the official
+  `yolo26n-depth` id, so the plugin downloaded the model on first use, but
+  release manifests declare only `CAMERA` (`INTERNET` exists only in the
+  debug/profile manifests). The load always failed, the estimator degraded, and
+  the screen showed the degraded banner while detection kept working.
+- `yolo26n-depth_w8a32.tflite` is now a bundled asset
+  ([`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite)),
+  loaded through the same asset path detection already uses. MDE is fully
+  offline and needs no `INTERNET` permission.
+
+### Added
+- One-shot `[Depth]` diagnostics: the requested model path and `useGpu` before
+  loading, the error string on load failure, and the first frame's map size,
+  depth range, elapsed milliseconds and accelerator choice.
+
+### Verified
+- Static only: `dart format`, `flutter analyze`, `flutter test` and
+  `flutter build apk --release`. **No device run** — the heatmap, metric
+  distances and on-device latency remain unverified.
+
+---
+
+## 2026-10-21 — Monocular depth estimation; single engine
+
+### Added
+- Optional metric distance from the official `yolo26n-depth` model, run as a
+  second `ultralytics_yolo` instance on the streamed analysis JPEG; see
+  [`mde-integration.md`](mde-integration.md).
+- `DistanceEstimationMode` (`monocularDepth` default, `boundingBoxApproximation`)
+  plus independent `showBoundingBoxes` / `showDepthHeatmap` preferences and the
+  Settings "Distance & Overlays" card; settings schema `3 → 4`.
+- Pure depth helpers ([`depth_distance_service.dart`](../lib/services/depth_distance_service.dart)),
+  the scheduler/estimator ([`monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart)),
+  and the rotated centre-crop heatmap widget
+  ([`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart)).
+- Metric distance on `DetectionInfo` (`estimatedMeters`, `distanceSource`,
+  `distanceLabel`) mapped onto the existing proximity bands; speech says
+  "about N m" when a metric estimate exists.
+- Non-blocking degraded path (model load failure, offline, stale map, geometry
+  change, GPU failure after one CPU retry) with a banner and retry.
+
+### Removed
+- The Custom EyeCue engine and its Dart/TFLite runtime, `tflite_flutter`, the
+  Gradle classic-LiteRT native-library workaround, the `yolov8n` base/INT8
+  assets, the forensic tooling, and the two-engine coordinator fallback APIs.
+- `InferenceEngine.custom`; a persisted legacy value now loads as
+  `ultralytics`.
+
+### Verified
+- `dart format` clean; `flutter analyze` shows only 4 pre-existing issues;
+  `flutter test` **452 passing, 1 pre-existing failure**; `flutter build apk
+  --release` succeeds (82.9 MB, no `libtensorflowlite_jni.so` in the APK).
+- **No device run.** Depth accuracy, on-device latency/FPS, thermal behaviour
+  and the manual matrix in [`mde-integration.md`](mde-integration.md) remain
+  unverified.
+
+---
+
 ## Unreleased — Waste-Reduction Cleanup (WS4, 2026-10-19)
 
 ### Changed

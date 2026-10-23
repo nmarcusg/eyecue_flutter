@@ -2,6 +2,7 @@ import 'dart:ui' show Rect;
 
 import '../models/detection.dart';
 import '../models/detection_info.dart';
+import 'depth_distance_service.dart';
 
 /// Converts raw detections into user-facing spatial and priority information.
 ///
@@ -100,13 +101,34 @@ class SpatialAnalysisService {
     return ProximityBand.far;
   }
 
-  static DetectionInfo analyze(Detection d) => DetectionInfo(
+  /// [meters] is an optional metric distance from the depth model. When absent
+  /// the bounding-box heuristic is used unchanged.
+  static DetectionInfo analyze(Detection d, {double? meters}) => DetectionInfo(
     detection: d,
     position: positionFor(d.box),
     priority: priorityFor(d.classId),
-    proximity: proximityFor(d.box),
+    proximity: meters == null || !meters.isFinite
+        ? proximityFor(d.box)
+        : DepthDistanceService.bandForMeters(meters),
+    estimatedMeters: meters == null || !meters.isFinite ? null : meters,
+    distanceSource: meters == null || !meters.isFinite
+        ? DistanceSource.boundingBox
+        : DistanceSource.monocularDepth,
+    distanceLabel: meters == null || !meters.isFinite
+        ? null
+        : DepthDistanceService.formatMeters(meters),
   );
 
-  static List<DetectionInfo> analyzeAll(List<Detection> detections) =>
-      detections.map(analyze).toList();
+  /// [meters] is index-aligned with [detections]; missing entries fall back to
+  /// the bounding-box heuristic.
+  static List<DetectionInfo> analyzeAll(
+    List<Detection> detections, {
+    List<double?>? meters,
+  }) => [
+    for (var i = 0; i < detections.length; i++)
+      analyze(
+        detections[i],
+        meters: meters != null && i < meters.length ? meters[i] : null,
+      ),
+  ];
 }

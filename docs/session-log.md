@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-10-21 — MDE integration and Custom engine removal
+
+### Context
+The approved MDE contract asked for metric distance from the official
+`yolo26n-depth` model inside the existing one-camera-session architecture, with
+the Custom EyeCue engine removed once the depth work passed analyze and tests.
+Work was done in an isolated worktree (`/home/nico/repos/eyecue_flutter-mde`,
+branch `codex/mde-integration`, base `dev@94f74d8`); the original worktree was
+never modified.
+
+### Changed
+- Added a second `ultralytics_yolo` instance (`YOLOTask.depth`,
+  `useMultiInstance: true`) fed by the streamed analysis JPEG, with a 500 ms
+  latest-frame-wins scheduler, one pending slot, GPU→CPU single retry and a
+  non-blocking degraded state; see [`mde-integration.md`](mde-integration.md).
+- Detection now consumes `onStreamingData` (which replaces `onResult` +
+  `onPerformanceMetrics`) and parses with the public
+  `YOLODetectionResults.fromMap` / `YOLOPerformanceMetrics.fromMap`.
+- Added `DistanceEstimationMode`, `showBoundingBoxes`, `showDepthHeatmap`
+  (schema v4), the Settings "Distance & Overlays" card, and the
+  `DepthOverlayState` presentation rules.
+- Added `estimatedMeters` / `distanceSource` / `distanceLabel` to
+  `DetectionInfo`, mapped metres onto the existing proximity bands, and made
+  speech say "about N m" when a metric estimate exists.
+- Removed the Custom engine, its probes/forensics/PNG tooling,
+  `tflite_flutter`, the Gradle classic-LiteRT workaround, the unused `yolov8n`
+  assets, and the coordinator's fallback APIs; `InferenceEngine` is now the
+  single `ultralytics` value.
+
+### Verified
+- `dart format --output=none --set-exit-if-changed lib test tool`: clean.
+- `flutter analyze`: 4 issues, all pre-existing on `dev@94f74d8`.
+- `flutter test`: **452 passing, 1 failing** — `tts_service_test.dart` "a
+  partial signal pair records a reconciliation timeout", which fails the same
+  way on the untouched `dev@94f74d8` worktree.
+- `flutter build apk --release`: success, 82.9 MB (82,882,016 bytes); no
+  R8/WorkManager missing-class warning. `assembleRelease` took 627.6 s cold and
+  147.1 s on the review re-run with the Gradle cache warm.
+- **No Android device was attached** (`flutter devices` shows Linux only,
+  `adb devices` empty), so nothing here is a device or performance result.
+
+### Known limitations
+- Depth accuracy in metres is uncalibrated; phone/lens calibration is out of
+  scope and required for research-grade use.
+- Device rotation is approximated from portrait/landscape because the plugin
+  exposes no angle to Dart; 180° and landscape-left/right are not observable.
+- Depth latency, detection FPS, thermal impact and the manual validation matrix
+  are unmeasured.
+
+---
+
 ## 2026-10-19 — WS4: waste reduction (C1–C5 accepted, C6 documentation reconciliation)
 
 ### Context

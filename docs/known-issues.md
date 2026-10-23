@@ -1,7 +1,35 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-10-19 (WS4 documentation reconciliation; earlier Workstream and PD1–PD3 dates below are historical)
-> See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state).
+> **Last Updated:** 2026-10-21 (MDE integration; the WS4 cleanup and the PD1–PD3/dual-engine notes below are historical)
+> See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
+
+## Monocular depth estimation (MDE)
+
+- **Metres are uncalibrated estimates.** The depth model was not calibrated per
+  phone or lens. Research-grade distance measurement requires calibration and is
+  out of scope.
+- **Device rotation is approximated.** The plugin exposes no rotation angle to
+  Dart and Flutter reports only portrait/landscape, so `deviceDegrees` is
+  `0`/`90`. A 180° turn and landscape-left vs landscape-right cannot be mapped;
+  if the rotation cannot be resolved the app runs degraded (bbox distance, no
+  heatmap).
+- **Resolved — the depth model could never be downloaded in a release build.**
+  The previously shipped build passed the official `yolo26n-depth` id and relied
+  on the plugin's first-use download, but release manifests declare only
+  `CAMERA` (`INTERNET` exists only in the debug/profile manifests), so the load
+  always failed and depth silently ran degraded. The model is now bundled as
+  [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite);
+  no `INTERNET` permission is needed. Previously installed release APKs must be
+  replaced to pick this up.
+- **Unmeasured on device.** Depth latency, achieved cadence, thermal impact,
+  detection FPS and depth accuracy have not been measured; the 500 ms interval
+  is a configured floor, not an observed rate.
+- **Stale depth hides the heatmap.** Maps older than 1000 ms or produced for a
+  different geometry are discarded for presentation and distance fall back to
+  the box-height heuristic.
+- **Box/heatmap switches are presentation only.** Hiding boxes does not stop
+  detection; hiding the heatmap does not stop depth inference; only
+  `boundingBoxApproximation` stops it.
 
 ## Current Blockers
 

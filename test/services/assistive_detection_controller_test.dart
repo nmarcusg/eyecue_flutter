@@ -48,7 +48,7 @@ void main() {
     await tts.init();
     addTearDown(tts.dispose);
     controller = AssistiveDetectionController(
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
       tts: tts,
       telemetry: TelemetryService(),
     );
@@ -83,7 +83,7 @@ void main() {
 
       final record = records.single;
       expect(record.origin, AlertOrigin.detection);
-      expect(record.engine, InferenceEngine.custom);
+      expect(record.engine, InferenceEngine.ultralytics);
       expect(record.frameNumber, 7);
       expect(record.analysisReceivedAt, timing.analysisReceivedAt);
       expect(record.inferenceStartedAt, timing.inferenceStartedAt);

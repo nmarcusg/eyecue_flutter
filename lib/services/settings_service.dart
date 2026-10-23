@@ -72,6 +72,10 @@ class SettingsService extends ChangeNotifier {
   InferenceEngine get inferenceEngine => _settings.inferenceEngine;
   double get detectionConfidence => _settings.detectionConfidence;
   bool get hideBottomNavigation => _settings.hideBottomNavigation;
+  bool get showBoundingBoxes => _settings.showBoundingBoxes;
+  bool get showDepthHeatmap => _settings.showDepthHeatmap;
+  DistanceEstimationMode get distanceEstimationMode =>
+      _settings.distanceEstimationMode;
 
   /// Loads persisted settings. Safe to call once at startup; on any failure
   /// (missing/corrupt file) the defaults are kept.
@@ -107,6 +111,15 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setHideBottomNavigation(bool value) =>
       _update(_settings.copyWith(hideBottomNavigation: value));
+
+  Future<void> setShowBoundingBoxes(bool value) =>
+      _update(_settings.copyWith(showBoundingBoxes: value));
+
+  Future<void> setShowDepthHeatmap(bool value) =>
+      _update(_settings.copyWith(showDepthHeatmap: value));
+
+  Future<void> setDistanceEstimationMode(DistanceEstimationMode value) =>
+      _update(_settings.copyWith(distanceEstimationMode: value));
 
   Future<void> _update(AppSettings next) async {
     if (next == _settings) return;

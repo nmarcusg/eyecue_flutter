@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Static-Image Test — Camera Removed From the Equation
 
 > **Status:** COMPLETE — evidence collected on-device (Android 13, arm64).

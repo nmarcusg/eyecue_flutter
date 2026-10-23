@@ -39,17 +39,17 @@ void main() {
     telemetry.recordDetection(
       detInfo('person', 0),
       30,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     telemetry.recordDetection(
       detInfo('car', 2),
       32,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     telemetry.recordDetection(
       detInfo('toothbrush', 79),
       31,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     expect(telemetry.totalDetections, 3);
     expect(telemetry.highPriorityAlerts, 2);
@@ -60,13 +60,13 @@ void main() {
       latencyMs: 100,
       inferenceFps: 10,
       objectCount: 1,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     telemetry.recordSample(
       latencyMs: 200,
       inferenceFps: 5,
       objectCount: 2,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     expect(telemetry.framesProcessed, 2);
     expect(telemetry.averageLatencyMs, 150);
@@ -77,19 +77,19 @@ void main() {
     telemetry.recordDetection(
       detInfo('person', 0),
       30,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     now = now.add(const Duration(seconds: 30));
     telemetry.recordDetection(
       detInfo('car', 2),
       30,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     now = now.add(const Duration(minutes: 1, seconds: 5));
     telemetry.recordDetection(
       detInfo('bus', 5),
       30,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
 
     final buckets = telemetry.detectionFrequencyByMinute();
@@ -105,7 +105,7 @@ void main() {
   group('alert lifecycle', () {
     AlertLifecycleRecord alert({
       AlertOrigin origin = AlertOrigin.detection,
-      InferenceEngine? engine = InferenceEngine.custom,
+      InferenceEngine? engine = InferenceEngine.ultralytics,
       DateTime? requestedAt,
       DateTime? submittedAt,
       DateTime? startedAt,
@@ -151,7 +151,7 @@ void main() {
 
     test('nearest-rank percentiles, max, and count', () {
       final summary = AlertLatencySummary.fromDurations(
-        InferenceEngine.custom,
+        InferenceEngine.ultralytics,
         [10, 20, 30, 40],
       );
       expect(summary.sampleCount, 4);
@@ -159,9 +159,10 @@ void main() {
       expect(summary.p95Ms, 40);
       expect(summary.maxMs, 40);
 
-      final single = AlertLatencySummary.fromDurations(InferenceEngine.custom, [
-        0,
-      ]);
+      final single = AlertLatencySummary.fromDurations(
+        InferenceEngine.ultralytics,
+        [0],
+      );
       expect(single.p50Ms, 0);
       expect(single.p95Ms, 0);
 
@@ -193,7 +194,7 @@ void main() {
       telemetry.recordAlertLifecycle(
         alert(
           origin: AlertOrigin.wayfinding,
-          engine: InferenceEngine.custom,
+          engine: InferenceEngine.ultralytics,
           submittedAt: base,
           startedAt: base.add(const Duration(milliseconds: 10)),
         ),
@@ -216,76 +217,21 @@ void main() {
         ),
       );
 
-      final custom = telemetry.alertSubmittedToStartedSummary(
-        InferenceEngine.custom,
-      );
-      expect(custom.sampleCount, 1);
-      expect(custom.p50Ms, 100);
-      expect(custom.p95Ms, 100);
-
+      // Both records now share the single engine; the wayfinding record, the
+      // engine-null record, the never-started record and the negative interval
+      // stay excluded.
       final ultralytics = telemetry.alertSubmittedToStartedSummary(
         InferenceEngine.ultralytics,
       );
-      expect(ultralytics.sampleCount, 1);
-      expect(ultralytics.maxMs, 40);
+      expect(ultralytics.sampleCount, 2);
+      expect(ultralytics.maxMs, 100);
     });
 
-    test('custom intervals use analysis receipt anchors', () {
-      final base = now.add(const Duration(seconds: 2));
-      telemetry.recordAlertLifecycle(
-        alert(
-          analysisReceivedAt: base,
-          detectionAcceptedAt: base.add(const Duration(milliseconds: 10)),
-          submittedAt: base.add(const Duration(milliseconds: 20)),
-          startedAt: base.add(const Duration(milliseconds: 50)),
-        ),
-      );
-
-      final receivedToAccepted = telemetry.alertLatencySummary(
-        InferenceEngine.custom,
-        AlertLatencyInterval.receivedToAccepted,
-      );
-      final acceptedToStarted = telemetry.alertLatencySummary(
-        InferenceEngine.custom,
-        AlertLatencyInterval.acceptedToStarted,
-      );
-      final submittedToStarted = telemetry.alertLatencySummary(
-        InferenceEngine.custom,
-        AlertLatencyInterval.submittedToStarted,
-      );
-      final receivedToStarted = telemetry.alertLatencySummary(
-        InferenceEngine.custom,
-        AlertLatencyInterval.receivedToStarted,
-      );
-
-      expect(receivedToAccepted.p50Ms, 10);
-      expect(acceptedToStarted.p50Ms, 40);
-      expect(submittedToStarted.p50Ms, 30);
-      expect(receivedToStarted.p50Ms, 50);
-      for (final summary in [
-        receivedToAccepted,
-        acceptedToStarted,
-        submittedToStarted,
-        receivedToStarted,
-      ]) {
-        expect(summary.sampleCount, 1);
-        expect(summary.p95Ms, summary.maxMs);
-      }
-
-      // The preserved public method keeps submitted -> started meaning.
-      final delegated = telemetry.alertSubmittedToStartedSummary(
-        InferenceEngine.custom,
-      );
-      expect(delegated.sampleCount, 1);
-      expect(delegated.p50Ms, 30);
-    });
-
-    test('ultralytics intervals use result receipt, not custom anchors', () {
+    test('intervals use the result receipt anchor', () {
       final result = now.add(const Duration(milliseconds: 100));
       telemetry.recordAlertLifecycle(
         alert(
           engine: InferenceEngine.ultralytics,
-          analysisReceivedAt: now,
           resultReceivedAt: result,
           detectionAcceptedAt: result.add(const Duration(milliseconds: 5)),
           submittedAt: result.add(const Duration(milliseconds: 8)),
@@ -329,16 +275,6 @@ void main() {
             .p50Ms,
         20,
       );
-      // The Custom-only analysis anchor never defines a Custom summary.
-      expect(
-        telemetry
-            .alertLatencySummary(
-              InferenceEngine.custom,
-              AlertLatencyInterval.receivedToStarted,
-            )
-            .sampleCount,
-        0,
-      );
     });
 
     test(
@@ -348,7 +284,7 @@ void main() {
         // Valid 10 ms and a valid 0 ms pair.
         telemetry.recordAlertLifecycle(
           alert(
-            analysisReceivedAt: base,
+            resultReceivedAt: base,
             detectionAcceptedAt: base.add(const Duration(milliseconds: 10)),
             submittedAt: base,
             startedAt: base.add(const Duration(milliseconds: 10)),
@@ -356,7 +292,7 @@ void main() {
         );
         telemetry.recordAlertLifecycle(
           alert(
-            analysisReceivedAt: base,
+            resultReceivedAt: base,
             detectionAcceptedAt: base,
             submittedAt: base,
             startedAt: base,
@@ -367,8 +303,8 @@ void main() {
         telemetry.recordAlertLifecycle(
           alert(
             origin: AlertOrigin.quickScan,
-            engine: InferenceEngine.custom,
-            analysisReceivedAt: base,
+            engine: InferenceEngine.ultralytics,
+            resultReceivedAt: base,
             detectionAcceptedAt: base.add(const Duration(milliseconds: 5)),
             submittedAt: base,
             startedAt: base.add(const Duration(milliseconds: 5)),
@@ -378,7 +314,7 @@ void main() {
         telemetry.recordAlertLifecycle(
           alert(
             engine: null,
-            analysisReceivedAt: base,
+            resultReceivedAt: base,
             detectionAcceptedAt: base.add(const Duration(milliseconds: 5)),
             submittedAt: base,
             startedAt: base.add(const Duration(milliseconds: 5)),
@@ -387,7 +323,7 @@ void main() {
         // Reversed analysis -> accepted interval is excluded individually.
         telemetry.recordAlertLifecycle(
           alert(
-            analysisReceivedAt: base.add(const Duration(milliseconds: 10)),
+            resultReceivedAt: base.add(const Duration(milliseconds: 10)),
             detectionAcceptedAt: base,
             submittedAt: base,
             startedAt: base.add(const Duration(milliseconds: 5)),
@@ -403,7 +339,7 @@ void main() {
         );
 
         final receivedToAccepted = telemetry.alertLatencySummary(
-          InferenceEngine.custom,
+          InferenceEngine.ultralytics,
           AlertLatencyInterval.receivedToAccepted,
         );
         expect(receivedToAccepted.sampleCount, 2);
@@ -413,7 +349,7 @@ void main() {
         expect(receivedToAccepted.maxMs, 10);
 
         final acceptedToStarted = telemetry.alertLatencySummary(
-          InferenceEngine.custom,
+          InferenceEngine.ultralytics,
           AlertLatencyInterval.acceptedToStarted,
         );
         expect(acceptedToStarted.sampleCount, 4);
@@ -432,7 +368,7 @@ void main() {
         );
       }
       final summary = telemetry.alertLatencySummary(
-        InferenceEngine.custom,
+        InferenceEngine.ultralytics,
         AlertLatencyInterval.submittedToStarted,
       );
       expect(summary.sampleCount, 3);
@@ -489,12 +425,12 @@ void main() {
     });
   });
 
-  test('keeps engine summaries separate', () {
+  test('aggregates every sample for the single engine', () {
     telemetry.recordSample(
       latencyMs: 150,
       inferenceFps: 6,
       objectCount: 0,
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
     );
     telemetry.recordSample(
       latencyMs: 30,
@@ -503,11 +439,8 @@ void main() {
       engine: InferenceEngine.ultralytics,
     );
 
-    final custom = telemetry.summaryFor(InferenceEngine.custom);
-    final ultralytics = telemetry.summaryFor(InferenceEngine.ultralytics);
-    expect(custom.averageLatencyMs, 150);
-    expect(custom.averageInferenceFps, 6);
-    expect(ultralytics.averageLatencyMs, 30);
-    expect(ultralytics.averageInferenceFps, 15);
+    final summary = telemetry.summaryFor(InferenceEngine.ultralytics);
+    expect(summary.averageLatencyMs, 90);
+    expect(summary.averageInferenceFps, 10.5);
   });
 }

@@ -13,7 +13,7 @@ List<RuntimeSample> samples(List<double> latencies, {List<double>? fps}) {
         latencyMs: latencies[i],
         inferenceFps: f[i],
         objectCount: 1,
-        engine: InferenceEngine.custom,
+        engine: InferenceEngine.ultralytics,
       ),
   ];
 }

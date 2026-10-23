@@ -32,7 +32,7 @@ class InferenceLifecycleEvent {
     this.restartAttempt = 0,
     this.failure,
     this.detail,
-    this.engine = InferenceEngine.custom,
+    this.engine = InferenceEngine.ultralytics,
   });
 
   bool get isTerminal => type == InferenceLifecycleEventType.terminalFailure;

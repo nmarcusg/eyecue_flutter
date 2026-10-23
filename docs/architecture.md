@@ -1,6 +1,6 @@
 # EyeCue — Architecture
 
-> **Current status:** The app-only candidate has two independent inference engines: Custom EyeCue and Ultralytics. They share only normalized detections and the assistive application layer; release identity/signing, broad device validation, formal benchmarking, and native-crash validation remain open.
+> **Current status:** EyeCue has **one detection engine** (`ultralytics_yolo`) and an **optional second model instance** for monocular depth distance estimation. The Custom EyeCue engine and `tflite_flutter` were removed on 2026-10-21; the Custom sections below are historical and are not part of the current build. Broad device validation, formal benchmarking, and native-crash validation remain open. See [`mde-integration.md`](mde-integration.md) for the depth subsystem.
 > See also: [`chat_spec.md`](../chat_spec.md) (historical specification), [`implementation-decisions.md`](implementation-decisions.md) (key decisions), and [`model-assets.md`](model-assets.md) (artifact record).
 
 ## Project Purpose
@@ -50,7 +50,39 @@ Originally prototyped in React Native, EyeCue has been rebuilt in Flutter to eli
 └──────────────────────────────────────────────────┘
 ```
 
-### Dual-engine boundary
+### Depth estimation (MDE)
+
+One camera session, two model instances:
+
+```
+YOLOView (detect)  ──onStreamingData──▶ detections + upright dims + JPEG (sensor)
+       │                                        │
+       │                                        ├─▶ DepthDistanceService (12% inset,
+       │                                        │   upright→sensor, median, EMA)
+       │                                        │
+       └─────────────── originalImage ──────────▶ MonocularDepthEstimator
+                                                 (YOLO yolo26n-depth, second
+                                                  instance, 500 ms latest-wins)
+                                                        │
+                                        DepthFrame (Float32List + ui.Image)
+                                                        │
+                              ┌─────────────────────────┴──────────────┐
+                              ▼                                        ▼
+                    Flutter box layer + heatmap              metres → ProximityBand
+                    (above native preview)                  → alert policy / speech
+```
+
+- The heatmap is a decorative `ui.Image` drawn above the native preview and
+  below the Flutter box layer; native overlays are disabled while it is shown.
+- Metres feed the existing band vocabulary, so alert policy, ranking, telemetry
+  and speech keep their shapes.
+- Every failure path (model load, offline, stale map, geometry change, GPU) is
+  non-blocking and falls back to the bounding-box estimator.
+
+Details, the settings × behaviour matrix, licences and unmeasured performance:
+[`mde-integration.md`](mde-integration.md).
+
+### Historical: dual-engine boundary (removed 2026-10-21)
 
 EyeCue deliberately retains two independent inference pipelines:
 
@@ -105,7 +137,7 @@ Changing Auto-start while the app is already running, and Android
 background/foreground, process death, and camera pre-emption lifecycle behavior,
 are out of scope and unverified.
 
-## Custom EyeCue Data Flow
+## Historical: Custom EyeCue Data Flow
 
 1. `CameraController.startImageStream()` delivers `CameraImage` at native FPS (~30)
 2. `_processCameraImage()` checks `_isInferring` gate → drops frame if busy
@@ -262,7 +294,7 @@ eyecue_flutter/
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `camera` | ^0.12.0+1 | Camera access + YUV420 image stream |
-| `tflite_flutter` | ^0.12.1 | Classic Interpreter FFI used only by Custom EyeCue; Android packaging extracts its 1.4.0 native library beside Ultralytics' LiteRT Next runtime without placing duplicate legacy Java APIs on the classpath |
+| `tflite_flutter` | *(removed)* | The Dart TFLite FFI runtime was only used by the removed Custom EyeCue engine; the native Ultralytics plugin owns inference now |
 | `flutter_tts` | ^4.2.0 | Text-to-speech audio feedback |
 | `permission_handler` | ^12.0.3 | Camera permission requests |
 | `path_provider` | ^2.1.4 | File-backed settings persistence ([`settings_service.dart`](../lib/services/settings_service.dart)) + debug/profile forensic run directories ([`forensic_log.dart`](../lib/services/forensic_log.dart)) |
