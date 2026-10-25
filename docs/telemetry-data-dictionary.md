@@ -1,15 +1,19 @@
 # Telemetry export data dictionary
 
-> **Status:** export schema version 3 (unreleased Workstream 2 candidate). The
-> exporter records bounded alert-lifecycle records, a cumulative scheduler
-> counter snapshot, four Ultralytics alert-latency summaries, and the inference
-> cadence configuration in addition to the per-frame inference data described
-> below. All alert timings come from the app's own speech-scheduler signals, so
-> they describe the app-side path only; physical audible-warning latency at the
-> speaker is **not** measured. The suite runs on this branch
-> (`flutter test --no-pub`: 527 passing, 1 known pre-existing failure;
-> `flutter analyze --no-pub`: 4 pre-existing issues); no build or device run has
-> validated this instrumentation.
+> **Status:** export schema version 4 (unreleased Workstream 2 candidate).
+> Version 4 adds the detector and depth stage timings, the reported depth
+> accelerator, the depth grid size, the heatmap build cost and the cumulative
+> `depthDroppedTicks` counter to each sample. The exporter records bounded
+> alert-lifecycle records, a cumulative scheduler counter snapshot, four
+> Ultralytics alert-latency summaries, and the inference cadence configuration in
+> addition to the per-frame inference data described below. All alert timings
+> come from the app's own speech-scheduler signals, so they describe the app-side
+> path only; physical audible-warning latency at the speaker is **not** measured.
+> No device run has validated this instrumentation.
+>
+> **Every schema-4 sample key is optional on read.** A schema-3 payload simply
+> lacks them, and an unmeasured value is absent (or, for `depthQueueWaitMs`,
+> explicitly `null`) — never `0`.
 
 EyeCue exports an image-free snapshot only after an explicit user action from
 Logs & Reports. JSON keeps the same values in nested record arrays. CSV uses one
@@ -21,7 +25,7 @@ are empty.
 | CSV column | Meaning | Units / values |
 |---|---|---|
 | `record_type` | Row kind | `metadata`, `sample`, `detection`, `failure`, `fallback`, `recovery`, `correction`, `alert_lifecycle`, `alert_counter`, or `alert_summary` |
-| `schema_version` | Export schema version | Integer; currently `3` |
+| `schema_version` | Export schema version | Integer; currently `4` |
 | `timestamp` | Event or export time | UTC ISO-8601 timestamp |
 | `app_version` | Application version | Version string; metadata rows only |
 | `session_id` | In-memory session identifier | Opaque session string; metadata/correction rows |
@@ -47,6 +51,19 @@ are empty.
 | `depth_observed_hz` | Observed depth completion cadence: a stop-surviving EMA that includes idle gaps; unsettled for the first samples after a resume | Hz, or empty when not yet measured |
 | `depth_latency_ms` | Last completed depth inference | Milliseconds, or empty when not yet measured |
 | `depth_status` | Depth model state | `disabled`, `loading`, `gpu`, `cpu`, `degraded`, or empty |
+| `detector_pre_ms` | Detector preprocessing (letterbox + normalization) | Milliseconds, or empty when native did not report it |
+| `detector_inference_ms` | Detector model inference | Milliseconds, or empty when native did not report it |
+| `detector_post_ms` | Detector postprocessing (decode + NMS) | Milliseconds, or empty when native did not report it |
+| `detector_observed_fps` | Native inference rate as reported | Frames per second, or empty when native did not report it |
+| `depth_pre_ms` | Depth preprocessing | Milliseconds, or empty when native did not report it |
+| `depth_inference_ms` | Depth model inference | Milliseconds, or empty when native did not report it |
+| `depth_post_ms` | Depth postprocessing | Milliseconds, or empty when native did not report it |
+| `depth_accelerator` | Accelerator native resolved for the depth instance | `gpu`/`cpu`, or empty while unknown |
+| `depth_grid_width` | Width of the emitted block-mean depth grid | Blocks, or empty before the first depth frame |
+| `depth_grid_height` | Height of the emitted block-mean depth grid | Blocks, or empty before the first depth frame |
+| `heatmap_build_ms` | Dart-side cost of building the display heatmap | Milliseconds, or empty when no heatmap was built (overlay hidden, or depth off) |
+| `depth_dropped_ticks` | **Cumulative** native count of depth ticks skipped so far | Count, or empty until a depth event arrives |
+| `depth_queue_wait_ms` | Time a depth frame waited in a Dart queue | Always `null`: there is no Dart-side queue |
 | `low_power_clamped` | Low power mode lowered the stored target | Boolean |
 | `source_limited` | Depth target exceeds the detector cadence that feeds it | Boolean |
 
@@ -66,6 +83,32 @@ are empty.
   yet.
 - Cadence values are frozen into each sample when it is recorded: a settings
   change is attributed from the next sample onward.
+- The stage timings, `depth_accelerator`, the grid size, `heatmap_build_ms` and
+  `depth_dropped_ticks` are frozen the same way, and are recorded only while
+  distance estimation is on. `detector_*` values come from the native streaming
+  metrics; `depth_*` values come from the last completed native depth event.
+- Every one of those keys is **omitted** when it has no value, so a schema-3
+  reader and a schema-4 reader agree that an absent key is unknown. `0` is never
+  written in place of an unknown, and a real `0 ms` stage is reported as `0`.
+- `depth_accelerator` and `depth_status` are different things: the first is
+  exactly what native resolved, the second folds in `disabled`/`loading`/
+  `degraded`. `depth_status` reads `loading` while the estimator is ready but no
+  depth event has arrived yet, because the accelerator is still unknown then.
+- `depth_dropped_ticks` is a **cumulative** native counter, not a per-sample
+  drop count: derive a per-interval delta by differencing consecutive samples
+  (or by resetting at a known tick restart). It counts skipped depth *ticks* —
+  an interval that had not elapsed, or an inference already in flight — so at a
+  2 Hz depth target on a 30 fps stream it mostly measures the cadence gate. It
+  is not a dropped-frame count.
+- `depth_queue_wait_ms` is always `null`. Depth cadence, latest-frame-wins and
+  the in-flight guard are native, so no frame ever waits in a Dart queue and a
+  number here would be fabricated.
+- `heatmap_build_ms` is presentation cost only: it prices the overlay, not the
+  depth pipeline, and it is absent while the overlay is hidden because no
+  heatmap is built then.
+- Session wall-clock lives on the export header (`session.durationMs`, CSV
+  `session_duration_ms`), not on each sample: it is one value per export, and
+  repeating it 500 times would only inflate the payload.
 
 ## Detections
 
