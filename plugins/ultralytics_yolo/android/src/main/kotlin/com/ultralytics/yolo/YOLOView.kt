@@ -178,7 +178,7 @@ class YOLOView @JvmOverloads constructor(
     @Volatile private var lastDepthStartMs = 0L
     // Ticks the depth path skipped (interval not elapsed, or an inference still in flight). The drop
     // is decided here, so only this counter can report it honestly; it rides the depth event and
-    // resets with `lastDepthStartMs`.
+    // resets only in `stop()`, not with `lastDepthStartMs` (which restarts the interval gate alone).
     private val depthDroppedTicks = AtomicInteger(0)
     // Set when a depth inference fails: further ticks are suppressed for this instance id until the
     // next streaming config arrives (Dart re-arms it through retry()) or the view is paused.
