@@ -524,7 +524,11 @@ class _UltralyticsDetectionScreenState
 
   /// Native depth event → depth frame. Silent unless a live map can be used.
   void _handleDepthEvent(YOLODepthEvent event) {
-    if (!_detectionActive || _paused || !_mdeEnabled || !_rotationResolved) {
+    // A failure must land even inside the pause/stop window: the native view latches its
+    // failure flag on it, so a dropped event would leave depth silently dead with no
+    // degraded state and no retry affordance once the camera resumes.
+    if (event.error == null &&
+        (!_detectionActive || _paused || !_mdeEnabled || !_rotationResolved)) {
       return;
     }
     _depth.onNativeDepth(

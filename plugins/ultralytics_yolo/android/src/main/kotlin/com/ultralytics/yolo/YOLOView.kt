@@ -172,10 +172,16 @@ class YOLOView @JvmOverloads constructor(
     // needs a memory barrier of its own.
     @Volatile private var depthExecutor: ExecutorService? = null
     private val depthInFlight = AtomicBoolean(false)
+    // Guards depthExecutor creation/teardown. A private monitor, not `this`: the view's own monitor
+    // belongs to the framework and must not be borrowed as an application lock.
+    private val depthLock = Any()
     @Volatile private var lastDepthStartMs = 0L
     // Set when a depth inference fails: further ticks are suppressed for this instance id until the
-    // next streaming config arrives (Dart re-arms it through retry()).
+    // next streaming config arrives (Dart re-arms it through retry()) or the view is paused.
     @Volatile private var depthDisabled = false
+    // One-shot guard so a failed `DepthEstimator` cast is reported instead of silently keeping the
+    // default grid cap for the life of the view.
+    @Volatile private var depthWiringWarned = false
     
     // Frame counter for streaming
     private var frameNumberCounter: Long = 0
@@ -692,6 +698,9 @@ class YOLOView @JvmOverloads constructor(
     fun pauseCamera() {
         isStopped = true
         intentionallyPaused = true
+        // Re-arm the depth failure latch: a pause ends the previous ticking episode, and a failure
+        // that landed just before it must not leave the instance dead for the resumed view.
+        depthDisabled = false
         try {
             imageAnalysisUseCase?.clearAnalyzer()
             if (::cameraProviderFuture.isInitialized) {
@@ -1595,7 +1604,7 @@ class YOLOView @JvmOverloads constructor(
         // Creation races stop(), which shuts the executor down and nulls the field from the platform
         // thread. Sharing this lock means a tick either sees the stopped view or leaves behind an
         // executor stop() will shut down.
-        val executor = synchronized(this) {
+        val executor = synchronized(depthLock) {
             if (isStopped) {
                 depthInFlight.set(false)
                 return
@@ -1608,9 +1617,21 @@ class YOLOView @JvmOverloads constructor(
             executor.execute {
                 val startedAt = SystemClock.elapsedRealtime()
                 try {
-                    runCatching {
-                        (YOLOInstanceManager.shared.getInstance(instanceId)?.predictorInstance() as? DepthEstimator)
-                            ?.gridMaxDim = maxDim
+                    // `depthMaxDim` only reaches the estimator through this wiring, so a failed cast
+                    // is logged once instead of silently pinning the grid to DEFAULT_GRID_MAX_DIM.
+                    val estimator =
+                        YOLOInstanceManager.shared.predictorInstance(instanceId) as? DepthEstimator
+                    if (estimator == null) {
+                        if (!depthWiringWarned) {
+                            depthWiringWarned = true
+                            Log.w(
+                                TAG,
+                                "Depth instance '$instanceId' is not a DepthEstimator; " +
+                                    "depthMaxDim=$maxDim is not applied (grid keeps DEFAULT_GRID_MAX_DIM)",
+                            )
+                        }
+                    } else {
+                        estimator.gridMaxDim = maxDim
                     }
                     // includeRawData and drawOverlays are both false: the stream carries the compact
                     // grid only, so neither the dense FloatArray nor the annotated full-frame copy
@@ -2564,7 +2585,7 @@ class YOLOView @JvmOverloads constructor(
         // discard its own result (the tick checks isStopped before emitting); shutdownNow() plus
         // awaitTermination() would interrupt a routine CPU inference and stall this caller — the
         // platform thread — for up to 500 ms. Never join here.
-        synchronized(this) {
+        synchronized(depthLock) {
             depthExecutor?.shutdown()
             depthExecutor = null
         }

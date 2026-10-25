@@ -114,10 +114,14 @@ class YOLOInstanceManager {
         }
     }
 
-    fun predictorInstance(instanceId: String){
-        instances[instanceId]?.let { yolo ->
-            yolo.predictorInstance();
-        }
+    /**
+     * Returns the instance's predictor (instantiating it on first use), or null when no model
+     * is loaded for [instanceId]. The depth tick casts the result to `DepthEstimator` to apply
+     * `depthMaxDim`, so the return type has to carry the predictor, not `Unit`.
+     */
+    fun predictorInstance(instanceId: String): Predictor? {
+        val yolo = instances[instanceId] ?: return null
+        return yolo.predictorInstance()
     }
 
     /**
