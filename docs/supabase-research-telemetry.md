@@ -58,8 +58,22 @@ without depending on how PostgREST returns conflicting rows. A replay therefore
 never creates a second row and never overwrites the stored payload — the probe
 short-circuits it, and `on conflict do nothing` covers the narrow race where a
 concurrent write lands between the probe and the insert (that write wins; the
-race loser still answers `201`, which is why the app treats both codes as a
-success).
+race loser still answers `201`).
+
+**What a replay means for the user.** `client_session_id` is minted **once per
+app run**, and the upload button re-arms after every attempt. "Upload → keep
+detecting 20 minutes → upload again" therefore repeats the same
+`client_session_id` with a larger snapshot, and the second snapshot is
+**discarded**: the pair already has a row, and a re-upload never overwrites it.
+A `2xx` alone does not mean *this* payload was stored, so the app answers a
+replay with its own state, `TelemetryUploadResult.alreadyUploaded()` — success-
+like, but rendered as "This session was already uploaded earlier and was not
+stored again. Save a local export if you have recorded more data since." — and
+keeps the plain success text for a first write only. A later snapshot of the
+same session reaches the collection only under a **new session id**, and a
+session that looks absent on the dashboard can equally have been **discarded as
+a duplicate** rather than never uploaded; check `received_at` and the
+`(participant_code, client_session_id)` pair before concluding it never arrived.
 
 `validate.js` — not `index.ts` — owns the envelope rules, so
 `node --test supabase/functions/ingest-telemetry/validate.test.mjs` exercises
@@ -83,7 +97,10 @@ is constrained.
 ### Forbidden keys
 
 Matched by **exact name**, at any depth, in objects and arrays inside
-`telemetry`:
+`telemetry`. The match is case- and whitespace-sensitive, so a key spelled
+`Image` or `" image "` would pass: this is a tripwire against the app's own key
+names, not a security boundary. Real protection is that the app never collects
+images, audio or device identifiers in the first place.
 
 `image`, `images`, `screenshot`, `screenshots`, `frame`, `frames`, `audio`,
 `utterance`, `path`, `paths`, `deviceId`, `technicalDetail`, `serviceRole`,
@@ -102,18 +119,21 @@ Every non-2xx answer is a single-machine-readable-code body.
 | 405 | `{"error":"method_not_allowed"}` | not a `POST` | — (not reachable from the app) |
 | 401 | `{"error":"unauthorized"}` | missing/incorrect `apikey` | "This build is not authorised for the research upload. Save a local export and try again later." |
 | 413 | `{"error":"payload_too_large"}` | `content-length` or UTF-8 body above 2 000 000 B | "This session is too large to upload. Save a local export to keep the data." |
-| 400 | `{"error":"invalid_json"}` | body is not JSON | "The research server rejected this session as invalid. Save a local export and try again later." |
-| 400 | `{"error":"invalid_telemetry_payload"}` | envelope shape/type/consent problem, or a forbidden key | same validation message |
+| 400 | `{"error":"invalid_json"}` | body is not JSON | "The research server rejected this session as invalid. Save a local export; sending it again will not help." |
+| 400 | `{"error":"invalid_telemetry_payload"}` | envelope shape/type/consent problem, a forbidden key, or a **syntactically valid body that is not a JSON object** (`[]`, `"text"`, `42` — the parse succeeds, the envelope check fails) | same validation message |
 | 400 | `{"error":"unsupported_schema_version","supported":[3,4]}` | header schema outside `{3,4}` | "This app build uses a telemetry format the research server does not accept. Update the app, or save a local export." |
 | 500 | `{"error":"database_write_failed"}` | the probe or the upsert failed | "The research server could not accept this session. Save a local export and try again later." |
 | 500 | `{"error":"server_configuration_error"}` | the server secret key env var is absent | same server message |
-| 200 / 201 | `{"accepted":true}` (+ `"duplicated":true` on replay) | stored / already stored | success |
+| 201 | `{"accepted":true}` | stored: first write for the pair | "Session uploaded to the research database." |
+| 200 | `{"accepted":true,"duplicated":true}` | already stored by an earlier attempt; nothing written | "This session was already uploaded earlier and was not stored again. Save a local export if you have recorded more data since." |
 
 `TelemetryUploadService` maps `401`/`403` → authorisation, `400` →
 validation (with the schema-version body split out), `413` → the local size
 message and `5xx` → server failure. Every branch keeps the in-memory session,
-so the JSON/CSV export still recovers it, and the client-side guard stays the
-stricter bound: the app refuses an over-cap body before the request is sent.
+so the JSON/CSV export still recovers it. The client guard uses the *same* byte
+bound as the function's body check — it is not stricter — and its only job is
+that an over-cap session is refused before the request is sent; the table adds
+a separate storage bound the client does not mirror (see *Payload size*).
 
 ### Local execution: BLOCKED-EXTERNAL — disk capacity
 
@@ -136,8 +156,18 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
   -H "apikey: $PUBLISHABLE" -H 'content-type: application/json' --data @envelope.json
 #   first answer 201, replay 200 {"duplicated":true}
 psql "$DB_URL" -c 'select count(*) from public.telemetry_sessions'   # stays 1
+# maxed-payload proof: one worst-case envelope, then the stored text size
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
+  -H "apikey: $PUBLISHABLE" -H 'content-type: application/json' --data @maxed-envelope.json
+psql "$DB_URL" -c "select octet_length(payload::text) from public.telemetry_sessions
+  where client_session_id = '<maxed-session-id>'"   # must be below 2400000
 npx supabase@latest stop
 ```
+
+`@maxed-envelope.json` is the envelope built by the Flutter worst-case test
+(2 000 detections, 400 samples with every schema-4 key, 500 alert records, 2 000
+corrections); it must be under 2 000 000 bytes itself, and its **stored**
+`payload::text` must stay under the table's 2 400 000-byte bound.
 
 ## Provisioning
 
@@ -169,15 +199,34 @@ npx supabase@latest stop
 ## Verification status
 
 The envelope rules are covered by `node --test
-supabase/functions/ingest-telemetry/validate.test.mjs` (36 cases: every
-forbidden key at three depths, the `frameNumber` allowance, each mistyped
-envelope field, both supported and three unsupported schema versions, and the
-2 000 000 / 2 000 001-byte boundary). The Flutter suite covers the client error
-mapping and re-reads both Edge Function sources. **Not executed**: the SQL and
-the TypeScript function themselves — see *Local execution: BLOCKED-EXTERNAL*
-above.
+supabase/functions/ingest-telemetry/validate.test.mjs` (40 cases: every
+forbidden key at three depths, the `frameNumber` allowance, case-variant and
+padded spellings that pass by design, each mistyped envelope field, both
+supported and three unsupported schema versions, the 2 000 000 / 2 000 001-byte
+boundary, and three coupling guards that read the migration SQL and `index.ts`
+from disk — schema list, unique-index columns against the `onConflict` target,
+and the storage bound against the wire cap). The Flutter suite covers the client
+error mapping, the duplicate-versus-success states, and re-reads both Edge
+Function sources. **Not executed**: the SQL and the TypeScript function
+themselves — see *Local execution: BLOCKED-EXTERNAL* above.
 
 ## Payload size
+
+Two different limits apply, and they are not the same number:
+
+| Limit | Value | Measured on | Enforced by |
+|---|---|---|---|
+| Wire cap | 2,000,000 B | the compact JSON body the app sends | `TelemetryUploadService` (client, before sending) **and** `isBodyTooLarge` in the Edge Function |
+| Storage bound | 2,400,000 B | `octet_length(payload::text)`, i.e. `jsonb` text output | the `telemetry_sessions_payload_size` check constraint |
+
+The gap is deliberate. The wire cap is the authoritative limit; the
+storage bound exists only to stop unbounded storage and is set above it, because
+`jsonb` re-spaces the JSON on text output so the stored form is roughly 10–15 %
+larger than the compact body. A storage bound set at the wire cap would reject,
+as a `500 database_write_failed`, a body the function had just accepted. The
+client guard is *identical* to the function's wire cap — not stricter — and its
+only advantage is ordering: it fires before the request is sent, so the server's
+`413` is never the first signal that a session was too large.
 
 The largest session the app can build is bounded by fixed collection caps. A test
 fills every one of them (2,000 detections, 400 samples, 500 alert lifecycle
@@ -185,8 +234,10 @@ records, 200 failures, 100 fallbacks, 200 recoveries, 2,000 corrections) with
 **device-shaped numbers** (Float32-derived box/confidence doubles such as
 `0.34545454545454546` and `0.8700000047683716`, not tidy 2-decimal literals) and
 every schema-4 sample key populated, and measures **1,850,400 bytes** — 149,600
-bytes of headroom under the function's 2,000,000-byte cap and 49,600 bytes under
-the internal 1,900,000-byte target.
+bytes under the 2,000,000-byte wire cap and 49,600 bytes under the internal
+1,900,000-byte test target. That 149,600-byte figure is headroom against the
+*wire* cap only; it says nothing about the storage bound, which is why the
+storage bound is derived from the wire cap rather than assumed equal to it.
 
 One thing *is* dropped, deliberately: `_maxSamples` is capped at 400, so a session
 longer than that keeps a **rolling window** of its most recent 400 samples
@@ -223,7 +274,10 @@ in-memory samples for the life of the session.
 
 Client-side, `TelemetryUploadService` refuses a body above 2,000,000 bytes and
 returns an explicit failure that tells the user to save a local export, so the
-server's `413` is never the first signal. In every failure path the session stays
+server's `413` is never the first signal. The session then still has one way to
+lose data that no size limit can report: a **replayed** upload is discarded by
+the idempotency pair (see *Idempotency*), which is why that answer carries its
+own message instead of the success text. In every failure path the session stays
 in memory and JSON/CSV export still recovers it; no record is truncated (the
 rolling sample window described above is the only data the app discards).
 

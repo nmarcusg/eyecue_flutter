@@ -122,8 +122,12 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
         metadata: metadata,
       );
       if (!mounted) return;
+      // A replay writes nothing, so it gets its own message rather than the
+      // plain success text. Still success-like, so not styled as an error.
       _showMessage(
-        result.isSuccess
+        result.isAlreadyUploaded
+            ? result.message!
+            : result.isSuccess
             ? 'Session uploaded to the research database.'
             : result.errorMessage!,
         isError: !result.isSuccess,
@@ -133,65 +137,10 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
     }
   }
 
-  Future<ResearchSessionMetadata?> _requestUploadMetadata() async {
-    final participantController = TextEditingController();
-    final scenarioController = TextEditingController();
-    final metadata = await showDialog<ResearchSessionMetadata>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Upload this session?'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'This manually sends the current image-free session to the '
-                'research database. It does not include camera frames or device IDs. '
-                'Use only a study participant code, never a name or email address.',
-              ),
-              const SizedBox(height: kSpace12),
-              TextField(
-                controller: participantController,
-                maxLength: 64,
-                decoration: const InputDecoration(
-                  labelText: 'Participant code',
-                  hintText: 'P-001',
-                ),
-              ),
-              TextField(
-                controller: scenarioController,
-                maxLength: 80,
-                decoration: const InputDecoration(
-                  labelText: 'Study scenario',
-                  hintText: 'indoor-obstacle-course',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = ResearchSessionMetadata(
-                participantCode: participantController.text,
-                studyScenario: scenarioController.text,
-              );
-              if (!value.isValid) return;
-              Navigator.pop(context, value);
-            },
-            child: const Text('Confirm upload'),
-          ),
-        ],
-      ),
-    );
-    participantController.dispose();
-    scenarioController.dispose();
-    return metadata;
-  }
+  Future<ResearchSessionMetadata?> _requestUploadMetadata() => showDialog(
+    context: context,
+    builder: (_) => const _UploadMetadataDialog(),
+  );
 
   Future<void> _export({required bool csv}) async {
     if (_exporting) return;
@@ -234,6 +183,80 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
       ),
     );
   }
+}
+
+/// Participant/study prompt for one upload.
+///
+/// The dialog owns its text controllers: disposing them in the caller leaves the
+/// closing route rebuilding a disposed controller for the length of its exit
+/// animation.
+class _UploadMetadataDialog extends StatefulWidget {
+  const _UploadMetadataDialog();
+
+  @override
+  State<_UploadMetadataDialog> createState() => _UploadMetadataDialogState();
+}
+
+class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
+  final TextEditingController _participantController = TextEditingController();
+  final TextEditingController _scenarioController = TextEditingController();
+
+  @override
+  void dispose() {
+    _participantController.dispose();
+    _scenarioController.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final value = ResearchSessionMetadata(
+      participantCode: _participantController.text,
+      studyScenario: _scenarioController.text,
+    );
+    if (!value.isValid) return;
+    Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Upload this session?'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'This manually sends the current image-free session to the '
+            'research database. It does not include camera frames or device IDs. '
+            'Use only a study participant code, never a name or email address.',
+          ),
+          const SizedBox(height: kSpace12),
+          TextField(
+            controller: _participantController,
+            maxLength: 64,
+            decoration: const InputDecoration(
+              labelText: 'Participant code',
+              hintText: 'P-001',
+            ),
+          ),
+          TextField(
+            controller: _scenarioController,
+            maxLength: 80,
+            decoration: const InputDecoration(
+              labelText: 'Study scenario',
+              hintText: 'indoor-obstacle-course',
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _confirm, child: const Text('Confirm upload')),
+    ],
+  );
 }
 
 class _OverviewTab extends StatelessWidget {

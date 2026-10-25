@@ -8,6 +8,9 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   ALLOWED_KEYS,
@@ -308,6 +311,58 @@ test('an unsupported schema version is reported separately with the supported se
       `schemaVersion ${version}`,
     )
   }
+})
+
+test('case-variant and padded forbidden-key spellings pass by design', () => {
+  // Matching is exact and whitespace-sensitive on purpose: this is a tripwire
+  // against the app's own key names, not a security boundary. A payload that
+  // called its image `Image` or ` image ` would pass here.
+  for (const key of ['Image', 'IMAGE', ' image ', 'image\t', 'deviceID']) {
+    assert.equal(isForbiddenKey(key), false, key)
+  }
+})
+
+const functionDir = dirname(fileURLToPath(import.meta.url))
+const migrationSql = readFileSync(
+  join(functionDir, '../../migrations/202610250001_harden_research_telemetry.sql'),
+  'utf8',
+)
+const indexSource = readFileSync(join(functionDir, 'index.ts'), 'utf8')
+
+test('the migration schema check matches SUPPORTED_SCHEMA_VERSIONS', () => {
+  const match = migrationSql.match(
+    /check \(telemetry_schema_version in \(([\d,\s]+)\)\)/,
+  )
+  assert.ok(match, 'the migration must carry the supported-schema check')
+  assert.deepEqual(
+    match[1].split(',').map((version) => Number(version.trim())),
+    [...SUPPORTED_SCHEMA_VERSIONS],
+  )
+})
+
+test('the migration unique index matches the onConflict target', () => {
+  const indexColumns = migrationSql.match(
+    /create unique index telemetry_sessions_participant_session_uidx\s+on public\.telemetry_sessions \(([^)]+)\)/,
+  )
+  assert.ok(indexColumns, 'the migration must create the idempotency index')
+  const onConflict = indexSource.match(/onConflict: '([^']+)'/)
+  assert.ok(onConflict, 'index.ts must upsert on the idempotency pair')
+  const columns = (value) =>
+    value
+      .split(',')
+      .map((column) => column.trim())
+      .join(',')
+  assert.equal(columns(indexColumns[1]), columns(onConflict[1]))
+})
+
+test('the storage bound leaves headroom above the wire cap', () => {
+  // `jsonb` text output is larger than the compact body, so a storage check at
+  // exactly MAX_BODY_BYTES would reject a body the function accepted.
+  const bound = migrationSql.match(
+    /check \(octet_length\(payload::text\) <= (\d+)\)/,
+  )
+  assert.ok(bound, 'the migration must carry the payload size bound')
+  assert.ok(Number(bound[1]) > MAX_BODY_BYTES)
 })
 
 test('the body bound is 2 000 000 bytes, inclusive', () => {

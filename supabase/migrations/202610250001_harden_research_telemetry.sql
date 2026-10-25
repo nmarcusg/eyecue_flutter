@@ -1,17 +1,24 @@
--- L6 hardening for researcher telemetry ingestion. Additive only: this file
--- rewrites, shortens and deletes nothing.
+-- L6 hardening for researcher telemetry ingestion. No table is rewritten, no
+-- column is dropped and no row is deleted or shortened; the only change to an
+-- existing object is the payload size check, dropped and re-added at the end
+-- with a wider bound (see the storage-bound comment).
 --
 -- Assumption (fresh project): this runs against a database created by
--- 202610200001_create_research_telemetry.sql that holds no duplicate
--- (participant_code, client_session_id) pair yet. If a duplicate pair exists the
--- unique index creation fails loudly and the migration stops with the offending
--- key in the error; nothing is deleted, because choosing which of two payloads
--- is the real session is a research decision, not a migration decision. Resolve
--- the duplicates deliberately, then apply this file again.
+-- 202610200001_create_research_telemetry.sql. Two kinds of pre-existing row can
+-- make a statement below abort, and neither is deleted here, because both are
+-- research decisions rather than migration decisions:
 --
--- The Supabase migration runner records applied versions, so these statements
--- are written to run once (no `if not exists` / `if exists` guards that would
--- silently skip a genuine conflict).
+--   1. a duplicate (participant_code, client_session_id) pair, which makes the
+--      unique index creation fail loudly with the offending key in the error;
+--   2. a row whose `telemetry_schema_version` is outside (3, 4). Schema 1 and 2
+--      were emitted historically, so an older project can hold them; the check
+--      constraint below would abort on such a row.
+--
+-- Resolution, for both cases, is deliberately manual: either archive the rows
+-- (copy them to a table outside this schema) or delete them, then apply this
+-- file again. The migration runner records applied versions, so these
+-- statements are written to run once (no `if not exists` / `if exists` guards
+-- that would silently skip a genuine conflict).
 
 -- Idempotency key. `ingest-telemetry` upserts on this pair with
 -- `ignoreDuplicates: true`, so a replayed upload keeps the first row and its
@@ -27,6 +34,21 @@ create unique index telemetry_sessions_participant_session_uidx
 alter table public.telemetry_sessions
   add constraint telemetry_sessions_supported_schema_version
   check (telemetry_schema_version in (3, 4));
+
+-- Storage bound. The authoritative size limit is the 2,000,000-byte wire cap
+-- enforced by `ingest-telemetry`, measured on the compact JSON body the app
+-- sends. 202610200001 repeated that same number against `payload::text`, but a
+-- `jsonb` value is re-spaced on text output, so the stored form is larger than
+-- the wire body and a body that passed the function could still be refused here
+-- as a 500 database_write_failed. This constraint exists only to stop unbounded
+-- storage, so it is set well above the wire cap to keep headroom for that
+-- re-spacing. The original migration left the check unnamed, so PostgreSQL
+-- named it after the table.
+alter table public.telemetry_sessions
+  drop constraint if exists telemetry_sessions_check;
+alter table public.telemetry_sessions
+  add constraint telemetry_sessions_payload_size
+  check (octet_length(payload::text) <= 2400000);
 
 -- Row Level Security is deliberately unchanged by this migration: the select
 -- policies from 202610200001 (authenticated research members only) remain the

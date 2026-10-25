@@ -10,6 +10,7 @@ import 'package:eyecue_flutter/screens/logs_reports_screen.dart';
 import 'package:eyecue_flutter/services/correction_service.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
+import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
@@ -53,6 +54,28 @@ class _FakeExportService extends TelemetryExportService {
     if (completer != null) await completer!.future;
     if (throwOnWrite) throw const FileSystemException('write failed');
     return File('/tmp/20260101120000-telemetry.csv');
+  }
+}
+
+/// A [TelemetryUploadService] that answers with one fixed result, so the
+/// screen's duplicate-versus-success message branch runs without a network.
+class _FakeUploadService extends TelemetryUploadService {
+  _FakeUploadService(this.result);
+
+  final TelemetryUploadResult result;
+  int uploads = 0;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<TelemetryUploadResult> upload({
+    required TelemetryService telemetry,
+    required ResearchSessionMetadata metadata,
+    AppSettings? settings,
+  }) async {
+    uploads++;
+    return result;
   }
 }
 
@@ -170,6 +193,7 @@ Future<void> pumpLogsScreen(
   required TelemetryService telemetry,
   CorrectionService? corrections,
   TelemetryExportService? exportService,
+  TelemetryUploadService? uploadService,
   double textScale = 1.0,
   Size size = const Size(390 * 3, 2400 * 3),
 }) async {
@@ -184,6 +208,7 @@ Future<void> pumpLogsScreen(
           telemetry: telemetry,
           corrections: corrections,
           exportService: exportService,
+          uploadService: uploadService,
         ),
       ),
     ),
@@ -722,6 +747,65 @@ void main() {
         find.text('Export could not be saved. Try again.'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('upload messages', () {
+    Future<void> uploadOnce(
+      WidgetTester tester,
+      TelemetryUploadService fake,
+    ) async {
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(),
+        uploadService: fake,
+      );
+      final button = find.text('Upload session to research database');
+      // The card is built lazily below the viewport; scrolling alone leaves it
+      // off-screen, so it is revealed before the tap.
+      await scrollOverviewTo(tester, button);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).at(0), 'P-001');
+      await tester.enterText(
+        find.byType(TextField).at(1),
+        'indoor-obstacle-course',
+      );
+      await tester.tap(find.text('Confirm upload'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a duplicate upload says so instead of reporting success', (
+      tester,
+    ) async {
+      final fake = _FakeUploadService(
+        const TelemetryUploadResult.alreadyUploaded(),
+      );
+
+      await uploadOnce(tester, fake);
+
+      expect(fake.uploads, 1);
+      expect(find.textContaining('already uploaded earlier'), findsOneWidget);
+      expect(
+        find.text('Session uploaded to the research database.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a stored upload keeps the plain success text', (tester) async {
+      final fake = _FakeUploadService(const TelemetryUploadResult.success());
+
+      await uploadOnce(tester, fake);
+
+      expect(fake.uploads, 1);
+      expect(
+        find.text('Session uploaded to the research database.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('already uploaded earlier'), findsNothing);
     });
   });
 
