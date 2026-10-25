@@ -101,7 +101,10 @@ android {
 // keeps the normal names; AGP 9 no longer exposes the file name through the
 // variant API, so the rename happens after the task that writes the file.
 if (!hasUploadSigning) {
-    val markTestSigned: (String) -> Unit = { path ->
+    // Fail closed: an absent artefact means the output path moved, and a silent
+    // skip would leave a plain-named, debug-signed file that reads as a Play
+    // release.
+    val markTestSigned: (String, Boolean) -> Unit = { path, required ->
         val artefact = layout.buildDirectory.file(path).get().asFile
         if (artefact.exists()) {
             val renamed = artefact.resolveSibling(
@@ -110,6 +113,12 @@ if (!hasUploadSigning) {
             check(artefact.renameTo(renamed)) {
                 "EyeCue: could not mark ${artefact.name} as test-signed"
             }
+        } else if (required) {
+            throw GradleException(
+                "EyeCue: ${artefact.path} is missing, so it cannot be marked " +
+                    "test-signed. The release output path changed; a plain-named " +
+                    "debug-signed file must not be reported as a build success.",
+            )
         }
     }
 
@@ -117,7 +126,7 @@ if (!hasUploadSigning) {
     // appbundle` then reports the renamed file.
     afterEvaluate {
         tasks.matching { it.name == "bundleRelease" }.configureEach {
-            doLast { markTestSigned("outputs/bundle/release/app-release.aab") }
+            doLast { markTestSigned("outputs/bundle/release/app-release.aab", true) }
         }
     }
 
@@ -128,9 +137,10 @@ if (!hasUploadSigning) {
     // `./gradlew markTestSignedApk`.
     tasks.register("markTestSignedApk") {
         doLast {
-            markTestSigned("outputs/flutter-apk/app-release.apk")
+            markTestSigned("outputs/flutter-apk/app-release.apk", true)
             // The tool also writes the APK's sha1 sidecar; keep the pair together.
-            markTestSigned("outputs/flutter-apk/app-release.apk.sha1")
+            // Not required: absent sidecar leaves nothing misleadingly named.
+            markTestSigned("outputs/flutter-apk/app-release.apk.sha1", false)
         }
     }
 }
