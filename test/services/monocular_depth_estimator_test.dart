@@ -481,6 +481,10 @@ void main() {
       'releaseModel frees the model, clears frame/heatmap and keeps telemetry',
       () async {
         final models = <_FakeDepthModel>[];
+        // Decoded before the feed: a decode started inside the builder completes
+        // on the platform's schedule, which no fixed wait can bound. One image
+        // per publish, because a superseded frame's image is disposed.
+        final images = [await _testImage(), await _testImage()];
         late ui.Image built;
         final estimator = MonocularDepthEstimator(
           modelFactory:
@@ -489,7 +493,7 @@ void main() {
                 models.add(model);
                 return model;
               },
-          heatmapBuilder: (_) async => built = await _testImage(),
+          heatmapBuilder: (_) async => built = images.removeAt(0),
         );
 
         await estimator.prepare();
@@ -662,15 +666,55 @@ void main() {
           1,
           reason: 'the stale handle is disposed on arrival',
         );
-        expect(
-          models.single.instanceId,
-          'depth-1',
-          reason: 'the handle was never adopted',
-        );
         expect(estimator.instanceId, isNull, reason: 'released stays released');
         expect(estimator.state.value, DepthRunState.idle);
 
         estimator.dispose();
+      },
+    );
+
+    test(
+      'a load that finishes after dispose is released, not adopted',
+      () async {
+        final gate = Completer<void>();
+        final models = <_FakeDepthModel>[];
+        final estimator = MonocularDepthEstimator(
+          modelFactory:
+              ({required String modelId, required bool useGpu}) async {
+                final model = _FakeDepthModel('depth-${models.length + 1}');
+                models.add(model);
+                await gate.future;
+                return model;
+              },
+          heatmapBuilder: (_) async => null,
+        );
+        final states = <DepthRunState>[];
+        void listener() => states.add(estimator.state.value);
+        estimator.state.addListener(listener);
+
+        final arming = estimator.prepare();
+        // Let the load reach the gated factory, i.e. the model is being decoded.
+        await pumpEventQueue();
+        expect(models, hasLength(1), reason: 'the load is in flight');
+        // The screen is torn down inside the load window: leaving the detection
+        // screen while the ~1 s decode runs is a reachable path.
+        estimator.dispose();
+        gate.complete();
+
+        // A `ready` write into the disposed notifier asserted here and, in
+        // release, leaked the 5.3 MB interpreter it had just adopted.
+        await expectLater(arming, completes);
+        expect(
+          models.single.releases,
+          1,
+          reason: 'the handle is freed on arrival',
+        );
+        expect(estimator.instanceId, isNull, reason: 'nothing was adopted');
+        expect(
+          states,
+          isNot(contains(DepthRunState.ready)),
+          reason: 'no state write reached a listener',
+        );
       },
     );
 
