@@ -152,18 +152,27 @@ Status values: `PENDING`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
 | Item | Scope (1 line) | Depends on | Status | Commit | Reviewer verdict | Evidence labels |
 | --- | --- | --- | --- | --- | --- | --- |
-| L0 baseline ledger (this commit) | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | this commit | awaiting reviewer | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
+| L0 baseline ledger (this commit) | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | awaiting reviewer | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
 | L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; hand the live camera frame to native depth inference | L0 | PENDING | — | — | `CONFIRMED-BY-INSPECTION` (target), `CONFIRMED-BY-TEST` (required) |
 | L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L5 telemetry perf fields + schema v4 | Carry cadence and stage-timing fields into the telemetry payload and bump the payload schema | L4 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
-| L6 Supabase idempotency + schema gating | Idempotent ingestion plus rejection of unknown payload schema versions server-side | L5 | PENDING | — | — | `BLOCKED-EXTERNAL` (needs local stack) |
+| L6 Supabase idempotency + schema gating | Idempotent ingestion plus rejection of unknown payload schema versions server-side | L5 | PENDING | — | — | `BLOCKED-EXTERNAL` (required) |
 | L7 dashboard contract compatibility | Keep the research dashboard able to read the amended payload contract | L5 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L8 R8/WorkManager/Room release verification | Prove the pinned WorkManager + Room + consumer R8 rules survive a minified release build | L1–L4 | PENDING | — | — | `CONFIRMED-BY-BUILD` (required) |
 | L9 Play Store configuration | Application ID, release signing config, versioning, permission surface | L8 | PENDING | — | — | `CONFIRMED-BY-BUILD` (required) |
 | L10 licensing/privacy/store materials | Licence decision, AGPL-3.0 interaction with the bundled Ultralytics artefacts, Data Safety answers | L9 | PENDING | — | — | `BLOCKED-EXTERNAL` |
 | L11 final readiness report | Release AAB build, artefact inspection, final readiness statement | all above | PENDING | — | — | `CONFIRMED-BY-BUILD`, `CONFIRMED-ON-DEVICE` (required) |
+
+### 5.1 L1 fork mechanics (decided)
+
+L1 stops depending on the hosted package. `pubspec.yaml:29` (`ultralytics_yolo: 0.6.13`)
+is replaced by a path dependency on `plugins/ultralytics_yolo`, a vendored copy of
+upstream 0.6.13 (see [`plugins/ultralytics_yolo/VENDORED.md`](../plugins/ultralytics_yolo/VENDORED.md)).
+Recorded reason: AGPL-preserving reproducibility — the AGPL-3.0 source we redistribute
+must be the source we build — plus the native deviation already approved under D4
+(`CONFIRMED-BY-INSPECTION`).
 
 ## 6. Verified MDE root cause
 
@@ -181,11 +190,12 @@ streaming configuration key is built by `streamingConfigKey`
 value assembly at `:143`), so enabling depth turns on per-result image transfer for the
 whole stream.
 
-On the native side that flag gates JPEG encoding of the analysis frame at
-`~/.pub-cache/.../com/ultralytics/yolo/YOLOView.kt:2316` (guard
-`if (config.includeOriginalImage)`) and the encode itself at
-`YOLOView.kt:2319`: `bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)`.
-A second encode site with the same call exists at `YOLOView.kt:2390`.
+On the native side, `~/.pub-cache/.../com/ultralytics/yolo/YOLOView.kt:2319` — guarded by
+`if (config.includeOriginalImage)` at `:2316` and reached from the per-result stream path
+at `:1510`→`:1528` — is the **only** JPEG encode on the per-detection hot path:
+`bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)`. The other `compress(`
+sites (`:1340`, `:1376`, `:1397`, `:2390`) are capture/snapshot-only and outside the
+argued hot path.
 
 > Citation correction against the contract: the encode is at `YOLOView.kt:2319`,
 > not `:2316`. Line `:2316` is the flag guard.
@@ -197,10 +207,10 @@ even though the depth path consumes only a small fraction of those frames.
 ### 6.2 Most of those encodes are already discarded by the estimator
 
 [`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart:156)
-(`submitFrame`) keeps a **single latest-frame slot**: `_pendingJpeg` at `:110` is
-overwritten wholesale, and the queue depth is documented as "Never exceeds one by
-design" (`debugPendingFrames`, `:119`). Frames arriving while a depth inference is
-in flight are dropped.
+(`submitFrame`) keeps a **single latest-frame slot**: the `_pendingJpeg` declaration at
+`:109` is overwritten wholesale at `:167`, and the queue depth is documented as "Never
+exceeds one by design" (`debugPendingFrames`, `:119`). Frames arriving while a depth
+inference is in flight are dropped.
 
 Consequence: at the configured depth cadence (about 2 Hz) the overwhelming majority of
 the JPEG encodes produced in 6.1 are encoded, copied and transferred only to be thrown
@@ -222,7 +232,8 @@ native handler decodes the bytes again with
 The cost is a full Android→Dart→Android round trip per depth frame: encode on the
 producer side, channel copy, decode on the consumer side, then a depth inference whose
 input is resized from the model's stored input dimensions, defaulting to 640×640 when
-the model does not report them (`DepthEstimator.kt:30`–`:32`).
+the model does not report them (`DepthEstimator.kt:30`–`:31`; `:32` is the `inputSize`
+assignment).
 
 ### 6.4 The dense Float32 depth map is returned on every depth frame
 
@@ -252,14 +263,18 @@ depth frame regardless of whether the heatmap is visible, so the cheapest config
 
 When the distance mode changes while MDE is disabled,
 [`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:572)
-calls only `_depth.stop()` and `_depth.clearFrame()` (lines `:572`–`:573`).
+runs the MDE-off block at `:572`–`:574` — `_depth.stop()`, `_depth.clearFrame()`, and
+`_depthSmoother.reset()` (`:574`).
 
-> Citation correction against the contract: the block is `:572`–`:573`, not
+> Citation correction against the contract: the block is `:572`–`:574`, not
 > `:570`–`:573` (line `:570` is the enclosing `if`).
 
 `stop()` halts the scheduler and `clearFrame()` drops the pending slot, but neither
-releases the loaded depth model/interpreter. Memory held by the model survives
-repeated enable/disable cycles.
+releases the loaded depth model/interpreter: `stop()` is itself documented "The model
+stays loaded" ([`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart:303)).
+The release hook `_disposeModel()` (`:329`) is reachable only from `dispose()` (call
+site `:428`), never from the toggle path. Memory held by the model survives repeated
+enable/disable cycles.
 
 ### 6.7 Lifecycle gap: release identity is still a template
 
@@ -268,6 +283,19 @@ repeated enable/disable cycles.
 `signingConfig = signingConfigs.getByName("debug")`
 ([`android/app/build.gradle.kts`](../android/app/build.gradle.kts:34)). A release
 artefact produced from this tree cannot be published; both lines are L9 work.
+
+### 6.8 Two facts L1 depends on
+
+**The frame is already in hand where the stream result is built.** At
+`YOLOView.kt:1510`–`:1511` the per-result path already holds the rotated `Bitmap`
+(`result.copy(originalImage = bitmap)`) *before* the encode at `:2319`. That is what
+makes a shared-frame transport cheap: the bitmap L1b needs is the one the stream path
+already has, so no new capture is required.
+
+**Depth entry point to extend.** L1b extends the `YOLOPlugin` handler for
+`predictSingleImage` (`~/.pub-cache/.../com/ultralytics/yolo/YOLOPlugin.kt:192`, decode
+at `:206`) and the `instanceManager.predict(...)` call it fronts (`:214`). The Dart
+dispatch side stays as-is (`~/.pub-cache/.../lib/core/yolo_inference.dart:57`).
 
 ## 7. External gates register
 
@@ -318,8 +346,8 @@ If the worktree is retained for inspection, only the branch needs removing:
 `git branch -D feat/play-store-readiness` (run from any checkout that does not have it
 checked out).
 
-Statement of blast radius: no protected branch (`dev`, `main`) was modified, no commit
-was rewritten, no stash was created or dropped, no other worktree was touched, and no
-external system (Supabase project, Play Console, signing infrastructure) was modified by
-this work. Checking out `dev` in the primary checkout is explicitly out of scope for
-this rollback.
+Statement of blast radius (`CONFIRMED-BY-INSPECTION`): no protected branch (`dev`,
+`main`) was modified, no commit was rewritten, no stash was created or dropped, no other
+worktree was touched, and no external system (Supabase project, Play Console, signing
+infrastructure) was modified by this work. Checking out `dev` in the primary checkout is
+explicitly out of scope for this rollback.
