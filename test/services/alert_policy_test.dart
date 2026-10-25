@@ -52,7 +52,7 @@ void main() {
 
   setUp(() {
     now = DateTime(2026, 1, 1, 12);
-    policy = AlertPolicy(clock: () => now);
+    policy = AlertPolicy();
   });
 
   AlertDecision decide(
@@ -322,7 +322,7 @@ void main() {
     });
 
     test('identity cache is bounded', () {
-      final bounded = AlertPolicy(clock: () => now, maxKeys: 2);
+      final bounded = AlertPolicy(maxKeys: 2);
       for (var id = 1; id <= 3; id++) {
         final primary = info(
           box: Rect.fromLTWH(0.3 + id * 0.01, 0.2, 0.1, 0.2),

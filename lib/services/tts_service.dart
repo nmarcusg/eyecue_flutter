@@ -157,7 +157,7 @@ class TtsService extends ChangeNotifier {
     this.preemptionCooldown = const Duration(milliseconds: 1500),
     AlertPolicy? policy,
   }) : _clock = clock ?? DateTime.now,
-       policy = policy ?? AlertPolicy(clock: clock ?? DateTime.now);
+       policy = policy ?? AlertPolicy();
 
   final TtsEngine engine;
   final AlertPolicy policy;
@@ -655,7 +655,7 @@ class TtsService extends ChangeNotifier {
 
     engine
         .speak(request.text)
-        .then((value) {
+        .then<void>((value) {
           if (submission.terminal != null) {
             _lateCallbacks++;
             _publishCounters();
@@ -668,7 +668,6 @@ class TtsService extends ChangeNotifier {
           if (submission.terminal == null) {
             _fail(submission, _CancelCause.engineError);
           }
-          return 0;
         });
   }
 

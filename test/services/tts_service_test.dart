@@ -8,7 +8,6 @@ import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/tracked_detection.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 enum FakeMode { autoComplete, drop, startOnly, manual }
@@ -24,6 +23,7 @@ class FakeTtsEngine implements TtsEngine {
   int recoverCalls = 0;
   int stopCalls = 0;
   bool throwOnRecover = false;
+  bool throwOnSpeak = false;
   FakeMode mode = FakeMode.autoComplete;
 
   VoidCallback? _onStart;
@@ -71,6 +71,7 @@ class FakeTtsEngine implements TtsEngine {
   @override
   Future<int> speak(String text) {
     spoken.add(text);
+    if (throwOnSpeak) return Future<int>.error(StateError('speak failed'));
     switch (mode) {
       case FakeMode.autoComplete:
         _onStart?.call();
@@ -1166,6 +1167,19 @@ void main() {
       await pumpEventQueue();
 
       expect(counters.last.lateCallbackIgnored, 1);
+      expect(await pending, isFalse);
+    });
+
+    test('a throwing speak fails the submission as an engine error', () async {
+      engine.throwOnSpeak = true;
+      addTearDown(() => engine.throwOnSpeak = false);
+      final pending = instrumented.speak('boom');
+      await pumpEventQueue();
+
+      final record = records.single;
+      expect(record.terminalState, AlertTerminalState.failed);
+      expect(record.terminalCause, 'engineError');
+      expect(counters.last.watchdogRecovery, 0);
       expect(await pending, isFalse);
     });
 
