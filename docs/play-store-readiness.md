@@ -327,7 +327,7 @@ other than the author of the commit being reviewed.
 
 | Commit | Item | Verdict | Findings | Reviewed by role |
 | --- | --- | --- | --- | --- |
-| — | — | — | — | — |
+| `a8e0571` | L0 baseline ledger | PASS_WITH_NOTES | 7 findings (5 minor/nit citation precision, 1 unlabelled claim, 1 cell-shape inconsistency); all applied in `e03bc36` | reviewer |
 
 ## 10. Rollback instructions
 
