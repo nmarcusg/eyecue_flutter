@@ -32,6 +32,13 @@
 - **Box/heatmap switches are presentation only.** Hiding boxes does not stop
   detection; hiding the heatmap does not stop depth inference; only
   `boundingBoxApproximation` stops it.
+- **Resolved — depth stayed resident after MDE was switched off.** Selecting
+  `boundingBoxApproximation` used to stop the ticks only: the depth interpreter
+  (5.3 MB model + GPU delegate) stayed loaded for the rest of the session, and a
+  model-load failure was unrecoverable because nothing re-armed the load. Depth
+  is now released on disable (`MonocularDepthEstimator.releaseModel()`) and
+  reloaded exactly once on re-enable. Pause, stop and backgrounding still keep
+  the model, so a resume pays no reload.
 
 ## Current Blockers
 

@@ -44,6 +44,34 @@ MonocularDepthEstimator _estimator({
   heatmapBuilder: (_) async => null,
 );
 
+/// A real (tiny) image, so disposal is observable through `debugDisposed`.
+Future<ui.Image> _testImage() {
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    Uint8List.fromList(const [255, 0, 0, 255]),
+    1,
+    1,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
+
+/// Counts the releases of an injected model instance.
+class _FakeDepthModel implements DepthModelHandle {
+  _FakeDepthModel(this.instanceId);
+
+  @override
+  final String instanceId;
+
+  int releases = 0;
+
+  @override
+  Future<void> dispose() async {
+    releases++;
+  }
+}
+
 void _feed(
   MonocularDepthEstimator estimator,
   YOLODepthEvent event, {
@@ -269,18 +297,7 @@ void main() {
   });
 
   group('heatmap gating', () {
-    /// A real (tiny) image, so disposal is observable through `debugDisposed`.
-    Future<ui.Image> testImage() {
-      final completer = Completer<ui.Image>();
-      ui.decodeImageFromPixels(
-        Uint8List.fromList(const [255, 0, 0, 255]),
-        1,
-        1,
-        ui.PixelFormat.rgba8888,
-        completer.complete,
-      );
-      return completer.future;
-    }
+    Future<ui.Image> testImage() => _testImage();
 
     test(
       'a hidden heatmap is never built and the grid still publishes',
@@ -415,6 +432,194 @@ void main() {
 
       estimator.dispose();
     });
+  });
+
+  group('model lifecycle', () {
+    test(
+      'releaseModel frees the model, clears frame/heatmap and keeps telemetry',
+      () async {
+        final models = <_FakeDepthModel>[];
+        late ui.Image built;
+        final estimator = MonocularDepthEstimator(
+          modelFactory:
+              ({required String modelId, required bool useGpu}) async {
+                final model = _FakeDepthModel('depth-${models.length + 1}');
+                models.add(model);
+                return model;
+              },
+          heatmapBuilder: (_) async => built = await _testImage(),
+        );
+
+        await estimator.prepare();
+        expect(estimator.state.value, DepthRunState.ready);
+        expect(estimator.instanceId, 'depth-1');
+
+        _feed(estimator, _event(latencyMs: 11));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        _feed(estimator, _event(latencyMs: 14, timestamp: 2000));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final observed = estimator.observedHz;
+        final latency = estimator.lastLatencyMs;
+        expect(observed, isNotNull);
+        expect(estimator.frame.value!.heatmap, isNotNull);
+        expect(built.debugDisposed, isFalse);
+
+        await estimator.releaseModel();
+
+        expect(models.single.releases, 1, reason: 'the interpreter is freed');
+        expect(estimator.instanceId, isNull, reason: 'nothing left to tick');
+        expect(estimator.state.value, DepthRunState.idle);
+        expect(estimator.frame.value, isNull);
+        expect(built.debugDisposed, isTrue, reason: 'the texture is freed');
+        expect(estimator.observedHz, observed, reason: 'telemetry survives');
+        expect(estimator.lastLatencyMs, latency, reason: 'telemetry survives');
+        // The notifiers outlive a release, unlike `dispose()`: the state can
+        // still be written and still reaches a registered listener.
+        var notifications = 0;
+        void listener() => notifications++;
+        estimator.state.addListener(listener);
+        estimator.state.value = DepthRunState.loading;
+        expect(notifications, 1, reason: 'the notifier was not disposed');
+        estimator.state.removeListener(listener);
+        estimator.state.value = DepthRunState.idle;
+
+        await estimator.releaseModel();
+        expect(models.single.releases, 1, reason: 'idempotent');
+        expect(estimator.state.value, DepthRunState.idle);
+
+        estimator.dispose();
+      },
+    );
+
+    test('re-arming after a release loads the model exactly once', () async {
+      var loads = 0;
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) async {
+          loads++;
+          return _FakeDepthModel('depth-$loads');
+        },
+        heatmapBuilder: (_) async => null,
+      );
+
+      await estimator.prepare();
+      expect(loads, 1);
+      expect(estimator.instanceId, 'depth-1');
+
+      await estimator.releaseModel();
+      expect(estimator.instanceId, isNull);
+      expect(estimator.state.value, DepthRunState.idle);
+
+      // Re-enable: `retry()` then the screen's arm, twice over. `prepare()`
+      // shares one in-flight load, so the second arm adds nothing.
+      estimator.retry();
+      expect(estimator.state.value, DepthRunState.idle);
+      await Future.wait([estimator.prepare(), estimator.prepare()]);
+
+      expect(loads, 2, reason: 'exactly one reload, not one per arm');
+      expect(estimator.state.value, DepthRunState.ready);
+      expect(estimator.instanceId, 'depth-2');
+
+      _feed(estimator, _event());
+      await pumpEventQueue();
+      expect(estimator.state.value, DepthRunState.ready);
+      expect(estimator.frame.value, isNotNull);
+
+      estimator.dispose();
+    });
+
+    test('a model-load failure recovers through retry + re-arm', () async {
+      var loads = 0;
+      var failNext = true;
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) async {
+          loads++;
+          if (failNext) throw StateError('depth model did not load');
+          return _FakeDepthModel('depth-$loads');
+        },
+        heatmapBuilder: (_) async => null,
+      );
+
+      await estimator.prepare();
+      expect(estimator.state.value, DepthRunState.degraded);
+      expect(estimator.instanceId, isNull, reason: 'no instance to tick');
+      expect(loads, 1);
+
+      // _retryDepth sees a null instance id and therefore re-arms.
+      failNext = false;
+      estimator.retry();
+      expect(estimator.state.value, DepthRunState.idle);
+      await estimator.prepare();
+
+      expect(loads, 2);
+      expect(estimator.state.value, DepthRunState.ready);
+      expect(estimator.instanceId, 'depth-2');
+
+      _feed(estimator, _event());
+      await pumpEventQueue();
+      expect(estimator.frame.value, isNotNull, reason: 'ticks are running');
+
+      estimator.dispose();
+    });
+
+    test('a native failure retries on its instance without a reload', () async {
+      var loads = 0;
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) async {
+          loads++;
+          return _FakeDepthModel('depth-$loads');
+        },
+        heatmapBuilder: (_) async => null,
+      );
+
+      await estimator.prepare();
+      final id = estimator.instanceId;
+      expect(loads, 1);
+
+      _feed(estimator, _event(error: 'inference_failed'));
+      await pumpEventQueue();
+      expect(estimator.state.value, DepthRunState.degraded);
+
+      // The instance still exists, so _retryDepth skips the arm: the state
+      // change alone re-pushes the id and clears the native latch.
+      estimator.retry();
+      expect(estimator.state.value, DepthRunState.ready);
+      expect(estimator.instanceId, id);
+      expect(loads, 1, reason: 'a native failure keeps its instance');
+
+      _feed(estimator, _event(timestamp: 5000));
+      await pumpEventQueue();
+      expect(estimator.frame.value!.timestampMs, 5000);
+
+      estimator.dispose();
+    });
+
+    test(
+      'a load that finishes after a release is disposed, not adopted',
+      () async {
+        final gate = Completer<void>();
+        var loads = 0;
+        final estimator = MonocularDepthEstimator(
+          modelFactory:
+              ({required String modelId, required bool useGpu}) async {
+                loads++;
+                await gate.future;
+                return _FakeDepthModel('depth-$loads');
+              },
+          heatmapBuilder: (_) async => null,
+        );
+
+        final arming = estimator.prepare();
+        await estimator.releaseModel();
+        gate.complete();
+        await arming;
+
+        expect(loads, 1);
+        expect(estimator.instanceId, isNull, reason: 'released stays released');
+        expect(estimator.state.value, DepthRunState.idle);
+
+        estimator.dispose();
+      },
+    );
   });
 
   test('heatmap buffer uses the downsampled grid', () {

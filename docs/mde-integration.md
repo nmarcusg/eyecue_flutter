@@ -249,12 +249,52 @@ EMA that includes idle gaps, so it is not a steady-state throughput claim.
 - A geometry change (rotation or upright dimensions) between submit and result
   discards the map (`DepthFrame.matchesGeometry`).
 - Pause and stop stop the native camera, so no tick runs; the freshness timer is
-  cancelled and the frame/heatmap dropped. `dispose()` releases the interpreter
-  and the view's depth executor is shut down in `YOLOView.stop()`. Backgrounding
-  is not observed explicitly: the camera stops delivering frames, so nothing new
-  is queued and the stale heatmap is hidden by the 1000 ms freshness check.
+  cancelled and the frame/heatmap dropped. They **keep the model loaded**
+  (`stop()` is the pause path), so a resume pays no load cost. Teardown
+  (`dispose()`) releases the interpreter and the view's depth executor is shut
+  down in `YOLOView.stop()`. Backgrounding is not observed explicitly: the camera
+  stops delivering frames, so nothing new is queued and the stale heatmap is
+  hidden by the 1000 ms freshness check.
 - Failure behaviour is always non-blocking: degraded notice + bbox estimator,
   never a crash, never a block on start/pause/stop/preview.
+
+## Enable / disable lifecycle
+
+The interpreter is resident only while depth is the active distance mode.
+
+| Step | Trigger | Effect |
+|---|---|---|
+| Arm | `distanceEstimationMode` = `monocularDepth` | `_armDepth()` → `prepare()` loads the depth instance once and its id reaches the streaming config |
+| Ticks | instance id in the config | the native view ticks at the depth cadence; events become `DepthFrame`s |
+| Disable | `distanceEstimationMode` = `boundingBoxApproximation` | `_depth.stop()` + `clearFrame()` + `releaseModel()` (smoother reset): the interpreter is disposed, the frame and its heatmap texture are dropped, the id is withdrawn |
+| Re-enable | back to `monocularDepth` | `retry()` → `_armDepth()` → `prepare()` loads exactly one new instance and the state returns to `ready` |
+
+`releaseModel()` details:
+
+- Disposes the loaded instance (`_disposeModel()`), which frees the 5.3 MB model
+  and its GPU delegate, then clears the frame/heatmap, clears the load-failure
+  flag and parks `state` at `DepthRunState.idle`.
+- **Does not** dispose the `ValueNotifier`s (unlike `dispose()`), so the
+  estimator stays usable: a later `retry()` + re-arm returns to `ready`.
+  Idempotent — with no model loaded it only re-parks the state.
+- **Preserves** `observedHz` and `lastLatencyMs`, exactly as `stop()` does, so
+  telemetry over a toggle has no hole (the screen already reports those only
+  while MDE is on).
+- A load that was already in flight when the disable landed is disposed on
+  arrival rather than adopted, so a toggle during the ~1 s load cannot leave an
+  interpreter resident.
+- **Pause, stop and backgrounding do not release.** They only stop the tick, so
+  resuming never pays a reload.
+
+The native failure latch is independent of the release: `releaseModel()` never
+touches it. It clears in `setStreamConfig` (`YOLOView.kt:210`), `pauseCamera()`
+(`:703`) and the full teardown (`:2593`); a disable with the id withdrawn
+re-pushes the config, so the next `setStreamConfig` clears it anyway.
+
+**Retry after a failure.** `_retryDepth` re-arms through `_armDepth()` when no
+instance exists (`instanceId == null`, the model-load failure case) and only
+re-pushes the existing instance id otherwise (the native inference failure case).
+`prepare()` shares one in-flight load, so repeated taps cannot spawn duplicates.
 
 ## Settings × behaviour matrix
 
