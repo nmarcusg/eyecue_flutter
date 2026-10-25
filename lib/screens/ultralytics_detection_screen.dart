@@ -303,10 +303,10 @@ class _UltralyticsDetectionScreenState
 
   /// Whether the native YOLOView shell has been mounted at least once.
   ///
-  /// PD1 stopped-shell parity: once true, the native viewport shell and the
-  /// viewport GestureSurface are retained after a manual Stop instead of being
-  /// replaced by [_buildCameraPending]. This keeps the viewport layout, gesture
-  /// handling, and horizontal navigation reachable while stopped.
+  /// PD1 stopped-shell parity: once true, the native viewport shell is retained
+  /// after a manual Stop instead of being replaced by [_buildCameraPending].
+  /// This keeps the viewport layout and horizontal navigation reachable while
+  /// stopped.
   bool _nativeViewMounted = false;
 
   /// Local native-view epoch.
@@ -778,9 +778,9 @@ class _UltralyticsDetectionScreenState
     );
     await _haptics.mediumTick();
     // The native controller may stop internally, but the native YOLOView shell
-    // and the viewport GestureSurface remain mounted (see [_buildMainArea]) so
-    // the stopped screen keeps its layout, gesture handling, and horizontal
-    // navigation. PD1 stopped-shell parity with the Custom screen.
+    // remains mounted (see [_buildMainArea]) so the stopped screen keeps its
+    // layout and horizontal navigation. PD1 stopped-shell parity with the
+    // Custom screen.
     //
     // Native `stop()` permanently destroys the predictor; the retained shell is
     // therefore a visual/gesture shell only. A later Start recreates the native
@@ -1206,7 +1206,18 @@ class _UltralyticsDetectionScreenState
                 // The viewport is the only flexible region; the control row
                 // below derives its height from its content and the minimum
                 // touch targets rather than a fixed percentage allocation.
-                Expanded(child: _buildMainArea(context)),
+                //
+                // The gesture region is this whole flexible area, not just the
+                // camera viewport: thesis gestures must work wherever the user
+                // swipes on Detection. The top bar (audio pill) and the action
+                // controls row stay outside it, so their taps are never also
+                // classified as a full-screen gesture.
+                Expanded(
+                  child: GestureSurface(
+                    controller: _gestureController,
+                    child: _buildMainArea(context),
+                  ),
+                ),
                 _buildActionControlsRow(context),
               ],
             ),
@@ -1283,11 +1294,11 @@ class _UltralyticsDetectionScreenState
     }
     if (_permissionDenied) return _buildPermissionDenied(context);
     // PD1 stopped-shell parity: once the native view has been mounted (i.e.
-    // detection has been started at least once), the native YOLOView shell and
-    // the viewport GestureSurface are retained even after a manual Stop. The
-    // native controller may stop internally, but the shell stays mounted so the
-    // viewport layout, gesture handling, and horizontal navigation remain
-    // reachable. Only a never-started screen falls back to the pending surface.
+    // detection has been started at least once), the native YOLOView shell is
+    // retained even after a manual Stop. The native controller may stop
+    // internally, but the shell stays mounted so the viewport layout and
+    // horizontal navigation remain reachable. Only a never-started screen falls
+    // back to the pending surface.
     //
     // Residual limitation (Needs Verification [external-runtime]): the retained
     // native texture after stop may render frozen, cleared, or inactive on a
@@ -1387,11 +1398,6 @@ class _UltralyticsDetectionScreenState
           DetectionInformationOverlay(
             infos: _overlayInfos,
             eligible: _overlayEligible,
-          ),
-          // Thesis gesture capture layer (transparent, topmost).
-          GestureSurface(
-            controller: _gestureController,
-            child: const SizedBox.expand(),
           ),
         ],
       ),

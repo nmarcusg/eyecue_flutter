@@ -11,6 +11,7 @@ import 'package:eyecue_flutter/services/tts_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Fake engine that models the real lifecycle signal order.
@@ -292,6 +293,112 @@ void main() {
         expect(hapticCalls, isEmpty);
       },
     );
+  });
+
+  group('pointer contract and commit on release', () {
+    /// A system Back request, as the Android back gesture/button would send.
+    Future<void> systemBack(WidgetTester tester) async {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'flutter/navigation',
+        const JSONMethodCodec().encodeMethodCall(const MethodCall('popRoute')),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'a long swipe moves exactly one tab and does not commit early',
+      (tester) async {
+        await tester.pumpWidget(buildShell());
+        final center = tester.getCenter(find.byType(IndexedStack));
+        final gesture = await tester.startGesture(center);
+        for (var i = 0; i < 16; i++) {
+          await gesture.moveBy(const Offset(-20, 0)); // 320 px total
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(find.text('PAGE0'), findsOneWidget); // nothing before release
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(find.text('PAGE1'), findsOneWidget);
+        expect(find.text('PAGE2'), findsNothing); // exactly one tab
+        expect(hapticCalls, ['light']);
+      },
+    );
+
+    testWidgets('a fast swipe moves exactly one tab, only on release', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildShell());
+      final center = tester.getCenter(find.byType(IndexedStack));
+      final gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(-240, 0)); // one large jump
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.text('PAGE0'), findsOneWidget);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE1'), findsOneWidget);
+      expect(find.text('PAGE2'), findsNothing);
+    });
+
+    testWidgets(
+      'a second pointer that enters and leaves cannot re-arm the sequence',
+      (tester) async {
+        await tester.pumpWidget(buildShell());
+        final center = tester.getCenter(find.byType(IndexedStack));
+        final first = await tester.startGesture(center);
+        await first.moveBy(const Offset(-40, 0)); // past slop, below commit
+        await tester.pump(const Duration(milliseconds: 16));
+
+        final second = await tester.startGesture(center + const Offset(0, 40));
+        await tester.pump(const Duration(milliseconds: 16));
+        await second.up(); // the second pointer leaves again
+        await tester.pump(const Duration(milliseconds: 16));
+
+        // The first pointer completes a full-length swipe on its own.
+        for (var i = 0; i < 6; i++) {
+          await first.moveBy(const Offset(-30, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await first.up();
+        await tester.pumpAndSettle();
+
+        expect(find.text('PAGE0'), findsOneWidget);
+        expect(hapticCalls, isEmpty);
+      },
+    );
+
+    testWidgets('a second pointer without movement still invalidates', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildShell());
+      final center = tester.getCenter(find.byType(IndexedStack));
+      final first = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 100));
+      final second = await tester.startGesture(center + const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 16));
+      await first.up();
+      await tester.pump(const Duration(milliseconds: 16));
+      await second.up();
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE0'), findsOneWidget);
+    });
+
+    testWidgets('system Back returns to Home from another tab', (tester) async {
+      await tester.pumpWidget(buildShell());
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE2'), findsOneWidget);
+
+      await systemBack(tester);
+      expect(find.text('PAGE0'), findsOneWidget);
+      expect(hapticCalls, isEmpty); // Back is not gesture-origin feedback
+    });
+
+    testWidgets('system Back on Home leaves the tab unchanged', (tester) async {
+      await tester.pumpWidget(buildShell());
+      await systemBack(tester);
+      expect(find.text('PAGE0'), findsOneWidget);
+    });
   });
 
   group('Detection owns horizontal navigation (single tab change)', () {

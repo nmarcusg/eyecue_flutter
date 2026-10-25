@@ -52,6 +52,9 @@ class _SingleFingerHorizontalDragRecognizer
   final bool Function()? enabled;
 
   /// True once a second pointer has joined the current sequence.
+  ///
+  /// Stays true until the next sequence starts, so a second pointer that
+  /// entered and then lifted can never re-arm the remaining pointer.
   bool _invalidated = false;
   double _accumulatedDx = 0;
 
@@ -68,12 +71,14 @@ class _SingleFingerHorizontalDragRecognizer
       resolve(GestureDisposition.rejected);
       return;
     }
-    // A second pointer joining invalidates the whole sequence.
-    if (_trackedPointers.isNotEmpty) {
-      _invalidated = true;
-    } else {
-      // First pointer of a new sequence: reset the accumulator.
+    if (_trackedPointers.isEmpty) {
+      // First pointer of a new sequence: reset the accumulator and the
+      // invalidation carried by the previous sequence.
       _accumulatedDx = 0;
+      _invalidated = false;
+    } else {
+      // A second pointer joining invalidates the whole sequence.
+      _invalidated = true;
     }
     _trackedPointers.add(event.pointer);
     super.addAllowedPointer(event);
@@ -82,14 +87,9 @@ class _SingleFingerHorizontalDragRecognizer
   @override
   void didStopTrackingLastPointer(int pointer) {
     _trackedPointers.remove(pointer);
-    _invalidated = false;
+    // super() dispatches the drag end, so the invalidation flag must still be
+    // visible to [_handleEnd] here; only a new sequence clears it.
     super.didStopTrackingLastPointer(pointer);
-  }
-
-  @override
-  void rejectGesture(int pointer) {
-    _invalidated = false;
-    super.rejectGesture(pointer);
   }
 
   void _handleStart(DragStartDetails details) {
@@ -363,8 +363,8 @@ class AppShellState extends State<AppShell> {
                   () => _SingleFingerHorizontalDragRecognizer(
                     onCommit: navigateRelative,
                     commitDistance: _primarySwipeCommitDistance,
-                    // Detection (index 1) owns horizontal navigation inside
-                    // its own viewport via its raw GestureSurface; the shell
+                    // Detection (index 1) owns horizontal navigation over its
+                    // whole main area via its raw GestureSurface; the shell
                     // recognizer must not claim the pointer there, or one
                     // physical swipe would move two primary tabs.
                     enabled: () => _index != 1,
