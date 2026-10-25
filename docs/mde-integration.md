@@ -288,6 +288,13 @@ The interpreter is resident only while depth is the active distance mode.
   release clears the in-flight slot, so the re-enable starts and adopts its own.
 - **Pause, stop and backgrounding do not release.** They only stop the tick, so
   resuming never pays a reload.
+- `dispose()` — the screen-teardown path — invalidates loads the same way: it
+  marks the estimator disposed *and* bumps the release epoch, so a load in
+  flight when the detection screen is torn down lands on the epoch branch, is
+  disposed and never writes `ready`. Before this, such a load was adopted: in
+  release the 5.3 MB interpreter landed on a dead estimator and leaked, in debug
+  the `ready` write asserted on the disposed notifier. Proved by `a load that
+  finishes after dispose is released, not adopted`.
 
 The native failure latch is independent of the release: `releaseModel()` never
 touches it. It clears in `setStreamConfig` (`YOLOView.kt:210`), `pauseCamera()`
@@ -298,6 +305,65 @@ re-pushes the config, so the next `setStreamConfig` clears it anyway.
 instance exists (`instanceId == null`, the model-load failure case) and only
 re-pushes the existing instance id otherwise (the native inference failure case).
 `prepare()` shares one in-flight load, so repeated taps cannot spawn duplicates.
+
+## Accelerator policy
+
+Depth accelerator selection is a **build-time measurement knob**, not a runtime
+setting: nothing is persisted, `AppSettings` is untouched, and there is no UI.
+
+| Define | Resolved value | Effect on the depth load |
+|---|---|---|
+| unset, or `EYECUE_DEPTH_ACCELERATOR=auto` | `DepthAccelerator.auto` | asks for the GPU delegate; `LiteRtModel` falls back to CPU when the GPU cannot run the graph |
+| `--dart-define=EYECUE_DEPTH_ACCELERATOR=cpu` | `DepthAccelerator.cpu` | `useGpu: false` — no GPU context is created for the depth instance |
+| `--dart-define=EYECUE_DEPTH_ACCELERATOR=gpu` | `DepthAccelerator.gpu` | the same request as `auto`, so a run can state its intent explicitly |
+
+`resolveDepthAccelerator(String raw)` in
+[`model_config.dart`](../lib/models/model_config.dart) is pure and total: it
+trims, lowercases and maps `cpu`/`gpu`, and returns `auto` for everything else —
+an unknown or empty value can never silently disable the GPU path.
+`DepthAccelerator.useGpu` is the only place the policy becomes a boolean, and
+`MonocularDepthEstimator` passes it to `DepthModelFactory(useGpu:)` for every
+load. The request is fixed for the estimator's life; switching accelerators means
+a rebuild, never a reload.
+
+**`auto` ships.** The knob exists so the device matrix in
+[`benchmark-procedure.md`](benchmark-procedure.md) can pin depth to CPU on a
+build without a settings screen.
+
+**The reported accelerator is never the request.** `accelerator` returns the
+`accelerator` field of the last native depth event, which
+`YOLOView.emitDepthEvent` derives from the predictor that actually ran, and is
+`null` until that first event or while no model is loaded. A requested GPU that
+fell back to CPU therefore reports `cpu`, and `depthStatusFor` passes that
+through to telemetry unchanged. Requested policy, build define and reported value
+are three different things; only the last one is evidence.
+
+## Stage timings surface
+
+Produced now, **not recorded**: adding telemetry fields is L5. Nothing below
+changes the current payload.
+
+| Side | Value | Null policy |
+|---|---|---|
+| Detector | `DetectorStageTimings.fromMetrics(YOLOPerformanceMetrics)` → `preMs`, `inferenceMs`, `postMs`, `fps` ([`detector_stage_timings.dart`](../lib/models/detector_stage_timings.dart)) | the native map omits the stage keys unless `includeProcessingTimeMs`/`includeFps` are on and the plugin defaults them to `0`; every value `<= 0` maps to `null` |
+| Depth | `MonocularDepthEstimator.stageTimings` → `DepthStageTimings(preMs, inferenceMs, postMs, accelerator, droppedTicks)` | `YOLODepthEvent` parses these as nullable, so an absent key is `null` |
+
+Both types are immutable and every measurement is `null` when it is missing — a
+stage nobody measured must never look like a 0 ms one. `DepthStageTimings` is
+last-known exactly like `lastLatencyMs`, so it survives `stop()` and
+`releaseModel()` and a toggle over a session leaves no hole in the record. The
+`.accelerator` inside it is the event's own value; the estimator's `accelerator`
+getter additionally requires a loaded instance, so a released estimator reports
+"unknown" rather than a stale string.
+
+`droppedTicks` is the **native cumulative** count of depth ticks the view skipped
+(interval not elapsed, or an inference already in flight) since the tick last
+restarted; `YOLOView.stop()` resets it. It is counted natively rather than
+derived in Dart because both drop decisions happen inside the native tick: Dart
+only sees completions, so a requested-vs-completed delta could not tell an
+interval skip from a tick that was never requested. At a 2 Hz depth target on a
+30 fps stream the interval gate dominates the count, so read it as the depth-tick
+deficit, not only as lost inferences.
 
 ## Settings × behaviour matrix
 
@@ -400,7 +466,11 @@ here, and the packaged library set was not re-inspected.
 | Thermal / battery impact | **Not measured.** |
 
 No FPS, latency, accuracy or calibration figure in this document is an
-invention; each remains unmeasured until a device run is recorded.
+invention; each remains unmeasured until a device run is recorded. The
+measurement protocol — matrix, commands, per-run record and an all-`NOT MEASURED`
+results table — is [`benchmark-procedure.md`](benchmark-procedure.md). **No
+`CONFIRMED-ON-DEVICE` claim exists** for any figure in this document, and the
+1.5 FPS Redmi regression stays open until that matrix runs.
 
 ## Manual device validation steps
 

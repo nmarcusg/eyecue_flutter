@@ -11,6 +11,7 @@ import '../models/box_transform.dart';
 import '../models/detection.dart';
 import '../models/detection_info.dart';
 import '../models/detection_runtime_state.dart';
+import '../models/detector_stage_timings.dart';
 import '../models/model_config.dart';
 import '../models/tracked_detection.dart';
 import '../services/assistive_detection_controller.dart';
@@ -968,9 +969,11 @@ class _UltralyticsDetectionScreenState
 
   void _handleMetrics(YOLOPerformanceMetrics metrics) {
     if (!_detectionActive || _paused) return;
-    final inferenceMs = metrics.inferenceMs > 0
-        ? metrics.inferenceMs
-        : metrics.processingTimeMs;
+    // Stage timings as typed values with null for "not reported", so a missing
+    // stage cannot be read as a 0 ms one. Processing time is the total the
+    // payload always carries, hence the fallback for the latency below.
+    final timings = DetectorStageTimings.fromMetrics(metrics);
+    final inferenceMs = timings.inferenceMs ?? metrics.processingTimeMs;
     // PD1: the visible developer metrics are removed, but the metric values are
     // still recorded for telemetry (Logs & Reports) and the latest inference
     // latency is retained for the shared assistive layer.

@@ -176,6 +176,10 @@ class YOLOView @JvmOverloads constructor(
     // belongs to the framework and must not be borrowed as an application lock.
     private val depthLock = Any()
     @Volatile private var lastDepthStartMs = 0L
+    // Ticks the depth path skipped (interval not elapsed, or an inference still in flight). The drop
+    // is decided here, so only this counter can report it honestly; it rides the depth event and
+    // resets with `lastDepthStartMs`.
+    private val depthDroppedTicks = AtomicInteger(0)
     // Set when a depth inference fails: further ticks are suppressed for this instance id until the
     // next streaming config arrives (Dart re-arms it through retry()) or the view is paused.
     @Volatile private var depthDisabled = false
@@ -1597,8 +1601,14 @@ class YOLOView @JvmOverloads constructor(
         val bitmap = latestAnalysisBitmap ?: return
         if (isStopped || depthDisabled) return
         val now = SystemClock.elapsedRealtime()
-        if (now - lastDepthStartMs < intervalMs) return
-        if (!depthInFlight.compareAndSet(false, true)) return
+        if (now - lastDepthStartMs < intervalMs) {
+            depthDroppedTicks.incrementAndGet()
+            return
+        }
+        if (!depthInFlight.compareAndSet(false, true)) {
+            depthDroppedTicks.incrementAndGet()
+            return
+        }
         lastDepthStartMs = now
         val maxDim = config.depthMaxDim
         // Creation races stop(), which shuts the executor down and nulls the field from the platform
@@ -1717,6 +1727,7 @@ class YOLOView @JvmOverloads constructor(
                 "inferenceMs" to result.inferenceMs.toInt(),
                 "postMs" to result.postMs.toInt(),
                 "accelerator" to if (result.accelerator?.equals("GPU", ignoreCase = true) == true) "gpu" else "cpu",
+                "droppedTicks" to depthDroppedTicks.get(),
                 "timestamp" to System.currentTimeMillis(),
             ),
         )
@@ -2593,6 +2604,7 @@ class YOLOView @JvmOverloads constructor(
         depthDisabled = false
         latestAnalysisBitmap = null
         lastDepthStartMs = 0L
+        depthDroppedTicks.set(0)
         // A full teardown is not an intentional pause; a later lifecycle restart should rebind normally.
         intentionallyPaused = false
 

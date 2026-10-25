@@ -1,6 +1,6 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-10-23 (inference cadence documentation; the WS4 cleanup, the PD1–PD3 redesign and the Custom-engine sections below are historical)
+> **Last Updated:** 2026-10-25 (L4 depth accelerator policy, depth stage timings and the device-measurement protocol; the WS4 cleanup, the PD1–PD3 redesign and the Custom-engine sections below are historical)
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
 
 ## Monocular depth estimation (MDE)
@@ -26,6 +26,23 @@
 - **Unmeasured on device.** Depth latency, achieved cadence, thermal impact,
   detection FPS and depth accuracy have not been measured; the 2 Hz default
   (500 ms) is a configured target, not an observed rate.
+- **The depth accelerator is a build-time knob, not a setting.**
+  `--dart-define=EYECUE_DEPTH_ACCELERATOR=auto|cpu|gpu` picks the depth
+  accelerator at build time (`auto` ships; an unknown or empty value resolves to
+  `auto`). Nothing is persisted, `AppSettings` is unchanged and there is no UI —
+  it exists so the benchmark matrix can pin depth to CPU. What the app and
+  telemetry report is the accelerator **native actually ran**: a requested GPU
+  that fell back to CPU reports `cpu`.
+- **The performance question is still open, and the protocol is the deliverable.**
+  [`benchmark-procedure.md`](benchmark-procedure.md) defines the matrix (MDE off,
+  heatmap off/on, bbox fallback, low power, two detector cadences, two depth
+  cadences, the accelerator combinations), the build/install/logcat/export
+  commands and a per-run record table. **No run has been performed and no
+  `CONFIRMED-ON-DEVICE` claim exists** — the 1.5 FPS Redmi regression is not
+  considered resolved until that matrix runs on hardware. Per-stage timings
+  (`DetectorStageTimings`, `DepthStageTimings`) and the native cumulative
+  `droppedTicks` counter are produced in-app but are **not yet in the telemetry
+  payload** (that is L5).
 - **Stale depth hides the heatmap.** Maps older than 1000 ms or produced for a
   different geometry are discarded for presentation and distance fall back to
   the box-height heuristic.

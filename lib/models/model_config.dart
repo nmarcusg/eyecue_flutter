@@ -42,3 +42,37 @@ abstract final class EyeCueModelConfig {
     return (clamped / 0.05).round() * 0.05;
   }
 }
+
+/// Requested depth accelerator.
+///
+/// A build-time benchmark/measurement switch, not a user setting and not
+/// persisted: `auto` is what ships. It exists so the device matrix in
+/// [`benchmark-procedure.md`](../../docs/benchmark-procedure.md) can pin depth
+/// to CPU without a settings UI.
+enum DepthAccelerator {
+  auto,
+  cpu,
+  gpu;
+
+  /// Whether to ask the plugin for the GPU delegate.
+  ///
+  /// `auto` asks, and `LiteRtModel` falls back to CPU when the GPU cannot run
+  /// the graph — the behaviour the app had before this knob existed.
+  bool get useGpu => this != DepthAccelerator.cpu;
+}
+
+/// The `--dart-define=EYECUE_DEPTH_ACCELERATOR=...` value; empty when unset.
+const depthAcceleratorDefine = String.fromEnvironment(
+  'EYECUE_DEPTH_ACCELERATOR',
+);
+
+/// Resolves the build-time accelerator request.
+///
+/// Pure and total: an unknown or empty value means [DepthAccelerator.auto], so
+/// a typo in a build flag cannot disable the GPU path silently.
+DepthAccelerator resolveDepthAccelerator(String raw) =>
+    switch (raw.trim().toLowerCase()) {
+      'cpu' => DepthAccelerator.cpu,
+      'gpu' => DepthAccelerator.gpu,
+      _ => DepthAccelerator.auto,
+    };

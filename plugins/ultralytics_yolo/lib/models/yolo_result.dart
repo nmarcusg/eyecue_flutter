@@ -389,10 +389,22 @@ class YOLODepthEvent {
   final int imageWidth;
   final int imageHeight;
   final int latencyMs;
-  final int preMs;
-  final int inferenceMs;
-  final int postMs;
-  final String accelerator;
+
+  /// Pre/inference/post stage timings and the accelerator native ran on.
+  ///
+  /// Null when the payload omits them: an unreported stage is not a 0 ms one.
+  final int? preMs;
+  final int? inferenceMs;
+  final int? postMs;
+
+  /// Accelerator the native predictor actually resolved (`gpu`/`cpu`), which is
+  /// a fallback result, not the requested one.
+  final String? accelerator;
+
+  /// Cumulative depth ticks the native view skipped (interval not elapsed or an
+  /// inference already in flight) since the tick last restarted.
+  final int? droppedTicks;
+
   final int timestampMs;
 
   /// Native failure marker (e.g. `inference_failed`); null on a usable frame.
@@ -407,10 +419,11 @@ class YOLODepthEvent {
     required this.imageWidth,
     required this.imageHeight,
     required this.latencyMs,
-    required this.preMs,
-    required this.inferenceMs,
-    required this.postMs,
-    required this.accelerator,
+    this.preMs,
+    this.inferenceMs,
+    this.postMs,
+    this.accelerator,
+    this.droppedTicks,
     required this.timestampMs,
     this.error,
   });
@@ -434,16 +447,18 @@ class YOLODepthEvent {
       imageWidth: MapConverter.safeGetInt(map, 'imageWidth'),
       imageHeight: MapConverter.safeGetInt(map, 'imageHeight'),
       latencyMs: MapConverter.safeGetInt(map, 'latencyMs'),
-      preMs: MapConverter.safeGetInt(map, 'preMs'),
-      inferenceMs: MapConverter.safeGetInt(map, 'inferenceMs'),
-      postMs: MapConverter.safeGetInt(map, 'postMs'),
-      accelerator: (map['accelerator'] as String?) ?? 'cpu',
+      preMs: (map['preMs'] as num?)?.toInt(),
+      inferenceMs: (map['inferenceMs'] as num?)?.toInt(),
+      postMs: (map['postMs'] as num?)?.toInt(),
+      accelerator: map['accelerator'] as String?,
+      droppedTicks: (map['droppedTicks'] as num?)?.toInt(),
       timestampMs: MapConverter.safeGetInt(map, 'timestamp'),
       error: map['error'] as String?,
     );
   }
 
-  /// The exact payload contract: these keys, and nothing else.
+  /// The exact payload contract: these keys, and nothing else. A stage native
+  /// did not report is present with a null value rather than omitted.
   Map<String, dynamic> toMap() => {
     'depthGrid': depthGrid,
     'width': width,
@@ -457,6 +472,7 @@ class YOLODepthEvent {
     'inferenceMs': inferenceMs,
     'postMs': postMs,
     'accelerator': accelerator,
+    'droppedTicks': droppedTicks,
     'timestamp': timestampMs,
     if (error != null) 'error': error,
   };

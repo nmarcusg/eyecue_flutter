@@ -50,6 +50,34 @@ class DepthFrame {
       this.uprightHeight == uprightHeight;
 }
 
+/// Per-stage timings of one native depth event.
+///
+/// Immutable, and `null` rather than `0` where native reported nothing: a stage
+/// nobody measured must not look like a 0 ms one. Last-known like
+/// [MonocularDepthEstimator.lastLatencyMs], so it survives
+/// [MonocularDepthEstimator.stop] and [MonocularDepthEstimator.releaseModel].
+class DepthStageTimings {
+  const DepthStageTimings({
+    this.preMs,
+    this.inferenceMs,
+    this.postMs,
+    this.accelerator,
+    this.droppedTicks,
+  });
+
+  final int? preMs;
+  final int? inferenceMs;
+  final int? postMs;
+
+  /// `gpu`/`cpu` as native resolved it, never the requested policy.
+  final String? accelerator;
+
+  /// Cumulative ticks native skipped (interval not elapsed, or an inference
+  /// already in flight) since its depth tick last restarted. The drop is
+  /// decided natively, so only native can count it.
+  final int? droppedTicks;
+}
+
 /// A loaded depth model instance: the surface the estimator actually drives.
 ///
 /// The real implementation wraps a plugin [YOLO] instance; tests inject a fake
@@ -120,7 +148,10 @@ class MonocularDepthEstimator {
     this.heatmapBuilder,
     this.modelId = EyeCueModelConfig.depthModelAssetPath,
     this.modelFactory = _loadYoloDepthModel,
-  });
+    DepthAccelerator? accelerator,
+  }) : _useGpu =
+           (accelerator ?? resolveDepthAccelerator(depthAcceleratorDefine))
+               .useGpu;
 
   /// Bundled asset path of the depth model, resolved by the plugin's
   /// `YOLOModelResolver` through the same asset path detection already uses.
@@ -160,7 +191,10 @@ class MonocularDepthEstimator {
 
   DepthModelHandle? _yolo;
   Future<void>? _preparing;
-  bool _useGpu = true;
+
+  /// The accelerator every load requests. Fixed for the estimator's life: the
+  /// policy is a build-time flag, so a reload cannot switch accelerators.
+  final bool _useGpu;
   bool _modelLoadFailed = false;
   bool _loggedFirstFrame = false;
 
@@ -171,6 +205,11 @@ class MonocularDepthEstimator {
   int? _lastLatencyMs;
   double? _observedHz;
   int? _lastCompletionMs;
+  DepthStageTimings? _stageTimings;
+
+  /// Accelerator of the CURRENT instance, cleared when one is adopted so a
+  /// previous session cannot label a fresh instance before its first event.
+  String? _reportedAccelerator;
   final Stopwatch _clock = Stopwatch()..start();
   bool _disposed = false;
 
@@ -184,8 +223,14 @@ class MonocularDepthEstimator {
   /// EMA of the observed native depth event cadence. Survives [stop].
   double? get observedHz => _observedHz;
 
-  /// Accelerator of a loaded model instance; null while none exists.
-  String? get accelerator => _yolo == null ? null : (_useGpu ? 'gpu' : 'cpu');
+  /// Stage timings of the last depth event. Survives [stop] and [releaseModel].
+  DepthStageTimings? get stageTimings => _stageTimings;
+
+  /// Accelerator native reported for the loaded instance, and therefore what
+  /// the run actually used; null while no model is loaded or before its first
+  /// event. Never the requested policy: a GPU request that fell back to CPU
+  /// reports `cpu`.
+  String? get accelerator => _yolo == null ? null : _reportedAccelerator;
 
   /// Whether the last model load failed. Cleared by [retry] and [releaseModel].
   bool get modelLoadFailed => _modelLoadFailed;
@@ -213,7 +258,7 @@ class MonocularDepthEstimator {
   Future<void> _load() async {
     if (_disposed || _modelLoadFailed) return;
     try {
-      await _ensureModel(_useGpu, _releaseEpoch);
+      await _ensureModel(_releaseEpoch);
     } catch (error) {
       debugPrint('[Depth] inference failed: $error');
       // The estimator can be torn down while the factory is still running; a
@@ -245,7 +290,7 @@ class MonocularDepthEstimator {
       return;
     }
     if (_publishing) return;
-    _recordCompletion(event.latencyMs);
+    _recordCompletion(event);
     final grid = YOLODepthMap(
       values: event.depthGrid,
       width: event.width,
@@ -333,13 +378,22 @@ class MonocularDepthEstimator {
     image.dispose();
   }
 
-  /// Records the native latency and the observed event cadence (EMA, seeded by
-  /// the first measured delta). Bounded storage: two ints and one double.
-  void _recordCompletion(int latencyMs) {
+  /// Records the native latency, the stage timings and the observed event
+  /// cadence (EMA, seeded by the first measured delta).
+  void _recordCompletion(YOLODepthEvent event) {
     final now = _clock.elapsedMilliseconds;
     final previous = _lastCompletionMs;
     _lastCompletionMs = now;
-    _lastLatencyMs = latencyMs;
+    _lastLatencyMs = event.latencyMs;
+    final accel = event.accelerator;
+    if (accel != null) _reportedAccelerator = accel;
+    _stageTimings = DepthStageTimings(
+      preMs: event.preMs,
+      inferenceMs: event.inferenceMs,
+      postMs: event.postMs,
+      accelerator: accel,
+      droppedTicks: event.droppedTicks,
+    );
     if (previous == null) return;
     final delta = now - previous;
     if (delta <= 0) return;
@@ -350,18 +404,17 @@ class MonocularDepthEstimator {
         : ema + (sample - ema) * _observedHzAlpha;
   }
 
-  Future<void> _ensureModel(bool useGpu, int epoch) async {
-    final existing = _yolo;
-    if (existing != null && _useGpu == useGpu) return;
+  Future<void> _ensureModel(int epoch) async {
+    if (_yolo != null) return;
     await _disposeModel();
     // The estimator can be torn down while the previous model is being freed,
     // and this write would then hit a disposed notifier.
     if (_disposed) return;
     state.value = DepthRunState.loading;
-    debugPrint('[Depth] loading model: $modelId (useGpu=$useGpu)');
+    debugPrint('[Depth] loading model: $modelId (useGpu=$_useGpu)');
     final DepthModelHandle handle;
     try {
-      handle = await modelFactory(modelId: modelId, useGpu: useGpu);
+      handle = await modelFactory(modelId: modelId, useGpu: _useGpu);
     } catch (error) {
       // A missing/incompatible bundled asset will not fix itself on retry.
       _modelLoadFailed = true;
@@ -386,7 +439,7 @@ class MonocularDepthEstimator {
       return;
     }
     _yolo = handle;
-    _useGpu = useGpu;
+    _reportedAccelerator = null;
     state.value = DepthRunState.ready;
   }
 
@@ -445,7 +498,6 @@ class MonocularDepthEstimator {
   void retry() {
     _modelLoadFailed = false;
     _loggedFirstFrame = false;
-    if (_yolo == null) _useGpu = true;
     state.value = _yolo == null ? DepthRunState.idle : DepthRunState.ready;
   }
 

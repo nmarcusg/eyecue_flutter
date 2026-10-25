@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:eyecue_flutter/models/model_config.dart';
 import 'package:eyecue_flutter/services/monocular_depth_estimator.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ultralytics_yolo/ultralytics_yolo.dart';
@@ -16,6 +17,11 @@ YOLODepthEvent _event({
   int imageWidth = 640,
   int imageHeight = 480,
   int latencyMs = 12,
+  int? preMs = 1,
+  int? inferenceMs = 8,
+  int? postMs = 3,
+  String? accelerator = 'gpu',
+  int? droppedTicks = 0,
   int timestamp = 1000,
   String? error,
 }) => YOLODepthEvent(
@@ -27,10 +33,11 @@ YOLODepthEvent _event({
   imageWidth: imageWidth,
   imageHeight: imageHeight,
   latencyMs: latencyMs,
-  preMs: 1,
-  inferenceMs: 8,
-  postMs: 3,
-  accelerator: 'gpu',
+  preMs: preMs,
+  inferenceMs: inferenceMs,
+  postMs: postMs,
+  accelerator: accelerator,
+  droppedTicks: droppedTicks,
   timestampMs: timestamp,
   error: error,
 );
@@ -751,6 +758,146 @@ void main() {
       expect(models.last.releases, 0, reason: 'the reload is the adopted one');
       expect(estimator.instanceId, 'depth-2');
       expect(estimator.state.value, DepthRunState.ready);
+
+      estimator.dispose();
+    });
+  });
+
+  group('accelerator policy and stage timings', () {
+    test('the reported accelerator is native\'s, not the request', () async {
+      final requested = <bool>[];
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) async {
+          requested.add(useGpu);
+          return _FakeDepthModel('depth-1');
+        },
+        heatmapBuilder: (_) async => null,
+      );
+
+      await estimator.prepare();
+      expect(requested, [true], reason: 'auto asks for the GPU delegate');
+      expect(
+        estimator.accelerator,
+        isNull,
+        reason: 'nothing is known before native reports',
+      );
+
+      // The requested GPU delegate fell back to CPU natively.
+      _feed(estimator, _event(accelerator: 'cpu'));
+      await pumpEventQueue();
+      expect(
+        estimator.accelerator,
+        'cpu',
+        reason: 'a GPU request that fell back must report cpu',
+      );
+
+      estimator.dispose();
+    });
+
+    test('the cpu policy asks the factory for no GPU delegate', () async {
+      final requested = <bool>[];
+      final estimator = MonocularDepthEstimator(
+        accelerator: DepthAccelerator.cpu,
+        modelFactory: ({required String modelId, required bool useGpu}) async {
+          requested.add(useGpu);
+          return _FakeDepthModel('depth-1');
+        },
+        heatmapBuilder: (_) async => null,
+      );
+
+      await estimator.prepare();
+
+      expect(requested, [false]);
+      // The policy is not the reported value: native still has the last word.
+      _feed(estimator, _event(accelerator: 'gpu'));
+      await pumpEventQueue();
+      expect(estimator.accelerator, 'gpu');
+
+      estimator.dispose();
+    });
+
+    test(
+      'stage timings come from the event and survive stop/release',
+      () async {
+        final estimator = MonocularDepthEstimator(
+          modelFactory:
+              ({required String modelId, required bool useGpu}) async =>
+                  _FakeDepthModel('depth-1'),
+          heatmapBuilder: (_) async => null,
+        );
+        expect(estimator.stageTimings, isNull);
+
+        _feed(
+          estimator,
+          _event(preMs: 4, inferenceMs: 30, postMs: 6, droppedTicks: 3),
+        );
+        await pumpEventQueue();
+
+        final timings = estimator.stageTimings!;
+        expect(timings.preMs, 4);
+        expect(timings.inferenceMs, 30);
+        expect(timings.postMs, 6);
+        expect(timings.accelerator, 'gpu');
+        expect(timings.droppedTicks, 3);
+
+        estimator.stop();
+        expect(
+          estimator.stageTimings!.inferenceMs,
+          30,
+          reason: 'survives stop',
+        );
+
+        await estimator.prepare();
+        await estimator.releaseModel();
+        expect(
+          estimator.stageTimings!.inferenceMs,
+          30,
+          reason: 'survives a release, like lastLatencyMs',
+        );
+
+        estimator.dispose();
+      },
+    );
+
+    test('an event without stage fields records nulls, never zeros', () async {
+      final estimator = _estimator();
+
+      _feed(
+        estimator,
+        _event(
+          preMs: null,
+          inferenceMs: null,
+          postMs: null,
+          accelerator: null,
+          droppedTicks: null,
+        ),
+      );
+      await pumpEventQueue();
+
+      final timings = estimator.stageTimings!;
+      expect(timings.preMs, isNull);
+      expect(timings.inferenceMs, isNull);
+      expect(timings.postMs, isNull);
+      expect(timings.accelerator, isNull);
+      expect(timings.droppedTicks, isNull);
+
+      estimator.dispose();
+    });
+
+    test('dropped ticks are the native cumulative count', () async {
+      final estimator = _estimator();
+
+      _feed(estimator, _event(timestamp: 1000, droppedTicks: 3));
+      await pumpEventQueue();
+      expect(estimator.stageTimings!.droppedTicks, 3);
+
+      _feed(estimator, _event(timestamp: 2000, droppedTicks: 9));
+      await pumpEventQueue();
+      expect(
+        estimator.stageTimings!.droppedTicks,
+        9,
+        reason: 'the counter is native cumulative, not a Dart tally',
+      );
 
       estimator.dispose();
     });
