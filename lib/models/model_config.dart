@@ -17,7 +17,14 @@ abstract final class EyeCueModelConfig {
   static const depthModelAssetPath = 'assets/yolo26n-depth_w8a32.tflite';
 
   /// Minimum gap between depth inferences; detection keeps its own cadence.
+  ///
+  /// The gap is enforced natively by the view's depth tick, not by a Dart timer.
   static const depthMinIntervalMs = 500;
+
+  /// Longest side of the block-mean depth grid the native transport emits.
+  /// 96 × 96 × 4 bytes ≈ 37 KB per depth event, versus a dense map of hundreds
+  /// of KB.
+  static const depthGridMaxDim = 96;
 
   /// A depth map older than this is stale: boxes fall back to bbox distance and
   /// the heatmap is hidden.

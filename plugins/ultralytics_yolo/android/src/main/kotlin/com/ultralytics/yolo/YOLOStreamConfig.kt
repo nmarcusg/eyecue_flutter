@@ -32,7 +32,13 @@ data class YOLOStreamConfig(
     // Requested CameraX analysis resolution; null keeps the CameraX default (~640x480). The camera
     // falls back to the nearest supported size, so any request is safe on any device.
     val analysisWidth: Int? = null,
-    val analysisHeight: Int? = null
+    val analysisHeight: Int? = null,
+
+    // Native depth transport: run a second model instance on the analysis frame inside the view and
+    // emit a compact block-mean grid. A null `depthInstanceId` keeps the tick disabled.
+    val depthInstanceId: String? = null,
+    val depthIntervalMs: Int? = null,     // minimum gap between depth ticks
+    val depthMaxDim: Int = 96             // longest side of the emitted grid
     
     // Note: annotatedImage is intentionally excluded for YOLOView
     // YOLOView uses Canvas drawing (real-time overlay), not bitmap generation
@@ -80,7 +86,10 @@ data class YOLOStreamConfig(
             maxFPS: Int? = null,
             throttleIntervalMs: Int? = null,
             inferenceFrequency: Int? = null,
-            skipFrames: Int? = null
+            skipFrames: Int? = null,
+            depthInstanceId: String? = null,
+            depthIntervalMs: Int? = null,
+            depthMaxDim: Int = 96
         ) = YOLOStreamConfig(
             includeMasks = includeMasks,
             includePoses = includePoses,
@@ -89,7 +98,10 @@ data class YOLOStreamConfig(
             maxFPS = maxFPS,
             throttleIntervalMs = throttleIntervalMs,
             inferenceFrequency = inferenceFrequency,
-            skipFrames = skipFrames
+            skipFrames = skipFrames,
+            depthInstanceId = depthInstanceId,
+            depthIntervalMs = depthIntervalMs,
+            depthMaxDim = depthMaxDim
         )
     }
 }

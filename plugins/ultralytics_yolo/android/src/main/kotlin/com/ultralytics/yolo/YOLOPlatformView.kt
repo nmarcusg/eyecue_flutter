@@ -154,7 +154,10 @@ class YOLOPlatformView(
                 inferenceFrequency = (streamingConfigParam["inferenceFrequency"] as? Number)?.toInt(),
                 skipFrames = (streamingConfigParam["skipFrames"] as? Number)?.toInt(),
                 analysisWidth = (streamingConfigParam["analysisWidth"] as? Number)?.toInt(),
-                analysisHeight = (streamingConfigParam["analysisHeight"] as? Number)?.toInt()
+                analysisHeight = (streamingConfigParam["analysisHeight"] as? Number)?.toInt(),
+                depthInstanceId = streamingConfigParam["depthInstanceId"] as? String,
+                depthIntervalMs = (streamingConfigParam["depthIntervalMs"] as? Number)?.toInt(),
+                depthMaxDim = (streamingConfigParam["depthMaxDim"] as? Number)?.toInt() ?: 96
             )
         } else {
             // Create default config when no streaming config is provided
@@ -428,7 +431,10 @@ class YOLOPlatformView(
                             inferenceFrequency = (configMap["inferenceFrequency"] as? Number)?.toInt(),
                             skipFrames = (configMap["skipFrames"] as? Number)?.toInt(),
                             analysisWidth = (configMap["analysisWidth"] as? Number)?.toInt(),
-                            analysisHeight = (configMap["analysisHeight"] as? Number)?.toInt()
+                            analysisHeight = (configMap["analysisHeight"] as? Number)?.toInt(),
+                            depthInstanceId = configMap["depthInstanceId"] as? String,
+                            depthIntervalMs = (configMap["depthIntervalMs"] as? Number)?.toInt(),
+                            depthMaxDim = (configMap["depthMaxDim"] as? Number)?.toInt() ?: 96
                         )
                         yoloView.setStreamConfig(streamConfig)
                         result.success(null)

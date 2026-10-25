@@ -129,6 +129,19 @@ class YOLOStreamingConfig {
   /// resolution and ignore this setting.
   final Size? analysisResolution;
 
+  /// Id of the native depth model instance to run on the analysis frame (Android only).
+  ///
+  /// When null the view runs no depth work. The instance must already be loaded through
+  /// the multi-instance API; the view feeds it the frame it already decoded for detection,
+  /// so no image crosses the platform channel.
+  final String? depthInstanceId;
+
+  /// Minimum gap between native depth ticks in milliseconds. Null disables the tick.
+  final int? depthIntervalMs;
+
+  /// Longest side of the block-mean depth grid the native side emits.
+  final int depthMaxDim;
+
   /// Creates a YOLOStreamingConfig with custom settings.
   ///
   /// This constructor allows full customization of streaming behavior.
@@ -147,6 +160,9 @@ class YOLOStreamingConfig {
     this.inferenceFrequency,
     this.skipFrames,
     this.analysisResolution,
+    this.depthInstanceId,
+    this.depthIntervalMs,
+    this.depthMaxDim = 96,
   });
 
   /// Creates a minimal configuration optimized for maximum performance.
@@ -174,6 +190,9 @@ class YOLOStreamingConfig {
       throttleInterval = null,
       inferenceFrequency = null,
       skipFrames = null,
+      depthInstanceId = null,
+      depthIntervalMs = null,
+      depthMaxDim = 96,
       analysisResolution = null;
 
   /// Creates a custom configuration with specified parameters.
@@ -202,6 +221,9 @@ class YOLOStreamingConfig {
     this.inferenceFrequency,
     this.skipFrames,
     this.analysisResolution,
+    this.depthInstanceId,
+    this.depthIntervalMs,
+    this.depthMaxDim = 96,
   }) : includeDetections = includeDetections ?? true,
        includeClassifications = includeClassifications ?? true,
        includeProcessingTimeMs = includeProcessingTimeMs ?? true,
@@ -230,6 +252,9 @@ class YOLOStreamingConfig {
       throttleInterval = null,
       inferenceFrequency = null,
       skipFrames = null,
+      depthInstanceId = null,
+      depthIntervalMs = null,
+      depthMaxDim = 96,
       analysisResolution = null;
 
   /// Creates a configuration with pose keypoints.
@@ -251,6 +276,9 @@ class YOLOStreamingConfig {
       throttleInterval = null,
       inferenceFrequency = null,
       skipFrames = null,
+      depthInstanceId = null,
+      depthIntervalMs = null,
+      depthMaxDim = 96,
       analysisResolution = null;
 
   /// Creates a full configuration with all data included.
@@ -278,6 +306,9 @@ class YOLOStreamingConfig {
       throttleInterval = null,
       inferenceFrequency = null,
       skipFrames = null,
+      depthInstanceId = null,
+      depthIntervalMs = null,
+      depthMaxDim = 96,
       analysisResolution = null;
 
   /// Creates a debug configuration with all data and images.
@@ -302,6 +333,9 @@ class YOLOStreamingConfig {
       throttleInterval = null,
       inferenceFrequency = null,
       skipFrames = null,
+      depthInstanceId = null,
+      depthIntervalMs = null,
+      depthMaxDim = 96,
       analysisResolution = null;
 
   /// Creates a throttled configuration with specified FPS limit.
@@ -412,6 +446,9 @@ class YOLOStreamingConfig {
         'throttleInterval: ${throttleInterval?.inMilliseconds}ms, '
         'inferenceFrequency: $inferenceFrequency, '
         'skipFrames: $skipFrames, '
+        'depthInstanceId: $depthInstanceId, '
+        'depthIntervalMs: $depthIntervalMs, '
+        'depthMaxDim: $depthMaxDim, '
         'analysisResolution: $analysisResolution)';
   }
 }

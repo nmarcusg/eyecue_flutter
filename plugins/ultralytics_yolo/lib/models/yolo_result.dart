@@ -370,6 +370,92 @@ class YOLODepthMap {
   };
 }
 
+/// One compact depth frame from the native shared-frame transport.
+///
+/// [depthGrid] holds block-mean metres over the analysis frame, row-major, with `NaN`
+/// where a block had no valid sample — never the dense per-pixel map. The event rides
+/// the same view event channel as the typed `zoom`/`lens`/`focus` events, tagged
+/// `type: 'depth'`.
+class YOLODepthEvent {
+  final Float32List depthGrid;
+  final int width;
+  final int height;
+  final double minDepth;
+  final double maxDepth;
+  final int imageWidth;
+  final int imageHeight;
+  final int rotationDegrees;
+  final int latencyMs;
+  final int preMs;
+  final int inferenceMs;
+  final int postMs;
+  final String accelerator;
+  final int timestampMs;
+
+  YOLODepthEvent({
+    required this.depthGrid,
+    required this.width,
+    required this.height,
+    required this.minDepth,
+    required this.maxDepth,
+    required this.imageWidth,
+    required this.imageHeight,
+    required this.rotationDegrees,
+    required this.latencyMs,
+    required this.preMs,
+    required this.inferenceMs,
+    required this.postMs,
+    required this.accelerator,
+    required this.timestampMs,
+  });
+
+  factory YOLODepthEvent.fromMap(Map<dynamic, dynamic> map) {
+    final raw = map['depthGrid'];
+    final grid = raw is Float32List
+        ? raw
+        : Float32List.fromList(
+            (raw as List<dynamic>? ?? const [])
+                .whereType<num>()
+                .map((value) => value.toDouble())
+                .toList(),
+          );
+    return YOLODepthEvent(
+      depthGrid: grid,
+      width: MapConverter.safeGetInt(map, 'width'),
+      height: MapConverter.safeGetInt(map, 'height'),
+      minDepth: MapConverter.safeGetDouble(map, 'minDepth'),
+      maxDepth: MapConverter.safeGetDouble(map, 'maxDepth'),
+      imageWidth: MapConverter.safeGetInt(map, 'imageWidth'),
+      imageHeight: MapConverter.safeGetInt(map, 'imageHeight'),
+      rotationDegrees: MapConverter.safeGetInt(map, 'rotationDegrees'),
+      latencyMs: MapConverter.safeGetInt(map, 'latencyMs'),
+      preMs: MapConverter.safeGetInt(map, 'preMs'),
+      inferenceMs: MapConverter.safeGetInt(map, 'inferenceMs'),
+      postMs: MapConverter.safeGetInt(map, 'postMs'),
+      accelerator: (map['accelerator'] as String?) ?? 'cpu',
+      timestampMs: MapConverter.safeGetInt(map, 'timestamp'),
+    );
+  }
+
+  /// The exact payload contract: these keys, and nothing else.
+  Map<String, dynamic> toMap() => {
+    'depthGrid': depthGrid,
+    'width': width,
+    'height': height,
+    'minDepth': minDepth,
+    'maxDepth': maxDepth,
+    'imageWidth': imageWidth,
+    'imageHeight': imageHeight,
+    'rotationDegrees': rotationDegrees,
+    'latencyMs': latencyMs,
+    'preMs': preMs,
+    'inferenceMs': inferenceMs,
+    'postMs': postMs,
+    'accelerator': accelerator,
+    'timestamp': timestampMs,
+  };
+}
+
 /// Dense full-image semantic segmentation result.
 class YOLOSemanticMask {
   /// Row-major class index for each mask pixel.

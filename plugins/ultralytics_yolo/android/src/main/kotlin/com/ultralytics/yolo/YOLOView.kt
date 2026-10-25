@@ -37,7 +37,9 @@ import android.widget.TextView
 import android.view.Gravity
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import android.os.SystemClock
 import android.content.res.Configuration
 
 /**
@@ -160,6 +162,15 @@ class YOLOView @JvmOverloads constructor(
     // Streaming functionality
     private var streamConfig: YOLOStreamConfig? = null
     private var streamCallback: ((Map<String, Any>) -> Unit)? = null
+
+    // Native depth transport (see YOLOStreamConfig.depthInstanceId). `ImageUtils.toBitmap` allocates a
+    // fresh bitmap per frame by copying pixels out of the ImageProxy, and nothing on the analysis path
+    // recycles or draws into it (the only recycle() sites are the still-capture/JPEG paths), so the
+    // depth tick can read this frame directly instead of taking a per-frame copy.
+    @Volatile private var latestAnalysisBitmap: Bitmap? = null
+    private var depthExecutor: ExecutorService? = null
+    private val depthInFlight = AtomicBoolean(false)
+    @Volatile private var lastDepthStartMs = 0L
     
     // Frame counter for streaming
     private var frameNumberCounter: Long = 0
@@ -1465,6 +1476,8 @@ class YOLOView @JvmOverloads constructor(
             return
         }
 
+        latestAnalysisBitmap = bitmap
+
         predictor?.let { p ->
             // Double-check stopped flag before inference (predictor might be closed)
             if (isStopped) {
@@ -1539,6 +1552,10 @@ class YOLOView @JvmOverloads constructor(
                     }
                 }
 
+                // Depth runs strictly after the detector result and the stream callback, so it can
+                // never delay detection output.
+                maybeRunDepthTick(rotationDegrees, orientedWidth, orientedHeight)
+
                 // Update overlay
                 post {
                     overlayView.invalidate()
@@ -1548,6 +1565,93 @@ class YOLOView @JvmOverloads constructor(
             }
         }
         imageProxy.close()
+    }
+
+    /**
+     * Runs the configured depth instance on the analysis frame, latest-frame-wins.
+     *
+     * A tick is skipped while another depth inference is in flight and while the configured
+     * interval has not elapsed. Nothing is queued and no buffer grows.
+     */
+    private fun maybeRunDepthTick(rotationDegrees: Int, imageWidth: Int, imageHeight: Int) {
+        val config = streamConfig ?: return
+        val instanceId = config.depthInstanceId ?: return
+        val intervalMs = config.depthIntervalMs ?: return
+        val bitmap = latestAnalysisBitmap ?: return
+        if (isStopped) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastDepthStartMs < intervalMs) return
+        if (!depthInFlight.compareAndSet(false, true)) return
+        lastDepthStartMs = now
+        val maxDim = config.depthMaxDim
+        val executor = depthExecutor ?: Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "yolo-depth").apply { isDaemon = true }
+        }.also { depthExecutor = it }
+        try {
+            executor.execute {
+                val startedAt = SystemClock.elapsedRealtime()
+                try {
+                    runCatching {
+                        (YOLOInstanceManager.shared.getInstance(instanceId)?.predictorInstance() as? DepthEstimator)
+                            ?.gridMaxDim = maxDim
+                    }
+                    // includeRawData = false: the stream carries the compact grid only, so the
+                    // dense per-inference FloatArray is never allocated.
+                    val result = YOLOInstanceManager.shared.predict(instanceId, bitmap, includeRawData = false)
+                    val depthMap = result?.depthMap
+                    if (result != null && depthMap != null && depthMap.grid != null) {
+                        emitDepthEvent(
+                            depthMap = depthMap,
+                            result = result,
+                            rotationDegrees = rotationDegrees,
+                            imageWidth = imageWidth,
+                            imageHeight = imageHeight,
+                            latencyMs = (SystemClock.elapsedRealtime() - startedAt).toInt(),
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Depth inference failed", e)
+                } finally {
+                    depthInFlight.set(false)
+                }
+            }
+        } catch (e: Exception) {
+            depthInFlight.set(false)
+            Log.e(TAG, "Depth tick rejected", e)
+        }
+    }
+
+    /** Emits the compact depth event on the existing streaming event channel. */
+    private fun emitDepthEvent(
+        depthMap: DepthMap,
+        result: YOLOResult,
+        rotationDegrees: Int,
+        imageWidth: Int,
+        imageHeight: Int,
+        latencyMs: Int,
+    ) {
+        val grid = depthMap.grid ?: return
+        // A FloatArray crosses StandardMessageCodec as a compact Float32List (same trick as
+        // `semanticMask.classMap`). The dense `values` array is never serialized.
+        emitEvent(
+            mapOf(
+                "type" to "depth",
+                "depthGrid" to grid,
+                "width" to depthMap.gridWidth,
+                "height" to depthMap.gridHeight,
+                "minDepth" to depthMap.minDepth.toDouble(),
+                "maxDepth" to depthMap.maxDepth.toDouble(),
+                "imageWidth" to imageWidth,
+                "imageHeight" to imageHeight,
+                "rotationDegrees" to rotationDegrees,
+                "latencyMs" to latencyMs,
+                "preMs" to result.preMs.toInt(),
+                "inferenceMs" to result.inferenceMs.toInt(),
+                "postMs" to result.postMs.toInt(),
+                "accelerator" to if (result.accelerator?.equals("GPU", ignoreCase = true) == true) "gpu" else "cpu",
+                "timestamp" to System.currentTimeMillis(),
+            ),
+        )
     }
 
     // endregion
@@ -2407,6 +2511,22 @@ class YOLOView @JvmOverloads constructor(
     fun stop() {
         // Set stopped flag first to prevent new frames from being processed
         isStopped = true
+
+        // Stop the depth thread before the predictors are closed so an in-flight depth inference
+        // cannot touch a closed interpreter (and no thread survives a camera stop/restart).
+        depthExecutor?.let { exec ->
+            exec.shutdown()
+            try {
+                if (!exec.awaitTermination(500, TimeUnit.MILLISECONDS)) exec.shutdownNow()
+            } catch (e: InterruptedException) {
+                exec.shutdownNow()
+                Thread.currentThread().interrupt()
+            }
+        }
+        depthExecutor = null
+        depthInFlight.set(false)
+        latestAnalysisBitmap = null
+        lastDepthStartMs = 0L
         // A full teardown is not an intentional pause; a later lifecycle restart should rebind normally.
         intentionallyPaused = false
 

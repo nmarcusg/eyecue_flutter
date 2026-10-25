@@ -40,43 +40,70 @@ defaults and unknown modes fall back to `monocularDepth`.
                 │   • detections (normalized, upright) │
                 │   • metrics, frameNumber, timestamp  │
                 │   • imageWidth/imageHeight (upright) │
-                │   • originalImage (JPEG q90, SENSOR) │  ← only when MDE is on
+                │  (no image ever crosses the channel) │
+                │                                      │
+                │  depth tick (own thread, ≤depth Hz)  │
+                │   • reuses the analysis Bitmap       │
+                │   • instanceManager.predict(depth)   │
+                │   • emits type:'depth' event         │
                 └──────────────┬───────────────────────┘
                                │
         ┌──────────────────────┼───────────────────────────┐
         ▼                      ▼                           ▼
  Detection parse        Depth sampler                Depth estimator
- YOLODetectionResults   inset 12% → sensor box       second YOLO instance
- → Detection[]          → median over map values     (YOLOTask.depth,
-        │               → EMA α=0.4 per trackId       useMultiInstance: true)
-        │                      │                       configured cadence, latest-wins
+ YOLODetectionResults   inset 12% → sensor box       parses the depth event
+ → Detection[]          → median over grid values    → DepthFrame + heatmap
+        │               → EMA α=0.4 per trackId       (ui.Image per frame)
         ▼                      ▼                           │
  SpatialAnalysisService  estimatedMeters                 ▼
- (band, priority, pos)        │                    DepthFrame + heatmap
-        │                      │                    (ui.Image per frame)
-        ▼                      ▼
- AssistiveDetectionController / AlertPolicy / TtsService
-        │
-        ▼
+ (band, priority, pos)        │                    DepthFrame.grid
+        │                      ▼
+        ▼               AssistiveDetectionController / AlertPolicy / TtsService
  Detection screen stack:
  YOLOView → DepthHeatmapView → BoundingBoxPainter → DetectionInformationOverlay
           → GestureSurface
 ```
 
-### Why a second `YOLO` instance (not a plugin fork)
+### Why a second `YOLO` instance
 
 The plugin exposes depth through the same single-image `YOLO` API. A second
 instance with `useMultiInstance: true` gets its own channel and interpreter, so
-depth work never shares state with the camera-bound `YOLOView` instance, and no
-vendored package or second inference framework is needed.
+depth work never shares state with the camera-bound `YOLOView` instance.
 
-### Why the JPEG bridge
+### Why a native shared-frame path
 
-`YOLOView` is camera-bound and cannot be fed a frame. Its streaming config can
-attach the analysis frame as a JPEG (`includeOriginalImage: true`), which is the
-only public path that exposes the exact pixels the detector saw. That JPEG
-exists only for **delivered** stream frames, so the depth cadence is bounded by
-the detection stream rather than every camera frame.
+`YOLOView` is camera-bound and cannot be fed a frame from Dart. The previous
+transport shipped the analysis frame as a JPEG on every delivered stream result
+(`includeOriginalImage: true`) and pushed it back through
+`predictSingleImage`, which re-decoded it natively: a full
+Android → Dart → Android round trip per depth frame, with the encode and the
+decode both on the delivery path, and every frame the estimator dropped still
+paid for it.
+
+L1b replaced that with a native tick inside the view. The streaming config now
+carries `depthInstanceId`, `depthIntervalMs` and `depthMaxDim` instead of an
+image flag (the vendored plugin's deviation list records the fork). The view:
+
+1. keeps the analysis `Bitmap` it already decoded for detection (nothing on that
+   path recycles or draws into it, so no copy is taken);
+2. after the detector result **and** the stream callback have been delivered,
+   checks the native cadence and the in-flight guard, then runs the depth
+   instance on its own single-thread executor;
+3. emits `type: 'depth'` on the existing view event channel as a compact
+   block-mean grid — `Float32List` through `StandardMessageCodec`, the same trick
+   `semanticMask.classMap` uses.
+
+Payload keys (exactly): `depthGrid`, `width`, `height`, `minDepth`, `maxDepth`,
+`imageWidth`, `imageHeight`, `rotationDegrees`, `latencyMs`, `preMs`,
+`inferenceMs`, `postMs`, `accelerator`, `timestamp` (plus `type` for routing).
+Grid values are metres; a block with no valid sample (finite, 0.1–80 m) is
+`NaN`. At the 96-cap that is ≤96 × 96 × 4 = **36 864 bytes** per event, versus
+hundreds of KB for the dense map and ~ hundreds of KB for the JPEG.
+
+Cadence ownership moved with the transport: the interval is native, so there is
+no Dart timer, no pending frame slot and no queue. Latest frame wins (a tick in
+flight makes the next one a no-op), and depth work is scheduled only after
+detection output, so detection latency cannot be affected.
 
 ## Depth model
 
@@ -86,7 +113,7 @@ the detection stream rather than every camera frame.
 | Artifact | [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite), bundled |
 | Format | `FlatBuffer (TFL3)` + appended **deflated** zip entry `metadata.json` (563 bytes): `task: depth`, `imgsz` 640×640, `w8a32`, `names {"0":"depth"}`, AGPL-3.0, version `8.4.104` |
 | Source | official Ultralytics export from the pinned plugin release `v0.6.6` |
-| Load | lazy, on the first submitted frame |
+| Load | lazy, once per depth-enabled session; its instance id then reaches the streaming config and the native tick |
 | Accelerator | GPU first, one CPU retry, then degraded |
 
 The metadata entry is deflated, so a raw byte grep misses it; `inspectModel` and
@@ -187,18 +214,19 @@ EMA that includes idle gaps, so it is not a steady-state throughput claim.
 
 ## Cadence, staleness and fallback
 
-- Depth cadence follows the resolved depth target (default 2 Hz, see above),
-  with **one** pending frame slot and **one** in-flight request. A newer frame
-  replaces the pending one; nothing is ever queued or awaited from the
-  detection callback.
+- Depth cadence is the resolved depth target (default 2 Hz, see above), enforced
+  **natively**: the tick only starts when `now - lastDepthStart >= depthIntervalMs`
+  and an `AtomicBoolean` in-flight guard is free. Nothing is queued on either
+  side and nothing is awaited from the detection callback.
 - A map older than **1000 ms** is stale (`depthStaleAfterMs`): the heatmap is
   hidden and every object falls back to the bounding-box estimator.
 - A geometry change (rotation or upright dimensions) between submit and result
-  discards the map.
-- Pause and stop cancel the freshness timer and drop the pending frame and
-  image; `dispose()` releases the interpreter. Backgrounding is not observed
-  explicitly: the native camera stops delivering frames, so nothing new is
-  queued and the stale heatmap is hidden by the 1000 ms freshness check.
+  discards the map (`DepthFrame.matchesGeometry`).
+- Pause and stop stop the native camera, so no tick runs; the freshness timer is
+  cancelled and the frame/heatmap dropped. `dispose()` releases the interpreter
+  and the view's depth executor is shut down in `YOLOView.stop()`. Backgrounding
+  is not observed explicitly: the camera stops delivering frames, so nothing new
+  is queued and the stale heatmap is hidden by the 1000 ms freshness check.
 - Failure behaviour is always non-blocking: degraded notice + bbox estimator,
   never a crash, never a block on start/pause/stop/preview.
 
@@ -242,6 +270,16 @@ Commands run in `/home/nico/repos/eyecue_flutter-cadence` on
 |---|---|
 | `flutter analyze --no-pub` | 4 issues, all pre-existing (unused field in `alert_policy.dart`, `onError` return type in `tts_service.dart`, two unnecessary test imports); no new issues |
 | `flutter test --no-pub` | **527 passing, 1 failing**; the failure (`tts_service_test.dart` → "a partial signal pair records a reconciliation timeout") fails identically on `dev@94f74d8` |
+
+L1b (native transport) was verified in `/home/nico/repos/eyecue_flutter-playstore`
+with the repository gates plus a native build. `flutter analyze` and
+`flutter test` do **not** cover `plugins/**`, so the plugin's own Dart surface was
+checked with `dart analyze lib` inside `plugins/ultralytics_yolo` (no issues) and
+the Kotlin with `flutter build apk --debug`. The payload contract itself is
+covered by `test/services/depth_payload_parity_test.dart` (exact key set, grid
+bound, rejection of `values`/`originalImage`) and the event → frame derivation by
+`test/services/monocular_depth_estimator_test.dart`. Depth accuracy and the
+achieved on-device cadence remain **unmeasured** — see the table below.
 
 Earlier MDE-branch evidence (452 passing / 1 failing and an 82.9 MB release APK)
 is historical: it belongs to `/home/nico/repos/eyecue_flutter-mde` at base

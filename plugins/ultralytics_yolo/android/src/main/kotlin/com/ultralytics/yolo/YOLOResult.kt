@@ -53,6 +53,12 @@ data class DepthMap(
     val minDepth: Float,
     val maxDepth: Float,
     val image: Bitmap?,
+    // Block-mean metres over the same crop `values` covers (NaN where a block had no valid
+    // sample). The native depth stream ships this grid instead of `values`, so `values` stays
+    // null on that path and no dense per-inference copy is allocated.
+    val grid: FloatArray? = null,
+    val gridWidth: Int = 0,
+    val gridHeight: Int = 0,
 )
 
 data class Probs(

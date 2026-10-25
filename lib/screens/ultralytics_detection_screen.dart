@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:camera/camera.dart' show CameraLensDirection, availableCameras;
 import 'package:flutter/material.dart';
@@ -120,27 +119,37 @@ bool shouldRecreateNativeSessionOnStart({
 
 /// Builds the native streaming config for a resolved cadence.
 ///
-/// `inferenceFrequency` is the detector target in Hz (`null` = Automatic), and
-/// every other streaming limit stays unset so native defaults are preserved.
-/// Pure so the cadence mapping is testable without a platform view.
+/// `inferenceFrequency` is the detector target in Hz (`null` = Automatic). The depth
+/// target reaches native as an instance id plus a tick interval; no image flag is set
+/// any more, so no analysis frame crosses the platform channel. Pure so the cadence
+/// mapping is testable without a platform view.
 @visibleForTesting
 YOLOStreamingConfig buildStreamingConfig({
   required int? effectiveDetectionHz,
-  required bool includeOriginalImage,
+  required String? depthInstanceId,
+  required int? depthIntervalMs,
 }) => YOLOStreamingConfig(
   inferenceFrequency: effectiveDetectionHz,
-  includeOriginalImage: includeOriginalImage,
+  depthInstanceId: depthInstanceId,
+  depthIntervalMs: depthIntervalMs,
+  depthMaxDim: EyeCueModelConfig.depthGridMaxDim,
 );
 
 /// The subset of the streaming config that changes native behaviour.
 ///
-/// Only these values justify a live `setStreamingConfig`; a depth-target or
-/// overlay-only change must not touch the native view.
+/// Only these values justify a live `setStreamingConfig`; an overlay-only change must
+/// not touch the native view. The depth target is included because it now reaches
+/// native (the instance to tick and how often).
 @visibleForTesting
-({int? hz, bool includeOriginalImage}) streamingConfigKey({
+({int? hz, String? depthInstanceId, int? depthIntervalMs}) streamingConfigKey({
   required InferenceCadence cadence,
   required bool mdeEnabled,
-}) => (hz: cadence.effectiveDetectionHz, includeOriginalImage: mdeEnabled);
+  required String? depthInstanceId,
+}) => (
+  hz: cadence.effectiveDetectionHz,
+  depthInstanceId: mdeEnabled ? depthInstanceId : null,
+  depthIntervalMs: mdeEnabled ? cadence.depthInterval?.inMilliseconds : null,
+);
 
 /// Depth status recorded with a telemetry sample.
 ///
@@ -311,9 +320,10 @@ class _UltralyticsDetectionScreenState
 
   /// Streaming values last applied to the native view.
   ///
-  /// Only a change here (effective detector Hz or the analysis-JPEG flag)
-  /// warrants a live `setStreamingConfig`.
-  ({int? hz, bool includeOriginalImage})? _lastStreamingConfigKey;
+  /// Only a change here (effective detector Hz, or the depth instance and
+  /// interval) warrants a live `setStreamingConfig`.
+  ({int? hz, String? depthInstanceId, int? depthIntervalMs})?
+  _lastStreamingConfigKey;
   String? _modelError;
   DetectionRuntimeState _runtimeState = DetectionRuntimeState.idle;
 
@@ -329,11 +339,15 @@ class _UltralyticsDetectionScreenState
 
   // --- Monocular depth (MDE) ------------------------------------------------
   //
-  // MDE is a SECOND model instance fed by the streamed analysis JPEG. It never
-  // blocks detection: sampling uses the latest fresh map and falls back to the
-  // bounding-box estimator whenever the map is missing, stale or mismatched.
+  // MDE is a SECOND model instance run natively on the analysis frame the view
+  // already decoded for detection. It never blocks detection: sampling uses the
+  // latest fresh grid and falls back to the bounding-box estimator whenever the
+  // grid is missing, stale or mismatched.
 
   final MonocularDepthEstimator _depth = MonocularDepthEstimator();
+
+  /// Native depth events, on the same view event channel as zoom/lens/focus.
+  StreamSubscription<YOLODepthEvent>? _depthEventSub;
   final DepthSmoother _depthSmoother = DepthSmoother();
 
   /// Latest detection boxes, retained so the Flutter box layer and the depth
@@ -392,21 +406,44 @@ class _UltralyticsDetectionScreenState
     distanceEstimationMode: _settings.distanceEstimationMode,
   );
 
+  /// The instance the native tick may run, or null when it must not run.
+  ///
+  /// Null while MDE is off (no depth work) and while degraded (the instance is
+  /// known to be failing, so ticking it would only burn CPU/GPU).
+  String? get _depthInstanceId =>
+      _mdeEnabled && _depth.state.value != DepthRunState.degraded
+      ? _depth.instanceId
+      : null;
+
   YOLOStreamingConfig get _streamingConfig => buildStreamingConfig(
     effectiveDetectionHz: _cadence.effectiveDetectionHz,
-    // Only the depth model needs the analysis JPEG; bbox mode never pays for it.
-    includeOriginalImage: _mdeEnabled,
+    depthInstanceId: _depthInstanceId,
+    depthIntervalMs: _mdeEnabled
+        ? _cadence.depthInterval?.inMilliseconds
+        : null,
   );
 
-  /// Applies the resolved depth cadence to the estimator, or stops it when the
-  /// current mode does no depth work.
-  void _applyDepthCadence() {
-    final interval = _cadence.depthInterval;
-    if (interval == null) {
-      _depth.stop();
-      return;
+  /// Pushes the streaming config when, and only when, a native-relevant value
+  /// changed.
+  void _syncStreamingConfig() {
+    final key = streamingConfigKey(
+      cadence: _cadence,
+      mdeEnabled: _mdeEnabled,
+      depthInstanceId: _depthInstanceId,
+    );
+    if (key == _lastStreamingConfigKey) return;
+    _lastStreamingConfigKey = key;
+    _controller.setStreamingConfig(_streamingConfig);
+  }
+
+  /// Loads the depth model (once) so its instance id can reach the native tick,
+  /// then re-syncs the config. Bounding-box mode passes a null instance, which
+  /// stops the tick immediately.
+  void _armDepth() {
+    if (_mdeEnabled && _cadence.depthInterval != null) {
+      unawaited(_depth.prepare());
     }
-    _depth.configure(minIntervalMs: interval.inMilliseconds);
+    _syncStreamingConfig();
   }
 
   @override
@@ -415,11 +452,13 @@ class _UltralyticsDetectionScreenState
     _lastStreamingConfigKey = streamingConfigKey(
       cadence: _cadence,
       mdeEnabled: _mdeEnabled,
+      depthInstanceId: _depthInstanceId,
     );
     _lastDistanceMode = _settings.distanceEstimationMode;
     _settings.addListener(_handleSettingsChanged);
     _depth.frame.addListener(_handleDepthFrame);
     _depth.state.addListener(_handleDepthStateChanged);
+    _depthEventSub = _controller.depthEvents.listen(_handleDepthEvent);
     _loadLabels();
     // The engine no longer reads the Auto-start preference directly. It acts
     // only on the shared start intent issued by the app-shell coordinator.
@@ -459,6 +498,7 @@ class _UltralyticsDetectionScreenState
   void dispose() {
     _settings.removeListener(_handleSettingsChanged);
     _freshnessTimer?.cancel();
+    _depthEventSub?.cancel();
     _depth.frame.removeListener(_handleDepthFrame);
     _depth.state.removeListener(_handleDepthStateChanged);
     _depth.dispose();
@@ -476,7 +516,23 @@ class _UltralyticsDetectionScreenState
   }
 
   void _handleDepthStateChanged() {
+    // The instance id exists only once the model is loaded, and it has to reach
+    // native before any depth tick can run (and must leave it on degrade).
+    _syncStreamingConfig();
     if (mounted) setState(() {});
+  }
+
+  /// Native depth event → depth frame. Silent unless a live map can be used.
+  void _handleDepthEvent(YOLODepthEvent event) {
+    if (!_detectionActive || _paused || !_mdeEnabled || !_rotationResolved) {
+      return;
+    }
+    _depth.onNativeDepth(
+      event,
+      rotationDegrees: _rotationDegrees,
+      uprightWidth: _uprightWidth,
+      uprightHeight: _uprightHeight,
+    );
   }
 
   /// Native overlays render boxes only while the heatmap is hidden; otherwise
@@ -557,14 +613,6 @@ class _UltralyticsDetectionScreenState
   }
 
   void _handleSettingsChanged() {
-    final streamingKey = streamingConfigKey(
-      cadence: _cadence,
-      mdeEnabled: _mdeEnabled,
-    );
-    if (streamingKey != _lastStreamingConfigKey) {
-      _lastStreamingConfigKey = streamingKey;
-      _controller.setStreamingConfig(_streamingConfig);
-    }
     final modeChanged = _settings.distanceEstimationMode != _lastDistanceMode;
     _lastDistanceMode = _settings.distanceEstimationMode;
     if (modeChanged && !_mdeEnabled) {
@@ -576,7 +624,7 @@ class _UltralyticsDetectionScreenState
       _depth.retry();
       _resolveRotation();
     }
-    _applyDepthCadence();
+    _armDepth();
     _startFreshnessTimer();
     _applyOverlayVisibility();
     if (mounted) setState(() {});
@@ -667,8 +715,8 @@ class _UltralyticsDetectionScreenState
       if (_mdeEnabled) {
         await _resolveRotation();
         _depth.retry();
-        _applyDepthCadence();
       }
+      _armDepth();
       _startFreshnessTimer();
       _applyOverlayVisibility();
       if (announce) await _tts.speak('Detection started', urgent: true);
@@ -787,7 +835,6 @@ class _UltralyticsDetectionScreenState
     );
     // Track identity for the next frame's EMA smoothing.
     _lastTracks = _assistive.tracks;
-    _submitDepthFrame(data);
     // PD3: accept a new overlay snapshot only while the currently observed
     // mapped coordinator outcome is Ready (healthy fallback maps to Ready).
     // This is a presentation-local gate; see the [_overlayInfos] doc comment
@@ -813,7 +860,7 @@ class _UltralyticsDetectionScreenState
     if (frame == null || !_depthFresh) return null;
     return [
       for (final detection in detections)
-        _smoothedMeters(detection, _sampleMeters(frame.map, detection)),
+        _smoothedMeters(detection, _sampleMeters(frame.grid, detection)),
     ];
   }
 
@@ -856,23 +903,6 @@ class _UltralyticsDetectionScreenState
     }
     // 0.2 normalized distance (~20% of the frame) is the identity window.
     return bestDistance <= 0.04 ? bestId : null;
-  }
-
-  /// Feeds the analysis JPEG to the depth model. Only delivered stream frames
-  /// carry a JPEG, so this naturally runs at the detection cadence.
-  void _submitDepthFrame(Map<String, dynamic> data) {
-    if (!_mdeEnabled || !_rotationResolved) return;
-    if (_depth.state.value == DepthRunState.degraded) return;
-    final image = data['originalImage'];
-    if (image is! Uint8List || image.isEmpty) return;
-    if (_uprightWidth <= 0 || _uprightHeight <= 0) return;
-    _depth.submitFrame(
-      image,
-      uprightWidth: _uprightWidth,
-      uprightHeight: _uprightHeight,
-      rotationDegrees: _rotationDegrees,
-      timestampMs: DateTime.now().millisecondsSinceEpoch,
-    );
   }
 
   void _retryDepth() {

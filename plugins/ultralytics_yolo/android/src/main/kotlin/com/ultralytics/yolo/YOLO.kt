@@ -64,8 +64,9 @@ class YOLO(
      * @param rotateForCamera Whether to rotate the image for camera processing, defaults to false for standard bitmap inference
      */
     @Synchronized
-    fun predict(bitmap: Bitmap, rotateForCamera: Boolean = false): YOLOResult {
-        predictor.includeRawMaskData = true
+    fun predict(bitmap: Bitmap, rotateForCamera: Boolean = false, includeRawData: Boolean = true): YOLOResult {
+        // Depth streaming needs only the compact grid, so it opts out of the dense raw copy.
+        predictor.includeRawMaskData = includeRawData
         val result = predictor.predict(bitmap, bitmap.width, bitmap.height, rotateForCamera, isLandscape = false)
         
         // Don't create annotated image for classification tasks to save memory and processing time

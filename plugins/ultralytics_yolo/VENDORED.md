@@ -56,9 +56,94 @@ Coverage for a change here has to be named explicitly:
 
 ## Native deviation list
 
-**Currently empty.** No file in this directory has been modified; this commit only
-vendors upstream 0.6.13.
+Added by L1b (native shared-frame depth transport). Every deviation below is a **fork
+obligation**: an upstream upgrade must re-apply it or the depth transport silently
+disappears (no compile error, no test failure — `flutter analyze` and `flutter test` do
+not cover this directory, see above).
 
-L1b (native shared-frame MDE transport) is the item that introduces deviations. It must
-record every one here as a row: file, upstream line range, current deviation, and why it
-cannot be expressed as a Dart-side change. Unlisted deviation is a defect.
+### 1. `android/src/main/kotlin/com/ultralytics/yolo/YOLOStreamConfig.kt`
+
+- **Deviation:** three data-class fields — `depthInstanceId: String? = null`,
+  `depthIntervalMs: Int? = null`, `depthMaxDim: Int = 96` — plus the same three
+  parameters on `custom(...)`.
+- **Why:** the view needs a target instance, a cadence and a grid cap. Upstream has no
+  vocabulary for any of them, and a Dart-side scheduler cannot reach the analysis bitmap.
+- **On upgrade:** re-add the fields after `analysisHeight` and the builder parameters +
+  pass-through in `custom(...)`.
+
+### 2. `YOLOView.kt`
+
+- **Deviation:** `@Volatile latestAnalysisBitmap`, a lazily created single-thread depth
+  executor, an `AtomicBoolean` in-flight guard, `lastDepthStartMs`, the
+  `maybeRunDepthTick(...)` call after the stream callback, `maybeRunDepthTick` +
+  `emitDepthEvent`, and the executor shutdown/state reset in `stop()`.
+- **Why:** only the view holds the decoded analysis `Bitmap`, and only the view knows the
+  detector result and the stream callback have already been delivered — the two facts that
+  make a zero-copy depth tick possible without touching detection latency. The deviating
+  lines are the four field declarations, one call site (after `callback.invoke`), the two
+  new private methods, and the teardown block at the top of `stop()`.
+- **On upgrade:** re-apply all four; `emitDepthEvent` is the payload contract.
+
+### 3. `YOLOPlatformView.kt`
+
+- **Deviation:** parse `depthInstanceId` / `depthIntervalMs` / `depthMaxDim` from
+  `creationParams["streamingConfig"]` and from the `setStreamingConfig` method call.
+- **Why:** the depth target arrives from Dart on both paths (initial mount and live
+  config change); without both, a mid-session enable would never reach native.
+- **On upgrade:** re-add the three parse lines in `setupYOLOViewStreaming` and in the
+  `setStreamingConfig` branch.
+
+### 4. `YOLOInstanceManager.kt`
+
+- **Deviation:** `companion object { val shared = YOLOInstanceManager() }` and an
+  `includeRawData: Boolean = true` parameter on `predict(...)`, forwarded to
+  `YOLO.predict(bitmap, includeRawData = ...)`.
+- **Why:** the view must reach the same instance registry the plugin owns (it cannot see
+  the plugin's field), and the depth tick must opt out of the dense `values` copy.
+- **On upgrade:** re-add the companion and the parameter pass-through.
+
+### 5. `YOLOPlugin.kt`
+
+- **Deviation:** `private val instanceManager = YOLOInstanceManager.shared` instead of
+  `YOLOInstanceManager()`.
+- **Why:** keeps the plugin and the view on one registry (see 4). Behaviour is unchanged
+  for every existing call site; `disposeAll()` still clears everything on detach.
+- **On upgrade:** re-point the field at `.shared`.
+
+### 6. `YOLOResult.kt`
+
+- **Deviation:** `DepthMap` gains `grid: FloatArray? = null`, `gridWidth: Int = 0`,
+  `gridHeight: Int = 0` (all defaulted, so existing constructor calls are unchanged).
+- **Why:** the grid and its dimensions must travel with the result without a second
+  channel or a dense `values` array.
+- **On upgrade:** re-add the three fields.
+
+### 7. `DepthEstimator.kt`
+
+- **Deviation:** `var gridMaxDim: Int = DEFAULT_GRID_MAX_DIM` (96) and
+  `blockMeanGrid(...)`; `postProcessDepth` now always builds the grid, keeps the crop and
+  `minDepth`/`maxDepth` exactly as before, and leaves `values` gated on
+  `includeRawMaskData`.
+- **Why:** computing the block means straight from the model output avoids allocating a
+  ~1.6 MB `FloatArray` per inference (the grid is ≤96²×4 ≈ 37 KB). The grid spans the same
+  crop as `values`, so sensor/upright box mapping is unchanged.
+- **On upgrade:** re-add the field, the helper and the grid fields on the returned
+  `DepthMap`; keep the 0.1–80 m valid-range filter and NaN-for-empty-block rule.
+
+### 8. `YOLO.kt`
+
+- **Deviation:** `predict(bitmap, rotateForCamera = false, includeRawData: Boolean = true)`;
+  the flag is assigned to `predictor.includeRawMaskData` instead of a hard-coded `true`.
+- **Why:** the depth tick needs the result without the dense raw copy; every existing
+  caller keeps the upstream default.
+- **On upgrade:** re-add the parameter (named-argument call sites stay source-compatible).
+
+### Dart surface (not native, recorded for the same upgrade review)
+
+`lib/yolo_streaming_config.dart` (the three fields, mirrored in the `custom(...)`
+constructor and the five preset initializer lists, plus `toString`),
+`lib/yolo_view.dart` (creation-param map), `lib/widgets/yolo_controller.dart`
+(`setStreamingConfig` map, `depthEvents` stream, `depth` case in `onNativeEvent`, async
+close in `dispose`) and `lib/models/yolo_result.dart` (`YOLODepthEvent` + `fromMap` /
+`toMap`). An upstream sync that drops any of these also breaks the payload contract
+without breaking compilation of the app's own `lib/`.

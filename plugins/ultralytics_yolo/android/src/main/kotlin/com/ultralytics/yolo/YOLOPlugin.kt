@@ -34,7 +34,7 @@ class YOLOPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler
   private lateinit var viewFactory: YOLOPlatformViewFactory
   private lateinit var binaryMessenger: io.flutter.plugin.common.BinaryMessenger
   private lateinit var pluginScope: CoroutineScope
-  private val instanceManager = YOLOInstanceManager()
+  private val instanceManager = YOLOInstanceManager.shared
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
