@@ -93,12 +93,28 @@ image flag (the vendored plugin's deviation list records the fork). The view:
    block-mean grid — `Float32List` through `StandardMessageCodec`, the same trick
    `semanticMask.classMap` uses.
 
+`depthMaxDim` is applied, not decorative:
+`YOLOInstanceManager.predictorInstance(instanceId)` returns the instance's
+predictor (or `null` when no model is loaded), the tick casts it to
+`DepthEstimator` and sets `gridMaxDim = config.depthMaxDim` immediately before the
+inference, so a non-default value genuinely changes the emitted grid. A failed
+cast is logged once (`Log.w`) instead of being swallowed by `runCatching`, so a
+wiring break cannot sit silent behind the default cap.
+
+Grid aspect is aspect-correct: one scale for both axes, taken from the crop's
+longest side, so the grid's longest side is ≤ `depthMaxDim` and its short side
+follows the crop ratio. The production analysis stream is 4:3 (nothing sets
+`analysisResolution`; CameraX yields 640×480 and `ImageUtils.toBitmap` never
+rotates), so at the default 96 cap the app emits a **96×72** grid, not a 96×96
+square.
+
 Payload keys (exactly): `depthGrid`, `width`, `height`, `minDepth`, `maxDepth`,
-`imageWidth`, `imageHeight`, `rotationDegrees`, `latencyMs`, `preMs`,
-`inferenceMs`, `postMs`, `accelerator`, `timestamp` (plus `type` for routing).
-Grid values are metres; a block with no valid sample (finite, 0.1–80 m) is
-`NaN`. At the 96-cap that is ≤96 × 96 × 4 = **36 864 bytes** per event, versus
-hundreds of KB for the dense map and ~ hundreds of KB for the JPEG.
+`imageWidth`, `imageHeight`, `latencyMs`, `preMs`, `inferenceMs`, `postMs`,
+`accelerator`, `timestamp` (plus `type` for routing). Grid values are metres; a
+block with no valid sample (finite, 0.1–80 m) is `NaN`. The bound at the 96-cap
+is ≤96 × 96 × 4 = **36 864 bytes** per event; the 4:3 stream emits
+96 × 72 × 4 = 27 648 bytes, versus hundreds of KB for the dense map and ~
+hundreds of KB for the JPEG.
 
 Cadence ownership moved with the transport: the interval is native, so there is
 no Dart timer, no pending frame slot and no queue. Latest frame wins (a tick in
@@ -278,8 +294,19 @@ checked with `dart analyze lib` inside `plugins/ultralytics_yolo` (no issues) an
 the Kotlin with `flutter build apk --debug`. The payload contract itself is
 covered by `test/services/depth_payload_parity_test.dart` (exact key set, grid
 bound, rejection of `values`/`originalImage`) and the event → frame derivation by
-`test/services/monocular_depth_estimator_test.dart`. Depth accuracy and the
-achieved on-device cadence remain **unmeasured** — see the table below.
+`test/services/monocular_depth_estimator_test.dart`. Two claims are **not**
+test-covered and must not be read as such:
+
+- the **grid arithmetic** inside `DepthEstimator.blockMeanGrid` (single scale,
+  640×480 → 96×72) has no automated test. There is no Kotlin test source set for
+  `plugins/**`, so the Dart test above pins the payload *shape* it is handed, not
+  the native maths that produces it. A real-device or JVM/Robolectric test is
+  required before any payload-size tuning.
+- the **`depthMaxDim` → estimator wiring** is compile-checked and inspected, not
+  executed.
+
+Depth accuracy and the achieved on-device cadence remain **unmeasured** — see the
+table below.
 
 Earlier MDE-branch evidence (452 passing / 1 failing and an 82.9 MB release APK)
 is historical: it belongs to `/home/nico/repos/eyecue_flutter-mde` at base

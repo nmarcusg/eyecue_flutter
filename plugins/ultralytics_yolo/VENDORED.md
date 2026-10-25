@@ -74,21 +74,39 @@ not cover this directory, see above).
 ### 2. `YOLOView.kt`
 
 - **Deviation:** `@Volatile latestAnalysisBitmap`, a `@Volatile` lazily created
-  single-thread daemon depth executor, an `AtomicBoolean` in-flight guard,
-  `lastDepthStartMs`, a `depthDisabled` failure latch, the `maybeRunDepthTick()` call after
-  the stream callback, `maybeRunDepthTick` + `emitDepthEvent` + `emitDepthFailure`, the
-  latch reset in `setStreamConfig`, and the executor `shutdown()` + state reset in `stop()`.
+  single-thread daemon depth executor, a `private val depthLock = Any()` guarding its
+  creation/teardown, an `AtomicBoolean` in-flight guard, `lastDepthStartMs`, a
+  `depthDisabled` failure latch, a one-shot `depthWiringWarned` flag, the
+  `maybeRunDepthTick()` call after the stream callback, `maybeRunDepthTick` +
+  `emitDepthEvent` + `emitDepthFailure`, the `depthMaxDim` → `DepthEstimator.gridMaxDim`
+  wiring inside the tick, the latch reset in `setStreamConfig` **and** `pauseCamera()`,
+  and the executor `shutdown()` + state reset in `stop()`.
 - **Why:** only the view holds the decoded analysis `Bitmap`, and only the view knows the
   detector result and the stream callback have already been delivered — the two facts that
   make a zero-copy depth tick possible without touching detection latency. The deviating
   lines are the field declarations, one call site (after `callback.invoke`), the three new
   private methods, and the teardown block at the top of `stop()`.
+- **Why `depthLock`:** the executor is created on the analysis thread and shut down from the
+  platform thread, so the pair needs a monitor. A private `Any()` is used instead of
+  `synchronized(this)` because the view's own monitor belongs to the framework. The critical
+  sections hold no `YOLO` instance monitor (they touch only `isStopped` and the executor
+  field) and no lock is held across `shutdown()`'s return — `shutdown()` is non-blocking
+  and never joins.
+- **Why the wiring:** `predictorInstance()` used to return `Unit`, so
+  `instanceId?.predictorInstance() as? DepthEstimator` could never succeed and
+  `depthMaxDim` was decorative. The tick now resolves the predictor through
+  `YOLOInstanceManager.predictorInstance(instanceId)` (return type `Predictor?`), casts it
+  once before the inference and assigns `gridMaxDim`, warning once via `Log.w` if the cast
+  fails so a broken wiring cannot degrade silently for the life of the view.
+- **Why the pause re-arm:** `pauseCamera()` ends a ticking episode, so it clears
+  `depthDisabled` in the same place the view re-arms for resume; a failure that landed just
+  before the pause can therefore not leave depth dead after the resume.
 - **On upgrade:** re-apply all of it. `emitDepthEvent` is the frame payload contract; a
   failed inference emits `{type: depth, error: inference_failed, timestamp}` **once**
-  (`depthDisabled` suppresses the rest of the episode) and the next `setStreamConfig` is
-  what clears the latch. `stop()` calls `shutdown()` only — never `shutdownNow()` or
-  `awaitTermination()` — because it runs on the platform thread and the tick is allowed to
-  finish and discard its own result.
+  (`depthDisabled` suppresses the rest of the episode) and the next `setStreamConfig` (or
+  `pauseCamera()`) is what clears the latch. `stop()` calls `shutdown()` only — never
+  `shutdownNow()` or `awaitTermination()` — because it runs on the platform thread and the
+  tick is allowed to finish and discard its own result.
 
 ### 3. `YOLOPlatformView.kt`
 
@@ -101,13 +119,19 @@ not cover this directory, see above).
 
 ### 4. `YOLOInstanceManager.kt`
 
-- **Deviation:** `companion object { val shared = YOLOInstanceManager() }` and the
+- **Deviation:** `companion object { val shared = YOLOInstanceManager() }`, the
   `includeRawData: Boolean = true` / `drawOverlays: Boolean = true` parameters on
-  `predict(...)`, forwarded to `YOLO.predict(...)`.
+  `predict(...)` (forwarded to `YOLO.predict(...)`), and
+  `fun predictorInstance(instanceId: String): Predictor?` — upstream's block-bodied
+  `Unit` version returns the instance's predictor (or `null` when no model is loaded).
 - **Why:** the view must reach the same instance registry the plugin owns (it cannot see
-  the plugin's field), and the depth tick must opt out of both the dense `values` copy and
-  the annotated-image render.
-- **On upgrade:** re-add the companion and both parameter pass-throughs.
+  the plugin's field), the depth tick must opt out of both the dense `values` copy and the
+  annotated-image render, and the tick must be able to set `gridMaxDim` on the depth
+  predictor — a `Unit` return made that cast impossible, which left `depthMaxDim` applied
+  to nothing.
+- **On upgrade:** re-add the companion, both parameter pass-throughs, and the `Predictor?`
+  return type. The `predictorInstance` MethodChannel handler in `YOLOPlugin.kt:513` ignores
+  the return value, so its behaviour is unchanged.
 
 ### 5. `YOLOPlugin.kt`
 
@@ -139,12 +163,24 @@ not cover this directory, see above).
 - **Why:** computing the block means straight from the model output avoids allocating a
   ~1.6 MB `FloatArray` per inference, and gating them off the dense path keeps the upstream
   still-image caller free of the extra pass and the allocation.
+- **`gridMaxDim` is applied from the config.** `YOLOView.maybeRunDepthTick` resolves the
+  instance's predictor (`YOLOInstanceManager.predictorInstance`, deviation 4) and assigns
+  `gridMaxDim = config.depthMaxDim` on every tick before the inference, so a non-default
+  value changes the emitted grid. Verified by compile + inspection only — see the gates
+  table above.
 - **Grid aspect (must not regress):** one scale for both axes, derived from the longest
   side — `scale = gridMaxDim / max(width, height)`, then `gridW = round(width × scale)`,
-  `gridH = round(height × scale)`, each clamped to `1..extent`. A 640×360 crop yields
-  96×54 and a 360×640 crop yields 54×96; per-axis scaling would force both sides to
-  `gridMaxDim` and squash every crop into a 96×96 square. The bound stays
-  `gridW × gridH ≤ 96² = 36 864` bytes.
+  `gridH = round(height × scale)`, each clamped to `1..extent`. The production analysis
+  stream is 4:3 (CameraX 640×480, `ImageUtils.toBitmap` does not rotate), so the real
+  expectation is 640×480 → **96×72**; a 640×360 crop yields 96×54. Per-axis scaling would
+  force both sides to `gridMaxDim` and squash every crop into a 96×96 square — and only a
+  4:3 crop can expose that, because 16:9 and 9:16 are the family where both formulas agree.
+  The bound stays `gridW × gridH ≤ 96² = 36 864` bytes.
+- **No automated test for this arithmetic.** There is no Kotlin test source set for
+  `plugins/**`, so `test/services/depth_payload_parity_test.dart` pins the payload shape it
+  is handed, not the maths above. The aspect guarantee is `CONFIRMED-BY-INSPECTION` only;
+  a real-device capture or a JVM/Robolectric test of `blockMeanGrid` is required before any
+  payload-size or `depthMaxDim` tuning is claimed as measured.
 - **On upgrade:** re-add the field, the helper and the grid fields on the returned
   `DepthMap`; keep the single-scale aspect math, the 0.1–80 m valid-range filter and the
   NaN-for-empty-block rule.

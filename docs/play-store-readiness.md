@@ -184,7 +184,7 @@ item as `DONE`.
 | --- | --- | --- | --- | --- | --- | --- |
 | L0 baseline ledger | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
 | L1a vendored plugin + reviewer notes | Replace the hosted `ultralytics_yolo` pin with the in-tree path dependency and apply the 7 L0 reviewer findings to this document | L0 | DONE | `d5390d4` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
-| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (grid ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` (`3f81cc3` docs; remediation `15fcf39`) | CHANGES_REQUIRED on `fcf4cd0`/`63131d5`/`3f81cc3` → all findings fixed in `15fcf39`, re-review pending | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
+| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (grid ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` (`3f81cc3` docs; remediation `15fcf39`, `2540470`, `79eb9c0`) | round 1 on `fcf4cd0`/`63131d5`/`3f81cc3` → CHANGES_REQUIRED (4 major/5 minor/2 nit); round 2 on `15fcf39`/`2540470` → CHANGES_REQUIRED (8 of 9 fixed, 4 open); round 3 remediation `79eb9c0`, re-review pending | `CONFIRMED-BY-INSPECTION` (grid arithmetic, `depthMaxDim` wiring, pause→failure→resume order), `CONFIRMED-BY-TEST` (payload key set/shape), `CONFIRMED-BY-BUILD` (vendored Kotlin compiles) |
 | L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
@@ -349,7 +349,9 @@ path. The tick calls `instanceManager.predict(...)` directly from the view.
 ### 6.9 L1b outcome (closes 6.1–6.4 for the depth path)
 
 `CONFIRMED-BY-INSPECTION` in the vendored plugin, `CONFIRMED-BY-TEST` for the payload
-contract, `CONFIRMED-BY-BUILD` for the Kotlin.
+contract (key set, rejection of `values`/`originalImage`, failure marker shape),
+`CONFIRMED-BY-BUILD` for the Kotlin. The grid arithmetic and the `depthMaxDim` wiring are
+**not** test-covered and stay `CONFIRMED-BY-INSPECTION` — see the payload fact below.
 
 | Finding | Status after L1b |
 | --- | --- |
@@ -369,23 +371,43 @@ builds neither the dense `values` copy nor the annotated full-frame bitmap that
 
 Failure fact (`CONFIRMED-BY-INSPECTION`): a depth inference that throws or returns no grid
 emits `{type: 'depth', error: 'inference_failed', timestamp}` exactly once and sets a
-native latch (`depthDisabled`) that stops the tick until the next streaming config arrives.
-Dart maps the `error` marker to degraded, which withdraws the instance id and falls back to
-bounding-box distance; `retry()` re-pushes the id, clearing the latch.
+native latch (`depthDisabled`) that stops the tick until the next streaming config — or a
+`pauseCamera()` re-arm — arrives. Dart maps the `error` marker to degraded **before** its
+pause/stopped early return, so a failure landing inside the pause window still withdraws
+the instance id; `retry()` re-pushes the id, clearing the latch. Pause → failure → resume
+therefore ends in a visible `degraded` state, never a silently dead depth path.
 
-Payload fact (`CONFIRMED-BY-TEST`): `depthMaxDim` 96 caps the longer side, so the grid is
-≤ 96 × 96 × 4 = **36 864 bytes** and a 16:9 crop yields 96 × 54 × 4 = 20 736 bytes, versus
-the JPEG plus its native re-decode it replaces.
+Payload fact (`CONFIRMED-BY-INSPECTION` for the arithmetic, `CONFIRMED-BY-TEST` only for the
+shape the Dart side parses): `depthMaxDim` is now actually applied — the tick resolves the
+instance predictor via `YOLOInstanceManager.predictorInstance(id): Predictor?`, casts it to
+`DepthEstimator` and assigns `gridMaxDim` before each inference, logging once if the cast
+fails. The cap holds the longest side at `depthMaxDim`, so the grid is
+≤ 96 × 96 × 4 = **36 864 bytes**, and the production 4:3 analysis stream emits
+96 × 72 × 4 = 27 648 bytes — versus the JPEG plus its native re-decode it replaces.
+Neither figure is produced by an executed native test: there is no Kotlin test source set
+for `plugins/**`, so the grid maths is `CONFIRMED-BY-INSPECTION` until a real-device or
+JVM/Robolectric measurement exists.
 
 Build fact (`CONFIRMED-BY-BUILD`): `flutter build apk --debug` on the L1b tree →
 `build/app/outputs/flutter-apk/app-debug.apk`, 116 s incremental (the planner
 preflight's from-cache figure in §4.6 was 625 s), exit 0. Re-verified on the remediation
 commit `15fcf39`: Gradle `assembleDebug` 39.8 s (45.5 s wall), exit 0, with the vendored
 Kotlin recompiled (`build/ultralytics_yolo/.../YOLOView*.class` rewritten), which is the
-only compile gate that covers `plugins/**`.
-The key set, the aspect-correct grid shape (portrait and landscape) and the failure marker
-are pinned by
-[`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:133).
+only compile gate that covers `plugins/**`. Re-verified again on the round-3 remediation:
+Gradle `assembleDebug` 45.0 s (52.06 s wall), exit 0, `flutter analyze` 4 issues / 0
+errors, `flutter test` 534 passing + 1 known pre-existing TTS failure; both
+`YOLOView.class` and `YOLOInstanceManager.class` were rewritten by that build, and
+`javap -p` on the latter reports
+`public final com.ultralytics.yolo.Predictor predictorInstance(java.lang.String)`, which is
+why the `DepthEstimator` cast is now reachable. That is a **compile-time** proof of the
+signature, not a runtime measurement: no device is attached, so the end-to-end
+`depthMaxDim` → grid effect is `CONFIRMED-BY-INSPECTION`.
+The key set, the failure marker and the payload *shape* are pinned by
+[`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:133);
+its primary grid fixture is the production 4:3 stream (640×480 → 96×72), with 16:9
+(640×360 → 96×54) kept as a secondary case. That test feeds the parser a hand-built event:
+it cannot catch a regression in `DepthEstimator.blockMeanGrid`, so the aspect guarantee
+itself is `CONFIRMED-BY-INSPECTION` (see the payload fact above).
 
 ## 7. External gates register
 
@@ -419,7 +441,8 @@ other than the author of the commit being reviewed.
 | --- | --- | --- | --- | --- |
 | `a8e0571` | L0 baseline ledger | PASS_WITH_NOTES | 7 findings (5 minor/nit citation precision, 1 unlabelled claim, 1 cell-shape inconsistency); all applied in `e03bc36` | reviewer |
 | `fcf4cd0`, `63131d5`, `3f81cc3` | L1 native shared-frame MDE transport | CHANGES_REQUIRED | 4 major: (1) grid aspect broken — per-axis scaling forced every crop to 96×96; (2) a failing depth inference was invisible and never stopped; (3) `stop()` blocked the platform thread and interrupted in-flight inference; (4) per-tick full-frame annotation copy. 5 minor: non-volatile `depthExecutor`; out-of-order `_publish`; misleading `imageWidth`/`imageHeight`/`rotationDegrees` keys; grid built on the dense path too; tautological grid test. 2 nits: two drifted doc statements | reviewer |
-| `15fcf39` | L1 remediation of the findings above | pending re-review | Finding → fix map: MAJOR-1 single scale from the longest side in `DepthEstimator.kt:135` (640×360 → 96×54); MAJOR-2 one-shot `{type: depth, error: inference_failed}` event + `depthDisabled` latch (`YOLOView.kt:1659`) mapped to `_degrade()` in `monocular_depth_estimator.dart:144`; MAJOR-3 `shutdown()` only, never `shutdownNow()`/`awaitTermination` (`YOLOView.kt:2567`); MAJOR-4 `drawOverlays = false` on the depth tick (`YOLO.kt:75`, `YOLOView.kt:1622`); MINOR-5 `@Volatile depthExecutor` + create/teardown lock (`YOLOView.kt:173`, `:1598`); MINOR-6 single-in-flight publish guard (`monocular_depth_estimator.dart:100`, `:163`); MINOR-7 `rotationDegrees` removed, `imageWidth`/`imageHeight` = analysed bitmap dims (`YOLOView.kt:1672`, `yolo_result.dart:399`); MINOR-8 grid only when `!includeRawMaskData` (`DepthEstimator.kt:130`); MINOR-9 portrait + landscape payload-shape tests (`depth_payload_parity_test.dart:204`, `:213`) | reviewer |
+| `15fcf39` | L1 remediation of the findings above | CHANGES_REQUIRED (round 2: 8 of 9 fixed, 4 open) | Finding → fix map: MAJOR-1 single scale from the longest side in `DepthEstimator.kt:135` (640×360 → 96×54); MAJOR-2 one-shot `{type: depth, error: inference_failed}` event + `depthDisabled` latch (`YOLOView.kt:1659`) mapped to `_degrade()` in `monocular_depth_estimator.dart:144`; MAJOR-3 `shutdown()` only, never `shutdownNow()`/`awaitTermination` (`YOLOView.kt:2567`); MAJOR-4 `drawOverlays = false` on the depth tick (`YOLO.kt:75`, `YOLOView.kt:1622`); MINOR-5 `@Volatile depthExecutor` + create/teardown lock (`YOLOView.kt:173`, `:1598`); MINOR-6 single-in-flight publish guard (`monocular_depth_estimator.dart:100`, `:163`); MINOR-7 `rotationDegrees` removed, `imageWidth`/`imageHeight` = analysed bitmap dims (`YOLOView.kt:1672`, `yolo_result.dart:399`); MINOR-8 grid only when `!includeRawMaskData` (`DepthEstimator.kt:130`); MINOR-9 portrait + landscape payload-shape tests (`depth_payload_parity_test.dart:204`, `:213`) | reviewer |
+| `79eb9c0` | L1 remediation round 2 — the four findings left open by the round-2 review | pending re-review | NEW-1 `YOLOInstanceManager.predictorInstance(instanceId): Predictor?` (was `Unit`) and `gridMaxDim = config.depthMaxDim` applied to the resolved `DepthEstimator` on the tick path, with a one-shot `Log.w` instead of a swallowing `runCatching`; compiled artefact checked with `javap` (`public final com.ultralytics.yolo.Predictor predictorInstance(java.lang.String)`). NEW-2 `depthDisabled = false` in `pauseCamera()` and the Dart depth handler now maps an `error` event before its `_paused`/`!_detectionActive` early return, so pause → failure → resume ends in a visible `degraded` state. NEW-3/MINOR-9 primary fixture is the production 4:3 stream (640×480 → 96×72), the impossible 360×640 case is gone, and the aspect guarantee is relabelled `CONFIRMED-BY-INSPECTION`. NIT `private val depthLock = Any()` replaces both `synchronized(this)` blocks. | reviewer |
 
 ## 10. Rollback instructions
 
