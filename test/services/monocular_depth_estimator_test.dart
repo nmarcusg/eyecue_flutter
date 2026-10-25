@@ -386,6 +386,34 @@ void main() {
       estimator.dispose();
     });
 
+    test(
+      'the exported heatmap cost is absent while no heatmap is held',
+      () async {
+        final images = [await _testImage(), await _testImage()];
+        var builds = 0;
+        final estimator = MonocularDepthEstimator(
+          heatmapBuilder: (_) async => images[builds++],
+        );
+
+        _feed(estimator, _event(timestamp: 1000));
+        await pumpEventQueue();
+        expect(estimator.lastHeatmapBuildMs, isNotNull);
+
+        // The screen exports this getter on every sample, so a frozen value
+        // would keep pricing an overlay that no longer exists.
+        estimator.heatmapEnabled = false;
+        expect(estimator.lastHeatmapBuildMs, isNull);
+
+        estimator.heatmapEnabled = true;
+        _feed(estimator, _event(timestamp: 2000));
+        await pumpEventQueue();
+        expect(estimator.frame.value!.heatmap, isNotNull);
+        expect(estimator.lastHeatmapBuildMs, isNotNull);
+
+        estimator.dispose();
+      },
+    );
+
     test('a publish disowned by disabling disposes its image', () async {
       final inFlight = Completer<void>();
       final image = await _testImage();

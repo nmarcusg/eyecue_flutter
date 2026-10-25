@@ -117,7 +117,7 @@ Per-run record (all mandatory; write `NOT MEASURED` rather than leaving a blank)
 | Requested detector Hz | the settings value (Automatic or the number) |
 | Effective detector Hz | resolved cadence (`effectiveDetectionHz` in the export) |
 | Observed detector FPS | `inferenceFps` in the export |
-| Detector stage timings | `detectorPreMs` / `detectorInferenceMs` / `detectorPostMs` (median of the run; `detectorObservedFps` is the native rate) |
+| Detector stage timings | `detectorPreMs` / `detectorInferenceMs` / `detectorPostMs` (median of the run) |
 | Depth requested Hz | the settings value |
 | Depth effective Hz | resolved cadence (`effectiveDepthHz` in the export) |
 | Depth observed Hz | `depthObservedHz` (EMA — not a steady-state throughput claim) |
@@ -194,7 +194,7 @@ no debugger session is needed.
 
 | Value | Produced by | Recorded in telemetry? |
 |---|---|---|
-| Detector `preMs`/`inferenceMs`/`postMs`/`fps` | `DetectorStageTimings.fromMetrics` in the screen's metrics handler | Yes — `detectorPreMs`, `detectorInferenceMs`, `detectorPostMs`, `detectorObservedFps` |
+| Detector `preMs`/`inferenceMs`/`postMs`/`fps` | `DetectorStageTimings.fromMetrics` in the screen's metrics handler | Yes — `detectorPreMs`, `detectorInferenceMs`, `detectorPostMs`; the native rate is `inferenceFps` (the detector observed FPS, `0` = not reported) |
 | Depth `preMs`/`inferenceMs`/`postMs` | `YOLODepthEvent` → `MonocularDepthEstimator.stageTimings` | Yes — `depthPreMs`, `depthInferenceMs`, `depthPostMs` |
 | Depth `accelerator` | native `YOLOView.emitDepthEvent` → `DepthStageTimings.accelerator` | Yes — `depthAccelerator` (and `depthStatus`) |
 | Depth grid size | `DepthFrame.grid` | Yes — `depthGridWidth`, `depthGridHeight` |
@@ -202,10 +202,17 @@ no debugger session is needed.
 | Depth `droppedTicks` (cumulative) | native `YOLOView` counter → `DepthStageTimings.droppedTicks` | Yes — `depthDroppedTicks` |
 | Cadence + `depthLatencyMs` + `depthObservedHz` + `depthStatus` | existing telemetry cadence sample | Yes |
 
-`depthQueueWaitMs` is exported as `null` on every sample: the depth tick is
-native and latest-frame-wins, so there is no Dart-side queue to wait in and no
-honest value to report. Session wall-clock is `session.durationMs` on the export
-header, not per sample.
+There is no `depthQueueWaitMs` column: the depth tick is native and
+latest-frame-wins, so there is no Dart-side queue to wait in and nothing honest to
+report. Session wall-clock is `session.durationMs` on the export header, not per
+sample.
+
+The detector/depth stage timings, `depthAccelerator`, the grid size,
+`heatmapBuildMs` and `depthDroppedTicks` are **thinned to every fifth sample**
+(sample 0, 5, 10, …) to keep the upload under the ingest bound; the cadence,
+`inferenceFps` and `latencyMs` fields stay on every sample. Take each run's
+median from the samples that carry the keys, and read `depthDroppedTicks` as a
+cumulative counter over those same samples.
 
 ## 8. Results table
 

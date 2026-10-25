@@ -57,7 +57,6 @@ void main() {
       detectorPreMs: 3.5,
       detectorInferenceMs: 28.25,
       detectorPostMs: 4.75,
-      detectorObservedFps: 15.5,
       depthPreMs: 6,
       depthInferenceMs: 61,
       depthPostMs: 9,
@@ -369,7 +368,6 @@ void main() {
       'detector_pre_ms',
       'detector_inference_ms',
       'detector_post_ms',
-      'detector_observed_fps',
       'depth_pre_ms',
       'depth_inference_ms',
       'depth_post_ms',
@@ -378,7 +376,6 @@ void main() {
       'depth_grid_height',
       'heatmap_build_ms',
       'depth_dropped_ticks',
-      'depth_queue_wait_ms',
     ]) {
       expect(sampleRow[header.indexOf('"$column"')], '""');
     }
@@ -386,13 +383,11 @@ void main() {
     // The same unknown values are null in JSON, never a fabricated `0`.
     expect(sample['detectorPreMs'], isNull);
     expect(sample['detectorInferenceMs'], isNull);
-    expect(sample['detectorObservedFps'], isNull);
     expect(sample['depthPreMs'], isNull);
     expect(sample['depthAccelerator'], isNull);
     expect(sample['depthGridWidth'], isNull);
     expect(sample['heatmapBuildMs'], isNull);
     expect(sample['depthDroppedTicks'], isNull);
-    expect(sample['depthQueueWaitMs'], isNull);
   });
 
   test('CSV appends cadence columns and keeps rows aligned', () {
@@ -469,7 +464,6 @@ void main() {
       expect(sample['detectorPreMs'], 3.5);
       expect(sample['detectorInferenceMs'], 28.25);
       expect(sample['detectorPostMs'], 4.75);
-      expect(sample['detectorObservedFps'], 15.5);
       expect(sample['depthPreMs'], 6);
       expect(sample['depthInferenceMs'], 61);
       expect(sample['depthPostMs'], 9);
@@ -479,8 +473,10 @@ void main() {
       expect(sample['heatmapBuildMs'], 11);
       // Cumulative native counter, not a per-sample drop count.
       expect(sample['depthDroppedTicks'], 37);
-      // No Dart-side depth queue exists, so the wait is unknown, not a number.
-      expect(sample['depthQueueWaitMs'], isNull);
+      // Neither a duplicate of `inferenceFps` nor a Dart-side queue wait is
+      // exported: both were constant padding that the ingest bound cannot carry.
+      expect(sample.containsKey('detectorObservedFps'), isFalse);
+      expect(sample.containsKey('depthQueueWaitMs'), isFalse);
 
       final lines = service.toCsv(telemetry: telemetry()).split('\n');
       final header = lines.first.split(',');
@@ -491,10 +487,57 @@ void main() {
       expect(row[column('detector_inference_ms')], '"28.25"');
       expect(row[column('depth_accelerator')], '"gpu"');
       expect(row[column('depth_dropped_ticks')], '"37"');
-      expect(row[column('depth_queue_wait_ms')], '""');
+      expect(column('detector_observed_fps'), -1);
+      expect(column('depth_queue_wait_ms'), -1);
       expect(row, hasLength(header.length));
     },
   );
+
+  test('tertiary perf keys are thinned to every fifth sample', () {
+    final service = TelemetryService(clock: () => timestamp);
+    addTearDown(service.dispose);
+    service.startSession();
+    for (var i = 0; i < 6; i++) {
+      service.recordSample(
+        latencyMs: 42.5,
+        inferenceFps: 15,
+        objectCount: 1,
+        engine: InferenceEngine.ultralytics,
+        detectorPreMs: 3.5,
+        depthAccelerator: 'gpu',
+        heatmapBuildMs: 11,
+        depthDroppedTicks: 37,
+      );
+    }
+
+    final exporter = TelemetryExportService(clock: () => timestamp);
+    final samples =
+        (jsonDecode(exporter.toJson(telemetry: service)) as Map)['samples']
+            as List;
+
+    // Every fifth sample (0 and 5) carries the tertiary perf keys.
+    for (final index in [0, 5]) {
+      final sample = samples[index] as Map;
+      expect(sample['detectorPreMs'], 3.5);
+      expect(sample['depthAccelerator'], 'gpu');
+      expect(sample['heatmapBuildMs'], 11);
+      expect(sample['depthDroppedTicks'], 37);
+    }
+    // The samples between them do not: sample N keeps the keys, N+1 does not.
+    for (var index = 1; index < 5; index++) {
+      final sample = samples[index] as Map;
+      expect(sample.containsKey('detectorPreMs'), isFalse);
+      expect(sample.containsKey('depthAccelerator'), isFalse);
+      expect(sample.containsKey('heatmapBuildMs'), isFalse);
+      expect(sample.containsKey('depthDroppedTicks'), isFalse);
+    }
+    // The core cadence/telemetry fields stay on every sample.
+    for (final sample in samples) {
+      expect((sample as Map)['latencyMs'], 42.5);
+      expect(sample['inferenceFps'], 15);
+      expect(sample['timestamp'], isNotNull);
+    }
+  });
 
   test(
     'a schema-3 sample without the new keys reads as unknown, never zero',
@@ -523,7 +566,6 @@ void main() {
         'detectorPreMs',
         'detectorInferenceMs',
         'detectorPostMs',
-        'detectorObservedFps',
         'depthPreMs',
         'depthInferenceMs',
         'depthPostMs',
@@ -532,7 +574,6 @@ void main() {
         'depthGridHeight',
         'heatmapBuildMs',
         'depthDroppedTicks',
-        'depthQueueWaitMs',
       ]) {
         expect(
           restored.samples.single[key],
@@ -590,7 +631,6 @@ void main() {
         detectorPreMs: 3.5,
         detectorInferenceMs: 28.25,
         detectorPostMs: 4.75,
-        detectorObservedFps: 15.5,
         depthPreMs: 6,
         depthInferenceMs: 61,
         depthPostMs: 9,
@@ -637,7 +677,7 @@ void main() {
     expect(bytes, lessThan(1500000), reason: 'measured $bytes bytes');
 
     final decoded = jsonDecode(jsonText) as Map;
-    expect(decoded['samples'], hasLength(500));
+    expect(decoded['samples'], hasLength(400));
     expect(decoded['detections'], hasLength(2000));
     expect(decoded['alertLifecycle'], hasLength(500));
 

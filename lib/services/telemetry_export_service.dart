@@ -16,6 +16,45 @@ class TelemetryExportService {
   final DateTime Function() _clock;
   final Future<Directory> Function()? _directoryProvider;
 
+  /// Every [perfSampleStride]th sample keeps the tertiary detector/depth cost
+  /// keys; the core cadence and telemetry keys stay on every sample.
+  ///
+  /// These costs move slowly, so repeating them on all 500 samples was
+  /// redundant and pushed the worst-case upload past the 2 MB ingest bound.
+  /// Thinning loses no record: on the other samples the keys are absent (never
+  /// truncated, never `0`), which the data dictionary documents.
+  static const int perfSampleStride = 5;
+
+  static const Set<String> _perfKeys = {
+    'detectorPreMs',
+    'detectorInferenceMs',
+    'detectorPostMs',
+    'depthPreMs',
+    'depthInferenceMs',
+    'depthPostMs',
+    'depthAccelerator',
+    'depthGridWidth',
+    'depthGridHeight',
+    'heatmapBuildMs',
+    'depthDroppedTicks',
+  };
+
+  /// Per-sample JSON with the perf keys dropped on the samples that do not fall
+  /// on the [perfSampleStride]. An absent perf key means "not sampled here",
+  /// not `0`.
+  static Iterable<Map<String, dynamic>> _sampleJson(
+    Iterable<RuntimeSample> samples,
+  ) sync* {
+    var index = 0;
+    for (final sample in samples) {
+      final json = sample.toJson();
+      if (index++ % perfSampleStride != 0) {
+        json.removeWhere((key, _) => _perfKeys.contains(key));
+      }
+      yield json;
+    }
+  }
+
   TelemetryExport snapshot({
     required TelemetryService telemetry,
     AppSettings? settings,
@@ -27,7 +66,7 @@ class TelemetryExportService {
       sessionStart: telemetry.sessionStart,
       sessionDurationMs: telemetry.sessionDuration.inMilliseconds,
       settings: settings?.toJson() ?? const {},
-      samples: telemetry.samples.map((sample) => sample.toJson()),
+      samples: _sampleJson(telemetry.samples),
       detections: telemetry.records.map((record) => record.toJson()),
       failures: telemetry.failures.map(_failureJson),
       fallbacks: telemetry.fallbacks.map((record) => record.toJson()),
@@ -122,7 +161,6 @@ class TelemetryExportService {
       'detector_pre_ms',
       'detector_inference_ms',
       'detector_post_ms',
-      'detector_observed_fps',
       'depth_pre_ms',
       'depth_inference_ms',
       'depth_post_ms',
@@ -131,7 +169,6 @@ class TelemetryExportService {
       'depth_grid_height',
       'heatmap_build_ms',
       'depth_dropped_ticks',
-      'depth_queue_wait_ms',
       'low_power_clamped',
       'source_limited',
     ];
@@ -174,7 +211,6 @@ class TelemetryExportService {
           'detector_pre_ms': sample['detectorPreMs'],
           'detector_inference_ms': sample['detectorInferenceMs'],
           'detector_post_ms': sample['detectorPostMs'],
-          'detector_observed_fps': sample['detectorObservedFps'],
           'depth_pre_ms': sample['depthPreMs'],
           'depth_inference_ms': sample['depthInferenceMs'],
           'depth_post_ms': sample['depthPostMs'],
@@ -183,7 +219,6 @@ class TelemetryExportService {
           'depth_grid_height': sample['depthGridHeight'],
           'heatmap_build_ms': sample['heatmapBuildMs'],
           'depth_dropped_ticks': sample['depthDroppedTicks'],
-          'depth_queue_wait_ms': sample['depthQueueWaitMs'],
           'low_power_clamped': sample['lowPowerClamped'],
           'source_limited': sample['sourceLimited'],
         }),

@@ -125,7 +125,6 @@ void main() {
       detectorPreMs: 3.5,
       detectorInferenceMs: 28.25,
       detectorPostMs: 4.75,
-      detectorObservedFps: 10.5,
       depthPreMs: 6,
       depthInferenceMs: 61,
       depthPostMs: 9,
@@ -140,7 +139,6 @@ void main() {
     expect(sample.detectorPreMs, 3.5);
     expect(sample.detectorInferenceMs, 28.25);
     expect(sample.detectorPostMs, 4.75);
-    expect(sample.detectorObservedFps, 10.5);
     expect(sample.depthPreMs, 6);
     expect(sample.depthInferenceMs, 61);
     expect(sample.depthPostMs, 9);
@@ -156,9 +154,12 @@ void main() {
     expect(json['depthDroppedTicks'], 37);
     // `depthStatus` stays a derived status; the raw accelerator is separate.
     expect(json['depthStatus'], isNull);
-    // No Dart-side depth queue exists, so the wait is exported as unknown.
-    expect(json.containsKey('depthQueueWaitMs'), isTrue);
-    expect(json['depthQueueWaitMs'], isNull);
+    // `inferenceFps` IS the detector observed FPS (`0` = not reported, which
+    // the plugin cannot distinguish from unreported), so no second key repeats
+    // it, and no Dart-side depth queue exists to report a wait.
+    expect(json['inferenceFps'], 10);
+    expect(json.containsKey('detectorObservedFps'), isFalse);
+    expect(json.containsKey('depthQueueWaitMs'), isFalse);
   });
 
   test('a schema-3 sample row gains no numbers when read at schema 4', () {
@@ -185,7 +186,6 @@ void main() {
       'detectorPreMs',
       'detectorInferenceMs',
       'detectorPostMs',
-      'detectorObservedFps',
       'depthPreMs',
       'depthInferenceMs',
       'depthPostMs',
@@ -194,7 +194,6 @@ void main() {
       'depthGridHeight',
       'heatmapBuildMs',
       'depthDroppedTicks',
-      'depthQueueWaitMs',
     ]) {
       expect(row[key], isNull, reason: '$key stays unknown, never 0');
     }
@@ -221,8 +220,8 @@ void main() {
     expect(json['depthStatus'], isNull);
   });
 
-  test('keeps only the newest 500 samples', () {
-    for (var i = 0; i < 520; i++) {
+  test('keeps only the newest 400 samples', () {
+    for (var i = 0; i < 420; i++) {
       telemetry.recordSample(
         latencyMs: i.toDouble(),
         inferenceFps: 10,
@@ -230,9 +229,9 @@ void main() {
         engine: InferenceEngine.ultralytics,
       );
     }
-    expect(telemetry.samples, hasLength(500));
+    expect(telemetry.samples, hasLength(400));
     expect(telemetry.samples.first.latencyMs, 20);
-    expect(telemetry.samples.last.latencyMs, 519);
+    expect(telemetry.samples.last.latencyMs, 419);
   });
 
   test('detection frequency buckets per minute', () {

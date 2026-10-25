@@ -96,6 +96,7 @@ class TelemetryUploadService {
     TelemetryExportService? exportService,
     TelemetryUploadSender? sender,
     DateTime Function()? clock,
+    this.maxBodyBytes = maxUploadBodyBytes,
   }) : _configuration =
            configuration ??
            const TelemetryUploadConfiguration.fromEnvironment(),
@@ -103,10 +104,17 @@ class TelemetryUploadService {
        _sender = sender ?? _send,
        _clock = clock ?? DateTime.now;
 
+  /// The ingest function's own body limit. A larger body is refused locally so
+  /// the server's `413` is never the first signal a session was lost.
+  static const int maxUploadBodyBytes = 2000000;
+
   final TelemetryUploadConfiguration _configuration;
   final TelemetryExportService _exportService;
   final TelemetryUploadSender _sender;
   final DateTime Function() _clock;
+
+  /// Effective body limit; a test may lower it to drive the refusal branch.
+  final int maxBodyBytes;
 
   bool get isConfigured => _configuration.isConfigured;
 
@@ -143,6 +151,15 @@ class TelemetryUploadService {
           .toJson(),
     };
 
+    final body = jsonEncode(payload);
+    // Never truncate: a shortened payload would be silently wrong research
+    // data, so an oversized session is reported and the local export kept.
+    if (utf8.encode(body).length > maxBodyBytes) {
+      return const TelemetryUploadResult.failure(
+        'This session is too large to upload. Save a local export to keep the data.',
+      );
+    }
+
     try {
       final response = await _sender(
         TelemetryUploadRequest(
@@ -153,7 +170,7 @@ class TelemetryUploadService {
             'apikey': _configuration.publishableKey,
             HttpHeaders.contentTypeHeader: 'application/json',
           },
-          body: jsonEncode(payload),
+          body: body,
         ),
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {

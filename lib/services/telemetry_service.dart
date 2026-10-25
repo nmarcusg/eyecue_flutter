@@ -71,6 +71,11 @@ class TelemetryRecord {
 class RuntimeSample {
   final DateTime timestamp;
   final double latencyMs;
+
+  /// Detector observed FPS: the native inference rate, as the plugin reported
+  /// it. `0` means "not reported" — the plugin cannot distinguish 0 from
+  /// unreported, so the raw value is kept rather than duplicated in a nullable
+  /// key that would only ever repeat the same number.
   final double inferenceFps;
   final int objectCount;
   final InferenceEngine engine;
@@ -106,9 +111,6 @@ class RuntimeSample {
   final double? detectorPreMs;
   final double? detectorInferenceMs;
   final double? detectorPostMs;
-
-  /// Native inference rate; `null` when native did not report one.
-  final double? detectorObservedFps;
 
   /// Depth stages of the last completed native depth event.
   final int? depthPreMs;
@@ -151,7 +153,6 @@ class RuntimeSample {
     this.detectorPreMs,
     this.detectorInferenceMs,
     this.detectorPostMs,
-    this.detectorObservedFps,
     this.depthPreMs,
     this.depthInferenceMs,
     this.depthPostMs,
@@ -184,7 +185,6 @@ class RuntimeSample {
     if (detectorPreMs != null) 'detectorPreMs': detectorPreMs,
     if (detectorInferenceMs != null) 'detectorInferenceMs': detectorInferenceMs,
     if (detectorPostMs != null) 'detectorPostMs': detectorPostMs,
-    if (detectorObservedFps != null) 'detectorObservedFps': detectorObservedFps,
     if (depthPreMs != null) 'depthPreMs': depthPreMs,
     if (depthInferenceMs != null) 'depthInferenceMs': depthInferenceMs,
     if (depthPostMs != null) 'depthPostMs': depthPostMs,
@@ -193,11 +193,6 @@ class RuntimeSample {
     if (depthGridHeight != null) 'depthGridHeight': depthGridHeight,
     if (heatmapBuildMs != null) 'heatmapBuildMs': heatmapBuildMs,
     if (depthDroppedTicks != null) 'depthDroppedTicks': depthDroppedTicks,
-    // There is no Dart-side depth queue: the tick, its cadence gate and the
-    // latest-frame-wins guard are all native, so nothing ever waits here. It is
-    // exported as an explicit `null` rather than omitted, because it is a
-    // constant of the transport, not a measurement that went missing.
-    'depthQueueWaitMs': null,
     'lowPowerClamped': lowPowerClamped,
     'sourceLimited': sourceLimited,
   };
@@ -220,7 +215,6 @@ class CadenceSample {
   final double? detectorPreMs;
   final double? detectorInferenceMs;
   final double? detectorPostMs;
-  final double? detectorObservedFps;
   final int? depthPreMs;
   final int? depthInferenceMs;
   final int? depthPostMs;
@@ -244,7 +238,6 @@ class CadenceSample {
     this.detectorPreMs,
     this.detectorInferenceMs,
     this.detectorPostMs,
-    this.detectorObservedFps,
     this.depthPreMs,
     this.depthInferenceMs,
     this.depthPostMs,
@@ -359,7 +352,15 @@ class TelemetryService extends ChangeNotifier {
   final List<AlertLifecycleRecord> _alertRecords = [];
 
   static const int _maxRecords = 2000;
-  static const int _maxSamples = 500;
+
+  /// 400, not 500: with every other collection at its cap the 500-sample
+  /// envelope measured 1,921,180 bytes after the perf keys were thinned (see
+  /// `TelemetryExportService.perfSampleStride`), above the 1,900,000-byte
+  /// target. The sample count was the only remaining lever that truncates
+  /// nothing — each sample is ~430 bytes, and the other collections are
+  /// already capped records. 400 samples ≈ 13 minutes at 0.5 Hz, and with the
+  /// N=5 thinning still 80 perf points.
+  static const int _maxSamples = 400;
   static const int _maxAlertRecords = 500;
   static const Duration _counterPublishWindow = Duration(milliseconds: 250);
 
@@ -448,7 +449,6 @@ class TelemetryService extends ChangeNotifier {
     double? detectorPreMs,
     double? detectorInferenceMs,
     double? detectorPostMs,
-    double? detectorObservedFps,
     int? depthPreMs,
     int? depthInferenceMs,
     int? depthPostMs,
@@ -480,7 +480,6 @@ class TelemetryService extends ChangeNotifier {
         detectorPreMs: detectorPreMs,
         detectorInferenceMs: detectorInferenceMs,
         detectorPostMs: detectorPostMs,
-        detectorObservedFps: detectorObservedFps,
         depthPreMs: depthPreMs,
         depthInferenceMs: depthInferenceMs,
         depthPostMs: depthPostMs,
