@@ -117,9 +117,11 @@ class TelemetryUploadService {
 
   /// Effective body limit; a test may lower it to drive the refusal branch.
   ///
-  /// Deliberately not settable from application code: widening it would let an
-  /// oversized body reach the server's `413` instead of the explicit local
-  /// refusal.
+  /// The annotation only documents that tests are the intended caller: it does
+  /// not prevent application code from passing a wider value through the named
+  /// constructor parameter. Nothing here enforces the 2 000 000 bound on a
+  /// caller that widens it, so keeping the default is a convention, not a
+  /// guarantee.
   @visibleForTesting
   final int maxBodyBytes;
 

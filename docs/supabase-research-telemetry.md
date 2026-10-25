@@ -107,6 +107,12 @@ confidence/probability-like scores 3 dp, latency and Hz 1 dp, sub-ms stage
 timings 2 dp. Rounding happens in the serialised output only — the stored
 samples, banding, in-app comparisons and speech text keep the full value.
 
+The same rounding is applied to the JSON and CSV file exports, because the
+upload wraps the export snapshot: **an archived export is no more precise than
+the payload that reached this function.** Study analyses (L10 materials) must
+work from the exported values; the unrounded doubles exist only in the phone's
+in-memory samples for the life of the session.
+
 Client-side, `TelemetryUploadService` refuses a body above 2,000,000 bytes and
 returns an explicit failure that tells the user to save a local export, so the
 server's `413` is never the first signal. In every failure path the session stays
