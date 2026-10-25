@@ -31,6 +31,7 @@ Map<String, dynamic> _depthEvent({
   'inferenceMs': 30,
   'postMs': 5,
   'accelerator': 'gpu',
+  'droppedTicks': 7,
   'timestamp': 1234567890,
 };
 
@@ -47,6 +48,7 @@ const _depthEventKeys = {
   'inferenceMs',
   'postMs',
   'accelerator',
+  'droppedTicks',
   'timestamp',
 };
 
@@ -147,9 +149,33 @@ void main() {
       expect(event.imageWidth, 640);
       expect(event.imageHeight, 360);
       expect(event.latencyMs, 41);
+      expect(event.preMs, 6);
+      expect(event.inferenceMs, 30);
+      expect(event.postMs, 5);
       expect(event.accelerator, 'gpu');
+      expect(event.droppedTicks, 7);
       expect(event.timestampMs, 1234567890);
       expect(event.error, isNull);
+    });
+
+    test('absent stage fields parse as null, never 0', () {
+      final payload = _depthEvent()
+        ..remove('preMs')
+        ..remove('inferenceMs')
+        ..remove('postMs')
+        ..remove('accelerator')
+        ..remove('droppedTicks');
+
+      final event = YOLODepthEvent.fromMap(payload);
+
+      expect(event.preMs, isNull);
+      expect(event.inferenceMs, isNull);
+      expect(event.postMs, isNull);
+      expect(event.accelerator, isNull);
+      expect(event.droppedTicks, isNull);
+      // The key set is unchanged: an unreported stage is present as null.
+      expect(event.toMap().keys.toSet(), _depthEventKeys);
+      expect(event.toMap()['inferenceMs'], isNull);
     });
 
     /// Payload-shape check: the grid is the crop scaled so its LONGEST side is
