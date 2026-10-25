@@ -245,7 +245,9 @@ class TelemetryUploadService {
       final decoded = jsonDecode(body);
       return decoded is Map && decoded['duplicated'] == true;
     } on FormatException {
-      return false;
+      // The 4 KiB read cap can cut the body mid-JSON, and a replay must still
+      // not be reported as a write: read the flag out of the surviving prefix.
+      return body.replaceAll(RegExp(r'\s'), '').contains('"duplicated":true');
     }
   }
 
@@ -303,6 +305,21 @@ class TelemetryUploadService {
   /// whole.
   static const int _maxResponseBytes = 4096;
 
+  /// Reads at most [_maxResponseBytes] of [body]. Public so the clamp is
+  /// exercised directly: a single chunk can overrun the cap, and a clamped body
+  /// may end mid-codepoint, so `allowMalformed` keeps the readable prefix.
+  @visibleForTesting
+  static Future<String> readClampedBody(Stream<List<int>> body) async {
+    final bytes = <int>[];
+    await for (final chunk in body) {
+      // Clamp the append: a single chunk can overrun the cap on its own, so
+      // testing the length after `addAll` would buffer up to 2x the cap.
+      bytes.addAll(chunk.take(_maxResponseBytes - bytes.length));
+      if (bytes.length >= _maxResponseBytes) break;
+    }
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
   static Future<TelemetryUploadResponse> _send(
     TelemetryUploadRequest request,
   ) async {
@@ -316,18 +333,9 @@ class TelemetryUploadService {
       final response = await requestHandle.close().timeout(
         const Duration(seconds: 20),
       );
-      final bytes = <int>[];
-      await for (final chunk in response) {
-        // Clamp the append: a single chunk can overrun the cap on its own, so
-        // testing the length after `addAll` would buffer up to 2x the cap.
-        bytes.addAll(chunk.take(_maxResponseBytes - bytes.length));
-        if (bytes.length >= _maxResponseBytes) break;
-      }
       return TelemetryUploadResponse(
         response.statusCode,
-        // A clamped body may end mid-codepoint; `allowMalformed` keeps the
-        // machine-readable code prefix readable.
-        utf8.decode(bytes, allowMalformed: true),
+        await readClampedBody(response),
       );
     } finally {
       client.close(force: true);

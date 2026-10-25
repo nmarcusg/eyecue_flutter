@@ -687,4 +687,60 @@ void main() {
       },
     );
   });
+
+  group('the response read is clamped at 4 KiB', () {
+    Future<String> readAsSingleChunk(List<int> bytes) =>
+        TelemetryUploadService.readClampedBody(Stream<List<int>>.value(bytes));
+
+    // The clamp runs on the default sender, so the body it produces is fed back
+    // through the injected sender to prove the decision still parses.
+    Future<TelemetryUploadResult> uploadClampedBody(String body) async {
+      final clamped = await readAsSingleChunk(utf8.encode(body));
+      return TelemetryUploadService(
+        configuration: const TelemetryUploadConfiguration(
+          ingestUrl:
+              'https://example.supabase.co/functions/v1/ingest-telemetry',
+          publishableKey: 'publishable-key',
+        ),
+        exportService: TelemetryExportService(clock: () => now),
+        clock: () => now,
+        sender: (_) async => TelemetryUploadResponse(200, clamped),
+      ).upload(telemetry: telemetry(), metadata: metadata);
+    }
+
+    test('one oversized chunk is truncated at 4096 B', () async {
+      final padding = 'x'.padRight(10000, 'x');
+      final clamped = await readAsSingleChunk(
+        utf8.encode('{"accepted":true}$padding'),
+      );
+
+      expect(utf8.encode(clamped), hasLength(4096));
+      expect(clamped, isNot(contains(padding)));
+    });
+
+    test('a codepoint split by the clamp does not throw', () async {
+      // 4095 ASCII bytes then a 3-byte `€`: the 4096-byte cut lands mid-sequence.
+      final bytes = utf8.encode('${'x'.padRight(4095, 'x')}€');
+      expect(bytes, hasLength(4098));
+
+      final clamped = await readAsSingleChunk(bytes);
+
+      expect(clamped, endsWith('\uFFFD'));
+      expect(clamped.substring(0, 4095), 'x'.padRight(4095, 'x'));
+    });
+
+    test('a duplicated prefix survives the clamp', () async {
+      // Valid JSON over the cap, so the clamp cuts inside the padding string:
+      // the replay flag survives in the prefix even though the body no longer
+      // parses as a whole.
+      final result = await uploadClampedBody(
+        '{"accepted":true,"duplicated":true,"detail":"'
+        '${'x'.padRight(10000, 'x')}"}',
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.isAlreadyUploaded, isTrue);
+      expect(result.message, contains('already uploaded earlier'));
+    });
+  });
 }
