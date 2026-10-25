@@ -56,8 +56,12 @@ each build carries what you think it does before measuring:
 adb logcat -s flutter:V | grep '\[Depth\]'
 ```
 
-A `--release` build is a separate, later gate (L8/L11) and is not part of this
-matrix; the workspace has no disk budget for a release AAB.
+A `--release` build is not part of this matrix: the matrix measures cadence and
+per-stage cost, which the release build type does not change. A release AAB and a
+release APK have since been built and inspected — see
+[`release-procedure.md`](release-procedure.md) §6 for the artefacts, digests and
+the bundle/DEX evidence. Installed *release* startup is still unverified: §5.1 is
+the command set that closes it.
 
 ## 3. Matrix
 
@@ -97,7 +101,7 @@ Notes:
 For each row, in order:
 
 1. `adb install -r ../apk-X.apk` (add `-t` only if the install rejects a debug APK).
-2. `adb shell pm clear com.example.eyecue_flutter` — every run starts clean.
+2. `adb shell pm clear app.eyecue.mobile` — every run starts clean.
 3. `adb logcat -c` — drop the old buffer.
 4. Start the log filter (section 5) in one terminal.
 5. Launch the app (section 5), start detection, set the settings for the row,
@@ -126,7 +130,7 @@ Per-run record (all mandatory; write `NOT MEASURED` rather than leaving a blank)
 | Accelerator actually reported | `depthAccelerator` in the export (`gpu`/`cpu`); `depthStatus` carries the same value plus `disabled`/`loading`/`degraded`. Both are the native value, never the requested policy |
 | Heatmap state | on/off as set in the row |
 | Thermals | `adb shell dumpsys thermalservice` before and after; treat as advisory |
-| Memory | `adb shell dumpsys meminfo com.example.eyecue_flutter` before and after (`TOTAL PSS`) |
+| Memory | `adb shell dumpsys meminfo app.eyecue.mobile` before and after (`TOTAL PSS`) |
 | Dropped depth ticks | `depthDroppedTicks` — a **cumulative native counter**, not a per-sample drop count. Report the last sample minus the first sample of the run (see `mde-integration.md`) |
 | Crashes / ANRs | `adb logcat -b crash -d` plus the run's own log |
 
@@ -144,19 +148,19 @@ adb logcat -v time \
 adb logcat -d -v time > run-<row>-logcat.txt
 
 # --- launch -----------------------------------------------------------------
-adb shell am start -n com.example.eyecue_flutter/.MainActivity
+adb shell am start -n app.eyecue.mobile/.MainActivity
 # (first start only) the app needs camera permission:
-adb shell pm grant com.example.eyecue_flutter android.permission.CAMERA
+adb shell pm grant app.eyecue.mobile android.permission.CAMERA
 
 # --- memory / thermals ------------------------------------------------------
-adb shell dumpsys meminfo com.example.eyecue_flutter | grep -E 'TOTAL PSS|TOTAL RSS'
+adb shell dumpsys meminfo app.eyecue.mobile | grep -E 'TOTAL PSS|TOTAL RSS'
 adb shell dumpsys thermalservice | grep -iE 'Thermal Status|temperature'
 
 # --- export the telemetry session ------------------------------------------
 # In the app: Logs & Reports -> Export JSON (and Export CSV). The files land in
 # the app's documents dir, readable from a debug build with run-as.
-adb shell run-as com.example.eyecue_flutter ls -l app_flutter
-adb exec-out run-as com.example.eyecue_flutter cat app_flutter/<export-name>.json > run-<row>.json
+adb shell run-as app.eyecue.mobile ls -l app_flutter
+adb exec-out run-as app.eyecue.mobile cat app_flutter/<export-name>.json > run-<row>.json
 
 # --- crashes ----------------------------------------------------------------
 adb logcat -b crash -d > run-<row>-crash.txt
@@ -175,6 +179,49 @@ device run says otherwise):
 - `[Depth] first frame … in <latency> ms (useGpu=…)` — the *requested* value,
   useful only to prove the knob reached the factory. It is **not** an
   accelerator claim: a `useGpu=true` line can still be a CPU run.
+
+### 5.1 Release-startup device gate (WorkManager / Room)
+
+**Status: NOT VERIFIED ON A DEVICE.** No device and no AVD exist on the build
+host, and creating one is not permitted there. The DEX-presence evidence in
+[`release-procedure.md`](release-procedure.md) §6.3 (the class
+`androidx.work.impl.WorkDatabase_Impl` and its no-arg constructor survive R8) is
+the strongest proxy available; it is **not** proof that the app starts.
+
+An AAB cannot be installed directly — use the release APK built for inspection:
+
+```sh
+cd /home/nico/repos/eyecue_flutter-playstore
+adb devices
+adb install -r build/app/outputs/flutter-apk/app-release.apk
+
+# first run only: grant camera before launch, or answer the prompt
+adb shell pm grant app.eyecue.mobile android.permission.CAMERA
+
+adb logcat -c
+adb logcat -v time | grep -E 'WorkDatabase|RoomDatabase|Failed to create an instance|FATAL|AndroidRuntime|ANR'
+
+adb shell am start -n app.eyecue.mobile/.MainActivity
+adb shell dumpsys activity activities | grep -i 'mResumedActivity'
+adb logcat -b crash -d
+```
+
+The failure this gate exists to catch reads:
+
+```
+java.lang.RuntimeException: Cannot find implementation for androidx.work.impl.WorkDatabase.
+  WorkDatabase_Impl does not exist
+```
+
+or `Failed to create an instance of class androidx.work.impl.WorkDatabase`. If the
+app reaches the home screen with no such line and no crash dump, the row can be
+recorded `CONFIRMED-ON-DEVICE` for startup only — still not for any performance
+figure in §3.
+
+`adb install` accepts a debug-signed APK — it is Play that refuses a debug-signed
+upload, not the device. The APK in this tree is `1.0.0-testsigned` at the time of
+writing (no upload keystore exists), so this install is a startup check, never a
+release-candidate check.
 
 ## 6. Reporting rules
 
