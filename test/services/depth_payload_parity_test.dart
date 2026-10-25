@@ -201,21 +201,28 @@ void main() {
       );
     }
 
+    // Primary case: the production analysis stream is 4:3 — nothing sets
+    // `analysisResolution`, CameraX yields 640x480 and `ImageUtils.toBitmap` never
+    // rotates — so 640x480 -> 96x72 is the grid the app really emits. A 16:9 or
+    // 9:16 crop is the one family where per-axis scaling and single-scale scaling
+    // agree, so only a 4:3 case can catch the regression.
+    test('a 640x480 analysis frame yields a 96x72 grid', () {
+      expectAspectCorrectGrid(
+        imageWidth: 640,
+        imageHeight: 480,
+        width: 96,
+        height: 72,
+      );
+    });
+
+    // Secondary (hypothetical crop): a 16:9 analysis buffer, kept because it is the
+    // shape any future `analysisResolution` change could reintroduce.
     test('a 640x360 analysis frame yields a 96x54 grid', () {
       expectAspectCorrectGrid(
         imageWidth: 640,
         imageHeight: 360,
         width: 96,
         height: 54,
-      );
-    });
-
-    test('a 360x640 analysis frame yields a 54x96 grid', () {
-      expectAspectCorrectGrid(
-        imageWidth: 360,
-        imageHeight: 640,
-        width: 54,
-        height: 96,
       );
     });
 
