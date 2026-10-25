@@ -79,11 +79,13 @@ All numbers below were measured in `/home/nico/repos/eyecue_flutter-playstore` a
 
 ```
 dart format --output=none --set-exit-if-changed .
-Formatted 103 files (0 changed) in 2.30 seconds.   (exit 0)
+Formatted 148 files (0 changed) in 2.97 seconds.   (exit 0)
 ```
 
 `CONFIRMED-BY-TEST` — the tree is already format-clean; no file was rewritten
-(`--output=none`).
+(`--output=none`). Re-measured at `d3a987a` after L1a vendored the plugin: the count is
+**148**, not the 103 recorded at `adfbc5d`, because `dart format .` now also covers the
+45 Dart files that live in-tree under `plugins/ultralytics_yolo/`.
 
 ### 4.2 Static analysis
 
@@ -144,16 +146,45 @@ file path above.
 | `flutter test` | 527 passed, 1 failed | 527 passed, 1 failed | identical |
 | Failing test name | `tts_service_test.dart` → reconciliation timeout | same | identical |
 | Dashboard `cadence.test.mjs` | 7/7 pass | 7/7 pass | identical |
-| `dart format` | not measured by planner | 103 files, 0 changed | new measurement |
+| `dart format` | not measured by planner | 148 files, 0 changed (re-measured after L1a; includes the 45 vendored Dart files) | new measurement |
+
+### 4.6 Native debug build (planner preflight)
+
+```
+flutter build apk --debug
+=> build/app/outputs/flutter-apk/app-debug.apk        (625 s, exit 0)
+```
+
+`CONFIRMED-BY-BUILD`, measured by the planner preflight in this worktree. It establishes
+three facts the native work depends on:
+
+| Fact | Value |
+| --- | --- |
+| The vendored plugin compiles in-tree | yes — `plugins/ultralytics_yolo` Kotlin + CMake sources build through the app's Gradle project |
+| Android Gradle Plugin | 9.0.1 |
+| Gradle | 9.1.0 (cached on this host) |
+| NDK | 28.2.13676358 (installed) |
+
+Consequence for later items: an in-tree native edit has a real compile gate without a
+toolchain bootstrap. The prebuilt `build/` tree (≈2.4 GB) is the incremental cache that
+keeps that gate cheap, so `flutter clean` is not run during this programme. A release
+AAB is deliberately out of scope here (disk headroom ≈4.4 GB, and L8/L9/L11 own the
+release artefact).
 
 ## 5. Implementation ledger
 
 Status values: `PENDING`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
+An evidence label of `BLOCKED-EXTERNAL` means **(required)**: the label cannot be
+produced from inside this repository, so the item it gates stays open until the owner
+action in §7 is executed. It is never a waiver, and no later item may treat such an
+item as `DONE`.
+
 | Item | Scope (1 line) | Depends on | Status | Commit | Reviewer verdict | Evidence labels |
 | --- | --- | --- | --- | --- | --- | --- |
-| L0 baseline ledger (this commit) | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | awaiting reviewer | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
-| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; hand the live camera frame to native depth inference | L0 | PENDING | — | — | `CONFIRMED-BY-INSPECTION` (target), `CONFIRMED-BY-TEST` (required) |
+| L0 baseline ledger | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
+| L1a vendored plugin + reviewer notes | Replace the hosted `ultralytics_yolo` pin with the in-tree path dependency and apply the 7 L0 reviewer findings to this document | L0 | DONE | `d5390d4` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
+| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; hand the live camera frame to native depth inference | L0, L1a | PENDING | — | — | `CONFIRMED-BY-INSPECTION` (target), `CONFIRMED-BY-TEST` (required) |
 | L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
@@ -165,21 +196,29 @@ Status values: `PENDING`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 | L10 licensing/privacy/store materials | Licence decision, AGPL-3.0 interaction with the bundled Ultralytics artefacts, Data Safety answers | L9 | PENDING | — | — | `BLOCKED-EXTERNAL` |
 | L11 final readiness report | Release AAB build, artefact inspection, final readiness statement | all above | PENDING | — | — | `CONFIRMED-BY-BUILD`, `CONFIRMED-ON-DEVICE` (required) |
 
-### 5.1 L1 fork mechanics (decided)
+### 5.1 L1 fork mechanics (applied)
 
-L1 stops depending on the hosted package. `pubspec.yaml:29` (`ultralytics_yolo: 0.6.13`)
-is replaced by a path dependency on `plugins/ultralytics_yolo`, a vendored copy of
-upstream 0.6.13 (see [`plugins/ultralytics_yolo/VENDORED.md`](../plugins/ultralytics_yolo/VENDORED.md)).
+L1 stopped depending on the hosted package in `d5390d4`: `pubspec.yaml:29`–`:30` now
+declare `ultralytics_yolo:` with `path: plugins/ultralytics_yolo`, replacing the former
+`ultralytics_yolo: 0.6.13` hosted pin with a vendored copy of upstream 0.6.13 (see
+[`plugins/ultralytics_yolo/VENDORED.md`](../plugins/ultralytics_yolo/VENDORED.md)).
 Recorded reason: AGPL-preserving reproducibility — the AGPL-3.0 source we redistribute
 must be the source we build — plus the native deviation already approved under D4
-(`CONFIRMED-BY-INSPECTION`).
+(`CONFIRMED-BY-INSPECTION` for the pin, `CONFIRMED-BY-BUILD` for the in-tree copy
+compiling, see §4.6).
+
+The vendored copy is now the only valid edit target: `~/.pub-cache` is a read-only
+reference that is no longer part of the build, so every plugin citation below is made
+against `plugins/ultralytics_yolo/`.
 
 ## 6. Verified MDE root cause
 
 Findings only. **Nothing in this section is fixed by L0.** All five root causes and
 both lifecycle gaps are `CONFIRMED-BY-INSPECTION` in the cited files this session.
-External plugin paths are shown in full because they live outside this repository
-(`~/.pub-cache/hosted/pub.dev/ultralytics_yolo-0.6.13`, read-only reference).
+Plugin citations use the vendored in-tree copy under `plugins/ultralytics_yolo/`, which
+has been the build input since `d5390d4`. (Citations written before L1a pointed into
+`~/.pub-cache/hosted/pub.dev/ultralytics_yolo-0.6.13`; that copy is byte-identical but
+is no longer consulted or built.)
 
 ### 6.1 Analysis frame is JPEG-encoded and transferred on every detection result
 
@@ -190,9 +229,11 @@ streaming configuration key is built by `streamingConfigKey`
 value assembly at `:143`), so enabling depth turns on per-result image transfer for the
 whole stream.
 
-On the native side, `~/.pub-cache/.../com/ultralytics/yolo/YOLOView.kt:2319` — guarded by
-`if (config.includeOriginalImage)` at `:2316` and reached from the per-result stream path
-at `:1510`→`:1528` — is the **only** JPEG encode on the per-detection hot path:
+On the native side,
+`plugins/ultralytics_yolo/android/src/main/kotlin/com/ultralytics/yolo/YOLOView.kt:2319`
+— guarded by `if (config.includeOriginalImage)` at `:2316` and reached from the per-result
+stream path at `:1510`→`:1529` (the `convertResultToStreamData(...)` call is at `:1529`)
+— is the **only** JPEG encode on the per-detection hot path:
 `bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)`. The other `compress(`
 sites (`:1340`, `:1376`, `:1397`, `:2390`) are capture/snapshot-only and outside the
 argued hot path.
@@ -221,10 +262,11 @@ away before any inference runs. This is pure waste on the detection hot path.
 The surviving bytes travel back into native code through the method channel:
 [`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart:256)
 (`_run`) calls `yolo.predict(jpeg)`; the plugin's Dart side dispatches method
-`predictSingleImage` (`~/.pub-cache/.../lib/core/yolo_inference.dart:57`); and the
+`predictSingleImage` at
+`plugins/ultralytics_yolo/lib/core/yolo_inference.dart:56`–`:58`; and the
 native handler decodes the bytes again with
 `BitmapFactory.decodeByteArray(imageData, 0, imageData.size)` at
-`~/.pub-cache/.../com/ultralytics/yolo/YOLOPlugin.kt:206`.
+`plugins/ultralytics_yolo/android/src/main/kotlin/com/ultralytics/yolo/YOLOPlugin.kt:206`.
 
 > Citation correction against the contract: this decode is at `YOLOPlugin.kt:206`,
 > not `:192`.
@@ -238,7 +280,8 @@ assignment).
 ### 6.4 The dense Float32 depth map is returned on every depth frame
 
 `Predictor.includeRawMaskData` defaults to `true`
-(`~/.pub-cache/.../com/ultralytics/yolo/Predictor.kt:136`), and
+(`plugins/ultralytics_yolo/android/src/main/kotlin/com/ultralytics/yolo/Predictor.kt:136`),
+and
 `DepthEstimator.kt:111` therefore fills a dense `FloatArray(width * height)` on every
 frame: `val values = if (includeRawMaskData) FloatArray(width * height) else null`.
 
@@ -293,9 +336,11 @@ makes a shared-frame transport cheap: the bitmap L1b needs is the one the stream
 already has, so no new capture is required.
 
 **Depth entry point to extend.** L1b extends the `YOLOPlugin` handler for
-`predictSingleImage` (`~/.pub-cache/.../com/ultralytics/yolo/YOLOPlugin.kt:192`, decode
-at `:206`) and the `instanceManager.predict(...)` call it fronts (`:214`). The Dart
-dispatch side stays as-is (`~/.pub-cache/.../lib/core/yolo_inference.dart:57`).
+`predictSingleImage`
+(`plugins/ultralytics_yolo/android/src/main/kotlin/com/ultralytics/yolo/YOLOPlugin.kt:192`,
+decode at `:206`) and the `instanceManager.predict(...)` call it fronts (`:214`). The
+Dart dispatch side stays as-is
+(`plugins/ultralytics_yolo/lib/core/yolo_inference.dart:56`–`:58`).
 
 ## 7. External gates register
 
