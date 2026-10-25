@@ -94,6 +94,35 @@ android {
     }
 }
 
+// A debug-signed bundle is refused by Play, yet it used to be written as
+// `app-release.aab` / `app-release.apk` — a filename indistinguishable from a
+// production artefact. On the no-keystore fallback only, rename the outputs so
+// the file itself says the build is not a Play release. AGP 9's variant API no
+// longer exposes output file names, and Flutter copies the APK into
+// `flutter-apk/` after packaging, so the rename runs once the lifecycle task
+// that `flutter build` invokes has finished everything below it. The
+// production path keeps the normal names.
+if (!hasUploadSigning) {
+    tasks.matching { it.name == "bundleRelease" || it.name == "assembleRelease" }.configureEach {
+        doLast {
+            listOf(
+                "outputs/bundle/release/app-release.aab",
+                "outputs/flutter-apk/app-release.apk",
+            ).forEach { path ->
+                val artefact = layout.buildDirectory.file(path).get().asFile
+                if (artefact.exists()) {
+                    val renamed = artefact.resolveSibling(
+                        artefact.name.replace("app-release", "app-release-testsigned"),
+                    )
+                    check(artefact.renameTo(renamed)) {
+                        "EyeCue: could not mark ${artefact.name} as test-signed"
+                    }
+                }
+            }
+        }
+    }
+}
+
 flutter {
     source = "../.."
 }

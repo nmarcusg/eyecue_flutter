@@ -52,10 +52,18 @@ keystore, a password, or `key.properties`. `storeFile` is resolved against
 `android/app/`, so use an absolute path unless the keystore really lives there.
 
 **No material present** → the release build falls back to the debug signing
-config, sets `versionNameSuffix = "-testsigned"` and prints a Gradle warning. A
-`1.0.0-testsigned` APK or AAB is a **test artifact**: it is not installable from
-Play (a debug-signed bundle is refused at upload) and must never be described as
-a release candidate.
+config, sets `versionNameSuffix = "-testsigned"`, prints a Gradle warning and
+renames the outputs to `app-release-testsigned.aab` / `app-release-testsigned.apk`.
+A `1.0.0-testsigned` APK or AAB is a **test artifact**: it is not installable
+from Play (a debug-signed bundle is refused at upload) and must never be
+described as a release candidate. The rename is what makes that visible in a
+directory listing — the version name alone did not stop
+`build/app/outputs/bundle/release/app-release.aab` from looking exactly like a
+production artefact. The rename is implemented in
+[`android/app/build.gradle.kts`](../android/app/build.gradle.kts) as a `doLast`
+on `bundleRelease` / `assembleRelease` (AGP 9 removed the variant-level output
+file name), and it runs only when `hasUploadSigning` is false: with a keystore
+the names stay `app-release.aab` / `app-release.apk`.
 
 Create the upload keystore once, outside the repository:
 
@@ -87,7 +95,9 @@ cd /home/nico/repos/eyecue_flutter-playstore
 flutter build appbundle --release
 ```
 
-Output: `build/app/outputs/bundle/release/app-release.aab`. Release shrinking is
+Output: `build/app/outputs/bundle/release/app-release.aab` with production
+signing, or `app-release-testsigned.aab` on the debug-signed fallback (§3).
+Release shrinking is
 enabled (`isMinifyEnabled`, `isShrinkResources` in the release build type) with
 [`android/app/proguard-rules.pro`](../android/app/proguard-rules.pro) added on
 top of the default optimized rules; R8 full mode is not forced.
@@ -96,7 +106,7 @@ For inspection use a release APK as well — most tools cannot read an AAB:
 
 ```sh
 flutter build apk --release
-unzip -p build/app/outputs/flutter-apk/app-release.apk 'classes*.dex' | strings | grep -c 'androidx/work/impl/WorkDatabase'
+unzip -p build/app/outputs/flutter-apk/app-release-testsigned.apk 'classes*.dex' | strings | grep -c 'androidx/work/impl/WorkDatabase'
 ```
 
 ## 5. Owner gates
@@ -128,11 +138,18 @@ flutter build apk --release         # Gradle assembleRelease  33.3s, 0:37 wall
 
 | Artefact | Path | Size | sha256 |
 | --- | --- | --- | --- |
-| AAB | `build/app/outputs/bundle/release/app-release.aab` | 78 607 421 B (78.6 MB) | `feaab199c74dda67985cd596e1e873313159a49c12d916c9b33219ea43cb821b` |
-| APK (inspection only) | `build/app/outputs/flutter-apk/app-release.apk` | 91 191 297 B (91.2 MB) | `99ac0da9a49697d3e027a4b8920d1ae3e9fd220061ea7db47056295351439a83` |
+| AAB | `build/app/outputs/bundle/release/app-release-testsigned.aab` | 78 607 421 B (78.6 MB) | `feaab199c74dda67985cd596e1e873313159a49c12d916c9b33219ea43cb821b` |
+| APK (inspection only) | `build/app/outputs/flutter-apk/app-release-testsigned.apk` | 91 191 297 B (91.2 MB) | `99ac0da9a49697d3e027a4b8920d1ae3e9fd220061ea7db47056295351439a83` |
 
-`sha256sum build/app/outputs/bundle/release/app-release.aab build/app/outputs/flutter-apk/app-release.apk`
+`sha256sum build/app/outputs/bundle/release/app-release-testsigned.aab build/app/outputs/flutter-apk/app-release-testsigned.apk`
 reproduces both digests for these exact files.
+
+Both files were first written as `app-release.*` by the L8/L9 build; the
+`-testsigned` names come from the rename in §3 and the **bytes are unchanged**
+(the packaging tasks were up to date, so only the names differ — which is itself
+the evidence that the rename cannot corrupt an artefact). No plain-named
+`app-release.aab` or `app-release.apk` exists in the tree any more, so a
+directory listing cannot present a debug-signed file as a Play upload.
 
 ### 6.1 Bundle manifest (`unzip -l`)
 
@@ -171,8 +188,8 @@ Three ABIs, no `x86`. The GPU accelerator library is absent from `armeabi-v7a`
 `~/Android/Sdk/cmdline-tools/latest/bin/apkanalyzer`).
 
 ```sh
-$ANDROID_HOME/build-tools/36.1.0/aapt2 dump badging app-release.apk
-$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer manifest print app-release.apk
+$ANDROID_HOME/build-tools/36.1.0/aapt2 dump badging app-release-testsigned.apk
+$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer manifest print app-release-testsigned.apk
 ```
 
 ```
@@ -188,26 +205,66 @@ launchable-activity: name='app.eyecue.mobile.MainActivity'
 `apkanalyzer` prints no `android:debuggable` attribute on `<application>`, i.e.
 `debuggable` is **false** — as required for a release build type.
 
-Effective permission list, all inherited from the merged manifest (the app's own
-manifests declare only `CAMERA` and `INTERNET`):
+Effective permission list. Every entry is inherited from the merged manifest
+(this tree's own manifests declare only `CAMERA` and `INTERNET`). The injectors
+below are read out of the merger's own blame report —
+`build/app/intermediates/manifest_merge_blame_file/release/processReleaseMainManifest/manifest-merger-blame-release-report.txt`
+(element line followed by a `-->[<dependency>] <path>:<line>` line) — and its
+human report `build/app/outputs/logs/manifest-merger-release-report.txt`:
 
-| Permission | Declared by |
+| Permission | True injector (blame report evidence) |
 | --- | --- |
-| `CAMERA` | app |
-| `INTERNET` | app |
-| `FOREGROUND_SERVICE` | plugin |
-| `FOREGROUND_SERVICE_DATA_SYNC` | plugin |
-| `WAKE_LOCK` | WorkManager / plugin |
-| `ACCESS_NETWORK_STATE` | plugin |
-| `RECEIVE_BOOT_COMPLETED` | plugin |
-| `RECORD_AUDIO` | `flutter_tts` |
-| `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion='28'`) | plugin |
-| `READ_EXTERNAL_STORAGE` | plugin |
-| `app.eyecue.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | androidx (auto-generated) |
+| `CAMERA` | app — `android/app/src/main/AndroidManifest.xml:5` |
+| `INTERNET` | app — `android/app/src/main/AndroidManifest.xml:7` |
+| `FOREGROUND_SERVICE` | `com.google.ai.edge.litert:litert:2.1.5` — `litert-2.1.5/AndroidManifest.xml:23` |
+| `FOREGROUND_SERVICE_DATA_SYNC` | `com.google.ai.edge.litert:litert:2.1.5` — `litert-2.1.5/AndroidManifest.xml:24` |
+| `WAKE_LOCK` | `androidx.work:work-runtime:2.11.2` — `work-runtime-2.11.2/AndroidManifest.xml:23` |
+| `ACCESS_NETWORK_STATE` | `androidx.work:work-runtime:2.11.2` — `work-runtime-2.11.2/AndroidManifest.xml:24` |
+| `RECEIVE_BOOT_COMPLETED` | `androidx.work:work-runtime:2.11.2` — `work-runtime-2.11.2/AndroidManifest.xml:25` |
+| `RECORD_AUDIO` | `camera_android_camerax` — merged manifest `:10` (`build/camera_android_camerax/intermediates/merged_manifest/release/processReleaseManifest/AndroidManifest.xml:10:5-71`) |
+| `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion='28'`) | `camera_android_camerax` — merged manifest `:11-13` (`...AndroidManifest.xml:11:5-13:38`) |
+| `READ_EXTERNAL_STORAGE` | **implied by the manifest merger** — declared by no manifest (see below) |
+| `app.eyecue.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | `androidx.core:core:1.18.0` — signature-level, auto-generated (`core-1.18.0/AndroidManifest.xml:22-24`) |
 
-`RECORD_AUDIO` and the storage permissions are not referenced by any Dart code in
-this tree; they arrive with the TTS and image-processing plugins. They are a
-Data Safety input for L10 (D3), not a build defect.
+Two corrections against the earlier version of this table:
+
+* `RECORD_AUDIO` is **not** injected by `flutter_tts`. The plugin's own manifest
+  (`~/.pub-cache/hosted/pub.dev/flutter_tts-*/android/src/main/AndroidManifest.xml`)
+  is a bare `<manifest package="com.eyedeadevelopment.fluttertts" />` and declares
+  **zero** permissions. Both audio and storage rows are blamed on the merged
+  `camera_android_camerax` manifest.
+* `READ_EXTERNAL_STORAGE` is in no manifest at all. The merger derives it, and its
+  report states so verbatim:
+
+  ```
+  uses-permission#android.permission.READ_EXTERNAL_STORAGE
+  IMPLIED from /home/nico/repos/eyecue_flutter-playstore/android/app/src/main/AndroidManifest.xml:1:1-33:12 reason: io.flutter.plugins.camerax requested WRITE_EXTERNAL_STORAGE
+  ```
+
+  So there is nothing to delete for it directly: **removing
+  `WRITE_EXTERNAL_STORAGE` is what removes `READ_EXTERNAL_STORAGE`.**
+
+#### Per-permission recommendation (L10 input)
+
+Neither audio nor shared storage is referenced by any code in this tree: the
+detector reads the CameraX analysis stream, TTS only speaks, and exports go to
+the app's own documents directory
+([`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:444)).
+The recommendation therefore differs per injector:
+
+| Permission | Used by this app? | Recommendation | Reason / residual risk |
+| --- | --- | --- | --- |
+| `CAMERA` | yes — camera preview and the only frame source | keep | without it there is no app |
+| `INTERNET` | yes — manual telemetry upload only | keep | models are bundled; no other network use |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | not directly; litert's NPU manager starts a foreground service | keep | removing them can raise `SecurityException` in litert's NPU startup path, which cannot be exercised without a device |
+| `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED` | not directly; `androidx.work:work-runtime:2.11.2` needs them | keep | WorkManager is constructed on the startup path this release pins (R8/Room, §6.3); dropping its permissions breaks enqueueing/rescheduling |
+| `RECORD_AUDIO` | no — the app never records audio | **remove** | only camerax's video-with-audio path uses it; that path is not used here |
+| `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion='28'`) | no — nothing writes shared storage | **remove** | only camerax's shared-storage save path on API ≤ 28 uses it; removing it also removes the implied `READ_EXTERNAL_STORAGE` |
+| `app.eyecue.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | framework-internal | keep | auto-generated by `androidx.core`, signature-protected, not removable |
+
+A permission that is merely declared and never requested produces no runtime
+prompt, so this table drives the Play Data Safety answer, not the first-run
+experience (§6.4).
 
 ### 6.3 R8 / WorkManager-Room evidence
 
@@ -247,8 +304,14 @@ The install/launch commands to close this gate are recorded in §5.1 of
 [`benchmark-procedure.md`](benchmark-procedure.md).
 
 The same gate applies to anything else that only a running app can show: the
-first-run camera permission flow, model load from the bundled `.tflite` assets,
-TTS initialisation and the `RECORD_AUDIO` prompt.
+first-run permission flow, model load from the bundled `.tflite` assets and TTS
+initialisation.
+
+**The only first-run prompt is `CAMERA`.** Nothing in this tree requests
+microphone or storage access — `RECORD_AUDIO` and `WRITE_EXTERNAL_STORAGE` are
+declared by the merged manifest (§6.2) but never requested at runtime, so no
+microphone or storage dialog can appear. Any document that implies such prompts
+existed was wrong.
 
 ### 6.5 Secret scan
 
@@ -273,16 +336,39 @@ which gates the upload at both the service and the button
 [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:113)), so these
 artefacts cannot upload anything.
 
-### 6.6 Reproducing this section
+### 6.6 The `<queries>` `IMAGE_CAPTURE` block was removed (documented)
+
+`2d0d0cd` deleted a `<queries><intent><action
+android:name="android.media.action.IMAGE_CAPTURE"/></intent></queries>` block from
+[`android/app/src/main/AndroidManifest.xml`](../android/app/src/main/AndroidManifest.xml)
+without saying so in the message. It is inert for this app, and the removal is
+recorded here rather than silently:
+
+```sh
+# no ACTION_IMAGE_CAPTURE usage anywhere in the app's Dart, Kotlin or manifest
+grep -rn "ACTION_IMAGE_CAPTURE\|image_picker" lib/ android/ pubspec.yaml pubspec.lock
+# (no matches)
+```
+
+`<queries>` only widens package-visibility for an explicit intent query. This app
+never launches or resolves `ACTION_IMAGE_CAPTURE` — the camera is used in-process
+through CameraX/`camera_android_camerax` — and `image_picker` is not a dependency
+(it appears in neither `pubspec.yaml` nor `pubspec.lock`). The block was a Flutter
+template leftover, so it is removed rather than restored.
+
+### 6.7 Reproducing this section
 
 ```sh
 cd /home/nico/repos/eyecue_flutter-playstore
 flutter build appbundle --release
 flutter build apk --release
-sha256sum build/app/outputs/bundle/release/app-release.aab build/app/outputs/flutter-apk/app-release.apk
-unzip -l build/app/outputs/bundle/release/app-release.aab | head -40
-unzip -p build/app/outputs/flutter-apk/app-release.apk 'classes*.dex' | strings | grep -c 'androidx/work/impl/WorkDatabase'
+sha256sum build/app/outputs/bundle/release/app-release-testsigned.aab build/app/outputs/flutter-apk/app-release-testsigned.apk
+unzip -l build/app/outputs/bundle/release/app-release-testsigned.aab | head -40
+unzip -p build/app/outputs/flutter-apk/app-release-testsigned.apk 'classes*.dex' | strings | grep -c 'androidx/work/impl/WorkDatabase'
 ```
 
-The digests change on every rebuild (timestamps, signing block); the model-asset,
-ABI, manifest and R8 facts above are the parts expected to be stable.
+On the debug-signed fallback the names carry `-testsigned` (§3); with a keystore
+they are `app-release.aab` / `app-release.apk`. The digests change on every real
+rebuild (timestamps, signing block); the model-asset, ABI, manifest and R8 facts
+above are the parts expected to be stable. A rename-only run reuses the packaged
+bytes and therefore does not change a digest.
