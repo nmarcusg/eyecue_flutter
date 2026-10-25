@@ -4,6 +4,7 @@ import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/telemetry_export.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,6 +114,92 @@ void main() {
     expect(json['depthStatus'], 'gpu');
     expect(json['lowPowerClamped'], isTrue);
     expect(json['sourceLimited'], isTrue);
+  });
+
+  test('stores and serializes the detector and depth stage timings', () {
+    telemetry.recordSample(
+      latencyMs: 100,
+      inferenceFps: 10,
+      objectCount: 1,
+      engine: InferenceEngine.ultralytics,
+      detectorPreMs: 3.5,
+      detectorInferenceMs: 28.25,
+      detectorPostMs: 4.75,
+      detectorObservedFps: 10.5,
+      depthPreMs: 6,
+      depthInferenceMs: 61,
+      depthPostMs: 9,
+      depthAccelerator: 'cpu',
+      depthGridWidth: 96,
+      depthGridHeight: 72,
+      heatmapBuildMs: 11,
+      depthDroppedTicks: 37,
+    );
+
+    final sample = telemetry.samples.single;
+    expect(sample.detectorPreMs, 3.5);
+    expect(sample.detectorInferenceMs, 28.25);
+    expect(sample.detectorPostMs, 4.75);
+    expect(sample.detectorObservedFps, 10.5);
+    expect(sample.depthPreMs, 6);
+    expect(sample.depthInferenceMs, 61);
+    expect(sample.depthPostMs, 9);
+    expect(sample.depthAccelerator, 'cpu');
+    expect(sample.depthGridWidth, 96);
+    expect(sample.depthGridHeight, 72);
+    expect(sample.heatmapBuildMs, 11);
+    expect(sample.depthDroppedTicks, 37);
+
+    final json = sample.toJson();
+    expect(json['detectorInferenceMs'], 28.25);
+    expect(json['depthAccelerator'], 'cpu');
+    expect(json['depthDroppedTicks'], 37);
+    // `depthStatus` stays a derived status; the raw accelerator is separate.
+    expect(json['depthStatus'], isNull);
+    // No Dart-side depth queue exists, so the wait is exported as unknown.
+    expect(json.containsKey('depthQueueWaitMs'), isTrue);
+    expect(json['depthQueueWaitMs'], isNull);
+  });
+
+  test('a schema-3 sample row gains no numbers when read at schema 4', () {
+    final v3Row = <String, dynamic>{
+      'timestamp': now.toUtc().toIso8601String(),
+      'latencyMs': 100.0,
+      'inferenceFps': 10.0,
+      'objectCount': 1,
+      'engine': 'ultralytics',
+      'confidenceThreshold': 0.25,
+      'depthStatus': 'gpu',
+      'depthLatencyMs': 90,
+    };
+    final restored = TelemetryExport.fromJson({
+      'schemaVersion': 3,
+      'exportedAt': now.toUtc().toIso8601String(),
+      'appVersion': '1.0.0+1',
+      'session': {'id': 'legacy', 'start': null, 'durationMs': 0},
+      'samples': [v3Row],
+    });
+
+    final row = restored.samples.single;
+    for (final key in const [
+      'detectorPreMs',
+      'detectorInferenceMs',
+      'detectorPostMs',
+      'detectorObservedFps',
+      'depthPreMs',
+      'depthInferenceMs',
+      'depthPostMs',
+      'depthAccelerator',
+      'depthGridWidth',
+      'depthGridHeight',
+      'heatmapBuildMs',
+      'depthDroppedTicks',
+      'depthQueueWaitMs',
+    ]) {
+      expect(row[key], isNull, reason: '$key stays unknown, never 0');
+    }
+    expect(row['depthStatus'], 'gpu', reason: 'the schema-3 value is intact');
+    expect(restored.toJson()['samples'], [v3Row]);
   });
 
   test('old recordSample call sites keep automatic/unknown as null', () {

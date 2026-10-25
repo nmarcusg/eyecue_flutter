@@ -40,9 +40,11 @@
   commands and a per-run record table. **No run has been performed and no
   `CONFIRMED-ON-DEVICE` claim exists** — the 1.5 FPS Redmi regression is not
   considered resolved until that matrix runs on hardware. Per-stage timings
-  (`DetectorStageTimings`, `DepthStageTimings`) and the native cumulative
-  `droppedTicks` counter are produced in-app but are **not yet in the telemetry
-  payload** (that is L5).
+  (`DetectorStageTimings`, `DepthStageTimings`), the reported depth accelerator
+  and the native cumulative `droppedTicks` counter now reach the telemetry
+  payload (schema 4, `telemetry-data-dictionary.md`), so a run's evidence comes
+  from its export rather than a debugger. Recording them is not measuring them:
+  every figure stays device-gated.
 - **Stale depth hides the heatmap.** Maps older than 1000 ms or produced for a
   different geometry are discarded for presentation and distance fall back to
   the box-height heuristic.

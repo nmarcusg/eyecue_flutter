@@ -197,7 +197,7 @@ void main() {
       expect(payload['consent'], {'manualSessionUpload': true});
       expect(payload['study'], metadata.toJson());
       final export = payload['telemetry'] as Map<String, dynamic>;
-      expect(export['schemaVersion'], 3);
+      expect(export['schemaVersion'], 4);
       expect(export.containsKey('images'), isFalse);
       expect(export.containsKey('deviceId'), isFalse);
     },
@@ -249,7 +249,7 @@ void main() {
     expect(localTelemetry.records.single.label, 'traffic light');
   });
 
-  test('cadence sample fields travel inside the schema-3 payload', () async {
+  test('cadence sample fields travel inside the schema-4 payload', () async {
     final localTelemetry = telemetry();
     populateEveryRecordType(localTelemetry);
 
@@ -258,7 +258,7 @@ void main() {
         (jsonDecode(request.body) as Map<String, dynamic>)['telemetry']
             as Map<String, dynamic>;
 
-    expect(export['schemaVersion'], 3);
+    expect(export['schemaVersion'], 4);
     final sample = (export['samples'] as List).single as Map<String, dynamic>;
     expect(
       sample.keys,
@@ -388,8 +388,10 @@ void main() {
     final request = await capturedUpload(localTelemetry);
     final bytes = utf8.encode(request.body).length;
 
-    // Measured 1_898_180 bytes with every collection at its cap, leaving
-    // 101_820 bytes (about 5%) of headroom under the 2 MB function limit.
+    // Measured 1_910_180 bytes with every collection at its cap (1_898_180
+    // before the schema-4 sample keys, i.e. 12 000 bytes for the constant
+    // `depthQueueWaitMs`; the other new keys are omitted when unmeasured),
+    // leaving 89_820 bytes (about 4.5%) of headroom under the 2 MB limit.
     expect(
       bytes,
       lessThan(2000000),

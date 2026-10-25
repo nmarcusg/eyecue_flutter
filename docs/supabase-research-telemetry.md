@@ -29,8 +29,10 @@ bounding boxes are retained because they are part of the research telemetry
 contract; they should be treated as research data, not public analytics.
 
 The whole `telemetry` object is stored in a JSONB `payload` column, so a new
-telemetry schema version requires **no migration**: schema-3 cadence data is
-stored exactly as sent and older rows keep their original payload. Release
+telemetry schema version requires **no migration**: schema-4 sample data is
+stored exactly as sent and older schema-3 rows keep their original payload.
+Every schema-4 key is optional, so a schema-3 row still reads as unknown rather
+than `0`. Release
 builds request `android.permission.INTERNET` solely for this optional manual
 upload; detection and depth stay bundled and work offline.
 
@@ -61,7 +63,7 @@ upload; detection and depth stay bundled and work offline.
 
 ## Verification status
 
-The schema-3 envelope, its forbidden-key guard, and the 2 MB body bound are
+The schema-4 envelope, its forbidden-key guard, and the 2 MB body bound are
 covered by CLI-free Flutter tests that also read the Edge Function source. Local
 database migration and function execution remain **unverified**: the Supabase
 CLI is not installed, and no local Supabase stack was started or executed, so

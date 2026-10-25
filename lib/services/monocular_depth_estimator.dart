@@ -207,6 +207,7 @@ class MonocularDepthEstimator {
   double? _observedHz;
   int? _lastCompletionMs;
   DepthStageTimings? _stageTimings;
+  int? _lastHeatmapBuildMs;
 
   /// Accelerator of the CURRENT instance, cleared when one is adopted so a
   /// previous session cannot label a fresh instance before its first event.
@@ -226,6 +227,10 @@ class MonocularDepthEstimator {
 
   /// Stage timings of the last depth event. Survives [stop] and [releaseModel].
   DepthStageTimings? get stageTimings => _stageTimings;
+
+  /// Dart-side milliseconds the last heatmap build took; `null` when no heatmap
+  /// was built. Presentation cost only — the grid never depends on it.
+  int? get lastHeatmapBuildMs => _lastHeatmapBuildMs;
 
   /// Accelerator native reported for the loaded instance, and therefore what
   /// the run actually used; null while no model is loaded or before its first
@@ -320,9 +325,7 @@ class MonocularDepthEstimator {
     required int uprightHeight,
     required int releaseEpoch,
   }) async {
-    var heatmap = heatmapEnabled
-        ? await (heatmapBuilder ?? _buildHeatmap)(grid)
-        : null;
+    var heatmap = heatmapEnabled ? await _buildTimedHeatmap(grid) : null;
     // A release landed while the builder ran: this frame belongs to a session
     // that no longer exists, so publishing it would repopulate `frame` and
     // report `ready` with no model behind it.
@@ -571,6 +574,13 @@ class MonocularDepthEstimator {
       }
     }
     return (width: width, height: height, pixels: pixels);
+  }
+
+  Future<ui.Image?> _buildTimedHeatmap(YOLODepthMap map) async {
+    final started = _clock.elapsedMilliseconds;
+    final image = await (heatmapBuilder ?? _buildHeatmap)(map);
+    _lastHeatmapBuildMs = _clock.elapsedMilliseconds - started;
+    return image;
   }
 
   Future<ui.Image?> _buildHeatmap(YOLODepthMap map) async {

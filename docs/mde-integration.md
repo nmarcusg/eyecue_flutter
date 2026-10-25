@@ -423,7 +423,9 @@ would need the frame the gate governs.
 - Speech uses the metric phrase when one exists (`"about 3.5 m"`), otherwise the
   existing `"approximately near/ahead/far"` wording. The bbox path is
   byte-identical to before.
-- Telemetry and Supabase payload shapes are unchanged (no new fields).
+- The distance work adds no telemetry field; the separate stage-timing fields
+  on the sample are described in
+  [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 
 ## Verification performed
 

@@ -7,7 +7,15 @@ import 'alert_lifecycle.dart';
 /// The export is deliberately image-free. Camera frames, forensic PNGs, device
 /// identifiers, and internal file paths are not part of this contract.
 class TelemetryExport {
-  static const int schemaVersion = 3;
+  /// Version 4 adds the detector/depth stage timings, the reported depth
+  /// accelerator, the depth grid size, the heatmap build cost and the
+  /// cumulative `depthDroppedTicks` counter to each sample.
+  ///
+  /// Every one of those keys is optional on read: a schema-3 payload simply
+  /// lacks them, and a missing measurement stays unknown (`null`/absent) — it
+  /// is never rendered as `0`. [fromJson] passes sample rows through unchanged
+  /// for exactly that reason.
+  static const int schemaVersion = 4;
 
   final DateTime exportedAt;
   final String appVersion;

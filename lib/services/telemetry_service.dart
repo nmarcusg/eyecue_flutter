@@ -99,6 +99,37 @@ class RuntimeSample {
 
   /// `disabled`, `loading`, `gpu`, `cpu`, or `degraded`; `null` when absent.
   final String? depthStatus;
+
+  /// Detector stages as native reported them; `null` when a stage was not
+  /// measured. [inferenceFps] keeps the plugin's raw (possibly defaulted)
+  /// value, so these stay nullable instead of inheriting its `0`.
+  final double? detectorPreMs;
+  final double? detectorInferenceMs;
+  final double? detectorPostMs;
+
+  /// Native inference rate; `null` when native did not report one.
+  final double? detectorObservedFps;
+
+  /// Depth stages of the last completed native depth event.
+  final int? depthPreMs;
+  final int? depthInferenceMs;
+  final int? depthPostMs;
+
+  /// Accelerator native resolved (`gpu`/`cpu`); `null` while unknown. Distinct
+  /// from [depthStatus], which folds in `disabled`/`loading`/`degraded`.
+  final String? depthAccelerator;
+
+  /// Size of the block-mean grid the last frame carried.
+  final int? depthGridWidth;
+  final int? depthGridHeight;
+
+  /// Dart-side cost of building the display heatmap; `null` when none was built.
+  final int? heatmapBuildMs;
+
+  /// Cumulative native count of skipped depth ticks. A per-interval delta is
+  /// derived by differencing consecutive samples; it is not a per-sample drop
+  /// count and not a dropped-frame count.
+  final int? depthDroppedTicks;
   final bool lowPowerClamped;
   final bool sourceLimited;
 
@@ -117,6 +148,18 @@ class RuntimeSample {
     this.depthObservedHz,
     this.depthLatencyMs,
     this.depthStatus,
+    this.detectorPreMs,
+    this.detectorInferenceMs,
+    this.detectorPostMs,
+    this.detectorObservedFps,
+    this.depthPreMs,
+    this.depthInferenceMs,
+    this.depthPostMs,
+    this.depthAccelerator,
+    this.depthGridWidth,
+    this.depthGridHeight,
+    this.heatmapBuildMs,
+    this.depthDroppedTicks,
     this.lowPowerClamped = false,
     this.sourceLimited = false,
   });
@@ -136,6 +179,25 @@ class RuntimeSample {
     'depthObservedHz': depthObservedHz,
     'depthLatencyMs': depthLatencyMs,
     'depthStatus': depthStatus,
+    // Measurements are written only when measured: an unknown stays absent
+    // (never `0`), which also stops 500 samples of `null` padding the payload.
+    if (detectorPreMs != null) 'detectorPreMs': detectorPreMs,
+    if (detectorInferenceMs != null) 'detectorInferenceMs': detectorInferenceMs,
+    if (detectorPostMs != null) 'detectorPostMs': detectorPostMs,
+    if (detectorObservedFps != null) 'detectorObservedFps': detectorObservedFps,
+    if (depthPreMs != null) 'depthPreMs': depthPreMs,
+    if (depthInferenceMs != null) 'depthInferenceMs': depthInferenceMs,
+    if (depthPostMs != null) 'depthPostMs': depthPostMs,
+    if (depthAccelerator != null) 'depthAccelerator': depthAccelerator,
+    if (depthGridWidth != null) 'depthGridWidth': depthGridWidth,
+    if (depthGridHeight != null) 'depthGridHeight': depthGridHeight,
+    if (heatmapBuildMs != null) 'heatmapBuildMs': heatmapBuildMs,
+    if (depthDroppedTicks != null) 'depthDroppedTicks': depthDroppedTicks,
+    // There is no Dart-side depth queue: the tick, its cadence gate and the
+    // latest-frame-wins guard are all native, so nothing ever waits here. It is
+    // exported as an explicit `null` rather than omitted, because it is a
+    // constant of the transport, not a measurement that went missing.
+    'depthQueueWaitMs': null,
     'lowPowerClamped': lowPowerClamped,
     'sourceLimited': sourceLimited,
   };
@@ -155,6 +217,18 @@ class CadenceSample {
   final double? depthObservedHz;
   final int? depthLatencyMs;
   final String? depthStatus;
+  final double? detectorPreMs;
+  final double? detectorInferenceMs;
+  final double? detectorPostMs;
+  final double? detectorObservedFps;
+  final int? depthPreMs;
+  final int? depthInferenceMs;
+  final int? depthPostMs;
+  final String? depthAccelerator;
+  final int? depthGridWidth;
+  final int? depthGridHeight;
+  final int? heatmapBuildMs;
+  final int? depthDroppedTicks;
   final bool lowPowerClamped;
   final bool sourceLimited;
 
@@ -167,6 +241,18 @@ class CadenceSample {
     this.depthObservedHz,
     this.depthLatencyMs,
     this.depthStatus,
+    this.detectorPreMs,
+    this.detectorInferenceMs,
+    this.detectorPostMs,
+    this.detectorObservedFps,
+    this.depthPreMs,
+    this.depthInferenceMs,
+    this.depthPostMs,
+    this.depthAccelerator,
+    this.depthGridWidth,
+    this.depthGridHeight,
+    this.heatmapBuildMs,
+    this.depthDroppedTicks,
     this.lowPowerClamped = false,
     this.sourceLimited = false,
   });
@@ -359,6 +445,18 @@ class TelemetryService extends ChangeNotifier {
     double? depthObservedHz,
     int? depthLatencyMs,
     String? depthStatus,
+    double? detectorPreMs,
+    double? detectorInferenceMs,
+    double? detectorPostMs,
+    double? detectorObservedFps,
+    int? depthPreMs,
+    int? depthInferenceMs,
+    int? depthPostMs,
+    String? depthAccelerator,
+    int? depthGridWidth,
+    int? depthGridHeight,
+    int? heatmapBuildMs,
+    int? depthDroppedTicks,
     bool lowPowerClamped = false,
     bool sourceLimited = false,
   }) {
@@ -379,6 +477,18 @@ class TelemetryService extends ChangeNotifier {
         depthObservedHz: depthObservedHz,
         depthLatencyMs: depthLatencyMs,
         depthStatus: depthStatus,
+        detectorPreMs: detectorPreMs,
+        detectorInferenceMs: detectorInferenceMs,
+        detectorPostMs: detectorPostMs,
+        detectorObservedFps: detectorObservedFps,
+        depthPreMs: depthPreMs,
+        depthInferenceMs: depthInferenceMs,
+        depthPostMs: depthPostMs,
+        depthAccelerator: depthAccelerator,
+        depthGridWidth: depthGridWidth,
+        depthGridHeight: depthGridHeight,
+        heatmapBuildMs: heatmapBuildMs,
+        depthDroppedTicks: depthDroppedTicks,
         lowPowerClamped: lowPowerClamped,
         sourceLimited: sourceLimited,
       ),

@@ -54,6 +54,18 @@ void main() {
       depthObservedHz: 1.5,
       depthLatencyMs: 90,
       depthStatus: 'gpu',
+      detectorPreMs: 3.5,
+      detectorInferenceMs: 28.25,
+      detectorPostMs: 4.75,
+      detectorObservedFps: 15.5,
+      depthPreMs: 6,
+      depthInferenceMs: 61,
+      depthPostMs: 9,
+      depthAccelerator: 'gpu',
+      depthGridWidth: 96,
+      depthGridHeight: 72,
+      heatmapBuildMs: 11,
+      depthDroppedTicks: 37,
       lowPowerClamped: true,
       sourceLimited: true,
     );
@@ -140,7 +152,7 @@ void main() {
     final session = decoded['session'] as Map<String, dynamic>;
     final failure = (decoded['failures'] as List).single as Map;
 
-    expect(decoded['schemaVersion'], 3);
+    expect(decoded['schemaVersion'], 4);
     expect(decoded['appVersion'], '1.2.3+4');
     expect(session['id'], 'session-test');
     expect(decoded['settings']['detectionConfidence'], 0.4);
@@ -232,7 +244,7 @@ void main() {
     expect(restored.alertSummaries, isEmpty);
     expect(restored.alertCounters['dropped'], 0);
     expect(restored.alertCounters['rejectedByReason'], isEmpty);
-    expect(TelemetryExport.schemaVersion, 3);
+    expect(TelemetryExport.schemaVersion, 4);
   });
 
   test('schema-v2 JSON round-trips alert payloads exactly', () {
@@ -354,9 +366,33 @@ void main() {
       'depth_observed_hz',
       'depth_latency_ms',
       'depth_status',
+      'detector_pre_ms',
+      'detector_inference_ms',
+      'detector_post_ms',
+      'detector_observed_fps',
+      'depth_pre_ms',
+      'depth_inference_ms',
+      'depth_post_ms',
+      'depth_accelerator',
+      'depth_grid_width',
+      'depth_grid_height',
+      'heatmap_build_ms',
+      'depth_dropped_ticks',
+      'depth_queue_wait_ms',
     ]) {
       expect(sampleRow[header.indexOf('"$column"')], '""');
     }
+
+    // The same unknown values are null in JSON, never a fabricated `0`.
+    expect(sample['detectorPreMs'], isNull);
+    expect(sample['detectorInferenceMs'], isNull);
+    expect(sample['detectorObservedFps'], isNull);
+    expect(sample['depthPreMs'], isNull);
+    expect(sample['depthAccelerator'], isNull);
+    expect(sample['depthGridWidth'], isNull);
+    expect(sample['heatmapBuildMs'], isNull);
+    expect(sample['depthDroppedTicks'], isNull);
+    expect(sample['depthQueueWaitMs'], isNull);
   });
 
   test('CSV appends cadence columns and keeps rows aligned', () {
@@ -423,6 +459,214 @@ void main() {
     expect(() => jsonEncode(restored.toJson()), returnsNormally);
   });
 
+  test(
+    'sample rows carry the schema-4 stage timings and depth transport keys',
+    () {
+      final service = TelemetryExportService(clock: () => timestamp);
+      final decoded = jsonDecode(service.toJson(telemetry: telemetry())) as Map;
+      final sample = (decoded['samples'] as List).single as Map;
+
+      expect(sample['detectorPreMs'], 3.5);
+      expect(sample['detectorInferenceMs'], 28.25);
+      expect(sample['detectorPostMs'], 4.75);
+      expect(sample['detectorObservedFps'], 15.5);
+      expect(sample['depthPreMs'], 6);
+      expect(sample['depthInferenceMs'], 61);
+      expect(sample['depthPostMs'], 9);
+      expect(sample['depthAccelerator'], 'gpu');
+      expect(sample['depthGridWidth'], 96);
+      expect(sample['depthGridHeight'], 72);
+      expect(sample['heatmapBuildMs'], 11);
+      // Cumulative native counter, not a per-sample drop count.
+      expect(sample['depthDroppedTicks'], 37);
+      // No Dart-side depth queue exists, so the wait is unknown, not a number.
+      expect(sample['depthQueueWaitMs'], isNull);
+
+      final lines = service.toCsv(telemetry: telemetry()).split('\n');
+      final header = lines.first.split(',');
+      final row = lines
+          .firstWhere((line) => line.startsWith('"sample"'))
+          .split(',');
+      int column(String name) => header.indexOf('"$name"');
+      expect(row[column('detector_inference_ms')], '"28.25"');
+      expect(row[column('depth_accelerator')], '"gpu"');
+      expect(row[column('depth_dropped_ticks')], '"37"');
+      expect(row[column('depth_queue_wait_ms')], '""');
+      expect(row, hasLength(header.length));
+    },
+  );
+
+  test(
+    'a schema-3 sample without the new keys reads as unknown, never zero',
+    () {
+      final v3Sample = <String, dynamic>{
+        'timestamp': timestamp.toUtc().toIso8601String(),
+        'latencyMs': 42.5,
+        'inferenceFps': 15.0,
+        'objectCount': 1,
+        'engine': 'ultralytics',
+        'confidenceThreshold': 0.4,
+        'depthStatus': 'cpu',
+        'depthLatencyMs': 90,
+        'depthObservedHz': 1.5,
+      };
+      final restored = TelemetryExport.fromJson({
+        'schemaVersion': 3,
+        'exportedAt': timestamp.toUtc().toIso8601String(),
+        'appVersion': '1.3.0+5',
+        'session': {'id': 'v3-session', 'start': null, 'durationMs': 1000},
+        'settings': <String, dynamic>{},
+        'samples': [v3Sample],
+      });
+
+      for (final key in const [
+        'detectorPreMs',
+        'detectorInferenceMs',
+        'detectorPostMs',
+        'detectorObservedFps',
+        'depthPreMs',
+        'depthInferenceMs',
+        'depthPostMs',
+        'depthAccelerator',
+        'depthGridWidth',
+        'depthGridHeight',
+        'heatmapBuildMs',
+        'depthDroppedTicks',
+        'depthQueueWaitMs',
+      ]) {
+        expect(
+          restored.samples.single[key],
+          isNull,
+          reason: '$key stays unknown',
+        );
+      }
+      // The old row is carried through untouched: no key is synthesised as `0`.
+      expect(restored.toJson()['samples'], [v3Sample]);
+      expect(() => jsonEncode(restored.toJson()), returnsNormally);
+    },
+  );
+
+  test('a worst-case session serialises below the payload ceiling', () async {
+    final service = TelemetryService(
+      clock: () => timestamp,
+      sessionId: 'session-worst-case',
+      appVersion: '1.2.3+4',
+    );
+    addTearDown(service.dispose);
+    service.startSession();
+    final info = DetectionInfo(
+      detection: const Detection(
+        classId: 41,
+        label: 'a-rather-long-coco-label-name-for-the-worst-case',
+        confidence: 0.875,
+        box: Rect.fromLTWH(0.123456, 0.234567, 0.334567, 0.434567),
+      ),
+      position: RelativePosition.left,
+      priority: ObjectPriority.medium,
+      proximity: ProximityBand.far,
+    );
+    for (var i = 0; i < 2000; i++) {
+      service.recordDetection(
+        info,
+        42.5,
+        engine: InferenceEngine.ultralytics,
+        confidenceThreshold: 0.4,
+      );
+    }
+    for (var i = 0; i < 500; i++) {
+      service.recordSample(
+        latencyMs: 42.5,
+        inferenceFps: 15,
+        objectCount: 3,
+        engine: InferenceEngine.ultralytics,
+        confidenceThreshold: 0.4,
+        requestedDetectionHz: 8,
+        effectiveDetectionHz: 5,
+        requestedDepthHz: 4,
+        effectiveDepthHz: 2,
+        depthObservedHz: 1.5,
+        depthLatencyMs: 90,
+        depthStatus: 'gpu',
+        detectorPreMs: 3.5,
+        detectorInferenceMs: 28.25,
+        detectorPostMs: 4.75,
+        detectorObservedFps: 15.5,
+        depthPreMs: 6,
+        depthInferenceMs: 61,
+        depthPostMs: 9,
+        depthAccelerator: 'gpu',
+        depthGridWidth: 96,
+        depthGridHeight: 72,
+        heatmapBuildMs: 11,
+        depthDroppedTicks: 37,
+        lowPowerClamped: true,
+        sourceLimited: true,
+      );
+    }
+    for (var i = 0; i < 500; i++) {
+      service.recordAlertLifecycle(
+        AlertLifecycleRecord(
+          origin: AlertOrigin.detection,
+          engine: InferenceEngine.ultralytics,
+          requestedAt: timestamp,
+          submittedAt: timestamp.add(const Duration(milliseconds: 100)),
+          alertStartedAt: timestamp.add(const Duration(milliseconds: 150)),
+          terminalAt: timestamp.add(const Duration(seconds: 1)),
+          terminalState: AlertTerminalState.completed,
+          terminalCause: null,
+          hadStarted: true,
+          reconciledAt: timestamp.add(const Duration(seconds: 1)),
+          frameNumber: 7,
+          resultReceivedAt: timestamp.add(const Duration(milliseconds: 80)),
+          detectionAcceptedAt: timestamp.add(const Duration(milliseconds: 90)),
+        ),
+      );
+    }
+    service.recordAlertCounters(
+      const AlertCounters(dropped: 1, muted: 2, rejectedByReason: {'x': 3}),
+    );
+
+    final exporter = TelemetryExportService(clock: () => timestamp);
+    final jsonText = exporter.toJson(telemetry: service);
+    // The ingest ceiling (2 000 000 bytes) and the 1 500 000-byte target apply
+    // to the wire form, so measure the compact encoding, not the indented file
+    // export (whose whitespace is presentation only).
+    final bytes = utf8.encode(jsonEncode(jsonDecode(jsonText))).length;
+    // ignore: avoid_print
+    print('worst-case telemetry payload: $bytes UTF-8 bytes (compact)');
+    expect(bytes, lessThan(1500000), reason: 'measured $bytes bytes');
+
+    final decoded = jsonDecode(jsonText) as Map;
+    expect(decoded['samples'], hasLength(500));
+    expect(decoded['detections'], hasLength(2000));
+    expect(decoded['alertLifecycle'], hasLength(500));
+
+    final lower = jsonText.toLowerCase();
+    for (final token in const [
+      'image',
+      'images',
+      'deviceid',
+      'path',
+      'utterance',
+      'technicaldetail',
+      'screenshot',
+      'audio',
+      'frame',
+      'secret',
+      'token',
+    ]) {
+      // `frameNumber` is a pre-existing counter key, not frame content.
+      final pattern = token == 'frame'
+          ? RegExp('frame(?!number)')
+          : RegExp(RegExp.escape(token));
+      expect(
+        pattern.hasMatch(lower),
+        isFalse,
+        reason: 'the serialised payload must not carry "$token"',
+      );
+    }
+  });
+
   test('writes JSON and CSV to an explicitly supplied directory', () async {
     final directory = await Directory.systemTemp.createTemp('eyecue-export-');
     addTearDown(() => directory.delete(recursive: true));
@@ -439,7 +683,7 @@ void main() {
 
     expect(await jsonFile.exists(), isTrue);
     expect(await csvFile.exists(), isTrue);
-    expect(await jsonFile.readAsString(), contains('"schemaVersion": 3'));
+    expect(await jsonFile.readAsString(), contains('"schemaVersion": 4'));
     expect(await csvFile.readAsString(), contains('record_type'));
   });
 }

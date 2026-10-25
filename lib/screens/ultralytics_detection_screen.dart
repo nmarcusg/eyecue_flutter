@@ -982,6 +982,11 @@ class _UltralyticsDetectionScreenState
     }
     final mdeEnabled = _mdeEnabled;
     final cadence = _cadence;
+    // Depth measurements are exported only while depth is on, exactly like
+    // `depthObservedHz`/`depthLatencyMs`: a released estimator keeps its
+    // last-known values, and those must not be read as current.
+    final depthTimings = mdeEnabled ? _depth.stageTimings : null;
+    final depthGrid = mdeEnabled ? _depth.frame.value?.grid : null;
     _assistive.recordMetrics(
       latencyMs: inferenceMs,
       inferenceFps: metrics.fps,
@@ -998,6 +1003,18 @@ class _UltralyticsDetectionScreenState
           state: _depth.state.value,
           accelerator: _depth.accelerator,
         ),
+        detectorPreMs: timings.preMs,
+        detectorInferenceMs: timings.inferenceMs,
+        detectorPostMs: timings.postMs,
+        detectorObservedFps: timings.fps,
+        depthPreMs: depthTimings?.preMs,
+        depthInferenceMs: depthTimings?.inferenceMs,
+        depthPostMs: depthTimings?.postMs,
+        depthAccelerator: mdeEnabled ? _depth.accelerator : null,
+        depthGridWidth: depthGrid?.width,
+        depthGridHeight: depthGrid?.height,
+        heatmapBuildMs: mdeEnabled ? _depth.lastHeatmapBuildMs : null,
+        depthDroppedTicks: depthTimings?.droppedTicks,
         lowPowerClamped: _cadence.lowPowerClamped,
         sourceLimited: _cadence.sourceLimited,
       ),
