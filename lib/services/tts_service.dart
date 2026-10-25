@@ -884,6 +884,8 @@ class TtsService extends ChangeNotifier {
     _state = terminal;
     if (identical(_active, submission)) _active = null;
     if (!submission.request.done.isCompleted) {
+      // The caller future reports a confirmed start only, so a failed or
+      // cancelled utterance still resolves true once its start was confirmed.
       submission.request.done.complete(submission.didStart);
     }
     _notify();
