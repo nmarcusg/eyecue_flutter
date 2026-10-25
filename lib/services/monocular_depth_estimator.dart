@@ -216,7 +216,9 @@ class MonocularDepthEstimator {
       await _ensureModel(_useGpu, _releaseEpoch);
     } catch (error) {
       debugPrint('[Depth] inference failed: $error');
-      _degrade();
+      // The estimator can be torn down while the factory is still running; a
+      // degraded write into a disposed notifier would escape as an error.
+      if (!_disposed) _degrade();
     }
   }
 
@@ -352,6 +354,9 @@ class MonocularDepthEstimator {
     final existing = _yolo;
     if (existing != null && _useGpu == useGpu) return;
     await _disposeModel();
+    // The estimator can be torn down while the previous model is being freed,
+    // and this write would then hit a disposed notifier.
+    if (_disposed) return;
     state.value = DepthRunState.loading;
     debugPrint('[Depth] loading model: $modelId (useGpu=$useGpu)');
     final DepthModelHandle handle;
@@ -362,9 +367,10 @@ class MonocularDepthEstimator {
       _modelLoadFailed = true;
       rethrow;
     }
-    if (epoch != _releaseEpoch) {
-      // Depth was switched off while the model loaded: honour the release
-      // instead of resurrecting an interpreter nobody asked for.
+    if (_disposed || epoch != _releaseEpoch) {
+      // Depth was switched off, or the estimator was torn down, while the model
+      // loaded: honour it instead of resurrecting an interpreter nobody asked
+      // for. Writing `ready` here would also touch a disposed notifier.
       try {
         await handle.dispose();
       } catch (error) {
@@ -538,6 +544,10 @@ class MonocularDepthEstimator {
 
   void dispose() {
     _disposed = true;
+    // Same invalidation as [releaseModel]: a load still in flight must land on
+    // the epoch mismatch and be disposed, not be adopted by a dead estimator.
+    _releaseEpoch++;
+    _preparing = null;
     stop();
     clearFrame();
     state.dispose();
