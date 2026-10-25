@@ -521,8 +521,11 @@ results table — is [`benchmark-procedure.md`](benchmark-procedure.md). **No
 | Flutter, Dart, `flutter_tts`, `permission_handler`, `path_provider`, `fl_chart`, `google_fonts` | BSD-3-Clause / MIT / Apache-2.0 as published |
 
 **AGPL compatibility:** EyeCue links `ultralytics_yolo` and ships AGPL-3.0
-YOLO26n weights. Distributing the app (or a derivative) therefore requires
-releasing the complete corresponding source under AGPL-3.0 and preserving the
-notices above. EyeCue is a thesis project distributed as source in this
-repository, which satisfies that obligation as long as the repository stays
-public and the notices remain. No root `LICENSE` file is added by this branch.
+YOLO26n weights, and the application's own licence is now `AGPL-3.0-only`
+([`../LICENSE`](../LICENSE)). Distributing the app (or a derivative) therefore
+requires releasing the complete corresponding source under AGPL-3.0 and
+preserving the notices above. EyeCue is a thesis project distributed as source in
+this repository, so the source is available for as long as the repository stays
+public and the notices remain — that is where the evidence lives, not a claim
+that compliance has been verified. The procedure is in
+[`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §7.

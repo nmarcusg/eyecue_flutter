@@ -13,16 +13,25 @@ Every fact below is inspectable in this tree; the evidence for the release build
 in [`docs/release-procedure.md`](docs/release-procedure.md) §6 and
 [`docs/release-readiness-report.md`](docs/release-readiness-report.md).
 
-## 1. The application's own licence — OWNER DECISION (open)
+## 1. The application's own licence — `AGPL-3.0-only`
 
-There is **no licence for this repository's own code**. [`LICENSE`](LICENSE) states
-that expressly and grants nothing.
+The EyeCue application source is licensed **`AGPL-3.0-only`** (SPDX), © the EyeCue
+project owner. The complete licence text is in [`LICENSE`](LICENSE): the canonical GNU
+Affero General Public License version 3, copied byte-for-byte from the vendored
+plugin's upstream copy at [`plugins/ultralytics_yolo/LICENSE`](plugins/ultralytics_yolo/LICENSE)
+(both sha256 `4df3c306dddaaf4baffdff5ca820cc679ac8cd6dc263c6a74517783e42fa7a3b`).
 
-* Owner decision **D2** in [`docs/play-store-readiness.md`](docs/play-store-readiness.md)
-  §8 is the gate.
-* Whatever licence is chosen must be compatible with the AGPL-3.0 components in
-  §2 and §3, and with the distribution model in §7. That compatibility question is
-  one of the review items in §6.
+Owner decision **D2** in [`docs/play-store-readiness.md`](docs/play-store-readiness.md)
+§8 is therefore **decided**: the application carries the same licence as the
+YOLO/Ultralytics components in §2 and §3.
+
+The consequence is that the AGPL-3.0 obligations now apply to the application's own
+code as well as to the vendored plugin and the bundled models. Every binary distributed
+from this tree must be accompanied by the complete corresponding source of the whole
+work, and source distribution is a duty for the app itself, not only for the plugin
+(§7). What those duties mean in practice — notice wording, "corresponding source" for
+weights, network use (§13), and app-store distribution terms — is listed as review
+items **R1–R7** in §6: **obligations identified, legal review not performed**.
 
 ## 2. Vendored plugin — `ultralytics_yolo` 0.6.13 (AGPL-3.0)
 
@@ -157,6 +166,9 @@ deciding whether this file is a sufficient notice is review item **R5**.
 
 ## 6. Items requiring qualified legal review (no opinion given)
 
+Obligations identified, **legal review not performed**: no item below has been
+reviewed by counsel, and nothing in this file states that AGPL compliance is verified.
+
 | # | Question | Why it matters |
 | --- | --- | --- |
 | R1 | Do the bundled Ultralytics **weights** trigger AGPL-3.0 §5/§6, and if so what counts as their "corresponding source"? | the models are redistributed inside the app bundle; the training pipeline is not here |
@@ -165,14 +177,17 @@ deciding whether this file is a sufficient notice is review item **R5**.
 | R4 | Are all 99 pub dependencies under terms compatible with distribution and with the app's eventual licence? | no licence audit has been performed here |
 | R5 | Do the native/AAR licences (AndroidX, LiteRT, Ultralytics native) require notices this repository does not currently produce? | redistributed binaries carry notice obligations |
 | R6 | AGPL-3.0 §13 (network use): does the optional research-telemetry upload, or the separate research dashboard, make the covered work "interacted with … remotely through a computer network"? | the dashboard is a separate repository and is not deployed |
-| R7 | Which licence may the owner choose for the app's own code given §2–§5? | gate D2; this repository deliberately does not decide |
+| R7 | Given §2–§5, what does the chosen `AGPL-3.0-only` (D2, decided) require in practice — notice wording, what counts as "source" for the weights, and how Play's distribution terms interact with it? | the licence choice is made; the practical duties are unanalysed by counsel |
 
 ## 7. AGPL-3.0 source-distribution procedure
 
 Every release artefact must be accompanied by the corresponding source of the
-AGPL-3.0 components. This repository **is** that source: the vendored plugin and both
-model assets are committed, so no separate download is needed to satisfy the
-"complete corresponding source" requirement for them.
+AGPL-3.0 work — the application's own code, the modified vendored plugin and both
+model assets. This repository **is** that source: everything is committed, together
+with the build instructions for the modified plugin in
+[`VENDORED.md`](plugins/ultralytics_yolo/VENDORED.md) and
+[`docs/release-procedure.md`](docs/release-procedure.md) §4, so no separate download is
+needed to satisfy the "complete corresponding source" requirement.
 
 ### 7.1 Tag ↔ `versionCode` matching (mandatory)
 
@@ -223,7 +238,7 @@ include the notices in this file. Check items R1–R7 in §6 before any publicat
 
 | Item | State |
 | --- | --- |
-| Application licence (own code) | **OWNER DECISION (D2) — open**; [`LICENSE`](LICENSE) grants nothing |
+| Application licence (own code) | **`AGPL-3.0-only`** (D2 decided); canonical text in [`LICENSE`](LICENSE), byte-identical to the vendored plugin's copy |
 | Vendored plugin licence text | present and unmodified |
 | Fork deviations recorded | yes (8 numbered, in `VENDORED.md` and §2.1) |
 | Model provenance recorded | yes (`docs/model-assets.md`); detector base graph not in tree (R2) |

@@ -18,13 +18,13 @@ verified), [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) (licensing).
 | --- | --- | --- |
 | 1 | Production upload keystore + Play App Signing enrolment | **OWNER ACTION** — no keystore exists; every artefact so far is debug-signed (`-testsigned`) |
 | 2 | Final `applicationId` (D1) | **DECIDED** — owner-approved `app.eyecue.mobile`; it cannot change after the first upload |
-| 3 | App licence (D2) | **OWNER ACTION** — [`LICENSE`](../LICENSE) grants nothing yet |
+| 3 | App licence (D2) | **DECIDED** — `AGPL-3.0-only`; text in [`../LICENSE`](../LICENSE) |
 | 4 | Installed-startup verification on a real device | **NOT VERIFIED** — no device/AVD on the build host |
 | 5 | Privacy policy published at a public URL | **OWNER ACTION** — does not exist |
 | 6 | Legal review of AGPL-3.0 obligations | **OWNER ACTION** — items R1–R7 in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 |
 
-Do not open a Play Console listing before items 1 and 3 are settled; items 4–6
-determine what can honestly be *declared*.
+Do not open a Play Console listing before item 1 is settled; items 4–6 determine
+what can honestly be *declared*.
 
 ## 1. Privacy policy
 
@@ -200,9 +200,28 @@ production-access application is required for this account type.
 | --- | --- | --- |
 | Production signing material (gate 1) | yes | **OWNER ACTION** |
 | Final `applicationId` (gate 2) | no — decided | **DECIDED** — `app.eyecue.mobile` |
-| App licence (gate 3) | yes | **OWNER ACTION** |
+| App licence (gate 3) | no — decided | **DECIDED** — `AGPL-3.0-only` (§15) |
 | Device startup verification (gate 4) | yes for any quality claim | **NOT VERIFIED** |
 | Privacy policy live (gate 5) | yes | **OWNER ACTION** |
 | Legal review (gate 6) | yes | **OWNER ACTION** |
 | Data safety form answerable as-is | no — P3/P2/P4 open | [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1 |
 | Listing copy / screenshots | yes | **OWNER ACTION** |
+| Complete source published for each released binary (AGPL-3.0 §5/§6) | yes | **OWNER ACTION** — §15 |
+
+## 15. Licence and source offer (AGPL-3.0-only)
+
+The application is licensed **`AGPL-3.0-only`** ([`../LICENSE`](../LICENSE)), the same
+licence as the vendored plugin and the bundled model weights, so the AGPL obligations
+apply to the app's own code too. The obligations are identified in
+[`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §1, §6 and §7; the mechanics
+are in [`release-procedure.md`](release-procedure.md) §7. No legal review has been
+performed.
+
+| Item | State |
+| --- | --- |
+| Store listing names the licence | **OWNER ACTION** — state `AGPL-3.0-only` and link the source in the listing |
+| Complete corresponding source for every released binary | **OWNER ACTION** — archive from the release tag; includes the modified vendored plugin and the build instructions ([`release-procedure.md`](release-procedure.md) §7) |
+| Tag matches the artefact's `versionName`+`versionCode` | **OWNER ACTION** — verify before publishing the archive |
+| Written offer names a place and a period (AGPL-3.0 §6) | **OWNER ACTION** — no offer exists yet |
+| `-testsigned` artefacts used as a release or source tag | **never** — debug-signed test artefacts, not releases (`release-procedure.md` §3) |
+| Obligations reviewed by counsel (R1–R7) | **NOT PERFORMED** — [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 |
