@@ -9,16 +9,17 @@ build evidence lives in [`play-store-readiness.md`](play-store-readiness.md)
 
 | Field | Value | Status |
 | --- | --- | --- |
-| `applicationId` / `namespace` | `app.eyecue.mobile` | **Provisional** — owner gate D1 |
+| `applicationId` / `namespace` | `app.eyecue.mobile` | **Final** — owner-approved (gate D1 decided) |
 | `android:label` (launcher) | `EyeCue` | set |
 | Kotlin package / `MainActivity` | `app.eyecue.mobile` | moved with the id |
 | `taskAffinity` | `""` (unchanged) | deliberate: the app never merges into another task's affinity |
 | Launcher icon | `@mipmap/ic_launcher` (unchanged) | generic Flutter icon is still an L10 asset item |
 | Deep links / providers / authorities | none declared | nothing to rename |
 
-Changing `applicationId` after the first Play upload is not possible for that
-listing, so it stays provisional until the owner confirms the reverse-domain
-namespace ([`play-store-readiness.md`](play-store-readiness.md) §8 D1).
+The owner approved `app.eyecue.mobile` as the permanent application ID; gate D1 is
+decided and there is nothing left to confirm ([`play-store-readiness.md`](play-store-readiness.md)
+§8 D1). Do not change it: `applicationId` cannot be changed after the first Play
+upload for that listing.
 
 ## 2. Versioning
 
@@ -134,7 +135,7 @@ unzip -p build/app/outputs/flutter-apk/app-release-testsigned.apk 'classes*.dex'
 
 | Gate | Needed for |
 | --- | --- |
-| Confirm final `applicationId` (D1) | first upload; irreversible per listing |
+| `applicationId` (D1) — **decided**: `app.eyecue.mobile` | nothing left to decide; irreversible per listing, so it must not change |
 | Provide the upload keystore / `EYECUE_KEYSTORE_*` | a bundle Play will accept |
 | Enrol the app in Play App Signing | production distribution |
 | Final licence (D2) | [`LICENSE`](../LICENSE) grants nothing yet; [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 R1–R7 need legal review |
