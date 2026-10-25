@@ -336,6 +336,20 @@ void main() {
         depthObservedHz: 1.8,
         depthLatencyMs: 520,
         depthStatus: 'gpu',
+        // Every schema-4 sample key populated, at its realistic maximum: the
+        // envelope must be measured with the fields the app really emits.
+        detectorPreMs: 4.75,
+        detectorInferenceMs: 32.125,
+        detectorPostMs: 4.75,
+        depthPreMs: 6,
+        depthInferenceMs: 520,
+        depthPostMs: 7,
+        depthAccelerator: 'gpu',
+        depthGridWidth: 48,
+        depthGridHeight: 72,
+        heatmapBuildMs: 11,
+        depthDroppedTicks: 37,
+        lowPowerClamped: true,
         sourceLimited: true,
       );
     }
@@ -387,16 +401,61 @@ void main() {
 
     final request = await capturedUpload(localTelemetry);
     final bytes = utf8.encode(request.body).length;
+    // ignore: avoid_print
+    print('worst-case upload envelope: $bytes UTF-8 bytes');
 
-    // Measured 1_910_180 bytes with every collection at its cap (1_898_180
-    // before the schema-4 sample keys, i.e. 12 000 bytes for the constant
-    // `depthQueueWaitMs`; the other new keys are omitted when unmeasured),
-    // leaving 89_820 bytes (about 4.5%) of headroom under the 2 MB limit.
-    expect(
-      bytes,
-      lessThan(2000000),
-      reason: 'worst-case envelope is $bytes bytes',
-    );
+    // Measured 1,878,480 bytes with every collection at its cap and every
+    // schema-4 sample key populated: 121,520 bytes of headroom under the
+    // ingest's 2,000,000-byte limit and under the 1,900,000 target. The same
+    // shape measured 2,027,180 bytes before the fix (≈2,040,680 counting the
+    // `detectorObservedFps` duplicate that was then removed), i.e. rejected.
+    expect(bytes, lessThan(1900000), reason: 'measured $bytes bytes');
+
+    final samples =
+        ((jsonDecode(request.body) as Map)['telemetry'] as Map)['samples']
+            as List;
+    // The tertiary perf keys are thinned to every fifth sample; the core
+    // cadence fields stay on every sample.
+    expect((samples[0] as Map)['detectorPreMs'], 4.75);
+    expect((samples[5] as Map)['detectorPreMs'], 4.75);
+    expect((samples[1] as Map).containsKey('detectorPreMs'), isFalse);
+    expect((samples[1] as Map)['latencyMs'], 42.5);
+    expect((samples[1] as Map)['inferenceFps'], 12.5);
+  });
+
+  test('an oversized envelope fails locally and keeps the session', () async {
+    final localTelemetry = telemetry();
+    populateEveryRecordType(localTelemetry);
+    final samplesBefore = localTelemetry.samples.length;
+    var sent = false;
+
+    final result = await TelemetryUploadService(
+      configuration: const TelemetryUploadConfiguration(
+        ingestUrl: 'https://example.supabase.co/functions/v1/ingest-telemetry',
+        publishableKey: 'publishable-key',
+      ),
+      exportService: TelemetryExportService(clock: () => now),
+      clock: () => now,
+      // The wire bound is 2,000,000; a small one drives the same branch.
+      maxBodyBytes: 512,
+      sender: (request) async {
+        sent = true;
+        return const TelemetryUploadResponse(201);
+      },
+    ).upload(telemetry: localTelemetry, metadata: metadata);
+
+    expect(result.isSuccess, isFalse);
+    expect(result.errorMessage, contains('too large to upload'));
+    expect(result.errorMessage, contains('local export'));
+    // The server never sees an over-cap body...
+    expect(sent, isFalse);
+    // ...and nothing is truncated, so the session still exports in full.
+    expect(localTelemetry.samples, hasLength(samplesBefore));
+    expect(localTelemetry.totalDetections, 1);
+  });
+
+  test('the local size guard uses the ingest byte limit', () {
+    expect(TelemetryUploadService.maxUploadBodyBytes, 2000000);
   });
 
   test('the Edge Function still accepts numeric schema-3 payloads', () {

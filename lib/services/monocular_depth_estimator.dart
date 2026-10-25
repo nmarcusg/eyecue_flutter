@@ -229,7 +229,10 @@ class MonocularDepthEstimator {
   DepthStageTimings? get stageTimings => _stageTimings;
 
   /// Dart-side milliseconds the last heatmap build took; `null` when no heatmap
-  /// was built. Presentation cost only — the grid never depends on it.
+  /// is held. Cleared by [heatmapEnabled] off (through `_dropHeatmap`) and by
+  /// [clearFrame] (so [releaseModel] and [dispose] clear it too): a value that
+  /// outlived its heatmap would be exported as if an overlay still existed.
+  /// Presentation cost only — the grid never depends on it.
   int? get lastHeatmapBuildMs => _lastHeatmapBuildMs;
 
   /// Accelerator native reported for the loaded instance, and therefore what
@@ -368,6 +371,7 @@ class MonocularDepthEstimator {
 
   /// Replaces the current frame with a heatmap-less copy and frees the texture.
   void _dropHeatmap() {
+    _lastHeatmapBuildMs = null;
     final previous = frame.value;
     final image = previous?.heatmap;
     if (previous == null || image == null) return;
@@ -470,6 +474,7 @@ class MonocularDepthEstimator {
 
   /// Drops the current frame and heatmap image.
   void clearFrame() {
+    _lastHeatmapBuildMs = null;
     final previous = frame.value;
     frame.value = null;
     previous?.heatmap?.dispose();
@@ -579,7 +584,11 @@ class MonocularDepthEstimator {
   Future<ui.Image?> _buildTimedHeatmap(YOLODepthMap map) async {
     final started = _clock.elapsedMilliseconds;
     final image = await (heatmapBuilder ?? _buildHeatmap)(map);
-    _lastHeatmapBuildMs = _clock.elapsedMilliseconds - started;
+    // Only a real image has a cost; a builder that produced nothing leaves the
+    // value absent instead of pricing a heatmap that does not exist.
+    _lastHeatmapBuildMs = image == null
+        ? null
+        : _clock.elapsedMilliseconds - started;
     return image;
   }
 

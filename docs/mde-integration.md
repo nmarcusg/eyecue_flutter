@@ -360,7 +360,7 @@ nullable end to end: unknown is `null`, never `0`.
 
 | Side | Value | Null policy |
 |---|---|---|
-| Detector | `DetectorStageTimings.fromMetrics(YOLOPerformanceMetrics)` → `preMs`, `inferenceMs`, `postMs`, `fps` ([`detector_stage_timings.dart`](../lib/models/detector_stage_timings.dart)) | the native map omits the stage keys unless `includeProcessingTimeMs`/`includeFps` are on and the plugin defaults them to `0`; every value `<= 0` maps to `null` |
+| Detector | `DetectorStageTimings.fromMetrics(YOLOPerformanceMetrics)` → `preMs`, `inferenceMs`, `postMs`, `fps` ([`detector_stage_timings.dart`](../lib/models/detector_stage_timings.dart)); the observed rate is recorded as the sample's `inferenceFps`, not as a second key | the native map omits the stage keys unless `includeProcessingTimeMs`/`includeFps` are on and the plugin defaults them to `0`; every value `<= 0` maps to `null` (so `inferenceFps: 0` means "not reported", which the plugin cannot distinguish from unreported) |
 | Depth | `MonocularDepthEstimator.stageTimings` → `DepthStageTimings(preMs, inferenceMs, postMs, accelerator, droppedTicks)` | `YOLODepthEvent` parses these as nullable, so an absent key is `null` |
 
 Both types are immutable and every measurement is `null` when it is missing — a

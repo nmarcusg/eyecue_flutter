@@ -12,8 +12,7 @@
 > No device run has validated this instrumentation.
 >
 > **Every schema-4 sample key is optional on read.** A schema-3 payload simply
-> lacks them, and an unmeasured value is absent (or, for `depthQueueWaitMs`,
-> explicitly `null`) — never `0`.
+> lacks them, and an unmeasured value is absent — never `0`.
 
 EyeCue exports an image-free snapshot only after an explicit user action from
 Logs & Reports. JSON keeps the same values in nested record arrays. CSV uses one
@@ -40,7 +39,7 @@ are empty.
 | CSV column | Meaning | Units / values |
 |---|---|---|
 | `latency_ms` | Inference or native processing latency | Milliseconds |
-| `inference_fps` | Observed inference rate | Frames per second |
+| `inference_fps` | Detector observed FPS: the native inference rate the plugin reported | Frames per second; `0` means "not reported", because the plugin defaults a missing rate to `0` and cannot distinguish that from a real zero |
 | `object_count` | Number of normalized detections | Count |
 | `confidence_threshold` | Active pre-NMS confidence threshold | Unit interval, quantized to the app's configured grid |
 | `requested_detection_hz` | Stored detector target | Hz, or empty when the target is Automatic |
@@ -54,16 +53,14 @@ are empty.
 | `detector_pre_ms` | Detector preprocessing (letterbox + normalization) | Milliseconds, or empty when native did not report it |
 | `detector_inference_ms` | Detector model inference | Milliseconds, or empty when native did not report it |
 | `detector_post_ms` | Detector postprocessing (decode + NMS) | Milliseconds, or empty when native did not report it |
-| `detector_observed_fps` | Native inference rate as reported | Frames per second, or empty when native did not report it |
 | `depth_pre_ms` | Depth preprocessing | Milliseconds, or empty when native did not report it |
 | `depth_inference_ms` | Depth model inference | Milliseconds, or empty when native did not report it |
 | `depth_post_ms` | Depth postprocessing | Milliseconds, or empty when native did not report it |
 | `depth_accelerator` | Accelerator native resolved for the depth instance | `gpu`/`cpu`, or empty while unknown |
 | `depth_grid_width` | Width of the emitted block-mean depth grid | Blocks, or empty before the first depth frame |
 | `depth_grid_height` | Height of the emitted block-mean depth grid | Blocks, or empty before the first depth frame |
-| `heatmap_build_ms` | Dart-side cost of building the display heatmap | Milliseconds, or empty when no heatmap was built (overlay hidden, or depth off) |
+| `heatmap_build_ms` | Dart-side cost of building the display heatmap | Whole milliseconds (a stopwatch reading, so `0` means "< 1 ms"), or empty while no heatmap is held (overlay hidden, no image built, or depth off) |
 | `depth_dropped_ticks` | **Cumulative** native count of depth ticks skipped so far | Count, or empty until a depth event arrives |
-| `depth_queue_wait_ms` | Time a depth frame waited in a Dart queue | Always `null`: there is no Dart-side queue |
 | `low_power_clamped` | Low power mode lowered the stored target | Boolean |
 | `source_limited` | Depth target exceeds the detector cadence that feeds it | Boolean |
 
@@ -100,12 +97,27 @@ are empty.
   an interval that had not elapsed, or an inference already in flight — so at a
   2 Hz depth target on a 30 fps stream it mostly measures the cadence gate. It
   is not a dropped-frame count.
-- `depth_queue_wait_ms` is always `null`. Depth cadence, latest-frame-wins and
+- There is no `depth_queue_wait_ms` column. Depth cadence, latest-frame-wins and
   the in-flight guard are native, so no frame ever waits in a Dart queue and a
-  number here would be fabricated.
+  number here would be fabricated; exporting a constant `null` was 12 KB of
+  padding at the sample cap and was removed.
 - `heatmap_build_ms` is presentation cost only: it prices the overlay, not the
-  depth pipeline, and it is absent while the overlay is hidden because no
-  heatmap is built then.
+  depth pipeline. It is absent while no heatmap is held — it is cleared when the
+  overlay is hidden, when the frame is cleared (pause/release/dispose) and it is
+  only written when the builder actually returned an image — so it never goes
+  stale while depth is still on.
+- **The tertiary perf keys are thinned to every fifth sample.** `detector_pre_ms`,
+  `detector_inference_ms`, `detector_post_ms`, `depth_pre_ms`,
+  `depth_inference_ms`, `depth_post_ms`, `depth_accelerator`, `depth_grid_width`,
+  `depth_grid_height`, `heatmap_build_ms` and `depth_dropped_ticks` are written on
+  samples 0, 5, 10, … only, and are empty on the samples between them. The
+  cadence, `inference_fps`, `latency_ms`, `object_count` and the boolean flags
+  stay on every sample; no record is dropped or truncated. Read medians and
+  `depth_dropped_ticks` deltas from the samples that carry the keys.
+- `inference_fps` **is** the detector observed FPS. The same number used to be
+  duplicated into `detector_observed_fps` (nullable, `null` for unreported),
+  which cost about 12.5 KB at the sample cap; the duplicate key was removed.
+  `inference_fps: 0` therefore means "not reported".
 - Session wall-clock lives on the export header (`session.durationMs`, CSV
   `session_duration_ms`), not on each sample: it is one value per export, and
   repeating it 500 times would only inflate the payload.
@@ -264,9 +276,18 @@ writes files only when the user selects an export action.
 
 ## Schema compatibility
 
-Schema version 3 only adds keys and columns; no existing key or column changes
-meaning. Reading a schema-v1 JSON export yields empty `alertLifecycle` and
-`alertSummaries` lists and the default zero `alertCounters` snapshot. Reading a
-schema-v1 or schema-v2 sample without the cadence keys yields `null`/empty
-cadence values rather than `0`, so older files stay loadable and “unknown”
-stays distinguishable from “zero”.
+Schema versions 3 and 4 only add keys and columns (version 4 later dropped the
+`detector_observed_fps` and `depth_queue_wait_ms` columns, which repeated or
+always-null data); no surviving key or column changes meaning. Reading a
+schema-v1 JSON export yields empty `alertLifecycle` and `alertSummaries` lists
+and the default zero `alertCounters` snapshot. Reading a schema-v1 or schema-v2
+sample without the cadence keys yields `null`/empty cadence values rather than
+`0`, so older files stay loadable and “unknown” stays distinguishable from
+“zero”.
+
+`TelemetryExport.toJson` always stamps the current `schemaVersion`, so
+re-exporting a restored schema-3 file produces a header saying `4` while its
+sample rows are still schema 3 (no schema-4 keys). That is harmless because every
+schema-4 key is optional — but a reader must not infer the row shape from the
+header alone. Server-side gating must keep accepting rows that lack the schema-4
+keys instead of rejecting a payload because its header claims schema 4.

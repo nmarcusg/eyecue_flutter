@@ -1006,7 +1006,6 @@ class _UltralyticsDetectionScreenState
         detectorPreMs: timings.preMs,
         detectorInferenceMs: timings.inferenceMs,
         detectorPostMs: timings.postMs,
-        detectorObservedFps: timings.fps,
         depthPreMs: depthTimings?.preMs,
         depthInferenceMs: depthTimings?.inferenceMs,
         depthPostMs: depthTimings?.postMs,

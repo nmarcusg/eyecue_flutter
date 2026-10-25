@@ -120,7 +120,6 @@ class AssistiveDetectionController extends ChangeNotifier {
       detectorPreMs: cadence?.detectorPreMs,
       detectorInferenceMs: cadence?.detectorInferenceMs,
       detectorPostMs: cadence?.detectorPostMs,
-      detectorObservedFps: cadence?.detectorObservedFps,
       depthPreMs: cadence?.depthPreMs,
       depthInferenceMs: cadence?.depthInferenceMs,
       depthPostMs: cadence?.depthPostMs,
