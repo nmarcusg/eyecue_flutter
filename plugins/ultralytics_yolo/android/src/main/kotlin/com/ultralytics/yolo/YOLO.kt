@@ -62,15 +62,24 @@ class YOLO(
      * Predict using a bitmap input
      * @param bitmap The bitmap to process
      * @param rotateForCamera Whether to rotate the image for camera processing, defaults to false for standard bitmap inference
+     * @param includeRawData Whether the result carries the dense raw mask/depth copy
+     * @param drawOverlays Whether to render the annotated image (a full-frame copy plus drawing work).
+     *   The native depth tick passes false: it consumes only the depth map, so the annotated bitmap
+     *   would be allocated and discarded.
      */
     @Synchronized
-    fun predict(bitmap: Bitmap, rotateForCamera: Boolean = false, includeRawData: Boolean = true): YOLOResult {
+    fun predict(
+        bitmap: Bitmap,
+        rotateForCamera: Boolean = false,
+        includeRawData: Boolean = true,
+        drawOverlays: Boolean = true,
+    ): YOLOResult {
         // Depth streaming needs only the compact grid, so it opts out of the dense raw copy.
         predictor.includeRawMaskData = includeRawData
         val result = predictor.predict(bitmap, bitmap.width, bitmap.height, rotateForCamera, isLandscape = false)
         
         // Don't create annotated image for classification tasks to save memory and processing time
-        val annotatedImage = if (task == YOLOTask.CLASSIFY) {
+        val annotatedImage = if (!drawOverlays || task == YOLOTask.CLASSIFY) {
             null
         } else {
             drawAnnotations(bitmap, result, rotateForCamera)

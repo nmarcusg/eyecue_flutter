@@ -89,7 +89,8 @@ class YOLOInstanceManager {
         bitmap: Bitmap,
         confidenceThreshold: Float? = null,
         iouThreshold: Float? = null,
-        includeRawData: Boolean = true
+        includeRawData: Boolean = true,
+        drawOverlays: Boolean = true
     ): YOLOResult? {
         val yolo = instances[instanceId] ?: run {
             Log.e(tag, "No model loaded for instance: $instanceId")
@@ -102,7 +103,7 @@ class YOLOInstanceManager {
             confidenceThreshold?.let { yolo.setConfidenceThreshold(it) }
             iouThreshold?.let { yolo.setIouThreshold(it) }
             try {
-                yolo.predict(bitmap, includeRawData = includeRawData)
+                yolo.predict(bitmap, includeRawData = includeRawData, drawOverlays = drawOverlays)
             } catch (e: Exception) {
                 Log.e(tag, "Prediction failed for instance $instanceId: ${e.message}")
                 null

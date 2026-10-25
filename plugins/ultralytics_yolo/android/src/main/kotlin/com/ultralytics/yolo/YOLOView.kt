@@ -168,9 +168,14 @@ class YOLOView @JvmOverloads constructor(
     // recycles or draws into it (the only recycle() sites are the still-capture/JPEG paths), so the
     // depth tick can read this frame directly instead of taking a per-frame copy.
     @Volatile private var latestAnalysisBitmap: Bitmap? = null
-    private var depthExecutor: ExecutorService? = null
+    // Created and read on the analysis thread, shut down from the platform thread in stop(), so it
+    // needs a memory barrier of its own.
+    @Volatile private var depthExecutor: ExecutorService? = null
     private val depthInFlight = AtomicBoolean(false)
     @Volatile private var lastDepthStartMs = 0L
+    // Set when a depth inference fails: further ticks are suppressed for this instance id until the
+    // next streaming config arrives (Dart re-arms it through retry()).
+    @Volatile private var depthDisabled = false
     
     // Frame counter for streaming
     private var frameNumberCounter: Long = 0
@@ -195,6 +200,8 @@ class YOLOView @JvmOverloads constructor(
         val resolutionChanged = config?.analysisWidth != streamConfig?.analysisWidth ||
             config?.analysisHeight != streamConfig?.analysisHeight
         this.streamConfig = config
+        // A new config is the re-arm signal: clear the failure latch so retry() can resume ticking.
+        depthDisabled = false
         setupThrottlingFromConfig()
         if (resolutionChanged && camera != null) {
             startCamera() // rebind so the new analysis resolution takes effect
@@ -1554,7 +1561,7 @@ class YOLOView @JvmOverloads constructor(
 
                 // Depth runs strictly after the detector result and the stream callback, so it can
                 // never delay detection output.
-                maybeRunDepthTick(rotationDegrees, orientedWidth, orientedHeight)
+                maybeRunDepthTick()
 
                 // Update overlay
                 post {
@@ -1570,23 +1577,33 @@ class YOLOView @JvmOverloads constructor(
     /**
      * Runs the configured depth instance on the analysis frame, latest-frame-wins.
      *
-     * A tick is skipped while another depth inference is in flight and while the configured
-     * interval has not elapsed. Nothing is queued and no buffer grows.
+     * A tick is skipped while another depth inference is in flight, while the configured
+     * interval has not elapsed, and after a failure until the next streaming config. Nothing
+     * is queued and no buffer grows.
      */
-    private fun maybeRunDepthTick(rotationDegrees: Int, imageWidth: Int, imageHeight: Int) {
+    private fun maybeRunDepthTick() {
         val config = streamConfig ?: return
         val instanceId = config.depthInstanceId ?: return
         val intervalMs = config.depthIntervalMs ?: return
         val bitmap = latestAnalysisBitmap ?: return
-        if (isStopped) return
+        if (isStopped || depthDisabled) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastDepthStartMs < intervalMs) return
         if (!depthInFlight.compareAndSet(false, true)) return
         lastDepthStartMs = now
         val maxDim = config.depthMaxDim
-        val executor = depthExecutor ?: Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "yolo-depth").apply { isDaemon = true }
-        }.also { depthExecutor = it }
+        // Creation races stop(), which shuts the executor down and nulls the field from the platform
+        // thread. Sharing this lock means a tick either sees the stopped view or leaves behind an
+        // executor stop() will shut down.
+        val executor = synchronized(this) {
+            if (isStopped) {
+                depthInFlight.set(false)
+                return
+            }
+            depthExecutor ?: Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable, "yolo-depth").apply { isDaemon = true }
+            }.also { depthExecutor = it }
+        }
         try {
             executor.execute {
                 val startedAt = SystemClock.elapsedRealtime()
@@ -1595,22 +1612,33 @@ class YOLOView @JvmOverloads constructor(
                         (YOLOInstanceManager.shared.getInstance(instanceId)?.predictorInstance() as? DepthEstimator)
                             ?.gridMaxDim = maxDim
                     }
-                    // includeRawData = false: the stream carries the compact grid only, so the
-                    // dense per-inference FloatArray is never allocated.
-                    val result = YOLOInstanceManager.shared.predict(instanceId, bitmap, includeRawData = false)
+                    // includeRawData and drawOverlays are both false: the stream carries the compact
+                    // grid only, so neither the dense FloatArray nor the annotated full-frame copy
+                    // that `drawAnnotations` would allocate is ever built.
+                    val result = YOLOInstanceManager.shared.predict(
+                        instanceId,
+                        bitmap,
+                        includeRawData = false,
+                        drawOverlays = false,
+                    )
                     val depthMap = result?.depthMap
+                    // Teardown happened while this ran: drop the result instead of emitting into a
+                    // stopped view.
+                    if (isStopped) return@execute
                     if (result != null && depthMap != null && depthMap.grid != null) {
                         emitDepthEvent(
                             depthMap = depthMap,
                             result = result,
-                            rotationDegrees = rotationDegrees,
-                            imageWidth = imageWidth,
-                            imageHeight = imageHeight,
+                            imageWidth = bitmap.width,
+                            imageHeight = bitmap.height,
                             latencyMs = (SystemClock.elapsedRealtime() - startedAt).toInt(),
                         )
+                    } else {
+                        emitDepthFailure()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Depth inference failed", e)
+                    if (!isStopped) emitDepthFailure()
                 } finally {
                     depthInFlight.set(false)
                 }
@@ -1621,11 +1649,29 @@ class YOLOView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Reports a failed depth inference once per episode.
+     *
+     * The event carries no `depthGrid` key, so Dart cannot mistake it for a frame: it maps the
+     * non-null `error` to degraded (bbox distance) and drops the instance id. `depthDisabled`
+     * stops the tick here so a broken interpreter is not re-run every interval.
+     */
+    private fun emitDepthFailure() {
+        if (depthDisabled) return
+        depthDisabled = true
+        emitEvent(
+            mapOf(
+                "type" to "depth",
+                "error" to "inference_failed",
+                "timestamp" to System.currentTimeMillis(),
+            ),
+        )
+    }
+
     /** Emits the compact depth event on the existing streaming event channel. */
     private fun emitDepthEvent(
         depthMap: DepthMap,
         result: YOLOResult,
-        rotationDegrees: Int,
         imageWidth: Int,
         imageHeight: Int,
         latencyMs: Int,
@@ -1633,6 +1679,8 @@ class YOLOView @JvmOverloads constructor(
         val grid = depthMap.grid ?: return
         // A FloatArray crosses StandardMessageCodec as a compact Float32List (same trick as
         // `semanticMask.classMap`). The dense `values` array is never serialized.
+        // `imageWidth`/`imageHeight` are the analysed analysis-bitmap dims — the grid's source, in
+        // sensor orientation. The detector's oriented dims belong to the detection payload only.
         emitEvent(
             mapOf(
                 "type" to "depth",
@@ -1643,7 +1691,6 @@ class YOLOView @JvmOverloads constructor(
                 "maxDepth" to depthMap.maxDepth.toDouble(),
                 "imageWidth" to imageWidth,
                 "imageHeight" to imageHeight,
-                "rotationDegrees" to rotationDegrees,
                 "latencyMs" to latencyMs,
                 "preMs" to result.preMs.toInt(),
                 "inferenceMs" to result.inferenceMs.toInt(),
@@ -2512,19 +2559,17 @@ class YOLOView @JvmOverloads constructor(
         // Set stopped flag first to prevent new frames from being processed
         isStopped = true
 
-        // Stop the depth thread before the predictors are closed so an in-flight depth inference
-        // cannot touch a closed interpreter (and no thread survives a camera stop/restart).
-        depthExecutor?.let { exec ->
-            exec.shutdown()
-            try {
-                if (!exec.awaitTermination(500, TimeUnit.MILLISECONDS)) exec.shutdownNow()
-            } catch (e: InterruptedException) {
-                exec.shutdownNow()
-                Thread.currentThread().interrupt()
-            }
+        // Thread hygiene, not interpreter safety: the depth executor is a daemon thread, so the tick
+        // never outlives the process. shutdown() lets the single in-flight inference finish and
+        // discard its own result (the tick checks isStopped before emitting); shutdownNow() plus
+        // awaitTermination() would interrupt a routine CPU inference and stall this caller — the
+        // platform thread — for up to 500 ms. Never join here.
+        synchronized(this) {
+            depthExecutor?.shutdown()
+            depthExecutor = null
         }
-        depthExecutor = null
         depthInFlight.set(false)
+        depthDisabled = false
         latestAnalysisBitmap = null
         lastDepthStartMs = 0L
         // A full teardown is not an intentional pause; a later lifecycle restart should rebind normally.

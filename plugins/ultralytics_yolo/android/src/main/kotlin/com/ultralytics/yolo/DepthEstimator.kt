@@ -22,7 +22,11 @@ class DepthEstimator(
     private val depthWidth: Int
     private var colorPixels = IntArray(0)
 
-    /** Longest side of the block-mean grid emitted by the native depth stream. */
+    /**
+     * Longest side of the block-mean grid emitted by the native depth stream. The short side is
+     * scaled by the same factor, so the grid keeps the crop's aspect ratio and never exceeds
+     * [gridMaxDim] on either axis.
+     */
     var gridMaxDim: Int = DEFAULT_GRID_MAX_DIM
 
     init {
@@ -118,11 +122,21 @@ class DepthEstimator(
                 output.copyInto(values, y * width, source + left, source + right)
             }
         }
-        // The compact grid is always built (it costs one pass over the crop) so the native depth
-        // stream never needs the dense copy above.
-        val gridWidth = gridDim(width)
-        val gridHeight = gridDim(height)
-        val gridValues = blockMeanGrid(output, depthWidth, left, top, width, height, gridWidth, gridHeight)
+        // Only the native depth stream needs the compact grid. The dense `predictSingleImage` path
+        // (`includeRawMaskData = true`) must not pay this extra pass or its allocation.
+        val grid: FloatArray?
+        var gridWidth = 0
+        var gridHeight = 0
+        if (includeRawMaskData) {
+            grid = null
+        } else {
+            // One scale for both axes: the longest side becomes `gridMaxDim` and the short side
+            // keeps the crop's aspect ratio (a 640x360 crop yields 96x54, not 96x96).
+            val scale = gridMaxDim.coerceAtLeast(1).toFloat() / maxOf(width, height)
+            gridWidth = (width * scale).roundToInt().coerceIn(1, width)
+            gridHeight = (height * scale).roundToInt().coerceIn(1, height)
+            grid = blockMeanGrid(output, depthWidth, left, top, width, height, gridWidth, gridHeight)
+        }
         val size = width * height
         if (colorPixels.size != size) colorPixels = IntArray(size)
         val range = colorizeDepth(
@@ -137,22 +151,18 @@ class DepthEstimator(
             minDepth = range[0],
             maxDepth = range[1],
             image = Bitmap.createBitmap(colorPixels, width, height, Bitmap.Config.ARGB_8888),
-            grid = gridValues,
+            grid = grid,
             gridWidth = gridWidth,
             gridHeight = gridHeight,
         )
     }
 
-    private fun gridDim(extent: Int): Int {
-        val scale = gridMaxDim.coerceAtLeast(1).toFloat() / maxOf(extent, 1)
-        return (extent * scale).roundToInt().coerceIn(1, extent.coerceAtLeast(1))
-    }
-
     /**
-     * Block means of [output]'s crop region, laid out row-major in a [gridWidth] x [gridHeight] grid.
-     * Only finite samples inside [MIN_VALID_DEPTH_M]..[MAX_VALID_DEPTH_M] contribute; a block with no
-     * valid sample is NaN. The grid spans exactly the crop, so it keeps the same upright/sensor
-     * geometry the dense map had and existing box mapping stays valid.
+     * Block means of [output]'s crop region, laid out row-major in the [gridWidth] x [gridHeight]
+     * grid the caller derived from the crop's aspect ratio. Only finite samples inside
+     * [MIN_VALID_DEPTH_M]..[MAX_VALID_DEPTH_M] contribute; a block with no valid sample is NaN. The
+     * grid spans exactly the crop, so it keeps the same upright/sensor geometry the dense map had
+     * and existing box mapping stays valid.
      */
     private fun blockMeanGrid(
         output: FloatArray,

@@ -184,7 +184,7 @@ item as `DONE`.
 | --- | --- | --- | --- | --- | --- | --- |
 | L0 baseline ledger | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
 | L1a vendored plugin + reviewer notes | Replace the hosted `ultralytics_yolo` pin with the in-tree path dependency and apply the 7 L0 reviewer findings to this document | L0 | DONE | `d5390d4` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
-| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (payload ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` | awaiting reviewer | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
+| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (grid ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` (`3f81cc3` docs; remediation sha recorded in the next docs commit) | CHANGES_REQUIRED on `fcf4cd0`/`63131d5`/`3f81cc3` → all findings fixed in the remediation commit, re-review pending | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
 | L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
@@ -230,12 +230,13 @@ value assembly at `:143`), so enabling depth turns on per-result image transfer 
 whole stream.
 
 On the native side,
-`plugins/ultralytics_yolo/android/src/main/kotlin/com/ultralytics/yolo/YOLOView.kt:2319`
-— guarded by `if (config.includeOriginalImage)` at `:2316` and reached from the per-result
-stream path at `:1510`→`:1529` (the `convertResultToStreamData(...)` call is at `:1529`)
+`plugins/ultralytics_yolo/android/src/main/kotlin/com/ultralytics/yolo/YOLOView.kt:2470`
+— guarded by `if (config.includeOriginalImage)` at `:2469` and reached from the per-result
+stream path at `:1549`→`:1558` (the `convertResultToStreamData(...)` call is at `:1549`,
+the `callback.invoke` at `:1558`, and the depth tick right after it at `:1564`)
 — is the **only** JPEG encode on the per-detection hot path:
 `bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)`. The other `compress(`
-sites (`:1340`, `:1376`, `:1397`, `:2390`) are capture/snapshot-only and outside the
+sites (`:1358`, `:1394`, `:1415`, `:2541`) are capture/snapshot-only and outside the
 argued hot path.
 
 > Citation correction against the contract: the encode is at `YOLOView.kt:2319`,
@@ -330,10 +331,13 @@ artefact produced from this tree cannot be published; both lines are L9 work.
 ### 6.8 Two facts L1 depends on
 
 **The frame is already in hand where the stream result is built.** At
-`YOLOView.kt:1510`–`:1511` the per-result path already holds the rotated `Bitmap`
-(`result.copy(originalImage = bitmap)`) *before* the encode at `:2319`. That is what
-makes a shared-frame transport cheap: the bitmap L1b needs is the one the stream path
-already has, so no new capture is required.
+`YOLOView.kt:1486` the analysis callback stores the sensor-orientation analysis `Bitmap`
+it decoded from the `ImageProxy` (`latestAnalysisBitmap = bitmap`), and `:1531`
+(`result.copy(originalImage = bitmap)`) reuses that same bitmap for the stream *before*
+the encode at `:2470`. The shared bitmap is therefore the analysis frame in sensor
+orientation, not a rotated rendering of it — which is exactly the frame the depth model
+consumes. That is what makes a shared-frame transport cheap: the bitmap L1b needs is the
+one the analysis path already has, so no new capture and no copy is required.
 
 **Depth entry point (as extended by L1b).** L1b does **not** go through the `YOLOPlugin`
 `predictSingleImage` handler
@@ -358,16 +362,27 @@ contract, `CONFIRMED-BY-BUILD` for the Kotlin.
 
 Transport facts (`CONFIRMED-BY-INSPECTION`): the interval and the in-flight guard are
 native, the tick runs after the detector result and the stream callback, and the event
-rides the existing view event channel as `type: 'depth'`.
+rides the existing view event channel as `type: 'depth'`. The tick calls
+`YOLOInstanceManager.predict(..., includeRawData = false, drawOverlays = false)`, so it
+builds neither the dense `values` copy nor the annotated full-frame bitmap that
+`drawAnnotations` would allocate.
 
-Payload fact (`CONFIRMED-BY-TEST`): `depthMaxDim` 96 ⇒ grid ≤ 96 × 96 × 4 =
-**36 864 bytes** per depth event, versus the JPEG plus its native re-decode it replaces.
+Failure fact (`CONFIRMED-BY-INSPECTION`): a depth inference that throws or returns no grid
+emits `{type: 'depth', error: 'inference_failed', timestamp}` exactly once and sets a
+native latch (`depthDisabled`) that stops the tick until the next streaming config arrives.
+Dart maps the `error` marker to degraded, which withdraws the instance id and falls back to
+bounding-box distance; `retry()` re-pushes the id, clearing the latch.
+
+Payload fact (`CONFIRMED-BY-TEST`): `depthMaxDim` 96 caps the longer side, so the grid is
+≤ 96 × 96 × 4 = **36 864 bytes** and a 16:9 crop yields 96 × 54 × 4 = 20 736 bytes, versus
+the JPEG plus its native re-decode it replaces.
 
 Build fact (`CONFIRMED-BY-BUILD`): `flutter build apk --debug` on the L1b tree →
 `build/app/outputs/flutter-apk/app-debug.apk`, 116 s incremental (the planner
 preflight's from-cache figure in §4.6 was 625 s), exit 0.
-The key set is pinned by
-[`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:96).
+The key set, the aspect-correct grid shape (portrait and landscape) and the failure marker
+are pinned by
+[`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:133).
 
 ## 7. External gates register
 
@@ -400,6 +415,8 @@ other than the author of the commit being reviewed.
 | Commit | Item | Verdict | Findings | Reviewed by role |
 | --- | --- | --- | --- | --- |
 | `a8e0571` | L0 baseline ledger | PASS_WITH_NOTES | 7 findings (5 minor/nit citation precision, 1 unlabelled claim, 1 cell-shape inconsistency); all applied in `e03bc36` | reviewer |
+| `fcf4cd0`, `63131d5`, `3f81cc3` | L1 native shared-frame MDE transport | CHANGES_REQUIRED | 4 major: (1) grid aspect broken — per-axis scaling forced every crop to 96×96; (2) a failing depth inference was invisible and never stopped; (3) `stop()` blocked the platform thread and interrupted in-flight inference; (4) per-tick full-frame annotation copy. 5 minor: non-volatile `depthExecutor`; out-of-order `_publish`; misleading `imageWidth`/`imageHeight`/`rotationDegrees` keys; grid built on the dense path too; tautological grid test. 2 nits: two drifted doc statements | reviewer |
+| L1b remediation commit (`fix(mde)`) | L1 remediation of the findings above | pending re-review | Finding → fix map: MAJOR-1 single scale from the longest side in `DepthEstimator.kt:135` (640×360 → 96×54); MAJOR-2 one-shot `{type: depth, error: inference_failed}` event + `depthDisabled` latch (`YOLOView.kt:1659`) mapped to `_degrade()` in `monocular_depth_estimator.dart:144`; MAJOR-3 `shutdown()` only, never `shutdownNow()`/`awaitTermination` (`YOLOView.kt:2567`); MAJOR-4 `drawOverlays = false` on the depth tick (`YOLO.kt:75`, `YOLOView.kt:1622`); MINOR-5 `@Volatile depthExecutor` + create/teardown lock (`YOLOView.kt:173`, `:1598`); MINOR-6 single-in-flight publish guard (`monocular_depth_estimator.dart:100`, `:163`); MINOR-7 `rotationDegrees` removed, `imageWidth`/`imageHeight` = analysed bitmap dims (`YOLOView.kt:1672`, `yolo_result.dart:399`); MINOR-8 grid only when `!includeRawMaskData` (`DepthEstimator.kt:130`); MINOR-9 portrait + landscape payload-shape tests (`depth_payload_parity_test.dart:204`, `:213`) | reviewer |
 
 ## 10. Rollback instructions
 

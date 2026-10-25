@@ -95,6 +95,10 @@ class MonocularDepthEstimator {
   final Stopwatch _clock = Stopwatch()..start();
   bool _disposed = false;
 
+  /// One publish at a time: an overlapping event is dropped (latest-frame-wins), so an
+  /// older frame can never land after a newer one and dispose the newer heatmap.
+  bool _publishing = false;
+
   /// Wall-clock milliseconds of the last native depth inference. Survives [stop].
   int? get lastLatencyMs => _lastLatencyMs;
 
@@ -128,7 +132,8 @@ class MonocularDepthEstimator {
   /// Consumes one native depth event and publishes the derived frame.
   ///
   /// Silent while degraded, so a broken depth instance cannot keep producing
-  /// work; [retry] re-arms it.
+  /// work; [retry] re-arms it. A native failure marker degrades without
+  /// building a frame: the view has already stopped ticking that instance.
   void onNativeDepth(
     YOLODepthEvent event, {
     required int rotationDegrees,
@@ -136,10 +141,17 @@ class MonocularDepthEstimator {
     required int uprightHeight,
   }) {
     if (_disposed || state.value == DepthRunState.degraded) return;
+    final error = event.error;
+    if (error != null) {
+      debugPrint('[Depth] native depth inference failed: $error');
+      _degrade();
+      return;
+    }
     if (event.depthGrid.isEmpty || event.width <= 0 || event.height <= 0) {
       _degrade();
       return;
     }
+    if (_publishing) return;
     _recordCompletion(event.latencyMs);
     final grid = YOLODepthMap(
       values: event.depthGrid,
@@ -148,6 +160,7 @@ class MonocularDepthEstimator {
       minDepth: event.minDepth,
       maxDepth: event.maxDepth,
     );
+    _publishing = true;
     unawaited(
       _publish(
         grid,
@@ -155,7 +168,7 @@ class MonocularDepthEstimator {
         rotationDegrees: rotationDegrees,
         uprightWidth: uprightWidth,
         uprightHeight: uprightHeight,
-      ),
+      ).whenComplete(() => _publishing = false),
     );
   }
 
@@ -261,8 +274,11 @@ class MonocularDepthEstimator {
     previous?.heatmap?.dispose();
   }
 
-  /// Re-arms a previously failed model load (used by the degraded retry).
+  /// Re-arms a previously failed model load or a native inference failure (used by
+  /// the degraded retry).
   ///
+  /// Leaving [DepthRunState.degraded] makes the screen re-push the instance id,
+  /// which is also what clears the native failure latch (`depthDisabled`).
   /// A loaded instance keeps its accelerator: a CPU instance stays CPU, so the
   /// retry cannot relabel it as GPU without reloading.
   void retry() {
