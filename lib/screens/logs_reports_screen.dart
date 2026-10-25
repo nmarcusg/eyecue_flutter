@@ -225,9 +225,9 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
       uploadToken: _tokenController.text,
     );
     if (!value.hasValidUploadToken) {
-      setState(
-        () => _tokenError = TelemetryUploadResult.invalidUploadTokenMessage,
-      );
+      // A local sentence: the token was never sent, so the server's own
+      // "did not recognise" answer would misdescribe this refusal.
+      setState(() => _tokenError = TelemetryUploadResult.tokenShapeMessage);
       return;
     }
     if (!value.isValid) return;

@@ -235,6 +235,18 @@ void main() {
     },
   );
 
+  test('the upload declares its own content-length', () async {
+    final request = await capturedUpload(telemetry());
+    final bodyBytes = utf8.encode(request.body).length;
+    // The same byte count is the local size cap and the declared length.
+    expect(request.contentLengthBytes, bodyBytes);
+    expect(request.headers[HttpHeaders.contentLengthHeader], '$bodyBytes');
+    // This pins the request object only. The sender seam cannot observe the
+    // socket: that `_send` assigns this to `requestHandle.contentLength` (so
+    // dart:io does not fall back to `Transfer-Encoding: chunked`, which the
+    // ingest function refuses with 411) is proven by a local HttpServer probe.
+  });
+
   test('upload is unavailable without build-time configuration', () async {
     final localTelemetry = telemetry();
     populateEveryRecordType(localTelemetry);

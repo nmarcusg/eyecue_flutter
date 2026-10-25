@@ -55,17 +55,21 @@ unauthenticated runs before it has to:
 3. study upload token header present and well-formed →
    `401 missing_upload_token` / `401 invalid_upload_token`
 4. rate limit for that token hash → `429 rate_limited`
-5. declared body size (2 000 000 B; a missing or unusable `content-length` is
-   refused here rather than buffered) → `413 payload_too_large`
-6. JSON parse → `400 invalid_json`
-7. envelope, consent, forbidden keys, schema version →
+5. a usable `content-length` (a chunked body cannot be bounded before it is
+   buffered, so it is refused rather than read whole) → `411 length_required`.
+   The app's sender declares one: `TelemetryUploadRequest.contentLengthBytes` is
+   assigned to `HttpClientRequest.contentLength` before the body is written
+6. declared body size above 2 000 000 B → `413 payload_too_large`; the byte count
+   actually received is re-checked later and is the authoritative bound
+7. JSON parse → `400 invalid_json`
+8. envelope, consent, forbidden keys, schema version →
    `400 invalid_telemetry_payload` / `400 unsupported_schema_version`
-8. token consumption (atomic, `for update`) → `401/403` per status below
-9. idempotent probe + upsert (unchanged), with a use refunded on a replay
-10. one `research_ingest_attempts` row, only for an outcome on a token the
+9. token consumption (atomic, `for update`) → `401/403` per status below
+10. idempotent probe + upsert (unchanged), with a use refunded on a replay
+11. one `research_ingest_attempts` row, only for an outcome on a token the
     database confirmed (best effort)
 
-Steps 3–8 are what stops an APK holder from writing rows: the publishable key
+Steps 3–9 are what stops an APK holder from writing rows: the publishable key
 alone now answers `missing_upload_token`.
 
 ### Study upload tokens
@@ -160,12 +164,17 @@ Two cases follow from that order, and both answer `200 { "accepted": true,
 
 So a network timeout after a successful write never forces a researcher to
 re-issue a token for data the database already holds. The probe on the
-`exhausted` path is safe because `consume` has already proved the token is real
-*and* that its participant binding matches; a token hash the table does not know
-returns `invalid` and is never probed, so the answer stays useless as an
-existence oracle for an unknown caller. What it does allow is for the holder of a
-real token to confirm a `(participant_code, client_session_id)` pair they can
-already name — accept that rather than the retry burning a token.
+`exhausted` path is safe because `consume` has already proved the token is real,
+and — for a token issued *with* a participant code — that its binding matches; a
+token hash the table does not know returns `invalid` and is never probed, so the
+answer stays useless as an existence oracle for an unknown caller. What it does
+allow is for the holder of a real token to confirm a
+`(participant_code, client_session_id)` pair, and for a token issued *without* a
+participant code nothing is verified against a participant at all, so that
+holder can confirm any pair: the session ids are microsecond timestamps, so it is
+a pair they can guess rather than one they must already know, and every probe is
+a recorded ledger row counting against the same 10 attempts / 10 minutes window
+as a real upload. Accept that rather than the retry burning a token.
 
 A use is still spent when the *write* fails: that is a server fault, not a
 replay.
@@ -235,7 +244,8 @@ Every non-2xx answer is a single-machine-readable-code body.
 | 403 | `{"error":"upload_token_exhausted"}` | `uses >= max_uses` | "This study upload token has no uploads left. Ask the study coordinator for a new one; the session was not uploaded. Save a local export." |
 | 403 | `{"error":"participant_mismatch"}` | the token is bound to a different participant code | "The study upload token belongs to a different participant code. Check both values; the session was not uploaded. Save a local export." |
 | 429 | `{"error":"rate_limited"}` | 10 recorded attempts / 10 min for this token hash | "Too many upload attempts from this token. Wait a few minutes and try again; the session was not uploaded. Save a local export to keep the data." |
-| 413 | `{"error":"payload_too_large"}` | `content-length` or UTF-8 body above 2 000 000 B, **or** no usable `content-length` at all (a chunked body is refused, not buffered) | "This session is too large to upload. Save a local export to keep the data." |
+| 411 | `{"error":"length_required"}` | no usable `content-length` at all: a chunked body carries no length, so it is refused rather than buffered | "The upload could not be sent in a form the server accepts. Save a local export." |
+| 413 | `{"error":"payload_too_large"}` | `content-length`, or the UTF-8 bytes actually received, above 2 000 000 B | "This session is too large to upload. Save a local export to keep the data." |
 | 400 | `{"error":"invalid_json"}` | body is not JSON | "The research server rejected this session as invalid. Save a local export; sending it again will not help." |
 | 400 | `{"error":"invalid_telemetry_payload"}` | envelope shape/type/consent problem, a forbidden key, or a **syntactically valid body that is not a JSON object** (`[]`, `"text"`, `42` — the parse succeeds, the envelope check fails) | same validation message |
 | 400 | `{"error":"unsupported_schema_version","supported":[3,4]}` | header schema outside `{3,4}` | "This app build uses a telemetry format the research server does not accept. Update the app, or save a local export." |
@@ -246,7 +256,8 @@ Every non-2xx answer is a single-machine-readable-code body.
 
 `TelemetryUploadService` maps each study-token code to its own sentence (the
 table above), then `401`/`403` without a token code → authorisation, `400` →
-validation (with the schema-version body split out), `413` → the local size
+validation (with the schema-version body split out), `411` → its own transport
+message, `413` → the local size
 message and `5xx` → server failure. A token refusal is never folded into the
 generic authorisation text, because "your token expired" and "this build is not
 authorised" need different actions. Every branch keeps the in-memory session, so
