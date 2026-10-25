@@ -89,6 +89,7 @@ The MDE and telemetry histories are joined by merge commit `2722a7b`.
 | this commit (`f1ff670`) | PASS_WITH_NOTES (backlog review) |
 | `d28baa4` | PASS_WITH_NOTES (backlog review) |
 | the commit carrying this row | no separate reviewer row (B secure telemetry transport; the implementer summary in §2 stands until it is reviewed) |
+| the commit carrying the G row | no separate reviewer row (G accessible safety disclosure; the implementer summary in the G row of [`play-store-readiness.md`](play-store-readiness.md) §5 stands until it is reviewed) |
 
 Reviewer-log note: `f1ff670` (this commit) is an amendment of `8c69a28`, which was
 itself an amendment of `a77024c`. All three were local and unpushed, and both
@@ -290,6 +291,11 @@ or published commit rewritten, no stash created or dropped, no external system
 * The pre-existing `.aab`/`.apk` were replaced by a rebuild from the L10 tree; the
   old digests are recorded as superseded (§4).
 * No secret, token or keystore path was written into the tree (secret scan: 0 hits).
+* The user-facing safety wording now has exactly one source:
+  [`lib/widgets/safety_disclosure.dart`](../lib/widgets/safety_disclosure.dart),
+  rendered by the permanent Help section and by the first-use acknowledgement.
+  The store-listing safety/accessibility statement (item K) **must mirror this
+  wording**; no second in-app notice exists, and none is planned.
 
 ## 15. Classification
 

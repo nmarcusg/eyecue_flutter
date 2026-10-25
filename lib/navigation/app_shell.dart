@@ -13,6 +13,7 @@ import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
 import '../theme/app_home_theme.dart';
+import '../widgets/safety_disclosure.dart';
 
 /// Arena-aware, **exactly-one-active-pointer** horizontal drag recognizer.
 ///
@@ -188,6 +189,32 @@ class AppShellState extends State<AppShell> {
     widget.settings.addListener(_syncAudio);
     widget.settings.addListener(_handleSettingsChanged);
     _applyLaunchPolicy();
+    _scheduleFirstUseSafetyDisclosure();
+  }
+
+  /// Shows the first-use safety disclosure after the first frame, until the
+  /// acknowledgement is persisted.
+  ///
+  /// It is a modal that cannot be dismissed without the explicit action, and it
+  /// is never a transient message. The Help tab holds the permanent copy, so
+  /// this is the only first-use surface and there is no second one to compete
+  /// with it.
+  void _scheduleFirstUseSafetyDisclosure() {
+    if (widget.settings.safetyAcknowledged) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || widget.settings.safetyAcknowledged) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        useSafeArea: true,
+        builder: (dialogContext) => SafetyDisclosureDialog(
+          onAcknowledge: () {
+            Navigator.of(dialogContext).pop();
+            widget.settings.setSafetyAcknowledged(true);
+          },
+        ),
+      );
+    });
   }
 
   /// Applies the finalized startup policy from the already-loaded preference.

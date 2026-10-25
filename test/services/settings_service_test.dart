@@ -70,8 +70,28 @@ void main() {
       await service.load();
       expect(service.detectionTargetHz, isNull);
       expect(service.depthTargetHz, AppSettings.defaultDepthTargetHz);
-      expect(AppSettings.currentSchemaVersion, 5);
+      expect(AppSettings.currentSchemaVersion, 6);
     });
+
+    test(
+      'safety acknowledgement defaults to unacknowledged and persists',
+      () async {
+        final store = InMemorySettingsStore();
+        final service = SettingsService(store: store);
+        await service.load();
+        expect(service.safetyAcknowledged, isFalse);
+
+        var notified = 0;
+        service.addListener(() => notified++);
+        await service.setSafetyAcknowledged(true);
+        expect(service.safetyAcknowledged, isTrue);
+        expect(notified, 1);
+
+        final reloaded = SettingsService(store: store);
+        await reloaded.load();
+        expect(reloaded.safetyAcknowledged, isTrue);
+      },
+    );
 
     test('cadence setters update, notify and persist', () async {
       final store = InMemorySettingsStore();

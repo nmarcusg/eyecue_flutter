@@ -75,12 +75,12 @@ enum DetectionSensitivityPreset {
 class AppSettings {
   // Incremented 1 -> 2 when `detectionConfidence` was added, 2 -> 3 when
   // `hideBottomNavigation` was added, 3 -> 4 when the distance/overlay fields
-  // were added, and 4 -> 5 when the inference cadence targets were added: the
-  // established convention is that a new persisted field bumps the schema
-  // version. The parser is field-tolerant and has no migration branch, so this
-  // is a marker only; older JSON that lacks the field still parses with the safe
-  // default.
-  static const int currentSchemaVersion = 5;
+  // were added, 4 -> 5 when the inference cadence targets were added, and 5 -> 6
+  // when the first-use safety acknowledgement was added: the established
+  // convention is that a new persisted field bumps the schema version. The parser
+  // is field-tolerant and has no migration branch, so this is a marker only;
+  // older JSON that lacks the field still parses with the safe default.
+  static const int currentSchemaVersion = 6;
   static const double defaultDetectionConfidence = 0.25;
   static const double minDetectionConfidence = 0.10;
   static const double maxDetectionConfidence = 0.75;
@@ -126,6 +126,10 @@ class AppSettings {
   /// Requested depth cadence in Hz. A target, not a guaranteed rate.
   final int depthTargetHz;
 
+  /// Whether the user has explicitly acknowledged the first-use safety
+  /// disclosure. `false` means the acknowledgement has not been shown yet.
+  final bool safetyAcknowledged;
+
   final int schemaVersion;
 
   const AppSettings({
@@ -141,6 +145,7 @@ class AppSettings {
     this.distanceEstimationMode = DistanceEstimationMode.monocularDepth,
     this.detectionTargetHz,
     this.depthTargetHz = defaultDepthTargetHz,
+    this.safetyAcknowledged = false,
     this.schemaVersion = currentSchemaVersion,
   });
 
@@ -161,6 +166,7 @@ class AppSettings {
     DistanceEstimationMode? distanceEstimationMode,
     Object? detectionTargetHz = _unset,
     int? depthTargetHz,
+    bool? safetyAcknowledged,
   }) {
     return AppSettings(
       vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
@@ -182,6 +188,7 @@ class AppSettings {
       depthTargetHz: depthTargetHz == null
           ? this.depthTargetHz
           : normalizeDepthTargetHz(depthTargetHz),
+      safetyAcknowledged: safetyAcknowledged ?? this.safetyAcknowledged,
     );
   }
 
@@ -199,6 +206,7 @@ class AppSettings {
     'distanceEstimationMode': distanceEstimationMode.name,
     'detectionTargetHz': detectionTargetHz,
     'depthTargetHz': depthTargetHz,
+    'safetyAcknowledged': safetyAcknowledged,
   };
 
   /// Parses old and partially written settings without allowing one malformed
@@ -237,6 +245,9 @@ class AppSettings {
       distanceEstimationMode: mode,
       detectionTargetHz: normalizeDetectionTargetHz(json['detectionTargetHz']),
       depthTargetHz: normalizeDepthTargetHz(json['depthTargetHz']),
+      // Older persisted JSON lacks the field, so an upgrading user sees the
+      // first-use disclosure once.
+      safetyAcknowledged: _boolOr(json['safetyAcknowledged'], false),
       schemaVersion: currentSchemaVersion,
     );
   }
@@ -284,7 +295,8 @@ class AppSettings {
       other.showDepthHeatmap == showDepthHeatmap &&
       other.distanceEstimationMode == distanceEstimationMode &&
       other.detectionTargetHz == detectionTargetHz &&
-      other.depthTargetHz == depthTargetHz;
+      other.depthTargetHz == depthTargetHz &&
+      other.safetyAcknowledged == safetyAcknowledged;
 
   @override
   int get hashCode => Object.hash(
@@ -300,5 +312,6 @@ class AppSettings {
     distanceEstimationMode,
     detectionTargetHz,
     depthTargetHz,
+    safetyAcknowledged,
   );
 }
