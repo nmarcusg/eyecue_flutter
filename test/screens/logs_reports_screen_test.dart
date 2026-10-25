@@ -797,10 +797,15 @@ void main() {
       await tester.tap(button);
       await tester.pumpAndSettle();
 
+      // Scoped to the dialog: a screen-wide match would not prove the sentence
+      // is part of what the researcher is confirming.
       expect(
-        find.textContaining(
-          'Only the first upload per app run is stored; export locally to keep '
-          'later data.',
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.textContaining(
+            'Only the first upload per app run is stored; export locally to '
+            'keep later data.',
+          ),
         ),
         findsOneWidget,
       );
