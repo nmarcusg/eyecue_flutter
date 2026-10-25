@@ -13,6 +13,7 @@ import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -28,9 +29,14 @@ void main() {
     return service;
   }
 
+  // A well-formed study token: 44 token-safe characters (the server floor is
+  // 43, i.e. 256 random bits base64url-encoded).
+  const testToken = 'q3Yd0n4N0m8Lw2Xc9Vb6Tz1Rf5Jk7Hp0Sg4Da2Em6Ui8';
+
   const metadata = ResearchSessionMetadata(
     participantCode: 'P-001',
     studyScenario: 'indoor-obstacle-course',
+    uploadToken: testToken,
   );
 
   // On device these are Float32-derived doubles (the plugin divides a float
@@ -498,16 +504,48 @@ void main() {
     expect(source, contains('validateEnvelope(body)'));
     expect(source, contains('isBodyTooLarge'));
     expect(source, contains('publishableKeys.default'));
+    // Codes answered directly …
     for (final error in const [
       'unauthorized',
-      'payload_too_large',
-      'invalid_telemetry_payload',
       'unsupported_schema_version',
       'database_write_failed',
       'server_configuration_error',
+      'invalid_upload_token',
+      'rate_limited',
     ]) {
       expect(source, contains("error: '$error'"), reason: error);
     }
+    // … and the ones answered through the attempt-recording helper.
+    for (final entry in const {
+      'payload_too_large': 413,
+      'invalid_json': 400,
+      'invalid_telemetry_payload': 400,
+    }.entries) {
+      expect(
+        source,
+        contains("reject('${entry.key}', ${entry.value}"),
+        reason: entry.key,
+      );
+    }
+    // The consume statuses are mapped in validate.js — the file `node --test`
+    // exercises — and index.ts only passes the mapped code/status pair through.
+    for (final error in const [
+      'missing_upload_token',
+      'invalid_upload_token',
+      'expired_upload_token',
+      'revoked_upload_token',
+      'upload_token_exhausted',
+      'participant_mismatch',
+    ]) {
+      expect(validator, contains("error: '$error'"), reason: error);
+    }
+    // The study token is read from a header, hashed, and checked by the two
+    // RPCs — never stored or echoed.
+    expect(source, contains('readUploadTokenHeader(request.headers)'));
+    expect(source, contains('isValidUploadTokenShape(uploadToken)'));
+    expect(source, contains('sha256Hex(uploadToken)'));
+    expect(source, contains("'consume_research_upload_token'"));
+    expect(source, contains("'research_ingest_rate_limited'"));
     // Idempotency: one row per session, a replay only reports it.
     expect(
       source,
@@ -535,9 +573,226 @@ void main() {
       const ResearchSessionMetadata(
         participantCode: 'person@example.com',
         studyScenario: 'lab',
+        uploadToken: testToken,
       ).isValid,
       isFalse,
     );
+  });
+
+  group('the study upload token', () {
+    test('travels as a header and never in the body', () async {
+      final localTelemetry = telemetry();
+      populateEveryRecordType(localTelemetry);
+
+      final request = await capturedUpload(localTelemetry);
+
+      expect(
+        TelemetryUploadService.uploadTokenHeaderName,
+        'X-Eyecue-Upload-Token',
+      );
+      expect(
+        request.headers[TelemetryUploadService.uploadTokenHeaderName],
+        testToken,
+      );
+      // The publishable key still identifies the client; the token authorises.
+      expect(request.headers['apikey'], 'publishable-key');
+      // Not in the payload, at any depth or inside any string.
+      expect(request.body, isNot(contains(testToken)));
+      expect((jsonDecode(request.body) as Map<String, dynamic>)['study'], {
+        'participantCode': 'P-001',
+        'studyScenario': 'indoor-obstacle-course',
+      });
+    });
+
+    test('is never serialised or stringified with the metadata', () {
+      expect(metadata.toJson().keys, ['participantCode', 'studyScenario']);
+      expect(jsonEncode(metadata.toJson()), isNot(contains(testToken)));
+      // An accidental log of the object must not leak the credential.
+      expect(metadata.toString(), isNot(contains(testToken)));
+      expect(metadata.toString(), contains('P-001'));
+    });
+
+    test('a malformed token is refused locally and nothing is sent', () async {
+      for (final token in [
+        '',
+        'short',
+        ' $testToken',
+        '$testToken ',
+        '$testToken=',
+        'a'.padRight(129, 'a'),
+        testToken.replaceFirst('q', '+'),
+      ]) {
+        var sends = 0;
+        final localTelemetry = telemetry();
+        populateEveryRecordType(localTelemetry);
+        final result =
+            await TelemetryUploadService(
+              configuration: const TelemetryUploadConfiguration(
+                ingestUrl:
+                    'https://example.supabase.co/functions/v1/ingest-telemetry',
+                publishableKey: 'publishable-key',
+              ),
+              exportService: TelemetryExportService(clock: () => now),
+              clock: () => now,
+              sender: (_) async {
+                sends++;
+                return const TelemetryUploadResponse(201);
+              },
+            ).upload(
+              telemetry: localTelemetry,
+              metadata: ResearchSessionMetadata(
+                participantCode: 'P-001',
+                studyScenario: 'lab',
+                uploadToken: token,
+              ),
+            );
+
+        expect(result.isSuccess, isFalse, reason: 'length ${token.length}');
+        expect(result.errorMessage, contains('study upload token'));
+        expect(result.errorMessage, contains('local export'));
+        expect(sends, 0, reason: 'nothing may be sent for a malformed token');
+        // The session survives every refusal.
+        expect(localTelemetry.totalDetections, 1);
+        expect(localTelemetry.samples, hasLength(1));
+        expect(localTelemetry.alertRecords, hasLength(1));
+        if (token.isNotEmpty) {
+          expect(result.errorMessage, isNot(contains(token)));
+        }
+      }
+    });
+
+    test('the client shape check matches the server range', () {
+      ResearchSessionMetadata withToken(String token) =>
+          ResearchSessionMetadata(
+            participantCode: 'P-001',
+            studyScenario: 'lab',
+            uploadToken: token,
+          );
+      expect(withToken('a'.padRight(42, 'a')).hasValidUploadToken, isFalse);
+      expect(withToken('a'.padRight(43, 'a')).hasValidUploadToken, isTrue);
+      expect(withToken('a'.padRight(64, 'a')).hasValidUploadToken, isTrue);
+      expect(withToken('a'.padRight(128, 'a')).hasValidUploadToken, isTrue);
+      expect(withToken('a'.padRight(129, 'a')).hasValidUploadToken, isFalse);
+      expect(withToken('$testToken=').hasValidUploadToken, isFalse);
+      expect(withToken(' $testToken').hasValidUploadToken, isFalse);
+      expect(withToken('').hasValidUploadToken, isFalse);
+    });
+
+    group('each refusal code has its own message', () {
+      Future<TelemetryUploadResult> answer(
+        int status,
+        String body, {
+        TelemetryService? session,
+      }) => TelemetryUploadService(
+        configuration: const TelemetryUploadConfiguration(
+          ingestUrl:
+              'https://example.supabase.co/functions/v1/ingest-telemetry',
+          publishableKey: 'publishable-key',
+        ),
+        exportService: TelemetryExportService(clock: () => now),
+        clock: () => now,
+        sender: (_) async => TelemetryUploadResponse(status, body),
+      ).upload(telemetry: session ?? telemetry(), metadata: metadata);
+
+      const codes = {
+        'missing_upload_token': 401,
+        'invalid_upload_token': 401,
+        'expired_upload_token': 401,
+        'revoked_upload_token': 401,
+        'upload_token_exhausted': 403,
+        'participant_mismatch': 403,
+        'rate_limited': 429,
+      };
+
+      test('every token code maps to one distinct message', () async {
+        final messages = <String>[];
+        for (final entry in codes.entries) {
+          final result = await answer(entry.value, '{"error":"${entry.key}"}');
+          expect(result.isSuccess, isFalse, reason: entry.key);
+          final message = result.errorMessage!;
+          expect(messages, isNot(contains(message)), reason: entry.key);
+          messages.add(message);
+          expect(message, contains('local export'), reason: entry.key);
+          expect(message, isNot(contains(testToken)), reason: entry.key);
+          // Never folded into the generic authorisation sentence.
+          expect(message, isNot(contains('not authorised')), reason: entry.key);
+        }
+        expect(messages, hasLength(codes.length));
+      });
+
+      test('each message names the action the researcher must take', () async {
+        expect(
+          (await answer(401, '{"error":"missing_upload_token"}')).errorMessage,
+          contains('No study upload token was sent'),
+        );
+        expect(
+          (await answer(401, '{"error":"invalid_upload_token"}')).errorMessage,
+          contains('did not recognise'),
+        );
+        expect(
+          (await answer(401, '{"error":"expired_upload_token"}')).errorMessage,
+          contains('has expired'),
+        );
+        expect(
+          (await answer(401, '{"error":"revoked_upload_token"}')).errorMessage,
+          contains('has been revoked'),
+        );
+        expect(
+          (await answer(
+            403,
+            '{"error":"upload_token_exhausted"}',
+          )).errorMessage,
+          contains('no uploads left'),
+        );
+        expect(
+          (await answer(403, '{"error":"participant_mismatch"}')).errorMessage,
+          contains('different participant code'),
+        );
+        expect(
+          (await answer(429, '{"error":"rate_limited"}')).errorMessage,
+          contains('Too many upload attempts'),
+        );
+      });
+
+      test('a plain-text body still finds the code', () async {
+        expect(
+          (await answer(401, 'expired_upload_token')).errorMessage,
+          contains('has expired'),
+        );
+        expect(
+          (await answer(403, 'upload_token_exhausted')).errorMessage,
+          contains('no uploads left'),
+        );
+      });
+
+      test('a body with no token code keeps the generic answer', () async {
+        expect(
+          (await answer(401, '{"error":"unauthorized"}')).errorMessage,
+          contains('not authorised'),
+        );
+        expect(
+          (await answer(403, '{"error":"nonsense"}')).errorMessage,
+          contains('not authorised'),
+        );
+      });
+
+      test('a token refusal leaves the local session intact', () async {
+        final localTelemetry = telemetry();
+        populateEveryRecordType(localTelemetry);
+
+        final result = await answer(
+          403,
+          '{"error":"upload_token_exhausted"}',
+          session: localTelemetry,
+        );
+
+        expect(result.isSuccess, isFalse);
+        expect(localTelemetry.totalDetections, 1);
+        expect(localTelemetry.samples, hasLength(1));
+        expect(localTelemetry.failures, hasLength(1));
+        expect(localTelemetry.alertRecords, hasLength(1));
+      });
+    });
   });
 
   group('a non-2xx answer maps to a distinct, actionable failure', () {
@@ -852,6 +1107,22 @@ void main() {
       }
     });
 
+    test('a non-DNS host shape and an out-of-range port are tolerated', () {
+      // Pinned, not accidental: `validateTelemetryEndpoint` carries a
+      // `shortcut:` comment saying exactly this. The endpoint is a
+      // maintainer-set --dart-define, so a host typo surfaces as "could not be
+      // reached" on the first request rather than as a validation message.
+      for (final url in [
+        // Dart percent-encodes the space: the host becomes `exam%20ple.com`.
+        'https://exam ple.com/functions/v1/ingest-telemetry',
+        'https://.com/functions/v1/ingest-telemetry',
+        'https://example..com/functions/v1/ingest-telemetry',
+        'https://example.supabase.co:99999/functions/v1/ingest-telemetry',
+      ]) {
+        expect(statusOf(url), TelemetryEndpointStatus.valid, reason: url);
+      }
+    });
+
     test('nothing supplied is its own status', () {
       expect(statusOf(''), TelemetryEndpointStatus.notConfigured);
       expect(
@@ -997,6 +1268,51 @@ void main() {
           expect(outcome.session.samples, hasLength(1));
           expect(outcome.session.alertRecords, hasLength(1));
         }
+      },
+    );
+
+    test(
+      'debugMode false refuses loopback http even where kDebugMode is true',
+      () async {
+        // `flutter test` runs with kDebugMode true, so the default (`kDebugMode`)
+        // would accept loopback http here. The field is the release decision and
+        // it must win — otherwise this exception silently becomes a debug-only
+        // hole in a release build.
+        expect(
+          kDebugMode,
+          isTrue,
+          reason: 'precondition: tests run in debug mode',
+        );
+        expect(
+          validateTelemetryEndpoint(
+            ingestUrl: 'http://localhost:54321/functions/v1/ingest-telemetry',
+            publishableKey: 'publishable-key',
+          ),
+          TelemetryEndpointStatus.valid,
+          reason: 'the parameter default really is kDebugMode',
+        );
+
+        var sends = 0;
+        final session = telemetry();
+        populateEveryRecordType(session);
+        final result = await TelemetryUploadService(
+          configuration: const TelemetryUploadConfiguration(
+            ingestUrl: 'http://localhost:54321/functions/v1/ingest-telemetry',
+            publishableKey: 'publishable-key',
+          ),
+          debugMode: false,
+          exportService: TelemetryExportService(clock: () => now),
+          clock: () => now,
+          sender: (_) async {
+            sends++;
+            return const TelemetryUploadResponse(201);
+          },
+        ).upload(telemetry: session, metadata: metadata);
+
+        expect(result.isSuccess, isFalse);
+        expect(result.errorMessage, contains('requires an HTTPS address'));
+        expect(sends, 0);
+        expect(session.totalDetections, 1);
       },
     );
 

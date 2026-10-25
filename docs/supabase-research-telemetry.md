@@ -18,6 +18,13 @@ containing:
   characters); and
 - a short study scenario label (maximum 80 characters).
 
+Beside the envelope, the request carries the
+**study upload token** in the `X-Eyecue-Upload-Token` header. It is a credential,
+not payload data: it is never in the body, never stored in a row, never logged
+and never persisted on the device beyond the request. Its threat model is
+[`ingest-threat-model.md`](ingest-threat-model.md); the operational part is
+*Study upload tokens* below.
+
 The prompt explicitly warns against names and email addresses. There is no
 free-text field in the mobile upload flow. Failed uploads never delete the
 session; JSON/CSV export remains available for recovery.
@@ -37,6 +44,65 @@ builds request `android.permission.INTERNET` solely for this optional manual
 upload; detection and depth stay bundled and work offline.
 
 ## Ingestion contract (L6)
+
+### Request order
+
+The function decides in this order, cheapest gate first, so nothing expensive or
+unauthenticated runs before it has to:
+
+1. `POST` only → `405 method_not_allowed`
+2. publishable key (`apikey`) → `401 unauthorized` — **client identity only**
+3. study upload token header present and well-formed →
+   `401 missing_upload_token` / `401 invalid_upload_token`
+4. rate limit for that token hash → `429 rate_limited`
+5. body size (2 000 000 B) → `413 payload_too_large`
+6. JSON parse → `400 invalid_json`
+7. envelope, consent, forbidden keys, schema version →
+   `400 invalid_telemetry_payload` / `400 unsupported_schema_version`
+8. token consumption (atomic, `for update`) → `401/403` per status below
+9. idempotent upsert (unchanged)
+10. one `research_ingest_attempts` row for the outcome (best effort)
+
+Steps 3–8 are what stops an APK holder from writing rows: the publishable key
+alone now answers `missing_upload_token`.
+
+### Study upload tokens
+
+A token is issued by the researcher, **not** shipped in the APK: 256 random bits,
+base64url-encoded (43 characters). Only `sha256(token)` is stored, so a reader of
+the table cannot replay a token. SHA-256 rather than bcrypt/argon2 is deliberate:
+high-entropy random input has nothing to stretch, and a password KDF would only
+add per-upload latency.
+
+[`202610260001_research_upload_tokens.sql`](../supabase/migrations/202610260001_research_upload_tokens.sql)
+creates:
+
+| Object | Purpose |
+|---|---|
+| `research_upload_tokens` | `token_hash` (unique), `study_scenario`, optional `participant_code`, `max_uses`, `uses`, `expires_at`, `revoked_at`, `created_at`, `note`. RLS enabled, **no client policy** |
+| `consume_research_upload_token(p_token_hash, p_participant_code)` | `security definer`; `select … for update`, then expiry → revocation → participant binding → `uses`; increments `uses`; returns `ok`, `invalid`, `expired`, `revoked`, `exhausted` or `participant_mismatch`. Never returns token data |
+| `research_ingest_attempts` | rolling-window ledger: `token_hash`, `participant_code`, `outcome`, `created_at`. RLS enabled, no client policy |
+| `research_ingest_rate_limited(p_token_hash, p_participant_code)` | `security definer`; `true` when the window is exhausted: **10 attempts / 10 min per token**, **20 / 10 min per participant**. The constants are mirrored in `validate.js` (`RATE_LIMIT_TOKEN_MAX`, `RATE_LIMIT_PARTICIPANT_MAX`, `RATE_LIMIT_WINDOW_MINUTES`) and a test asserts the two copies agree |
+
+Both functions are `revoke`d from `public`, `anon` and `authenticated`, and granted
+to `service_role` only, so the Edge Function is the only caller. The participant
+window is only consulted when a code is supplied; the function passes `null`
+because it asks *before* parsing the body, and a code taken from an unvalidated
+body would be chosen by the caller.
+
+Issuing and revoking a token is an operator action, documented at the end of the
+migration file:
+
+```sh
+TOKEN=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')
+HASH=$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)
+psql "$DB_URL" -c "insert into public.research_upload_tokens
+  (token_hash, study_scenario, participant_code, max_uses, expires_at, note)
+  values ('$HASH', 'indoor-obstacle-course', 'P-001', 5,
+          now() + interval '14 days', 'P-001 session 1')"
+# revoke: update public.research_upload_tokens set revoked_at = now()
+#         where token_hash = '<hash>';
+```
 
 ### Idempotency
 
@@ -118,6 +184,13 @@ Every non-2xx answer is a single-machine-readable-code body.
 |---|---|---|---|
 | 405 | `{"error":"method_not_allowed"}` | not a `POST` | — (not reachable from the app) |
 | 401 | `{"error":"unauthorized"}` | missing/incorrect `apikey` | "This build is not authorised for the research upload. Save a local export and try again later." |
+| 401 | `{"error":"missing_upload_token"}` | the `X-Eyecue-Upload-Token` header is absent or empty | "No study upload token was sent. Enter the token the study coordinator gave you; the session was not uploaded. Save a local export." |
+| 401 | `{"error":"invalid_upload_token"}` | header present but not a well-formed token (padded, too short, non-token-safe), or no such token | "The research server did not recognise the study upload token. Check it with the study coordinator; the session was not uploaded. Save a local export." |
+| 401 | `{"error":"expired_upload_token"}` | `expires_at` has passed | "The study upload token has expired. Ask the study coordinator for a new one; the session was not uploaded. Save a local export." |
+| 401 | `{"error":"revoked_upload_token"}` | `revoked_at` is set | "The study upload token has been revoked. Ask the study coordinator for a new one; the session was not uploaded. Save a local export." |
+| 403 | `{"error":"upload_token_exhausted"}` | `uses >= max_uses` | "This study upload token has no uploads left. Ask the study coordinator for a new one; the session was not uploaded. Save a local export." |
+| 403 | `{"error":"participant_mismatch"}` | the token is bound to a different participant code | "The study upload token belongs to a different participant code. Check both values; the session was not uploaded. Save a local export." |
+| 429 | `{"error":"rate_limited"}` | 10 attempts / 10 min for this token hash (or 20 / 10 min for the participant, when one is supplied) | "Too many upload attempts from this token. Wait a few minutes and try again; the session was not uploaded. Save a local export to keep the data." |
 | 413 | `{"error":"payload_too_large"}` | `content-length` or UTF-8 body above 2 000 000 B | "This session is too large to upload. Save a local export to keep the data." |
 | 400 | `{"error":"invalid_json"}` | body is not JSON | "The research server rejected this session as invalid. Save a local export; sending it again will not help." |
 | 400 | `{"error":"invalid_telemetry_payload"}` | envelope shape/type/consent problem, a forbidden key, or a **syntactically valid body that is not a JSON object** (`[]`, `"text"`, `42` — the parse succeeds, the envelope check fails) | same validation message |
@@ -127,13 +200,17 @@ Every non-2xx answer is a single-machine-readable-code body.
 | 201 | `{"accepted":true}` | stored: first write for the pair | "Session uploaded to the research database." |
 | 200 | `{"accepted":true,"duplicated":true}` | already stored by an earlier attempt; nothing written | "This session was already uploaded earlier and was not stored again. Save a local export if you have recorded more data since." |
 
-`TelemetryUploadService` maps `401`/`403` → authorisation, `400` →
+`TelemetryUploadService` maps each study-token code to its own sentence (the
+table above), then `401`/`403` without a token code → authorisation, `400` →
 validation (with the schema-version body split out), `413` → the local size
-message and `5xx` → server failure. Every branch keeps the in-memory session,
-so the JSON/CSV export still recovers it. The client guard uses the *same* byte
-bound as the function's body check — it is not stricter — and its only job is
-that an over-cap session is refused before the request is sent; the table adds
-a separate storage bound the client does not mirror (see *Payload size*).
+message and `5xx` → server failure. A token refusal is never folded into the
+generic authorisation text, because "your token expired" and "this build is not
+authorised" need different actions. Every branch keeps the in-memory session, so
+the JSON/CSV export still recovers it, and no message interpolates the token or
+the publishable key. The client guard uses the *same* byte bound as the
+function's body check — it is not stricter — and its only job is that an over-cap
+session is refused before the request is sent; the table adds a separate storage
+bound the client does not mirror (see *Payload size*).
 
 ### Transport: `https` is enforced client-side
 
@@ -154,44 +231,75 @@ Only scheme and host are constrained: port, path and query are free, so
 `https://<ref>.supabase.co/functions/v1/ingest-telemetry` is valid. A defective URL
 is **rejected, never repaired** — no trimming, no scheme substitution. Every refusal
 happens before the payload is built, so no request is made and the in-memory session
-is untouched ([`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart:277)).
+is untouched ([`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart:298)).
+
+One tolerance is documented rather than fixed: there is no host-shape rule and no
+port-range check, so `https://.com`, `https://example..com`,
+`https://exam ple.com` (Dart percent-encodes the space) and a port above 65535 all
+pass validation and fail as "could not be reached" on the first request. The URL
+is a maintainer-set `--dart-define`, so the typo is caught in the build. The
+`shortcut:` comment on the validator says so, and a test pins it.
 
 **Debug-only exception.** Plain `http` is accepted for a loopback host
 (`localhost`, `127.0.0.1`, `::1`) **and only when `kDebugMode` is true**, so a local
 ingest function can be exercised from a debug build
-([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart:92)). A release
+([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart:98)). A release
 build rejects loopback `http` like any other insecure scheme, and non-loopback `http`
 is rejected in both modes. Both sides are asserted in
-[`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart:747)
-by injecting `debugMode` rather than relying on the compile-time constant.
+[`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart:999)
+by injecting `debugMode` rather than relying on the compile-time constant — including
+one case that proves `debugMode: false` refuses loopback `http` **even though**
+`flutter test` runs with `kDebugMode` true, so the injected value is what decides.
 
 No refusal message contains the endpoint URL, the publishable key, or any part of
 either; a test asserts that for the credentials case, which carries both.
 
 ### Local execution: BLOCKED-EXTERNAL — disk capacity
 
-**Neither the migration nor the function has been executed anywhere.** This
+**None of the SQL, the RPCs or the function has been executed anywhere.** This
 host has no PostgreSQL server, no Supabase CLI and no cached Supabase container
-images, and the volume holds 4.3 GB free of 91 GB (96 % used) — not enough for
+images, and the volume holds 7.7 GB free of 91 GB (92 % used) — not enough for
 the CLI plus its images. Nothing was installed and no image was pulled; the
-production project was never contacted.
+production project was never contacted. Everything below is
+`CONFIRMED-BY-INSPECTION` plus the pure `node --test` contract tests, which read
+the SQL and the function source from disk without running either.
 
 Exact reproduction on a machine with capacity (throwaway project only):
 
 ```sh
 npx supabase@latest --version
 npx supabase@latest start        # Postgres/Studio/Edge images, ≈10 GB
-npx supabase@latest db reset     # applies 202610200001, then 202610250001
+npx supabase@latest db reset     # 202610200001, 202610250001, 202610260001
 npx supabase@latest db lint
 npx supabase@latest functions serve ingest-telemetry
-# idempotency proof: two identical POSTs, then count the rows
+
+# token proof: issue one, then use it
+TOKEN=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')
+HASH=$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)
+psql "$DB_URL" -c "insert into public.research_upload_tokens
+  (token_hash, study_scenario, participant_code, max_uses, expires_at)
+  values ('$HASH', 'indoor-obstacle-course', 'P-001', 2, now() + interval '1 day')"
+# no header -> 401 {"error":"missing_upload_token"}
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
   -H "apikey: $PUBLISHABLE" -H 'content-type: application/json' --data @envelope.json
-#   first answer 201, replay 200 {"duplicated":true}
+# padded token -> 401 {"error":"invalid_upload_token"}
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
+  -H "apikey: $PUBLISHABLE" -H "X-Eyecue-Upload-Token: $TOKEN " \
+  -H 'content-type: application/json' --data @envelope.json
+# correct token -> 201, replay -> 200 {"duplicated":true}
+curl -sS -w '\n%{http_code}\n' -X POST "$URL" \
+  -H "apikey: $PUBLISHABLE" -H "X-Eyecue-Upload-Token: $TOKEN" \
+  -H 'content-type: application/json' --data @envelope.json
 psql "$DB_URL" -c 'select count(*) from public.telemetry_sessions'   # stays 1
+# uses exhausted after max_uses -> 403 {"error":"upload_token_exhausted"}
+psql "$DB_URL" -c 'select uses, max_uses from public.research_upload_tokens'
+# expired / revoked / participant_mismatch -> update the row and repeat
+# rate limit -> 11 POSTs in 10 min -> 429 {"error":"rate_limited"}
+
 # maxed-payload proof: one worst-case envelope, then the stored text size
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
-  -H "apikey: $PUBLISHABLE" -H 'content-type: application/json' --data @maxed-envelope.json
+  -H "apikey: $PUBLISHABLE" -H "X-Eyecue-Upload-Token: $TOKEN" \
+  -H 'content-type: application/json' --data @maxed-envelope.json
 psql "$DB_URL" -c "select octet_length(payload::text) from public.telemetry_sessions
   where client_session_id = '<maxed-session-id>'"   # must be below 2400000
 npx supabase@latest stop
@@ -206,17 +314,23 @@ bytes itself, and its **stored** `payload::text` must stay under the table's
 ## Provisioning
 
 1. Create a Supabase project and apply, in order,
-   [`supabase/migrations/202610200001_create_research_telemetry.sql`](../supabase/migrations/202610200001_create_research_telemetry.sql)
+   [`supabase/migrations/202610200001_create_research_telemetry.sql`](../supabase/migrations/202610200001_create_research_telemetry.sql),
+   [`supabase/migrations/202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql)
    and
-   [`supabase/migrations/202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql).
+   [`supabase/migrations/202610260001_research_upload_tokens.sql`](../supabase/migrations/202610260001_research_upload_tokens.sql).
 2. Create authenticated accounts for researchers, then insert their user IDs
    in `public.research_members` with `researcher` or `admin` role. Do not give
    participant devices database accounts or table privileges.
-3. Deploy `supabase/functions/ingest-telemetry`. It is intentionally public at
+3. Issue at least one **study upload token** per participant/session (see
+   *Study upload tokens*), and hand the token to the researcher out of band.
+   Without a token every upload answers `401 missing_upload_token`, so a
+   deployment that skips this step collects nothing.
+4. Deploy `supabase/functions/ingest-telemetry`. It is intentionally public at
    the function boundary so a consented mobile device can upload, but the
-   function validates a bounded payload and writes using its server-only
-   Supabase secret. Tables remain protected by Row Level Security.
-4. Build the Android app with these non-secret client values:
+   function requires a valid study token, validates a bounded payload and writes
+   using its server-only Supabase secret. Tables remain protected by Row Level
+   Security.
+5. Build the Android app with these non-secret client values:
 
    ```text
    --dart-define=EYECUE_TELEMETRY_INGEST_URL=https://<project-ref>.supabase.co/functions/v1/ingest-telemetry
@@ -226,14 +340,14 @@ bytes itself, and its **stored** `payload::text` must stay under the table's
    Do not put a `secret`/`service_role` key in a Flutter build, source file, or
    dashboard. Supabase's client initialization uses publishable keys; secret
    keys belong only in the server runtime.
-5. Open the private researcher dashboard, sign in with a researcher account,
+6. Open the private researcher dashboard, sign in with a researcher account,
    then enter the project URL and publishable key. It reads sessions under RLS
    and writes additive annotations; it does not modify the uploaded payload.
 
 ## Verification status
 
-The envelope rules are covered by `node --test
-supabase/functions/ingest-telemetry/validate.test.mjs` (41 cases: every
+The envelope **and token** rules are covered by `node --test
+supabase/functions/ingest-telemetry/validate.test.mjs` (**52 cases**: every
 forbidden key at three depths, the `frameNumber` allowance, case-variant and
 padded spellings that pass by design, each mistyped envelope field, both
 supported and three unsupported schema versions, the 2 000 000 / 2 000 001-byte
@@ -241,10 +355,24 @@ boundary, and four coupling guards that read the migration SQL and `index.ts`
 from disk — schema list, unique-index columns against the `onConflict` target,
 the storage bound at least 20 % above the wire cap, and the unguarded `drop
 constraint telemetry_sessions_check` that must abort on a renamed constraint).
-The Flutter suite covers the client
-error mapping, the duplicate-versus-success states, and re-reads both Edge
-Function sources. **Not executed**: the SQL and the TypeScript function
-themselves — see *Local execution: BLOCKED-EXTERNAL* above.
+The token cases cover: the header name, reading a `Headers` instance and a plain
+record, returning the value unmodified (never trimmed), the 43/128-character
+boundaries, empty/padded/oversized/non-token-safe values, every status →
+`{error, status}` mapping including an unrecognised status never reading as
+success, the assertion that no helper logs or echoes the token, that `index.ts`
+hashes it and never puts it in an answer body or a row, and two coupling guards
+on the new migration (additive only, RLS with no client policy, `for update`,
+`security definer`, `revoke`/`grant` for both RPCs, and the rate-limit
+thresholds matching the JS constants).
+
+The Flutter suite covers the client error mapping for every token code, the
+dialog requiring the field, the header actually carrying the token, the token
+never appearing in the body/`toJson()`/`toString()`/any message, the
+duplicate-versus-success states, and re-reads both Edge Function sources.
+**Not executed**: the SQL, the RPCs and the TypeScript function themselves — see
+*Local execution: BLOCKED-EXTERNAL* above. The token is proven absent from the
+wire body and the UI by test; the hash-and-consume path is
+`CONFIRMED-BY-INSPECTION` only.
 
 ## Payload size
 

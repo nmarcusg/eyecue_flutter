@@ -201,10 +201,16 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
   final TextEditingController _participantController = TextEditingController();
   final TextEditingController _scenarioController = TextEditingController();
 
+  /// The study upload token is held here only for the lifetime of the dialog.
+  /// It is never written to preferences, an export, telemetry or a message;
+  /// disposing the dialog drops it.
+  final TextEditingController _tokenController = TextEditingController();
+
   @override
   void dispose() {
     _participantController.dispose();
     _scenarioController.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
@@ -212,8 +218,9 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
     final value = ResearchSessionMetadata(
       participantCode: _participantController.text,
       studyScenario: _scenarioController.text,
+      uploadToken: _tokenController.text,
     );
-    if (!value.isValid) return;
+    if (!value.isValid || !value.hasValidUploadToken) return;
     Navigator.pop(context, value);
   }
 
@@ -228,8 +235,9 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
             'This manually sends the current image-free session to the '
             'research database. It does not include camera frames or device IDs. '
             'Use only a study participant code, never a name or email address. '
-            'Only the first upload per app run is stored; export locally to keep '
-            'later data.',
+            'The study upload token comes from the study coordinator; it is used '
+            'for this upload only and is not saved. Only the first upload per app '
+            'run is stored; export locally to keep later data.',
           ),
           const SizedBox(height: kSpace12),
           TextField(
@@ -246,6 +254,16 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
             decoration: const InputDecoration(
               labelText: 'Study scenario',
               hintText: 'indoor-obstacle-course',
+            ),
+          ),
+          TextField(
+            controller: _tokenController,
+            maxLength: 128,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: const InputDecoration(
+              labelText: 'Study upload token',
+              helperText: 'Required. Supplied by the study coordinator.',
             ),
           ),
         ],

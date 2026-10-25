@@ -16,11 +16,22 @@ import {
   ALLOWED_KEYS,
   FORBIDDEN_KEYS,
   MAX_BODY_BYTES,
+  MISSING_UPLOAD_TOKEN,
+  RATE_LIMIT_PARTICIPANT_MAX,
+  RATE_LIMIT_TOKEN_MAX,
+  RATE_LIMIT_WINDOW_MINUTES,
   SUPPORTED_SCHEMA_VERSIONS,
+  UPLOAD_TOKEN_FAILURES,
+  UPLOAD_TOKEN_HEADER,
+  UPLOAD_TOKEN_MAX_LENGTH,
+  UPLOAD_TOKEN_MIN_LENGTH,
   containsForbiddenKey,
   isBodyTooLarge,
   isForbiddenKey,
   isSupportedSchemaVersion,
+  isValidUploadTokenShape,
+  readUploadTokenHeader,
+  uploadTokenFailure,
   validateEnvelope,
 } from './validate.js'
 
@@ -394,4 +405,240 @@ test('the body bound is 2 000 000 bytes, inclusive', () => {
   assert.equal(isBodyTooLarge(2_000_001), true)
   // The measured worst-case envelope is 1 850 400 bytes: still accepted.
   assert.equal(isBodyTooLarge(1_850_400), false)
+})
+
+// ---------------------------------------------------------------------------
+// Study upload tokens (docs/ingest-threat-model.md, T1–T4).
+// ---------------------------------------------------------------------------
+
+/** A well-formed 256-bit token: 32 bytes base64url-encoded, no padding. */
+const VALID_TOKEN = 'q3Yd0n4N0m8Lw2Xc9Vb6Tz1Rf5Jk7Hp0Sg4Da2Em6Ui8'
+
+test('the upload token header name is the documented one', () => {
+  assert.equal(UPLOAD_TOKEN_HEADER, 'x-eyecue-upload-token')
+})
+
+test('readUploadTokenHeader reads Headers and plain records, or null', () => {
+  const headers = new Headers()
+  headers.set('X-Eyecue-Upload-Token', VALID_TOKEN)
+  assert.equal(readUploadTokenHeader(headers), VALID_TOKEN)
+
+  // Absent.
+  assert.equal(readUploadTokenHeader(new Headers()), null)
+  // Plain record, any case.
+  assert.equal(
+    readUploadTokenHeader({ 'X-EYECUE-UPLOAD-TOKEN': VALID_TOKEN }),
+    VALID_TOKEN,
+  )
+  // Nothing at all, or a non-string value.
+  assert.equal(readUploadTokenHeader(null), null)
+  assert.equal(readUploadTokenHeader(undefined), null)
+  assert.equal(readUploadTokenHeader({}), null)
+  assert.equal(readUploadTokenHeader({ [UPLOAD_TOKEN_HEADER]: 42 }), null)
+  // Empty is absent, not "invalid shape": the two answers are different.
+  assert.equal(readUploadTokenHeader({ [UPLOAD_TOKEN_HEADER]: '' }), null)
+})
+
+test('the header value is returned unmodified, never trimmed', () => {
+  // Repairing a padded header would make a value that was never issued work.
+  const padded = ` ${VALID_TOKEN} `
+  assert.equal(
+    readUploadTokenHeader({ [UPLOAD_TOKEN_HEADER]: padded }),
+    padded,
+  )
+  assert.equal(isValidUploadTokenShape(padded), false)
+})
+
+test('a token is 43–128 token-safe characters, unpadded', () => {
+  assert.equal(UPLOAD_TOKEN_MIN_LENGTH, 43)
+  assert.equal(UPLOAD_TOKEN_MAX_LENGTH, 128)
+  // Boundaries.
+  assert.equal(isValidUploadTokenShape('a'.repeat(42)), false)
+  assert.equal(isValidUploadTokenShape('a'.repeat(43)), true)
+  assert.equal(isValidUploadTokenShape('a'.repeat(64)), true)
+  assert.equal(isValidUploadTokenShape('a'.repeat(128)), true)
+  assert.equal(isValidUploadTokenShape('a'.repeat(129)), false)
+  // base64url and hex alphabets, including both separator characters.
+  assert.equal(isValidUploadTokenShape(VALID_TOKEN), true)
+  assert.equal(isValidUploadTokenShape('-'.repeat(43)), true)
+  assert.equal(isValidUploadTokenShape('_'.repeat(43)), true)
+  assert.equal(isValidUploadTokenShape('A1'.repeat(32)), true)
+})
+
+test('an empty, padded, oversized or non-token-safe token is refused', () => {
+  for (const token of [
+    '',
+    ' ',
+    ` ${VALID_TOKEN}`,
+    `${VALID_TOKEN} `,
+    `${VALID_TOKEN}\n`,
+    `${VALID_TOKEN}=`,
+    VALID_TOKEN.replace('q', '+'),
+    VALID_TOKEN.replace('q', '/'),
+    `${VALID_TOKEN}.`,
+    `${VALID_TOKEN} ${VALID_TOKEN}`,
+    `${VALID_TOKEN}!`,
+    'ü'.repeat(43),
+    'a'.repeat(500),
+  ]) {
+    assert.equal(
+      isValidUploadTokenShape(token),
+      false,
+      `token ${JSON.stringify(token.slice(0, 12))}… must be refused`,
+    )
+  }
+  for (const value of [undefined, null, 42, {}, [], true]) {
+    assert.equal(isValidUploadTokenShape(value), false, String(value))
+  }
+})
+
+test('each token status maps to one stable HTTP answer', () => {
+  assert.equal(uploadTokenFailure('ok'), null)
+  assert.deepEqual(uploadTokenFailure('invalid'), {
+    error: 'invalid_upload_token',
+    status: 401,
+  })
+  assert.deepEqual(uploadTokenFailure('expired'), {
+    error: 'expired_upload_token',
+    status: 401,
+  })
+  assert.deepEqual(uploadTokenFailure('revoked'), {
+    error: 'revoked_upload_token',
+    status: 401,
+  })
+  assert.deepEqual(uploadTokenFailure('exhausted'), {
+    error: 'upload_token_exhausted',
+    status: 403,
+  })
+  assert.deepEqual(uploadTokenFailure('participant_mismatch'), {
+    error: 'participant_mismatch',
+    status: 403,
+  })
+  assert.deepEqual(MISSING_UPLOAD_TOKEN, {
+    error: 'missing_upload_token',
+    status: 401,
+  })
+})
+
+test('an unrecognised status is never treated as success', () => {
+  for (const status of ['toString', 'OK', 'nope', 0, null, undefined, {}]) {
+    assert.deepEqual(
+      uploadTokenFailure(status),
+      { error: 'invalid_upload_token', status: 401 },
+      `status ${String(status)}`,
+    )
+  }
+  // The remote status list is exactly the six documented strings.
+  assert.deepEqual(Object.keys(UPLOAD_TOKEN_FAILURES).sort(), [
+    'exhausted',
+    'expired',
+    'invalid',
+    'participant_mismatch',
+    'revoked',
+  ])
+})
+
+test('no token helper echoes the token or logs anything', () => {
+  const validatorSource = readFileSync(join(functionDir, 'validate.js'), 'utf8')
+  assert.ok(
+    !/console\./.test(validatorSource),
+    'validate.js must not log at all, so no token can be logged by accident',
+  )
+  // Every mapping answer is a fixed code/status pair, never the token.
+  for (const status of [...Object.keys(UPLOAD_TOKEN_FAILURES), 'ok', 'junk']) {
+    const answer = uploadTokenFailure(status)
+    assert.ok(
+      !JSON.stringify(answer ?? {}).includes(VALID_TOKEN),
+      `status ${status} must not echo the token`,
+    )
+  }
+  // The shape check answers a boolean.
+  assert.equal(typeof isValidUploadTokenShape(VALID_TOKEN), 'boolean')
+})
+
+test('the Edge Function hashes the token and never puts it in a body or row', () => {
+  assert.ok(
+    indexSource.includes('sha256Hex(uploadToken)'),
+    'index.ts must hash the raw token before any database call',
+  )
+  // No log line carries the raw token.
+  for (const match of indexSource.matchAll(/console\.\w+\(([\s\S]*?)\)\n/g)) {
+    assert.ok(!match[1].includes('uploadToken'), match[0].slice(0, 60))
+  }
+  // Nor does any answer body or stored column.
+  assert.ok(!/error: uploadToken[),]/.test(indexSource))
+  assert.ok(!/token:\s*uploadToken[),]/.test(indexSource))
+  assert.ok(!/payload:\s*uploadToken[),]/.test(indexSource))
+})
+
+test('the token migration is additive, locked down and lock-safe', () => {
+  const tokenSql = readFileSync(
+    join(functionDir, '../../migrations/202610260001_research_upload_tokens.sql'),
+    'utf8',
+  )
+  // No destructive statement anywhere in a purely additive migration.
+  assert.ok(!/drop\s+(table|column|constraint)/i.test(tokenSql), 'additive only')
+  // Only a hash is stored: no plaintext column exists at all.
+  assert.match(tokenSql, /token_hash text not null unique/)
+  assert.ok(!/^\s*token text/m.test(tokenSql), 'never store the token itself')
+  // RLS on both new tables, with no policy granted to any client role.
+  assert.equal(tokenSql.match(/enable row level security/g)?.length, 2)
+  assert.ok(!/create policy/i.test(tokenSql), 'no client policy may exist')
+  // Atomic consumption: the row is locked, and the statuses are spelled out.
+  assert.match(tokenSql, /for update/i)
+  assert.match(tokenSql, /security definer/i)
+  for (const status of [
+    'ok',
+    'invalid',
+    'expired',
+    'revoked',
+    'exhausted',
+    'participant_mismatch',
+  ]) {
+    assert.ok(tokenSql.includes(`'${status}'`), status)
+  }
+  // SECURITY DEFINER functions must not be reachable by a client role.
+  for (const fn of [
+    'consume_research_upload_token',
+    'research_ingest_rate_limited',
+  ]) {
+    assert.ok(
+      tokenSql.includes(
+        `revoke all on function public.${fn}(text, text)\n  from public, anon, authenticated;`,
+      ),
+      `${fn} must be revoked from every client role`,
+    )
+    assert.ok(
+      tokenSql.includes(
+        `grant execute on function public.${fn}(text, text)\n  to service_role;`,
+      ),
+      `${fn} must be executable by service_role only`,
+    )
+  }
+})
+
+test('the rate-limit thresholds in SQL match the JS constants', () => {
+  const tokenSql = readFileSync(
+    join(functionDir, '../../migrations/202610260001_research_upload_tokens.sql'),
+    'utf8',
+  )
+  assert.deepEqual(
+    [RATE_LIMIT_TOKEN_MAX, RATE_LIMIT_PARTICIPANT_MAX, RATE_LIMIT_WINDOW_MINUTES],
+    [10, 20, 10],
+  )
+  // The SQL is the enforcer; the constants above are the documentation the
+  // function and the docs quote. A silent divergence would either throttle real
+  // uploads or quietly disable the limit.
+  assert.ok(
+    tokenSql.includes(`interval '${RATE_LIMIT_WINDOW_MINUTES} minutes'`),
+    'window must match RATE_LIMIT_WINDOW_MINUTES',
+  )
+  assert.ok(
+    tokenSql.includes(') >= 10,'),
+    'per-token ceiling must match RATE_LIMIT_TOKEN_MAX',
+  )
+  assert.ok(
+    tokenSql.includes(') >= 20,'),
+    'per-participant ceiling must match RATE_LIMIT_PARTICIPANT_MAX',
+  )
 })
