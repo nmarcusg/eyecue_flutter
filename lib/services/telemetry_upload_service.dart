@@ -247,6 +247,10 @@ class TelemetryUploadService {
     } on FormatException {
       // The 4 KiB read cap can cut the body mid-JSON, and a replay must still
       // not be reported as a write: read the flag out of the surviving prefix.
+      // shortcut: this is a prefix heuristic on an untrusted, possibly truncated
+      // body — a cut before the flag reads as a write and the token anywhere in
+      // a non-JSON body reads as a duplicate; switch to a length-delimited or
+      // header-based signal if the ingest response contract changes.
       return body.replaceAll(RegExp(r'\s'), '').contains('"duplicated":true');
     }
   }

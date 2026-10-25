@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
@@ -11,8 +14,30 @@ dependencies {
     implementation("androidx.work:work-runtime:2.11.2")
 }
 
+// Release signing material is owner-supplied and never committed: either
+// android/key.properties (gitignored) or the EYECUE_KEYSTORE_* environment
+// variables. Store file paths are resolved against android/app/, so use an
+// absolute path unless the keystore really lives under android/app/.
+val uploadKeyProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) FileInputStream(file).use { load(it) }
+}
+fun uploadSecret(property: String, env: String): String? =
+    uploadKeyProperties.getProperty(property)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+
+val uploadStoreFile = uploadSecret("storeFile", "EYECUE_KEYSTORE_PATH")
+val uploadStorePassword = uploadSecret("storePassword", "EYECUE_KEYSTORE_PASSWORD")
+val uploadKeyAlias = uploadSecret("keyAlias", "EYECUE_KEY_ALIAS")
+val uploadKeyPassword = uploadSecret("keyPassword", "EYECUE_KEY_PASSWORD")
+val hasUploadSigning = uploadStoreFile != null && uploadStorePassword != null &&
+    uploadKeyAlias != null && uploadKeyPassword != null
+
 android {
-    namespace = "com.example.eyecue_flutter"
+    // Provisional Play Store identity; the final applicationId is an owner gate
+    // (docs/release-procedure.md). Changing it after the first upload is not
+    // possible for the same listing.
+    namespace = "app.eyecue.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -22,16 +47,49 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.eyecue_flutter"
+        applicationId = "app.eyecue.mobile"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasUploadSigning) {
+            create("release") {
+                storeFile = file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            // Flutter's Gradle plugin does not enable shrinking; these are the
+            // effective release values and R8 (including its consumer rules from
+            // WorkManager/Room) runs on this build type.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+
+            if (hasUploadSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                // No keystore: the build must never pass for a Play release.
+                logger.warn(
+                    "EyeCue: no release signing material (android/key.properties or " +
+                        "EYECUE_KEYSTORE_*). This release build is DEBUG-SIGNED and its " +
+                        "versionName carries -testsigned: it is a test artifact, not a " +
+                        "Play Store release.",
+                )
+                signingConfig = signingConfigs.getByName("debug")
+                versionNameSuffix = "-testsigned"
+            }
         }
     }
 }
