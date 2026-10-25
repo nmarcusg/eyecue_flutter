@@ -184,7 +184,7 @@ item as `DONE`.
 | --- | --- | --- | --- | --- | --- | --- |
 | L0 baseline ledger | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
 | L1a vendored plugin + reviewer notes | Replace the hosted `ultralytics_yolo` pin with the in-tree path dependency and apply the 7 L0 reviewer findings to this document | L0 | DONE | `d5390d4` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
-| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (payload ≤ 36 864 bytes) | L0, L1a | DONE | `L1B_SHA` | awaiting reviewer | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
+| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (payload ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` | awaiting reviewer | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
 | L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
@@ -362,6 +362,10 @@ rides the existing view event channel as `type: 'depth'`.
 
 Payload fact (`CONFIRMED-BY-TEST`): `depthMaxDim` 96 ⇒ grid ≤ 96 × 96 × 4 =
 **36 864 bytes** per depth event, versus the JPEG plus its native re-decode it replaces.
+
+Build fact (`CONFIRMED-BY-BUILD`): `flutter build apk --debug` on the L1b tree →
+`build/app/outputs/flutter-apk/app-debug.apk`, 116 s incremental (the planner
+preflight's from-cache figure in §4.6 was 625 s), exit 0.
 The key set is pinned by
 [`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:96).
 
