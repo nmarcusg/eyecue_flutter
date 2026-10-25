@@ -64,7 +64,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 - Adaptive throttling fully implemented — 🟡 partial (Low Power Mode dispatch throttle)
 - GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU — 🟡 explicit XNNPACK candidate, initial target-device evidence, and recoverable CPU fallback are present; extended native stability validation and NNAPI/GPU alternatives remain pending
 - Integration tests for end-to-end pipeline — 🟡 deterministic unit/widget/orchestration coverage is in place; physical-device and full camera-to-runtime integration remain manual
-- Package name fixed to `com.eyecue` — ❌ (still `com.example.eyecue_flutter`)
+- Package name finalised as `app.eyecue.mobile` (owner-approved, supersedes the earlier `com.eyecue` target) — ✅ `2d0d0cd`
 - `minSdkVersion` set explicitly to thesis-aligned API 29 — 🟡 (currently relies on Flutter default 24)
 - All documentation up to date — ⚠️ (the 2026-09-05 synchronization was accurate at that revision; as of 2026-10-17, device validation, audible-latency measurement, telemetry instrumentation, and Play-release readiness documentation remain pending)
 

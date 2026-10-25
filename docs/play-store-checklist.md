@@ -17,14 +17,14 @@ verified), [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) (licensing).
 | # | Gate | State |
 | --- | --- | --- |
 | 1 | Production upload keystore + Play App Signing enrolment | **OWNER ACTION** — no keystore exists; every artefact so far is debug-signed (`-testsigned`) |
-| 2 | Final `applicationId` (D1) | **OWNER ACTION** — `app.eyecue.mobile` is provisional and cannot change after the first upload |
+| 2 | Final `applicationId` (D1) | **DECIDED** — owner-approved `app.eyecue.mobile`; it cannot change after the first upload |
 | 3 | App licence (D2) | **OWNER ACTION** — [`LICENSE`](../LICENSE) grants nothing yet |
 | 4 | Installed-startup verification on a real device | **NOT VERIFIED** — no device/AVD on the build host |
 | 5 | Privacy policy published at a public URL | **OWNER ACTION** — does not exist |
 | 6 | Legal review of AGPL-3.0 obligations | **OWNER ACTION** — items R1–R7 in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 |
 
-Do not open a Play Console listing before items 1–3 are settled; items 4–6 determine
-what can honestly be *declared*.
+Do not open a Play Console listing before items 1 and 3 are settled; items 4–6
+determine what can honestly be *declared*.
 
 ## 1. Privacy policy
 
@@ -199,7 +199,7 @@ production-access application is required for this account type.
 | Gate | Blocking? | State |
 | --- | --- | --- |
 | Production signing material (gate 1) | yes | **OWNER ACTION** |
-| Final `applicationId` (gate 2) | yes | **OWNER ACTION** |
+| Final `applicationId` (gate 2) | no — decided | **DECIDED** — `app.eyecue.mobile` |
 | App licence (gate 3) | yes | **OWNER ACTION** |
 | Device startup verification (gate 4) | yes for any quality claim | **NOT VERIFIED** |
 | Privacy policy live (gate 5) | yes | **OWNER ACTION** |

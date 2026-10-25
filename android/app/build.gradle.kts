@@ -34,8 +34,9 @@ val hasUploadSigning = uploadStoreFile != null && uploadStorePassword != null &&
     uploadKeyAlias != null && uploadKeyPassword != null
 
 android {
-    // Provisional Play Store identity; the final applicationId is an owner gate
-    // (docs/release-procedure.md). Changing it after the first upload is not
+    // Final Play Store identity: the owner approved app.eyecue.mobile, so both
+    // applicationId and namespace are settled (gate D1 decided; see
+    // docs/release-procedure.md). Changing it after the first upload is not
     // possible for the same listing.
     namespace = "app.eyecue.mobile"
     compileSdk = flutter.compileSdkVersion

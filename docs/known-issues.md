@@ -145,7 +145,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 | 🟡 P1 | Ultralytics' native overlay still needs device-level revalidation with the current metadata-enriched artifact; EyeCue's own adapted cards/TTS resolve labels correctly from `labels.txt` | Model metadata / Ultralytics overlay |
 | 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` (historical; Custom engine removed) | [`detection_screen.dart`](../lib/screens/detection_screen.dart) (frame dispatch) |
 | 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear (historical; Custom engine removed) | `inference_isolate.dart` (deleted with the Custom engine on 2026-10-21) |
-| 🟢 P3 | Package name is `com.example.eyecue_flutter` instead of specified `com.eyecue` | [`build.gradle.kts:7`](../android/app/build.gradle.kts:7) |
+| ✅ | Package name was the placeholder `com.example.eyecue_flutter` instead of the specified `com.eyecue` | Resolved by the owner-approved final ID `app.eyecue.mobile` ([`build.gradle.kts`](../android/app/build.gradle.kts)) |
 | 🟢 P3 | `minSdkVersion` relies on the Flutter default (24) — thesis targets Android 10 / API 29; not set explicitly | [`build.gradle.kts:18`](../android/app/build.gradle.kts:18) |
 | 🟢 P3 | Release build still signs with the debug keystore | [`build.gradle.kts`](../android/app/build.gradle.kts) |
 | ✅ | Detection sensitivity was previously fixed at 0.25 | Resolved by persisted presets and bounded advanced values in [`app_settings.dart`](../lib/models/app_settings.dart), applied through [`model_config.dart`](../lib/models/model_config.dart) |

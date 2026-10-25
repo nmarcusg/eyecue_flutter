@@ -224,7 +224,8 @@ field, so dashboard compatibility is unchanged by this run.
 
 ## 11. Remaining owner actions
 
-1. Confirm the production `applicationId` (D1) — irreversible per listing.
+1. `applicationId` (D1) is **decided** — `app.eyecue.mobile`, owner-approved and
+   final; it must not change (irreversible per listing).
 2. Provide the upload keystore / `EYECUE_KEYSTORE_*` and enrol Play App Signing.
 3. Choose the application licence (D2) after legal review of R1–R7.
 4. Answer the Data Safety form (D3) — items P1–P5 in
@@ -251,7 +252,7 @@ field, so dashboard compatibility is unchanged by this run.
 | 6 | Data Safety answers cannot all be given truthfully yet (no retention policy, no deletion process). The former third clause — `https` not enforced — is closed: the client validates the ingest endpoint and refuses any non-`https` scheme (see the B row in [`play-store-readiness.md`](play-store-readiness.md) §5) |
 | 7 | `flutter test` carries one known failing TTS test; a real regression there would not be distinguishable from it |
 | 8 | Dashboard contract verified only in the separate repository, not deployed |
-| 9 | `applicationId` is provisional; `auditor.md`, `chat_spec.md` and four dated audit documents still quote the old `com.example.eyecue_flutter` (historical snapshots, deliberately not rewritten) |
+| 9 | `applicationId` is the owner-approved final `app.eyecue.mobile`; `auditor.md`, `chat_spec.md` and the dated audit documents still quote the historical `com.example.eyecue_flutter` (time-stamped snapshots, deliberately not rewritten) |
 | 10 | The APK `-testsigned` name depends on the manual `markTestSignedApk` task: `flutter build apk --release` alone still yields a plain-named, debug-signed `app-release.apk`. The AAB, which is what Play consumes, is renamed automatically by `bundleRelease` |
 | 11 | The marking task now fails closed (§3), but that only catches a moved artefact at task-run time — a renamed *directory* is not detected at configuration time; a second `markTestSignedApk` run against an already-marked set also fails, because the task declares no outputs |
 | 12 | The AAB is discovered by globbing the release directory with a "first `.aab` wins" fallback, so a stale `-testsigned.aab` sitting beside a fresh plain one would be the file reported |
@@ -308,15 +309,15 @@ reproducibly enough to inspect, and now declares eight permissions with the thre
 unused ones removed and
 proved absent by `aapt2`. Everything that remains cannot be produced from inside
 this repository: installed startup is unverified because no device exists, the
-artefacts are debug-signed because no keystore exists, the `applicationId` is still
-provisional, the Data Safety answers cannot be given truthfully until retention and
-deletion are decided (`https` enforcement no longer blocks them — it is enforced in
-code), and the AGPL-3.0 obligations on the vendored plugin and the bundled models
-have had no legal review. Those are owner gates, not engineering defects — but they
-are gates.
+artefacts are debug-signed because no keystore exists, the `applicationId` is decided
+(`app.eyecue.mobile`) and irreversible per listing, the Data Safety answers cannot be
+given truthfully until retention and deletion are decided (`https` enforcement no
+longer blocks them — it is enforced in code), and the AGPL-3.0 obligations on the
+vendored plugin and the bundled models have had no legal review. Those are owner
+gates, not engineering defects — but they are gates.
 
 **`READY_FOR_PLAY_STORE_SUBMISSION` is not available for this tree.** The app cannot
 be submitted today: the artefact Play would receive is debug-signed and would be
-rejected, startup has never run on a device, the final `applicationId` is unconfirmed
-and irreversible per listing, and the privacy, Data Safety and licensing positions
-are undecided. None of that is softened by the green checks in §3.
+rejected, startup has never run on a device, and the privacy, Data Safety and
+licensing positions are undecided. None of that is softened by the green checks in
+§3.
