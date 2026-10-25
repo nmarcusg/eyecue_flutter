@@ -33,7 +33,8 @@ what was measured, what was **not** verified, and one classification.
 | L9 Play Store configuration | `2d0d0cd`, `870c24e` | CHANGES_REQUIRED (same round) |
 | L10 attribution + naming | `423d97a` | PASS_WITH_NOTES (backlog review — the L8/L9 round-1 findings are applied) |
 | **L10 permission removal + licence/notices/privacy/checklist** | **`8766586`, `842d38b`** | **PASS_WITH_NOTES for `8766586`; CHANGES_REQUIRED (LOW, docs only) for `842d38b` — backlog review** |
-| **L11 final readiness report** | **this commit** | **PASS_WITH_NOTES (backlog review)** |
+| **L11 final readiness report** | **`f1ff670`** | **PASS_WITH_NOTES (backlog review)** |
+| **B secure telemetry transport** | **the commit carrying this row** | **implementer summary — no reviewer verdict yet (no self-approval)** |
 
 ### 2.1 Source histories incorporated
 
@@ -86,6 +87,7 @@ The MDE and telemetry histories are joined by merge commit `2722a7b`.
 | `842d38b` | CHANGES_REQUIRED (LOW, docs only) |
 | this commit (`f1ff670`) | PASS_WITH_NOTES (backlog review) |
 | `d28baa4` | PASS_WITH_NOTES (backlog review) |
+| the commit carrying this row | no separate reviewer row (B secure telemetry transport; the implementer summary in §2 stands until it is reviewed) |
 
 Reviewer-log note: `f1ff670` (this commit) is an amendment of `8c69a28`, which was
 itself an amendment of `a77024c`. All three were local and unpushed, and both
@@ -224,8 +226,10 @@ field, so dashboard compatibility is unchanged by this run.
 2. Provide the upload keystore / `EYECUE_KEYSTORE_*` and enrol Play App Signing.
 3. Choose the application licence (D2) after legal review of R1–R7.
 4. Answer the Data Safety form (D3) — items P1–P5 in
-   [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1 are open, notably
-   retention, deletion process and `https` enforcement.
+   [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1: P3 (`https`
+   enforcement) is **resolved in code**; P1 retention, P2 participant-code
+   interpretation, P4 processor-versus-third-party and P5 privacy-policy URL remain
+   owner decisions.
 5. Publish the privacy policy and fill the store listing
    ([`play-store-checklist.md`](play-store-checklist.md) §1, §6–§10).
 6. Run the device gate (install, launch, camera path, TTS, model load).
@@ -242,7 +246,7 @@ field, so dashboard compatibility is unchanged by this run.
 | 3 | Removing `RECORD_AUDIO`/storage permissions would break camerax video-with-audio and shared-storage capture paths (unused today) |
 | 4 | Every artefact is debug-signed; Play will refuse it |
 | 5 | AGPL-3.0 obligations for the plugin and models are unanalysed by counsel |
-| 6 | Data Safety answers cannot all be given truthfully yet (no retention policy, no deletion process, `https` not enforced) |
+| 6 | Data Safety answers cannot all be given truthfully yet (no retention policy, no deletion process). The former third clause — `https` not enforced — is closed: the client validates the ingest endpoint and refuses any non-`https` scheme (see the B row in [`play-store-readiness.md`](play-store-readiness.md) §5) |
 | 7 | `flutter test` carries one known failing TTS test; a real regression there would not be distinguishable from it |
 | 8 | Dashboard contract verified only in the separate repository, not deployed |
 | 9 | `applicationId` is provisional; `auditor.md`, `chat_spec.md` and four dated audit documents still quote the old `com.example.eyecue_flutter` (historical snapshots, deliberately not rewritten) |
@@ -298,10 +302,11 @@ unused ones removed and
 proved absent by `aapt2`. Everything that remains cannot be produced from inside
 this repository: installed startup is unverified because no device exists, the
 artefacts are debug-signed because no keystore exists, the `applicationId` is still
-provisional, the Data Safety answers cannot be given truthfully until retention,
-deletion and `https` enforcement are decided, and the AGPL-3.0 obligations on the
-vendored plugin and the bundled models have had no legal review. Those are owner
-gates, not engineering defects — but they are gates.
+provisional, the Data Safety answers cannot be given truthfully until retention and
+deletion are decided (`https` enforcement no longer blocks them — it is enforced in
+code), and the AGPL-3.0 obligations on the vendored plugin and the bundled models
+have had no legal review. Those are owner gates, not engineering defects — but they
+are gates.
 
 **`READY_FOR_PLAY_STORE_SUBMISSION` is not available for this tree.** The app cannot
 be submitted today: the artefact Play would receive is debug-signed and would be

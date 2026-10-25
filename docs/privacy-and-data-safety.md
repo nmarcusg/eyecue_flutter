@@ -54,12 +54,20 @@ No legal opinion is given. This is the input to gate **D3** in
 
 Two independent guards:
 
-1. **Configuration** — `TelemetryUploadConfiguration.isConfigured` requires an ingest
-   URL with a scheme and a non-empty publishable key, both supplied at build time
-   (`--dart-define`). The release artefacts built here carry no such defines, so the
-   upload is structurally impossible in them
-   ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:30),
-   [`docs/release-procedure.md`](release-procedure.md) §6.5).
+1. **Configuration and transport** — the ingest URL and the publishable key are both
+   supplied at build time (`--dart-define`), and the URL is validated before a socket
+   is opened: [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart:58)
+   accepts `https` only, requires an absolute URI with a host, and rejects embedded
+   credentials. Every other scheme (`http`, `ftp`, `javascript`, `file`, custom) is
+   refused, and
+   [`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart:277)
+   returns that refusal instead of sending anything. "Encrypted in transit" is
+   therefore enforced by **code**, not assumed from how the deployment is configured.
+   The one exception is a debug build pointed at a loopback host
+   ([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart:92)); a release
+   build rejects even `http://localhost`. The release artefacts built here carry no
+   defines at all, so the upload is structurally impossible in them
+   ([`docs/release-procedure.md`](release-procedure.md) §6.5).
 2. **Explicit user confirmation** — the upload button opens a dialog
    ([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:222)) and only
    a confirmed dialog proceeds
@@ -99,7 +107,20 @@ Migration [`202610200001_create_research_telemetry.sql`](../supabase/migrations/
 | `client_submitted_at`, `received_at` | timestamps |
 | `telemetry_schema_version`, `app_version` | schema/app version strings |
 | `client_session_id`, `session_started_at`, `session_duration_ms` | session identity/timing |
-| `payload` | the image-free telemetry snapshot (`jsonb`, ≤ 2 000 000 octets) |
+| `payload` | the image-free telemetry snapshot (`jsonb`, ≤ 2 400 000 octets — the table's storage bound, **not** the wire cap) |
+
+Two different limits apply to that `payload`; they are not interchangeable:
+
+* **2 000 000 B — the wire cap.** The size of the JSON body the app sends. Refused on
+  the client before the request is built
+  ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:229))
+  and again by the ingest function.
+* **2 400 000 B — the table's storage bound.** The
+  `telemetry_sessions_payload_size` check on the stored `jsonb`
+  ([`202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql:56)),
+  deliberately above the wire cap so the client's limit is the one a researcher hits
+  first. [`supabase-research-telemetry.md`](supabase-research-telemetry.md) documents
+  the same pair under *Payload size*.
 
 There is **no** device-model, Android-version, IP, or advertising-id column, and the
 ingest function does not add one
@@ -157,7 +178,7 @@ binding.
 | Play Data safety field | Answer | Basis |
 | --- | --- | --- |
 | Does your app collect or share any of the required user data types? | **Yes — only when the researcher uploads a session** (App activity / "Other in-app actions": numeric detection & performance records) | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:183), §4 |
-| Is all data encrypted in transit? | **OWNER DECISION / code gap** — the client only checks that the configured URL *has a scheme*, not that it is `https` | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:30) — if the deployer configures `http://`, traffic is not encrypted. Declare "yes" only after the URL is pinned to `https` |
+| Is all data encrypted in transit? | **Yes — enforced by code for the upload path** | [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart:58) accepts `https` only and reports `insecureScheme` for everything else, and [the service refuses to send](../lib/services/telemetry_upload_service.dart:277) on any non-`valid` status. TLS itself comes from the platform trust store via `dart:io`'s `HttpClient`; no certificate pinning is implemented. Proven by the transport unit/service/widget cases — see §4 |
 | Is data collected ephemerally (in memory only)? | The local session is; the **uploaded** snapshot is stored in the study database | §3, §5 |
 | Data type: **Location** | No | no location API anywhere in `lib/` |
 | Data type: **Personal info** (name, e-mail, phone, address, ID numbers) | No — the only identity field is a researcher code, validated to `^[A-Za-z0-9_-]{1,64}$` | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:46) |
@@ -180,6 +201,6 @@ binding.
 | --- | --- | --- |
 | P1 | Retention period and deletion SLA | §6 has none; a policy statement is required |
 | P2 | A participant code can be a disguised name | validation cannot distinguish; the study protocol must be the control |
-| P3 | Ingest URL scheme is not enforced to be `https` | "encrypted in transit" cannot be declared from code as-is |
+| P3 | ~~Ingest URL scheme is not enforced to be `https`~~ — **RESOLVED**: `https` is now the only accepted scheme and a non-`https` endpoint is refused before sending (§4) | was: "encrypted in transit" could not be declared from code. Now covered by [`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart:747) (validator matrix, refusal, debug loopback both ways) and the screen case at [`logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart:865) |
 | P4 | Whether the Supabase project counts as a processor or a third-party share | depends on the deployment and the study's agreements |
 | P5 | Privacy-policy URL | does not exist yet; required by Play |

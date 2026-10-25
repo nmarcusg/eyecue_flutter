@@ -753,11 +753,12 @@ void main() {
   group('upload messages', () {
     Future<void> uploadOnce(
       WidgetTester tester,
-      TelemetryUploadService fake,
-    ) async {
+      TelemetryUploadService fake, {
+      TelemetryService? telemetry,
+    }) async {
       await pumpLogsScreen(
         tester,
-        telemetry: buildTelemetry(),
+        telemetry: telemetry ?? buildTelemetry(),
         uploadService: fake,
       );
       final button = find.text('Upload session to research database');
@@ -859,6 +860,53 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('already uploaded earlier'), findsNothing);
+    });
+
+    testWidgets('an insecure endpoint is explained and the session survives', (
+      tester,
+    ) async {
+      var sends = 0;
+      // A real service, so the button's enabled state and the message both come
+      // from the same gate the shipped build uses: an endpoint that is present
+      // but not usable — the case that used to read "not configured".
+      final service = TelemetryUploadService(
+        configuration: const TelemetryUploadConfiguration(
+          ingestUrl: 'http://example.com/functions/v1/ingest-telemetry',
+          publishableKey: 'sb_publishable_secret',
+        ),
+        debugMode: false,
+        exportService: _FakeExportService(),
+        sender: (_) async {
+          sends++;
+          return const TelemetryUploadResponse(201);
+        },
+      );
+      final localTelemetry = buildTelemetry(populated: true);
+
+      await uploadOnce(tester, service, telemetry: localTelemetry);
+
+      expect(sends, 0, reason: 'nothing may be sent to an insecure endpoint');
+      expect(find.textContaining('requires an HTTPS address'), findsOneWidget);
+
+      // Surfaced through the existing accessible path: one polite live region.
+      final liveRegions = tester
+          .widgetList<Semantics>(find.byType(Semantics))
+          .where(
+            (widget) => (widget.properties.label ?? '').contains(
+              'requires an HTTPS address',
+            ),
+          )
+          .toList();
+      expect(liveRegions, hasLength(1));
+      expect(liveRegions.single.properties.liveRegion, isTrue);
+
+      // The session is untouched, and neither the endpoint nor the key is
+      // echoed back to the user.
+      expect(localTelemetry.totalDetections, 1);
+      expect(localTelemetry.samples, hasLength(1));
+      expect(localTelemetry.alertRecords, hasLength(2));
+      expect(find.textContaining('example.com'), findsNothing);
+      expect(find.textContaining('sb_publishable_secret'), findsNothing);
     });
   });
 

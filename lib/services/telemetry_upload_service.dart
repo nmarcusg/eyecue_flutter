@@ -27,9 +27,100 @@ class TelemetryUploadConfiguration {
   final String ingestUrl;
   final String publishableKey;
 
+  /// True when the build supplied *something* to upload to.
+  ///
+  /// Deliberately weaker than "usable": a present-but-insecure endpoint must
+  /// still reach [TelemetryUploadService.upload] so the user is told the
+  /// specific reason instead of a generic "not configured". Whether the
+  /// endpoint may actually be used is [validateTelemetryEndpoint]'s decision.
   bool get isConfigured =>
-      Uri.tryParse(ingestUrl)?.hasScheme == true && publishableKey.isNotEmpty;
+      ingestUrl.trim().isNotEmpty && publishableKey.trim().isNotEmpty;
 }
+
+/// Why the configured ingest endpoint may or may not be used.
+enum TelemetryEndpointStatus {
+  valid,
+  notConfigured,
+  insecureScheme,
+  malformed,
+  missingHost,
+  hasCredentials,
+}
+
+/// Validates the build-time ingest endpoint. Pure: nothing outside the
+/// arguments is read, and [debugMode] is injected so both sides of the
+/// debug-only exception can be asserted without a compile-time constant.
+///
+/// Rules: `https` only; an absolute URI with a host; no embedded credentials.
+/// A URL is never rewritten or normalised — a defective one is reported, not
+/// repaired. Path, port and query are unconstrained, because a Supabase
+/// function URL is `https://<ref>.supabase.co/functions/v1/ingest-telemetry`.
+TelemetryEndpointStatus validateTelemetryEndpoint({
+  required String ingestUrl,
+  required String publishableKey,
+  bool debugMode = kDebugMode,
+}) {
+  if (ingestUrl.trim().isEmpty || publishableKey.trim().isEmpty) {
+    return TelemetryEndpointStatus.notConfigured;
+  }
+  // Reject, never repair: padding is reported so a mis-quoted --dart-define
+  // surfaces instead of being half-mended.
+  if (ingestUrl != ingestUrl.trim() ||
+      publishableKey != publishableKey.trim()) {
+    return TelemetryEndpointStatus.malformed;
+  }
+  final uri = Uri.tryParse(ingestUrl);
+  if (uri == null || !uri.hasScheme) {
+    // A scheme-less host ("example.com/ingest") is not an absolute URL.
+    return TelemetryEndpointStatus.malformed;
+  }
+  if (uri.scheme.toLowerCase() != 'https' &&
+      !_isDebugLoopback(uri, debugMode: debugMode)) {
+    return TelemetryEndpointStatus.insecureScheme;
+  }
+  if (uri.host.isEmpty) return TelemetryEndpointStatus.missingHost;
+  if (uri.userInfo.isNotEmpty) {
+    return TelemetryEndpointStatus.hasCredentials;
+  }
+  return TelemetryEndpointStatus.valid;
+}
+
+/// Debug-only, deliberately narrow exception: plain `http` is accepted for a
+/// loopback host so a local ingest function can be exercised from a debug
+/// build. A release build rejects loopback `http` like any other insecure
+/// scheme, and every non-loopback `http` host is rejected in both modes.
+bool _isDebugLoopback(Uri uri, {required bool debugMode}) {
+  if (!debugMode || uri.scheme.toLowerCase() != 'http') return false;
+  final host = uri.host.toLowerCase();
+  return host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host == '::1' ||
+      host == '[::1]';
+}
+
+/// One user-facing sentence per failing status, or `null` when the endpoint is
+/// [TelemetryEndpointStatus.valid]. No message contains the endpoint, the key,
+/// or any part of either.
+String? telemetryEndpointMessage(TelemetryEndpointStatus status) =>
+    switch (status) {
+      TelemetryEndpointStatus.valid => null,
+      TelemetryEndpointStatus.notConfigured =>
+        'Research upload has not been configured for this build.',
+      TelemetryEndpointStatus.insecureScheme =>
+        'Research upload requires an HTTPS address. This build is configured '
+            'with an insecure endpoint, so the session was not uploaded. Save '
+            'a local export.',
+      TelemetryEndpointStatus.malformed =>
+        'The configured research upload address is not a valid HTTPS address, '
+            'so the session was not uploaded. Save a local export.',
+      TelemetryEndpointStatus.missingHost =>
+        'The configured research upload address does not name a server, so '
+            'the session was not uploaded. Save a local export.',
+      TelemetryEndpointStatus.hasCredentials =>
+        'The configured research upload address contains an embedded username '
+            'or password, so it was refused and the session was not uploaded. '
+            'Save a local export.',
+    };
 
 /// Research context supplied by a researcher for one explicitly uploaded
 /// session. It deliberately has no free-text field to avoid accidental PII.
@@ -124,6 +215,7 @@ class TelemetryUploadService {
     TelemetryExportService? exportService,
     TelemetryUploadSender? sender,
     DateTime Function()? clock,
+    this.debugMode = kDebugMode,
     this.maxBodyBytes = maxUploadBodyBytes,
   }) : _configuration =
            configuration ??
@@ -145,6 +237,11 @@ class TelemetryUploadService {
   final TelemetryUploadSender _sender;
   final DateTime Function() _clock;
 
+  /// Injected so a test can assert both sides of the debug-only loopback
+  /// exception; defaults to the compile-time constant. Public only so the
+  /// constructor can take it as an initializing formal, like [maxBodyBytes].
+  final bool debugMode;
+
   /// Effective body limit; a test may lower it to drive the refusal branch.
   ///
   /// The annotation only documents that tests are the intended caller: it does
@@ -155,17 +252,29 @@ class TelemetryUploadService {
   @visibleForTesting
   final int maxBodyBytes;
 
+  /// True when the build supplied an endpoint and a key at all — not that the
+  /// endpoint is usable. Callers gate the *button* on this so a
+  /// present-but-insecure address still reaches [upload] and is explained;
+  /// [upload] itself refuses anything that is not [TelemetryEndpointStatus.valid].
   bool get isConfigured => _configuration.isConfigured;
+
+  /// Whether the configured endpoint may be used, and why not when it may not.
+  TelemetryEndpointStatus get endpointStatus => validateTelemetryEndpoint(
+    ingestUrl: _configuration.ingestUrl,
+    publishableKey: _configuration.publishableKey,
+    debugMode: debugMode,
+  );
 
   Future<TelemetryUploadResult> upload({
     required TelemetryService telemetry,
     required ResearchSessionMetadata metadata,
     AppSettings? settings,
   }) async {
-    if (!isConfigured) {
-      return const TelemetryUploadResult.failure(
-        'Research upload has not been configured for this build.',
-      );
+    final status = endpointStatus;
+    if (status != TelemetryEndpointStatus.valid) {
+      // Refused before anything is read from the session or sent: no request is
+      // made and the in-memory telemetry is left exactly as it was.
+      return TelemetryUploadResult.failure(telemetryEndpointMessage(status)!);
     }
     if (!metadata.isValid) {
       return const TelemetryUploadResult.failure(
@@ -173,12 +282,9 @@ class TelemetryUploadService {
       );
     }
 
-    final uri = Uri.tryParse(_configuration.ingestUrl);
-    if (uri == null) {
-      return const TelemetryUploadResult.failure(
-        'Research upload address is invalid.',
-      );
-    }
+    // Already validated above: absolute, `https` (or the debug loopback case),
+    // hosted and credential-free — so this parse cannot disagree with it.
+    final uri = Uri.parse(_configuration.ingestUrl);
 
     final payload = {
       'ingestionSchemaVersion': 1,

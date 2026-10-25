@@ -135,6 +135,39 @@ bound as the function's body check — it is not stricter — and its only job i
 that an over-cap session is refused before the request is sent; the table adds
 a separate storage bound the client does not mirror (see *Payload size*).
 
+### Transport: `https` is enforced client-side
+
+The endpoint is checked before a request is built, so an insecure deployment cannot
+silently downgrade the upload. [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart:58)
+returns a `TelemetryEndpointStatus`:
+
+| Status | Condition | Result |
+|---|---|---|
+| `valid` | absolute URI, scheme `https`, non-empty host, no `userInfo` | the upload proceeds |
+| `notConfigured` | ingest URL or publishable key empty (the release artefacts here) | refused, "not configured" message |
+| `insecureScheme` | scheme is anything but `https` — `http`, `ftp`, `javascript:`, `file:`, custom | refused, HTTPS message |
+| `malformed` | unparsable, no scheme, or padded/space-wrapped input | refused, "not a valid HTTPS address" message |
+| `missingHost` | `https://` or `https:///path` | refused, "does not name a server" message |
+| `hasCredentials` | non-empty `userInfo` (`https://user:pass@host/…`) | refused, embedded-credentials message |
+
+Only scheme and host are constrained: port, path and query are free, so
+`https://<ref>.supabase.co/functions/v1/ingest-telemetry` is valid. A defective URL
+is **rejected, never repaired** — no trimming, no scheme substitution. Every refusal
+happens before the payload is built, so no request is made and the in-memory session
+is untouched ([`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart:277)).
+
+**Debug-only exception.** Plain `http` is accepted for a loopback host
+(`localhost`, `127.0.0.1`, `::1`) **and only when `kDebugMode` is true**, so a local
+ingest function can be exercised from a debug build
+([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart:92)). A release
+build rejects loopback `http` like any other insecure scheme, and non-loopback `http`
+is rejected in both modes. Both sides are asserted in
+[`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart:747)
+by injecting `debugMode` rather than relying on the compile-time constant.
+
+No refusal message contains the endpoint URL, the publishable key, or any part of
+either; a test asserts that for the credentials case, which carries both.
+
 ### Local execution: BLOCKED-EXTERNAL — disk capacity
 
 **Neither the migration nor the function has been executed anywhere.** This

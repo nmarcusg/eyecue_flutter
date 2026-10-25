@@ -743,4 +743,281 @@ void main() {
       expect(result.message, contains('already uploaded earlier'));
     });
   });
+
+  group('ingest endpoint validation', () {
+    TelemetryEndpointStatus statusOf(
+      String url, {
+      String key = 'publishable-key',
+      bool debugMode = false,
+    }) => validateTelemetryEndpoint(
+      ingestUrl: url,
+      publishableKey: key,
+      debugMode: debugMode,
+    );
+
+    test('a Supabase function HTTPS URL is accepted', () {
+      expect(
+        statusOf('https://example.supabase.co/functions/v1/ingest-telemetry'),
+        TelemetryEndpointStatus.valid,
+      );
+      // Only scheme and host are constrained: port and query are allowed.
+      expect(
+        statusOf(
+          'https://example.supabase.co:8443/functions/v1/ingest-telemetry'
+          '?study=1',
+        ),
+        TelemetryEndpointStatus.valid,
+      );
+      // Scheme and host are case-insensitive in a URI.
+      expect(
+        statusOf('HTTPS://Example.SUPABASE.co/ingest'),
+        TelemetryEndpointStatus.valid,
+      );
+    });
+
+    test('a production http endpoint is rejected in release and in debug', () {
+      const url = 'http://example.com/functions/v1/ingest-telemetry';
+      expect(statusOf(url), TelemetryEndpointStatus.insecureScheme);
+      // The loopback exception is host-scoped, not scheme-scoped.
+      expect(
+        statusOf(url, debugMode: true),
+        TelemetryEndpointStatus.insecureScheme,
+      );
+    });
+
+    test('every non-https scheme is rejected', () {
+      for (final url in [
+        'ftp://example.com/ingest',
+        'javascript:alert(1)',
+        'file:///data/local/tmp/ingest',
+        'ws://example.com/ingest',
+        'custom-ingest://example.com/ingest',
+      ]) {
+        expect(
+          statusOf(url),
+          TelemetryEndpointStatus.insecureScheme,
+          reason: url,
+        );
+      }
+    });
+
+    test('a malformed address is reported, never repaired', () {
+      for (final url in [
+        'not a url at all',
+        // A scheme-less host is not an absolute URL.
+        'example.com/functions/v1/ingest-telemetry',
+        // Padding is reported rather than trimmed into a working URL.
+        ' https://example.supabase.co/ingest',
+      ]) {
+        expect(statusOf(url), TelemetryEndpointStatus.malformed, reason: url);
+      }
+      expect(
+        statusOf('https://example.supabase.co/ingest', key: ' publishable-key'),
+        TelemetryEndpointStatus.malformed,
+      );
+    });
+
+    test('a missing host is rejected', () {
+      expect(statusOf('https://'), TelemetryEndpointStatus.missingHost);
+      expect(
+        statusOf('https:///functions/v1/ingest-telemetry'),
+        TelemetryEndpointStatus.missingHost,
+      );
+    });
+
+    test('an address with embedded credentials is rejected', () {
+      expect(
+        statusOf('https://researcher:secret@example.supabase.co/ingest'),
+        TelemetryEndpointStatus.hasCredentials,
+      );
+      expect(
+        statusOf('https://researcher@example.supabase.co/ingest'),
+        TelemetryEndpointStatus.hasCredentials,
+      );
+    });
+
+    test('loopback http is accepted in debug and rejected in release', () {
+      for (final host in ['localhost', '127.0.0.1', '[::1]']) {
+        final url = 'http://$host:54321/functions/v1/ingest-telemetry';
+        expect(
+          statusOf(url, debugMode: true),
+          TelemetryEndpointStatus.valid,
+          reason: url,
+        );
+        expect(
+          statusOf(url),
+          TelemetryEndpointStatus.insecureScheme,
+          reason: url,
+        );
+      }
+    });
+
+    test('nothing supplied is its own status', () {
+      expect(statusOf(''), TelemetryEndpointStatus.notConfigured);
+      expect(
+        statusOf('https://example.supabase.co/ingest', key: ''),
+        TelemetryEndpointStatus.notConfigured,
+      );
+    });
+
+    test('each failing status names the problem and the export fallback', () {
+      for (final status in TelemetryEndpointStatus.values) {
+        final message = telemetryEndpointMessage(status);
+        if (status == TelemetryEndpointStatus.valid) {
+          expect(message, isNull);
+          continue;
+        }
+        expect(message, isNotNull, reason: '$status');
+        if (status != TelemetryEndpointStatus.notConfigured) {
+          expect(message, contains('Save a local export'), reason: '$status');
+        }
+      }
+      expect(
+        telemetryEndpointMessage(TelemetryEndpointStatus.notConfigured),
+        contains('not been configured'),
+      );
+      expect(
+        telemetryEndpointMessage(TelemetryEndpointStatus.insecureScheme),
+        contains('HTTPS'),
+      );
+      expect(
+        telemetryEndpointMessage(TelemetryEndpointStatus.malformed),
+        contains('not a valid HTTPS address'),
+      );
+      expect(
+        telemetryEndpointMessage(TelemetryEndpointStatus.missingHost),
+        contains('does not name a server'),
+      );
+      expect(
+        telemetryEndpointMessage(TelemetryEndpointStatus.hasCredentials),
+        contains('embedded username or password'),
+      );
+    });
+
+    test('no message repeats the endpoint, the key, or either credential', () {
+      const url =
+          'https://researcher:secret@example.supabase.co/functions/v1/'
+          'ingest-telemetry';
+      const key = 'sb_publishable_abc123';
+      final status = validateTelemetryEndpoint(
+        ingestUrl: url,
+        publishableKey: key,
+      );
+      expect(status, TelemetryEndpointStatus.hasCredentials);
+      final message = telemetryEndpointMessage(status)!;
+      for (final leak in [
+        'example.supabase.co',
+        'researcher',
+        'secret',
+        key,
+        'http://',
+        'https://',
+      ]) {
+        expect(message, isNot(contains(leak)), reason: leak);
+      }
+    });
+  });
+
+  group('an endpoint this build may not use is refused before sending', () {
+    /// Runs one real upload against [ingestUrl] with a sender that only counts
+    /// calls, so "was it sent?" and "did the session survive?" are observable.
+    Future<
+      ({TelemetryUploadResult result, int sends, TelemetryService session})
+    >
+    uploadWith({required String ingestUrl, bool debugMode = false}) async {
+      var sends = 0;
+      final session = telemetry();
+      populateEveryRecordType(session);
+      final service = TelemetryUploadService(
+        configuration: TelemetryUploadConfiguration(
+          ingestUrl: ingestUrl,
+          publishableKey: 'publishable-key',
+        ),
+        exportService: TelemetryExportService(clock: () => now),
+        clock: () => now,
+        debugMode: debugMode,
+        sender: (_) async {
+          sends++;
+          return const TelemetryUploadResponse(201);
+        },
+      );
+
+      final result = await service.upload(
+        telemetry: session,
+        metadata: metadata,
+      );
+      return (result: result, sends: sends, session: session);
+    }
+
+    test(
+      'an http endpoint fails with the insecure message and no request',
+      () async {
+        final outcome = await uploadWith(
+          ingestUrl: 'http://example.com/functions/v1/ingest-telemetry',
+        );
+
+        expect(outcome.result.isSuccess, isFalse);
+        expect(
+          outcome.result.errorMessage,
+          contains('requires an HTTPS address'),
+        );
+        expect(outcome.result.errorMessage, contains('Save a local export'));
+        expect(outcome.sends, 0);
+        expect(outcome.session.totalDetections, 1);
+        expect(outcome.session.samples, hasLength(1));
+        expect(outcome.session.alertRecords, hasLength(1));
+      },
+    );
+
+    test(
+      'credentials, a missing host and a malformed address fail distinctly',
+      () async {
+        final withCredentials = await uploadWith(
+          ingestUrl: 'https://researcher:secret@example.supabase.co/ingest',
+        );
+        final noHost = await uploadWith(
+          ingestUrl: 'https:///functions/v1/ingest-telemetry',
+        );
+        final malformed = await uploadWith(
+          ingestUrl: 'example.com/functions/v1/ingest-telemetry',
+        );
+
+        expect(
+          withCredentials.result.errorMessage,
+          contains('embedded username or password'),
+        );
+        expect(noHost.result.errorMessage, contains('does not name a server'));
+        expect(
+          malformed.result.errorMessage,
+          contains('not a valid HTTPS address'),
+        );
+        for (final outcome in [withCredentials, noHost, malformed]) {
+          expect(outcome.sends, 0);
+          expect(outcome.session.totalDetections, 1);
+          expect(outcome.session.samples, hasLength(1));
+          expect(outcome.session.alertRecords, hasLength(1));
+        }
+      },
+    );
+
+    test('the debug loopback exception sends, and only in debug', () async {
+      final debug = await uploadWith(
+        ingestUrl: 'http://localhost:54321/functions/v1/ingest-telemetry',
+        debugMode: true,
+      );
+      expect(debug.result.isSuccess, isTrue);
+      expect(debug.sends, 1);
+
+      final release = await uploadWith(
+        ingestUrl: 'http://localhost:54321/functions/v1/ingest-telemetry',
+      );
+      expect(release.result.isSuccess, isFalse);
+      expect(
+        release.result.errorMessage,
+        contains('requires an HTTPS address'),
+      );
+      expect(release.sends, 0);
+      expect(release.session.totalDetections, 1);
+    });
+  });
 }
