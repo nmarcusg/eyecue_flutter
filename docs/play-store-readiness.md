@@ -426,7 +426,8 @@ Every `DepthMap.image` consumer checked before making it null on this path
 (`drawAnnotations` DENSE MAPS arm — not reached on the tick, which passes
 `drawOverlays = false`), `YOLOView.kt:1935` (the view's own overlay for its detection task, not
 the depth instance), and no Dart consumer: `YOLODepthMap.fromMap` in
-`plugins/ultralytics_yolo/lib/models/yolo_result.dart:297` reads only the numeric fields.
+`plugins/ultralytics_yolo/lib/models/yolo_result.dart:345` (`:297` is its call site)
+reads only the numeric fields.
 `YOLOPlugin.kt:295` and `YOLOView.kt:2414` serialise `requireNotNull(depthMap.values)`, not the
 image, and both sit on the dense (`includeRawMaskData = true`) paths, which keep `values`.
 

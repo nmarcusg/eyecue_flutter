@@ -356,6 +356,34 @@ void main() {
       estimator.dispose();
     });
 
+    test('a publish disowned by disabling disposes its image', () async {
+      final inFlight = Completer<void>();
+      late ui.Image built;
+      final estimator = MonocularDepthEstimator(
+        heatmapBuilder: (_) async {
+          await inFlight.future;
+          return built = await testImage();
+        },
+      );
+
+      _feed(estimator, _event(timestamp: 1000));
+      // The overlay disappears while the real builder is still producing the
+      // image, so the publish owns a texture nobody asked for any more.
+      estimator.heatmapEnabled = false;
+      inFlight.complete();
+      await pumpEventQueue();
+
+      expect(
+        built.debugDisposed,
+        isTrue,
+        reason: 'a disowned image must not leak its GPU texture',
+      );
+      expect(estimator.frame.value!.heatmap, isNull);
+      expect(estimator.frame.value!.timestampMs, 1000);
+
+      estimator.dispose();
+    });
+
     test('a frame in flight cannot resurrect a degraded state', () async {
       final inFlight = Completer<void>();
       final estimator = MonocularDepthEstimator(
