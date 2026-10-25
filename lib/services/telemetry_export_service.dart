@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:path_provider/path_provider.dart';
 
 import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
+import '../models/detection_correction.dart';
 import '../models/telemetry_export.dart';
 import 'telemetry_service.dart';
 
@@ -19,7 +21,7 @@ class TelemetryExportService {
   /// Every [perfSampleStride]th sample keeps the tertiary detector/depth cost
   /// keys; the core cadence and telemetry keys stay on every sample.
   ///
-  /// These costs move slowly, so repeating them on all 500 samples was
+  /// These costs move slowly, so repeating them on all 400 retained samples was
   /// redundant and pushed the worst-case upload past the 2 MB ingest bound.
   /// Thinning loses no record: on the other samples the keys are absent (never
   /// truncated, never `0`), which the data dictionary documents.
@@ -39,6 +41,70 @@ class TelemetryExportService {
     'depthDroppedTicks',
   };
 
+  /// Serialisation-only precision contract.
+  ///
+  /// On device a box coordinate is a Float32 plugin value divided in double
+  /// arithmetic (`0.34545454545454546`), so every detection-bearing record
+  /// carries four 17–19-character decimals — ~260 KB across a worst-case
+  /// envelope, more than the ingest limit can absorb. Rounding happens here,
+  /// in the serialised output only: the stored samples are never mutated, so
+  /// band classification, in-app comparisons and speech text still read the
+  /// full value. Boxes keep 4 dp (~0.1 px of a 1080 px frame), scores 3 dp,
+  /// latency/Hz 1 dp, and the sub-millisecond stage timings 2 dp (1 dp would
+  /// round a 4.75 ms stage to 4.8).
+  static const int _boxDecimals = 4;
+  static const int _scoreDecimals = 3;
+  static const int _msDecimals = 1;
+  static const int _stageDecimals = 2;
+
+  static const Map<String, int> _samplePrecision = {
+    'latencyMs': _msDecimals,
+    'inferenceFps': _msDecimals,
+    'detectorPreMs': _stageDecimals,
+    'detectorInferenceMs': _stageDecimals,
+    'detectorPostMs': _stageDecimals,
+    'depthObservedHz': _msDecimals,
+    'confidenceThreshold': _scoreDecimals,
+  };
+
+  static double _round(double value, int places) =>
+      double.parse(value.toStringAsFixed(places));
+
+  static Map<String, double> _boxJson(Rect box) => {
+    'left': _round(box.left, _boxDecimals),
+    'top': _round(box.top, _boxDecimals),
+    'width': _round(box.width, _boxDecimals),
+    'height': _round(box.height, _boxDecimals),
+  };
+
+  static Map<String, dynamic> _detectionJson(TelemetryRecord record) {
+    final json = record.toJson();
+    json['confidence'] = _round(record.confidence, _scoreDecimals);
+    json['latencyMs'] = _round(record.latencyMs, _msDecimals);
+    json['confidenceThreshold'] = _round(
+      record.confidenceThreshold,
+      _scoreDecimals,
+    );
+    final box = record.box;
+    if (box != null) json['box'] = _boxJson(box);
+    return json;
+  }
+
+  static Map<String, dynamic> _correctionJson(DetectionCorrection record) {
+    final json = record.toJson();
+    json['confidenceThreshold'] = _round(
+      record.confidenceThreshold,
+      _scoreDecimals,
+    );
+    final detection = record.detection;
+    json['detection'] = {
+      ...detection.toJson(),
+      'confidence': _round(detection.confidence, _scoreDecimals),
+      'box': _boxJson(detection.box),
+    };
+    return json;
+  }
+
   /// Per-sample JSON with the perf keys dropped on the samples that do not fall
   /// on the [perfSampleStride]. An absent perf key means "not sampled here",
   /// not `0`.
@@ -48,6 +114,12 @@ class TelemetryExportService {
     var index = 0;
     for (final sample in samples) {
       final json = sample.toJson();
+      for (final entry in _samplePrecision.entries) {
+        final value = json[entry.key];
+        if (value is num) {
+          json[entry.key] = _round(value.toDouble(), entry.value);
+        }
+      }
       if (index++ % perfSampleStride != 0) {
         json.removeWhere((key, _) => _perfKeys.contains(key));
       }
@@ -67,11 +139,11 @@ class TelemetryExportService {
       sessionDurationMs: telemetry.sessionDuration.inMilliseconds,
       settings: settings?.toJson() ?? const {},
       samples: _sampleJson(telemetry.samples),
-      detections: telemetry.records.map((record) => record.toJson()),
+      detections: telemetry.records.map(_detectionJson),
       failures: telemetry.failures.map(_failureJson),
       fallbacks: telemetry.fallbacks.map((record) => record.toJson()),
       recoveries: telemetry.recoveries.map((record) => record.toJson()),
-      corrections: telemetry.corrections.map((record) => record.toJson()),
+      corrections: telemetry.corrections.map(_correctionJson),
       alertLifecycle: telemetry.alertRecords.map((record) => record.toJson()),
       alertCounters: telemetry.alertCounters.toJson(),
       alertSummaries: [
@@ -383,9 +455,9 @@ class TelemetryExportService {
     'engine': summary.engine.name,
     'interval': interval.name,
     'label': interval.label(summary.engine),
-    'p50Ms': summary.p50Ms,
-    'p95Ms': summary.p95Ms,
-    'maxMs': summary.maxMs,
+    'p50Ms': _round(summary.p50Ms, _msDecimals),
+    'p95Ms': _round(summary.p95Ms, _msDecimals),
+    'maxMs': _round(summary.maxMs, _msDecimals),
     'sampleCount': summary.sampleCount,
   };
 

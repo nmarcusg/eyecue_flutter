@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/app_settings.dart';
 import 'telemetry_export_service.dart';
 import 'telemetry_service.dart';
@@ -114,6 +116,11 @@ class TelemetryUploadService {
   final DateTime Function() _clock;
 
   /// Effective body limit; a test may lower it to drive the refusal branch.
+  ///
+  /// Deliberately not settable from application code: widening it would let an
+  /// oversized body reach the server's `413` instead of the explicit local
+  /// refusal.
+  @visibleForTesting
   final int maxBodyBytes;
 
   bool get isConfigured => _configuration.isConfigured;

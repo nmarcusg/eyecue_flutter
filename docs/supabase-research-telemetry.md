@@ -72,31 +72,46 @@ the migration and function behaviour have never run against a live project.
 ## Payload size
 
 The largest session the app can build is bounded by fixed collection caps. A test
-fills every one of them (2000 detections, 400 samples, 500 alert lifecycle
-records, 200 failures, 100 fallbacks, 200 recoveries, 2000 corrections) with every
-schema-4 sample key populated, and measures **1,878,480 bytes** — 121,520 bytes of
-headroom under the function's 2,000,000-byte cap, and under the 1,900,000 target.
+fills every one of them (2,000 detections, 400 samples, 500 alert lifecycle
+records, 200 failures, 100 fallbacks, 200 recoveries, 2,000 corrections) with
+**device-shaped numbers** (Float32-derived box/confidence doubles such as
+`0.34545454545454546` and `0.8700000047683716`, not tidy 2-decimal literals) and
+every schema-4 sample key populated, and measures **1,850,400 bytes** — 149,600
+bytes of headroom under the function's 2,000,000-byte cap and 49,600 bytes under
+the internal 1,900,000-byte target.
+
+One thing *is* dropped, deliberately: `_maxSamples` is capped at 400, so a session
+longer than that keeps a **rolling window** of its most recent 400 samples
+(≈13 minutes at 0.5 Hz) and discards its **oldest** samples as new ones arrive.
+The window slides; it does not grow, and it is the only lossy cap. The other
+collections are caps too (oldest entries dropped at 2,000 detections, 500 alert
+records, 2,000 corrections, 200 failures, 100 fallbacks, 200 recoveries), but no
+individual record is ever *partially* written or shortened.
 
 This was a real defect, not a hypothetical: the same worst case measured
-**2,027,180 bytes** with the schema-4 sample keys (≈2,040,680 including the
-`detectorObservedFps` duplicate), so the whole upload would have been rejected
-with `413 payload_too_large` and the session lost with no user-visible
-diagnosis. Three changes bought the space, and none truncates a record:
+**2,027,180 bytes** even with tidy 2-decimal literals (≈2,040,680 including the
+`detectorObservedFps` duplicate), so the upload would have been rejected with
+`413 payload_too_large` and the session lost with no user-visible diagnosis. The
+first fix removed the constant `depth_queue_wait_ms` (≈12 KB), removed
+`detector_observed_fps` as a duplicate of `inference_fps` (≈13 KB), thinned the
+eleven tertiary perf keys to every fifth sample (≈94 KB) and capped samples at
+400 (≈43 KB).
 
-- `depth_queue_wait_ms` was removed: a constant `null` because no Dart-side depth
-  queue exists, ≈12 KB at the sample cap.
-- `detector_observed_fps` was removed: it duplicated `inference_fps`, which *is*
-  the detector observed FPS (`0` = not reported, because the plugin cannot
-  distinguish 0 from unreported), ≈13 KB at the cap.
-- The eleven tertiary perf keys (detector/depth stage timings, accelerator, grid
-  size, heatmap cost, dropped ticks) are thinned to every fifth sample (≈94 KB),
-  and the sample cap is 400 instead of 500 (≈43 KB). Cadence, `inference_fps`,
-  `latency_ms`, `object_count` and the flags stay on every sample.
+A re-review then showed that fixture still lied about number width. On device a
+box coordinate is a Float32 plugin value divided in double arithmetic, so it
+serialises as a 17–19-character decimal — ≈+74 B on every detection-bearing
+record. Measured with device-shaped numbers the envelope was **2,018,480 bytes**,
+still above the cap. The export layer therefore applies a documented precision
+contract before serialising (see the data dictionary): box coordinates 4 dp,
+confidence/probability-like scores 3 dp, latency and Hz 1 dp, sub-ms stage
+timings 2 dp. Rounding happens in the serialised output only — the stored
+samples, banding, in-app comparisons and speech text keep the full value.
 
 Client-side, `TelemetryUploadService` refuses a body above 2,000,000 bytes and
 returns an explicit failure that tells the user to save a local export, so the
 server's `413` is never the first signal. In every failure path the session stays
-in memory and JSON/CSV export still recovers it; nothing is truncated.
+in memory and JSON/CSV export still recovers it; no record is truncated (the
+rolling sample window described above is the only data the app discards).
 
 ## Research handling
 

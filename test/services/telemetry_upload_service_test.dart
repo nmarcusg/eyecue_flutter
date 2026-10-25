@@ -33,13 +33,22 @@ void main() {
     studyScenario: 'indoor-obstacle-course',
   );
 
+  // On device these are Float32-derived doubles (the plugin divides a float
+  // `xywh` by the image size, then Dart subtracts `right - left`), so they
+  // serialise as 17–19-character decimals. Tidy literals understated the
+  // envelope by ~74 B per detection-bearing record.
   DetectionInfo detInfo(String label, int classId) =>
       SpatialAnalysisService.analyze(
         Detection(
           classId: classId,
           label: label,
-          confidence: 0.87,
-          box: const Rect.fromLTWH(0.11, 0.22, 0.33, 0.44),
+          confidence: 0.8700000047683716,
+          box: const Rect.fromLTWH(
+            0.11363636363636363,
+            0.22656200000000002,
+            0.34545454545454546,
+            0.43750000000000006,
+          ),
         ),
       );
 
@@ -404,11 +413,12 @@ void main() {
     // ignore: avoid_print
     print('worst-case upload envelope: $bytes UTF-8 bytes');
 
-    // Measured 1,878,480 bytes with every collection at its cap and every
-    // schema-4 sample key populated: 121,520 bytes of headroom under the
-    // ingest's 2,000,000-byte limit and under the 1,900,000 target. The same
-    // shape measured 2,027,180 bytes before the fix (≈2,040,680 counting the
-    // `detectorObservedFps` duplicate that was then removed), i.e. rejected.
+    // Measured 1,850,400 bytes with every collection at its cap, every schema-4
+    // sample key populated and device-shaped (Float32-derived) box/confidence
+    // doubles: 149,600 bytes of headroom under the ingest's 2,000,000-byte limit
+    // and 49,600 under the 1,900,000 target. With the same fixture but tidy
+    // 2-decimal literals it read 1,878,480 bytes; with device-shaped numbers and
+    // no serialisation rounding it was 2,018,480 bytes, i.e. refused.
     expect(bytes, lessThan(1900000), reason: 'measured $bytes bytes');
 
     final samples =

@@ -112,7 +112,8 @@ are empty.
   `depth_grid_height`, `heatmap_build_ms` and `depth_dropped_ticks` are written on
   samples 0, 5, 10, … only, and are empty on the samples between them. The
   cadence, `inference_fps`, `latency_ms`, `object_count` and the boolean flags
-  stay on every sample; no record is dropped or truncated. Read medians and
+  stay on every sample. Thinning itself drops no record; the rolling window
+  described below is the one cap that does drop samples. Read medians and
   `depth_dropped_ticks` deltas from the samples that carry the keys.
 - `inference_fps` **is** the detector observed FPS. The same number used to be
   duplicated into `detector_observed_fps` (nullable, `null` for unreported),
@@ -120,7 +121,46 @@ are empty.
   `inference_fps: 0` therefore means "not reported".
 - Session wall-clock lives on the export header (`session.durationMs`, CSV
   `session_duration_ms`), not on each sample: it is one value per export, and
-  repeating it 500 times would only inflate the payload.
+  repeating it on all 400 retained samples would only inflate the payload.
+
+## Rolling sample window
+
+The service keeps the most recent **400** samples and discards the **oldest** ones
+as new ones arrive (`_maxSamples`). At a 0.5 Hz cadence that is ≈13 minutes of
+history; the window slides for the whole session and never grows. Consequences a
+researcher must account for:
+
+- **`sample 0` is the oldest *retained* sample, not the session's first sample.**
+  In a long session it sits ≈13 minutes before export time, so a "start of
+  session" reading taken from sample 0 is wrong; use `session.start` and
+  `session.durationMs` from the header instead.
+- **The strided perf keys can differ between exports of the same growing
+  session.** Samples leave in arrival order, so the survivors stay contiguous,
+  but which survivor holds the perf keys (samples 0, 5, 10, …) shifts as the
+  window slides. Aggregate the perf keys by value; never key them to an absolute
+  sample index.
+- Every other collection is capped the same way, oldest first: 2,000
+  detections, 2,000 corrections, 500 alert-lifecycle records, 200 failures, 200
+  recoveries, 100 fallbacks.
+- No record is ever partially written, re-ordered, or shortened.
+
+## Serialised precision
+
+Device numbers are Float32-derived doubles: a normalised box coordinate arrives
+as `0.34545454545454546` and a detection confidence as `0.8700000047683716`. The
+exporter rounds **only the serialised output** so the payload stays inside the
+ingest bound; the stored samples keep full precision, so band and priority
+classification, in-app comparisons and speech text are unaffected.
+
+| Field(s) | Decimal places |
+|---|---|
+| box `left`, `top`, `width`, `height` (detections and a correction's embedded detection) | 4 |
+| `confidence`, `confidence_threshold` | 3 |
+| `latency_ms`, `inference_fps`, `depth_observed_hz`, `p50_ms`, `p95_ms`, `max_ms` | 1 |
+| `detector_pre_ms`, `detector_inference_ms`, `detector_post_ms` | 2 |
+
+4 dp on a normalised coordinate is ≈0.1 px of a 1080 px frame, and 2 dp keeps a
+4.75 ms stage timing intact where 1 dp would report 4.8 ms.
 
 ## Detections
 

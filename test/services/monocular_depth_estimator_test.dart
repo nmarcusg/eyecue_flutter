@@ -439,6 +439,9 @@ void main() {
       );
       expect(estimator.frame.value!.heatmap, isNull);
       expect(estimator.frame.value!.timestampMs, 1000);
+      // The build finished after the disable, so its cost belongs to an image
+      // the session threw away and must not be exported.
+      expect(estimator.lastHeatmapBuildMs, isNull);
 
       estimator.dispose();
     });
@@ -474,6 +477,9 @@ void main() {
         isTrue,
         reason: 'the disowned texture is freed',
       );
+      // The builder completed after `releaseModel()`, so the cost it recorded
+      // must not survive on the released estimator.
+      expect(estimator.lastHeatmapBuildMs, isNull);
 
       estimator.dispose();
     });

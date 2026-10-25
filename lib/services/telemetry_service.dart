@@ -181,7 +181,7 @@ class RuntimeSample {
     'depthLatencyMs': depthLatencyMs,
     'depthStatus': depthStatus,
     // Measurements are written only when measured: an unknown stays absent
-    // (never `0`), which also stops 500 samples of `null` padding the payload.
+    // (never `0`), which also stops 400 samples of `null` padding the payload.
     if (detectorPreMs != null) 'detectorPreMs': detectorPreMs,
     if (detectorInferenceMs != null) 'detectorInferenceMs': detectorInferenceMs,
     if (detectorPostMs != null) 'detectorPostMs': detectorPostMs,

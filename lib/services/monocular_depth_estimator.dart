@@ -334,12 +334,16 @@ class MonocularDepthEstimator {
     // report `ready` with no model behind it.
     if (_disposed || releaseEpoch != _releaseEpoch) {
       heatmap?.dispose();
+      // The builder just priced an image this session discards.
+      _lastHeatmapBuildMs = null;
       return;
     }
     // Disabled while the builder ran: publish the grid without the image.
     if (!heatmapEnabled) {
       heatmap?.dispose();
       heatmap = null;
+      // Same: a discarded image must not keep exporting a build cost.
+      _lastHeatmapBuildMs = null;
     }
     final next = DepthFrame(
       grid: grid,
