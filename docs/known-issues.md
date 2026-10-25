@@ -37,8 +37,12 @@
   (5.3 MB model + GPU delegate) stayed loaded for the rest of the session, and a
   model-load failure was unrecoverable because nothing re-armed the load. Depth
   is now released on disable (`MonocularDepthEstimator.releaseModel()`) and
-  reloaded exactly once on re-enable. Pause, stop and backgrounding still keep
-  the model, so a resume pays no reload.
+  reloaded once on re-enable, **including the disable-during-load window**: a
+  disable that lands while a load is in flight invalidates that load, which is
+  disposed on arrival, and the re-enable starts and adopts its own load instead
+  of joining the doomed one (proved by `a disable during the load does not
+  strand the re-enable`). Pause, stop and backgrounding still keep the model, so
+  a resume pays no reload.
 
 ## Current Blockers
 

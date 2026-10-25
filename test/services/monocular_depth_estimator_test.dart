@@ -297,16 +297,19 @@ void main() {
   });
 
   group('heatmap gating', () {
-    Future<ui.Image> testImage() => _testImage();
-
+    // Every image in this group is decoded before the publish starts:
+    // `decodeImageFromPixels` completes on the platform's schedule and
+    // `pumpEventQueue()` does not bound it, so decoding inside a builder made
+    // these tests flaky.
     test(
       'a hidden heatmap is never built and the grid still publishes',
       () async {
+        final image = await _testImage();
         var builds = 0;
         final estimator = MonocularDepthEstimator(
           heatmapBuilder: (_) async {
             builds++;
-            return testImage();
+            return image;
           },
         )..heatmapEnabled = false;
 
@@ -320,15 +323,17 @@ void main() {
         expect(estimator.state.value, DepthRunState.ready);
 
         estimator.dispose();
+        image.dispose();
       },
     );
 
     test('re-enabling makes the next frame carry a heatmap again', () async {
+      final image = await _testImage();
       var builds = 0;
       final estimator = MonocularDepthEstimator(
         heatmapBuilder: (_) async {
           builds++;
-          return testImage();
+          return image;
         },
       )..heatmapEnabled = false;
 
@@ -348,9 +353,10 @@ void main() {
     });
 
     test('disabling drops the held image and keeps the grid', () async {
+      final image = await _testImage();
       late ui.Image built;
       final estimator = MonocularDepthEstimator(
-        heatmapBuilder: (_) async => built = await testImage(),
+        heatmapBuilder: (_) async => built = image,
       );
 
       _feed(estimator, _event());
@@ -375,11 +381,12 @@ void main() {
 
     test('a publish disowned by disabling disposes its image', () async {
       final inFlight = Completer<void>();
+      final image = await _testImage();
       late ui.Image built;
       final estimator = MonocularDepthEstimator(
         heatmapBuilder: (_) async {
           await inFlight.future;
-          return built = await testImage();
+          return built = image;
         },
       );
 
@@ -397,6 +404,41 @@ void main() {
       );
       expect(estimator.frame.value!.heatmap, isNull);
       expect(estimator.frame.value!.timestampMs, 1000);
+
+      estimator.dispose();
+    });
+
+    test('a publish in flight at a release is dropped', () async {
+      final inFlight = Completer<void>();
+      final image = await _testImage();
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) async =>
+            _FakeDepthModel('depth-1'),
+        heatmapBuilder: (_) async {
+          await inFlight.future;
+          return image;
+        },
+      );
+
+      await estimator.prepare();
+      _feed(estimator, _event(timestamp: 1000));
+      // Depth is switched off while the frame's heatmap is still being built.
+      await estimator.releaseModel();
+      inFlight.complete();
+      await pumpEventQueue();
+
+      expect(
+        estimator.frame.value,
+        isNull,
+        reason: 'a released estimator must not be repopulated',
+      );
+      expect(estimator.state.value, DepthRunState.idle);
+      expect(estimator.instanceId, isNull);
+      expect(
+        image.debugDisposed,
+        isTrue,
+        reason: 'the disowned texture is freed',
+      );
 
       estimator.dispose();
     });
@@ -597,13 +639,14 @@ void main() {
       'a load that finishes after a release is disposed, not adopted',
       () async {
         final gate = Completer<void>();
-        var loads = 0;
+        final models = <_FakeDepthModel>[];
         final estimator = MonocularDepthEstimator(
           modelFactory:
               ({required String modelId, required bool useGpu}) async {
-                loads++;
+                final model = _FakeDepthModel('depth-${models.length + 1}');
+                models.add(model);
                 await gate.future;
-                return _FakeDepthModel('depth-$loads');
+                return model;
               },
           heatmapBuilder: (_) async => null,
         );
@@ -613,13 +656,60 @@ void main() {
         gate.complete();
         await arming;
 
-        expect(loads, 1);
+        expect(models, hasLength(1));
+        expect(
+          models.single.releases,
+          1,
+          reason: 'the stale handle is disposed on arrival',
+        );
+        expect(
+          models.single.instanceId,
+          'depth-1',
+          reason: 'the handle was never adopted',
+        );
         expect(estimator.instanceId, isNull, reason: 'released stays released');
         expect(estimator.state.value, DepthRunState.idle);
 
         estimator.dispose();
       },
     );
+
+    test('a disable during the load does not strand the re-enable', () async {
+      final firstGate = Completer<void>();
+      final models = <_FakeDepthModel>[];
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) async {
+          final model = _FakeDepthModel('depth-${models.length + 1}');
+          models.add(model);
+          // Only the load in flight at the disable is gated.
+          if (models.length == 1) await firstGate.future;
+          return model;
+        },
+        heatmapBuilder: (_) async => null,
+      );
+
+      final staleLoad = estimator.prepare();
+      await estimator.releaseModel();
+      // The re-enable must start its own load instead of joining the doomed
+      // one: that load lands on the epoch mismatch and is disposed, so joining
+      // it used to leave the estimator silently `idle` with no model and no
+      // `degraded` notice to offer a retry.
+      final reload = estimator.prepare();
+      firstGate.complete();
+      await Future.wait([staleLoad, reload]);
+
+      expect(models, hasLength(2), reason: 'one load per enable');
+      expect(
+        models.first.releases,
+        1,
+        reason: 'the invalidated load is disposed, never adopted',
+      );
+      expect(models.last.releases, 0, reason: 'the reload is the adopted one');
+      expect(estimator.instanceId, 'depth-2');
+      expect(estimator.state.value, DepthRunState.ready);
+
+      estimator.dispose();
+    });
   });
 
   test('heatmap buffer uses the downsampled grid', () {

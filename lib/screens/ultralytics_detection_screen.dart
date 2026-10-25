@@ -182,6 +182,19 @@ String depthStatusFor({
   return accel == 'gpu' ? 'gpu' : 'cpu';
 }
 
+/// Whether a depth retry has to re-arm the model load.
+///
+/// A load failure leaves no instance at all, so `retry()` alone would only drop
+/// the banner and leave depth dead with no further affordance. A native
+/// inference failure keeps its instance, so the state change alone re-pushes the
+/// instance id and clears the native latch. Pure so the decision is testable
+/// without a camera or a model.
+@visibleForTesting
+bool depthNeedsReload({
+  required String? instanceId,
+  required bool modelLoadFailed,
+}) => instanceId == null || modelLoadFailed;
+
 class UltralyticsDetectionScreen extends StatefulWidget {
   final SettingsService settings;
   final TtsService tts;
@@ -649,8 +662,7 @@ class _UltralyticsDetectionScreenState
     if (modeChanged && !_mdeEnabled) {
       // Bounding-box mode stops depth inference entirely and releases the
       // interpreter, so its weights and delegate do not stay resident.
-      _depth.stop();
-      _depth.clearFrame();
+      // `releaseModel()` already stops the tick and clears the frame.
       _depthSmoother.reset();
       unawaited(_depth.releaseModel());
     } else if (modeChanged) {
@@ -940,17 +952,17 @@ class _UltralyticsDetectionScreenState
 
   /// Retry after a depth failure.
   ///
-  /// A model-load failure leaves no instance at all, so `retry()` on its own
-  /// would only drop the banner and leave depth dead with no further
-  /// affordance: the load has to be re-armed here. A native inference failure
-  /// keeps its instance, so the state change alone re-pushes the instance id.
-  /// `prepare()` shares one in-flight load, so repeated taps cannot spawn
-  /// duplicate loads.
+  /// [depthNeedsReload] decides whether the model has to be re-armed; it is read
+  /// before `retry()` because that clears the load-failure flag. `prepare()`
+  /// shares one in-flight load, so repeated taps cannot spawn duplicate loads.
   void _retryDepth() {
-    final modelMissing = _depth.instanceId == null;
+    final needsReload = depthNeedsReload(
+      instanceId: _depth.instanceId,
+      modelLoadFailed: _depth.modelLoadFailed,
+    );
     _depth.retry();
     _resolveRotation();
-    if (modelMissing) _armDepth();
+    if (needsReload) _armDepth();
     if (mounted) setState(() {});
   }
 

@@ -68,4 +68,21 @@ void main() {
       'cpu',
     );
   });
+
+  test('a retry re-arms the load only when no instance is usable', () {
+    // A load failure leaves no instance, so `retry()` alone would leave depth
+    // dead with no affordance: the load must be re-armed.
+    expect(depthNeedsReload(instanceId: null, modelLoadFailed: true), isTrue);
+    expect(depthNeedsReload(instanceId: null, modelLoadFailed: false), isTrue);
+    expect(
+      depthNeedsReload(instanceId: 'depth-1', modelLoadFailed: true),
+      isTrue,
+    );
+    // A native inference failure keeps its instance: the state change alone
+    // re-pushes the id, so a reload would only cost a second load.
+    expect(
+      depthNeedsReload(instanceId: 'depth-1', modelLoadFailed: false),
+      isFalse,
+    );
+  });
 }

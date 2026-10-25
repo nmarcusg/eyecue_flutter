@@ -266,14 +266,16 @@ The interpreter is resident only while depth is the active distance mode.
 |---|---|---|
 | Arm | `distanceEstimationMode` = `monocularDepth` | `_armDepth()` → `prepare()` loads the depth instance once and its id reaches the streaming config |
 | Ticks | instance id in the config | the native view ticks at the depth cadence; events become `DepthFrame`s |
-| Disable | `distanceEstimationMode` = `boundingBoxApproximation` | `_depth.stop()` + `clearFrame()` + `releaseModel()` (smoother reset): the interpreter is disposed, the frame and its heatmap texture are dropped, the id is withdrawn |
+| Disable | `distanceEstimationMode` = `boundingBoxApproximation` | `releaseModel()` (smoother reset): it stops the tick, drops the frame and its heatmap texture, parks the state at `idle` and then disposes the interpreter; the id is withdrawn |
 | Re-enable | back to `monocularDepth` | `retry()` → `_armDepth()` → `prepare()` loads exactly one new instance and the state returns to `ready` |
 
 `releaseModel()` details:
 
-- Disposes the loaded instance (`_disposeModel()`), which frees the 5.3 MB model
-  and its GPU delegate, then clears the frame/heatmap, clears the load-failure
-  flag and parks `state` at `DepthRunState.idle`.
+- Clears the frame and its heatmap texture, clears the pending/failure state and
+  parks `state` at `DepthRunState.idle` — **clear-then-dispose** — and only then
+  disposes the loaded instance (`_disposeModel()`), which frees the 5.3 MB model
+  and its GPU delegate. The release epoch is bumped first, so a frame or a load
+  still in flight is dropped on arrival instead of repopulating the estimator.
 - **Does not** dispose the `ValueNotifier`s (unlike `dispose()`), so the
   estimator stays usable: a later `retry()` + re-arm returns to `ready`.
   Idempotent — with no model loaded it only re-parks the state.
@@ -282,7 +284,8 @@ The interpreter is resident only while depth is the active distance mode.
   while MDE is on).
 - A load that was already in flight when the disable landed is disposed on
   arrival rather than adopted, so a toggle during the ~1 s load cannot leave an
-  interpreter resident.
+  interpreter resident. The re-enable does not join that doomed load: the
+  release clears the in-flight slot, so the re-enable starts and adopts its own.
 - **Pause, stop and backgrounding do not release.** They only stop the tick, so
   resuming never pays a reload.
 
