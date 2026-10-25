@@ -596,11 +596,17 @@ void main() {
     addTearDown(service.dispose);
     service.startSession();
     final info = DetectionInfo(
+      // Device-shaped: Float32-derived doubles, not tidy literals.
       detection: const Detection(
         classId: 41,
         label: 'a-rather-long-coco-label-name-for-the-worst-case',
-        confidence: 0.875,
-        box: Rect.fromLTWH(0.123456, 0.234567, 0.334567, 0.434567),
+        confidence: 0.8700000047683716,
+        box: Rect.fromLTWH(
+          0.11363636363636363,
+          0.22656200000000002,
+          0.34545454545454546,
+          0.43750000000000006,
+        ),
       ),
       position: RelativePosition.left,
       priority: ObjectPriority.medium,
@@ -705,6 +711,106 @@ void main() {
         reason: 'the serialised payload must not carry "$token"',
       );
     }
+  });
+
+  test('serialised numbers follow the documented precision contract', () {
+    final service = TelemetryService(
+      clock: () => timestamp,
+      sessionId: 'session-precision',
+      appVersion: '1.2.3+4',
+    );
+    addTearDown(service.dispose);
+    service.startSession();
+    // Device-shaped values: what a Float32 plugin value divided in double
+    // arithmetic actually serialises as (17–19 characters each).
+    const box = Rect.fromLTWH(
+      0.34545454545454546,
+      0.22656200000000002,
+      0.11363636363636363,
+      0.43750000000000006,
+    );
+    const detection = Detection(
+      classId: 41,
+      label: 'cup',
+      confidence: 0.8700000047683716,
+      box: box,
+    );
+    final info = DetectionInfo(
+      detection: detection,
+      position: RelativePosition.left,
+      priority: ObjectPriority.medium,
+      proximity: ProximityBand.far,
+    );
+    service.recordDetection(
+      info,
+      42.519999999999996,
+      engine: InferenceEngine.ultralytics,
+      confidenceThreshold: 0.40000000000000002,
+    );
+    service.recordSample(
+      latencyMs: 42.519999999999996,
+      inferenceFps: 12.499999999999998,
+      objectCount: 1,
+      engine: InferenceEngine.ultralytics,
+      confidenceThreshold: 0.40000000000000002,
+      depthObservedHz: 1.7999999999999998,
+    );
+    service.recordCorrection(
+      DetectionCorrection(
+        recordId: 'correction-1',
+        timestamp: timestamp,
+        sessionId: 'session-precision',
+        engine: InferenceEngine.ultralytics,
+        detection: detection,
+        feedback: CorrectionFeedback.correct,
+        correctedLabel: 'cup',
+        confidenceThreshold: 0.40000000000000002,
+      ),
+    );
+
+    final exporter = TelemetryExportService(clock: () => timestamp);
+    final export = exporter.snapshot(telemetry: service);
+    final jsonText = jsonEncode(export.toJson());
+
+    // Contract: boxes 4 dp, scores 3 dp, milliseconds and Hz 1 dp.
+    final row = export.detections.single;
+    expect(row['confidence'], 0.87);
+    expect(row['latencyMs'], 42.5);
+    expect(row['confidenceThreshold'], 0.4);
+    expect(row['box'], {
+      'left': 0.3455,
+      'top': 0.2266,
+      'width': 0.1136,
+      'height': 0.4375,
+    });
+    final correction = export.corrections.single;
+    expect(correction['confidenceThreshold'], 0.4);
+    expect((correction['detection'] as Map)['confidence'], 0.87);
+    expect((correction['detection'] as Map)['box'], {
+      'left': 0.3455,
+      'top': 0.2266,
+      'width': 0.1136,
+      'height': 0.4375,
+    });
+    final sample = export.samples.single;
+    expect(sample['latencyMs'], 42.5);
+    expect(sample['inferenceFps'], 12.5);
+    expect(sample['depthObservedHz'], 1.8);
+    expect(sample['confidenceThreshold'], 0.4);
+    expect(
+      jsonText,
+      isNot(contains('0.34545454545454546')),
+      reason: 'no unbounded device double may reach the payload',
+    );
+
+    // Rounding is serialisation-only: the stored samples keep full precision,
+    // so banding, comparisons and speech text are unaffected.
+    final stored = service.records.single;
+    expect(stored.box!.left, 0.34545454545454546);
+    expect(stored.confidence, 0.8700000047683716);
+    expect(stored.latencyMs, 42.519999999999996);
+    expect(service.samples.single.inferenceFps, 12.499999999999998);
+    expect(stored.box, box, reason: 'the stored Rect is untouched');
   });
 
   test('writes JSON and CSV to an explicitly supplied directory', () async {
