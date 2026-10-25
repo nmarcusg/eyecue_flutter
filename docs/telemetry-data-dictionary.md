@@ -142,7 +142,8 @@ researcher must account for:
 - Every other collection is capped the same way, oldest first: 2,000
   detections, 2,000 corrections, 500 alert-lifecycle records, 200 failures, 200
   recoveries, 100 fallbacks.
-- No record is ever partially written, re-ordered, or shortened.
+- No record is ever partially written, re-ordered, or shortened — except the
+  numeric rounding described below.
 
 ## Serialised precision
 
@@ -161,6 +162,15 @@ classification, in-app comparisons and speech text are unaffected.
 
 4 dp on a normalised coordinate is ≈0.1 px of a 1080 px frame, and 2 dp keeps a
 4.75 ms stage timing intact where 1 dp would report 4.8 ms.
+
+**The JSON and CSV file exports share this rounding with the upload.** Both are
+produced from the same serialised snapshot, so a saved export carries exactly the
+values the wire payload carried — an archived file is no more precise than what
+was uploaded to the research server, and no re-export recovers the discarded
+digits (the in-memory sample still holds them, but only until the session ends).
+Study analyses must therefore be run on the exported values: an L10 comparison
+against a device-side buffer of unrounded doubles would disagree in the 3rd–5th
+decimal place, which is analysis noise, not a data fault.
 
 ## Detections
 
