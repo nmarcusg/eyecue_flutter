@@ -58,6 +58,16 @@ list". Summary:
 | 7 | `DepthEstimator.kt` | `gridMaxDim`, block-mean grid, and skipping colourisation/bitmap/dense `values` on the native-stream path |
 | 8 | `YOLO.kt` | `predict(...)` gains `rotateForCamera`, `includeRawData`, `drawOverlays` |
 
+The deviations are not Kotlin-only: four **Dart** files in the vendored copy also
+diverge from upstream and carry the same publication obligation —
+`plugins/ultralytics_yolo/lib/models/yolo_result.dart`,
+`plugins/ultralytics_yolo/lib/widgets/yolo_controller.dart`,
+`plugins/ultralytics_yolo/lib/yolo_streaming_config.dart` and
+`plugins/ultralytics_yolo/lib/yolo_view.dart`. They are recorded in
+[`VENDORED.md`](plugins/ultralytics_yolo/VENDORED.md) §"Dart surface". The eight
+Kotlin rows above plus that section cover **every** file in the vendored copy that
+differs from upstream, which is the set the notice duty below applies to.
+
 AGPL-3.0 requires modified versions to carry prominent notices stating that they
 were changed and the date. The deviations are recorded in `VENDORED.md` and in this
 file; whether that satisfies "prominent notices" for each source file is review item

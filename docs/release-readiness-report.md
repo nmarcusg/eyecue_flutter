@@ -12,7 +12,7 @@ what was measured, what was **not** verified, and one classification.
 | HEAD at the start of this (resumed L10/L11) run | `423d97a1c1ce162a3646fef78ecea1d7ffe81b9f` |
 | HEAD at the end of this run | `842d38b` (L10/L11 docs) + this report commit |
 | Base commit | `adfbc5d` (`docs(status): retire obsolete XNNPACK items and dead links`) |
-| History | additive only — no commit rewritten, no force-push, nothing merged into `dev`/`main` |
+| History | additive only — no prior-item or published commit was rewritten, no force-push, nothing merged into `dev`/`main`; the L11 commit was amended twice before completion (§2.2), `a77024c` → `8c69a28` → `f1ff670` |
 | Flutter | 3.44.2, stable channel |
 | Artefact source | same worktree, no `--dart-define`, no keystore, no Play Console access |
 
@@ -85,6 +85,12 @@ The MDE and telemetry histories are joined by merge commit `2722a7b`.
 | `842d38b` | pending review |
 | this commit | pending review |
 
+Reviewer-log note: `f1ff670` (this commit) is an amendment of `8c69a28`, which was
+itself an amendment of `a77024c`. All three were local and unpushed, and both
+amendments happened before this commit was handed to review. No L0–L10 commit and no
+published commit was rewritten: every SHA in §2.1 and §2.2 belonging to an earlier
+item is unchanged.
+
 ## 3. Verification
 
 All commands run in `/home/nico/repos/eyecue_flutter-playstore` on 2026-10-25.
@@ -92,13 +98,14 @@ All commands run in `/home/nico/repos/eyecue_flutter-playstore` on 2026-10-25.
 | Check | Command | Result |
 | --- | --- | --- |
 | Formatting | `dart format --output=none --set-exit-if-changed lib test` | **PASS** — `Formatted 104 files (0 changed)`, exit 0 |
-| Static analysis | `flutter analyze` | **PASS** — `4 issues found`, **0 errors**, 0 warnings; all four are `info` (e.g. `unnecessary_import` in `test/services/tts_service_test.dart:11`) |
+| Static analysis | `flutter analyze` | **PASS** — `4 issues found`: **0 errors, 2 warnings, 2 infos**. Warnings: `unused_field` (`_clock`) at `lib/services/alert_policy.dart:124` and `invalid_return_type_for_catch_error` at `lib/services/tts_service.dart:671`. Infos: `unnecessary_import` at `test/services/assistive_detection_controller_test.dart:9` and `test/services/tts_service_test.dart:11`. Both warnings are **pre-existing**: neither file is touched by any commit in this programme (`git diff adfbc5d..HEAD -- lib/services/alert_policy.dart lib/services/tts_service.dart` is empty), so they were left alone rather than silenced. |
 | Unit/widget suite | `flutter test` | **589 passed, 1 failed** — `test/services/tts_service_test.dart: alert lifecycle telemetry a partial signal pair records a reconciliation timeout`, the known pre-existing TTS failure recorded since L0; not introduced here and not fixed here |
 | Ingest validator | `node --test supabase/functions/ingest-telemetry/validate.test.mjs` | **PASS** — `1..41`, 41 pass, 0 fail |
 | Dashboard contract | `node --test` in the separate dashboard repo | 21/21 as recorded in the L7 row; **not re-run in this workspace** (different repository, not modified by L10/L11) |
 | Whitespace | `git diff --check` | **PASS** — exit 0, no output |
 | Conflict markers | `grep -rn` for the seven-`<` / seven-`>` merge-marker runs over `--include=*.dart --include=*.kt --include=*.ts --include=*.js --include=*.md` | **PASS** — 0 hits outside this sentence's own wording (the pattern is described, not quoted, so the scan stays clean) |
 | Secret scan (decompressed AAB) | `unzip -p <aab> '*' \| grep -ac 'service_role\|SUPABASE_SECRET\|BEGIN PRIVATE KEY\|eyJhbGciOi'` | **PASS** — 0 hits |
+| Test-signed marking | `cd android && ./gradlew markTestSignedApk` run against the already-renamed artefact set | **FAILS CLOSED as intended** — `Execution failed for task ':app:markTestSignedApk'` → `EyeCue: …/flutter-apk/app-release.apk is missing, so it cannot be marked test-signed`; exit non-zero, nothing renamed, both artefact digests unchanged. `--dry-run` configures the script cleanly, so the task is still wired |
 | Worktree state | `git status --porcelain` | clean after the commit series |
 
 ## 4. Artefacts
@@ -201,7 +208,7 @@ field, so dashboard compatibility is unchanged by this run.
 | Item | State |
 | --- | --- |
 | Application licence | **OWNER DECISION (D2)** — [`LICENSE`](../LICENSE) grants nothing |
-| Vendored plugin (AGPL-3.0) | licence text preserved verbatim; eight deviations recorded in `plugins/ultralytics_yolo/VENDORED.md` and [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §2.1 |
+| Vendored plugin (AGPL-3.0) | licence text preserved verbatim; eight native deviations plus four Dart-surface files recorded in `plugins/ultralytics_yolo/VENDORED.md` and [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §2.1 |
 | Bundled models | both AGPL-3.0 (Ultralytics); provenance, sizes and digests in the notices §3 |
 | Pub / native inventories | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §4–§5 |
 | AGPL source-distribution procedure | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §7 (tag ↔ `versionCode`, in-repo sources, archive step) |
@@ -235,10 +242,15 @@ field, so dashboard compatibility is unchanged by this run.
 | 7 | `flutter test` carries one known failing TTS test; a real regression there would not be distinguishable from it |
 | 8 | Dashboard contract verified only in the separate repository, not deployed |
 | 9 | `applicationId` is provisional; `auditor.md`, `chat_spec.md` and four dated audit documents still quote the old `com.example.eyecue_flutter` (historical snapshots, deliberately not rewritten) |
+| 10 | The APK `-testsigned` name depends on the manual `markTestSignedApk` task: `flutter build apk --release` alone still yields a plain-named, debug-signed `app-release.apk`. The AAB, which is what Play consumes, is renamed automatically by `bundleRelease` |
+| 11 | The marking task now fails closed (§3), but that only catches a moved artefact at task-run time — a renamed *directory* is not detected at configuration time |
+| 12 | The AAB is discovered by globbing the release directory with a "first `.aab` wins" fallback, so a stale `-testsigned.aab` sitting beside a fresh plain one would be the file reported |
+| 13 | The two analyzer warnings are now described accurately (§3), but they are permanent fixtures of the "4 issues" count: a genuinely new warning is indistinguishable from them, so they must be fixed before that count is used as a regression gate |
 
 ## 13. Rollback
 
-The branch is additive on `adfbc5d` and rewrites no history.
+The branch is additive on `adfbc5d`; no prior-item or published commit was rewritten
+(the L11 commit was amended twice locally before completion, §2.2).
 
 ```sh
 # discard the whole programme
@@ -249,17 +261,22 @@ git branch -D feat/play-store-readiness
 To drop only the L10/L11 work, `git revert --no-commit 842d38b 8766586` followed by
 a single revert commit restores the pre-L10 tree (undoes the manifest rules, the
 Gradle naming change, the new docs and this report) without touching L0–L9.
-Blast radius (`CONFIRMED-BY-INSPECTION`): no protected branch modified, no commit
-rewritten, no stash created or dropped, no external system (Supabase project, Play
-Console, signing infrastructure) touched. Artefacts under `build/` are regenerated,
-not tracked.
+Blast radius (`CONFIRMED-BY-INSPECTION`): no protected branch modified, no prior-item
+or published commit rewritten, no stash created or dropped, no external system
+(Supabase project, Play Console, signing infrastructure) touched. Artefacts under
+`build/` are regenerated, not tracked.
 
 ## 14. Safety confirmation
 
-* No push, no deploy, no Play Console interaction, no keystore created, no history
-  rewrite, no new dependency.
-* Nothing outside this worktree was modified except the on-disk release artefacts,
-  which the build regenerates in place.
+* No push, no deploy, no Play Console interaction, no keystore created, no rewrite of
+  any prior-item or published commit (the L11 commit was amended twice locally before
+  completion, §2.2), no new dependency.
+* Nothing inside this worktree was modified except the on-disk release artefacts,
+  which the build regenerates in place. One exception is **UNVERIFIABLE**: the
+  `/tmp/eyecue_base` scratch worktree (`94f74d8`, `dev`) no longer exists on disk and
+  nothing was recorded about it before removal, so no claim is made about what was
+  modified under that path. `git worktree list` reports it as `prunable`, and
+  `git worktree prune --dry-run` would drop its record.
 * The pre-existing `.aab`/`.apk` were replaced by a rebuild from the L10 tree; the
   old digests are recorded as superseded (§4).
 * No secret, token or keystore path was written into the tree (secret scan: 0 hits).
@@ -269,9 +286,10 @@ not tracked.
 **`CODE_READY_WITH_EXTERNAL_GATES`**
 
 The release engineering work is complete and measured: the tree formats, analyses
-clean (0 errors), passes 589 of 590 tests (the single failure is the known
-pre-existing TTS test), builds both release artefacts reproducibly enough to
-inspect, and now declares eight permissions with the three unused ones removed and
+with 0 errors and 2 pre-existing warnings (§3), passes 589 of 590 tests (the single
+failure is the known pre-existing TTS test), builds both release artefacts
+reproducibly enough to inspect, and now declares eight permissions with the three
+unused ones removed and
 proved absent by `aapt2`. Everything that remains cannot be produced from inside
 this repository: installed startup is unverified because no device exists, the
 artefacts are debug-signed because no keystore exists, the `applicationId` is still
