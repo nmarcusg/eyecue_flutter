@@ -318,15 +318,16 @@ class TelemetryUploadService {
       );
       final bytes = <int>[];
       await for (final chunk in response) {
-        bytes.addAll(chunk);
+        // Clamp the append: a single chunk can overrun the cap on its own, so
+        // testing the length after `addAll` would buffer up to 2x the cap.
+        bytes.addAll(chunk.take(_maxResponseBytes - bytes.length));
         if (bytes.length >= _maxResponseBytes) break;
       }
-      final head = bytes.length > _maxResponseBytes
-          ? bytes.sublist(0, _maxResponseBytes)
-          : bytes;
       return TelemetryUploadResponse(
         response.statusCode,
-        utf8.decode(head, allowMalformed: true),
+        // A clamped body may end mid-codepoint; `allowMalformed` keeps the
+        // machine-readable code prefix readable.
+        utf8.decode(bytes, allowMalformed: true),
       );
     } finally {
       client.close(force: true);

@@ -44,8 +44,14 @@ alter table public.telemetry_sessions
 -- storage, so it is set well above the wire cap to keep headroom for that
 -- re-spacing. The original migration left the check unnamed, so PostgreSQL
 -- named it after the table.
+--
+-- Deliberately no `if exists`: dropping a name that does not exist must abort
+-- this migration. If PostgreSQL named the original check differently on a real
+-- project, a guarded drop would silently no-op and leave the old 2,000,000-byte
+-- bound in force beside the new one — the narrower limit keeps rejecting writes
+-- the function accepted, with no error anywhere explaining why.
 alter table public.telemetry_sessions
-  drop constraint if exists telemetry_sessions_check;
+  drop constraint telemetry_sessions_check;
 alter table public.telemetry_sessions
   add constraint telemetry_sessions_payload_size
   check (octet_length(payload::text) <= 2400000);
