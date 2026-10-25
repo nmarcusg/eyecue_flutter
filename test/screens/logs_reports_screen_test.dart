@@ -16,6 +16,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_test/flutter_test.dart';
 
+/// A well-formed study upload token: 44 token-safe characters, the shape a
+/// researcher pastes into the manual upload dialog.
+const String screenUploadToken = 'q3Yd0n4N0m8Lw2Xc9Vb6Tz1Rf5Jk7Hp0Sg4Da2Em6Ui8';
+
 /// A [TelemetryExportService] whose writes are controlled by the test so the
 /// busy guard, success SnackBar, and failure SnackBar can be exercised
 /// deterministically without touching the filesystem.
@@ -65,6 +69,10 @@ class _FakeUploadService extends TelemetryUploadService {
   final TelemetryUploadResult result;
   int uploads = 0;
 
+  /// What the dialog handed over, so a test can prove the token reached the
+  /// service in memory without ever reaching the screen.
+  ResearchSessionMetadata? lastMetadata;
+
   @override
   bool get isConfigured => true;
 
@@ -75,6 +83,7 @@ class _FakeUploadService extends TelemetryUploadService {
     AppSettings? settings,
   }) async {
     uploads++;
+    lastMetadata = metadata;
     return result;
   }
 }
@@ -755,11 +764,13 @@ void main() {
       WidgetTester tester,
       TelemetryUploadService fake, {
       TelemetryService? telemetry,
+      TelemetryExportService? exportService,
     }) async {
       await pumpLogsScreen(
         tester,
         telemetry: telemetry ?? buildTelemetry(),
         uploadService: fake,
+        exportService: exportService,
       );
       final button = find.text('Upload session to research database');
       // The card is built lazily below the viewport; scrolling alone leaves it
@@ -775,6 +786,7 @@ void main() {
         find.byType(TextField).at(1),
         'indoor-obstacle-course',
       );
+      await tester.enterText(find.byType(TextField).at(2), screenUploadToken);
       await tester.tap(find.text('Confirm upload'));
       await tester.pumpAndSettle();
     }
@@ -860,6 +872,106 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('already uploaded earlier'), findsNothing);
+    });
+
+    testWidgets('the dialog requires a study upload token', (tester) async {
+      final fake = _FakeUploadService(const TelemetryUploadResult.success());
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(),
+        uploadService: fake,
+      );
+      final button = find.text('Upload session to research database');
+      await scrollOverviewTo(tester, button);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      // The field is part of what the researcher confirms, and says it is
+      // required before the upload button becomes usable.
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Study upload token'),
+        ),
+        findsOneWidget,
+      );
+
+      Future<void> confirm() async {
+        await tester.tap(find.text('Confirm upload'));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.enterText(find.byType(TextField).at(0), 'P-001');
+      await tester.enterText(find.byType(TextField).at(1), 'lab');
+
+      // No token: the dialog stays open and nothing is sent.
+      await confirm();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(fake.uploads, 0);
+
+      // A padded token is refused as well: the shape is checked, not repaired.
+      await tester.enterText(
+        find.byType(TextField).at(2),
+        ' $screenUploadToken ',
+      );
+      await confirm();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(fake.uploads, 0);
+
+      // A well-formed token closes the dialog and reaches the service.
+      await tester.enterText(find.byType(TextField).at(2), screenUploadToken);
+      await confirm();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(fake.uploads, 1);
+    });
+
+    testWidgets('the token is handed over in memory and never rendered', (
+      tester,
+    ) async {
+      final fake = _FakeUploadService(const TelemetryUploadResult.success());
+      final exporter = _FakeExportService();
+
+      await uploadOnce(tester, fake, exportService: exporter);
+
+      // It reached the service, so the dialog really passed it on…
+      expect(fake.lastMetadata!.uploadToken, screenUploadToken);
+      // …and it is nowhere the user can see or keep.
+      expect(find.textContaining(screenUploadToken), findsNothing);
+      expect(find.textContaining('q3Yd0n4N'), findsNothing);
+      // The upload path writes no file, so the token cannot reach an export.
+      expect(exporter.jsonWrites, 0);
+      expect(exporter.csvWrites, 0);
+    });
+
+    testWidgets('a token refusal is explained without echoing the token', (
+      tester,
+    ) async {
+      final service = TelemetryUploadService(
+        configuration: const TelemetryUploadConfiguration(
+          ingestUrl:
+              'https://example.supabase.co/functions/v1/ingest-telemetry',
+          publishableKey: 'sb_publishable_secret',
+        ),
+        debugMode: false,
+        exportService: _FakeExportService(),
+        sender: (_) async => const TelemetryUploadResponse(
+          403,
+          '{"error":"upload_token_exhausted"}',
+        ),
+      );
+      final localTelemetry = buildTelemetry(populated: true);
+
+      await uploadOnce(tester, service, telemetry: localTelemetry);
+
+      expect(find.textContaining('no uploads left'), findsOneWidget);
+      // Neither the token nor the publishable key is ever shown.
+      expect(find.textContaining(screenUploadToken), findsNothing);
+      expect(find.textContaining('sb_publishable_secret'), findsNothing);
+      // The session survives, so a local export still recovers it.
+      expect(localTelemetry.totalDetections, 1);
+      expect(localTelemetry.samples, hasLength(1));
     });
 
     testWidgets('an insecure endpoint is explained and the session survives', (

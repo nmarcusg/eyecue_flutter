@@ -82,6 +82,12 @@ TelemetryEndpointStatus validateTelemetryEndpoint({
   if (uri.userInfo.isNotEmpty) {
     return TelemetryEndpointStatus.hasCredentials;
   }
+  // shortcut: no host-shape rule and no port-range check, so a syntactically
+  // odd host (`https://.com`, `https://example..com`, `https://exam ple.com`)
+  // and a port above 65535 still count as valid — the first request then fails
+  // as "could not be reached". This URL is a maintainer-set --dart-define, so a
+  // typo is caught in the build, not by the app; add a host rule if the endpoint
+  // ever becomes user- or remote-supplied.
   return TelemetryEndpointStatus.valid;
 }
 
@@ -124,24 +130,44 @@ String? telemetryEndpointMessage(TelemetryEndpointStatus status) =>
 
 /// Research context supplied by a researcher for one explicitly uploaded
 /// session. It deliberately has no free-text field to avoid accidental PII.
+///
+/// [uploadToken] is a study credential, not participant data. It crosses the
+/// wire in the upload header only: never in [toJson], never in a preference, an
+/// export file, telemetry or a log line, and [toString] redacts it so an
+/// accidental `print` of this object cannot leak it.
 class ResearchSessionMetadata {
   const ResearchSessionMetadata({
     required this.participantCode,
     required this.studyScenario,
+    required this.uploadToken,
   });
 
   final String participantCode;
   final String studyScenario;
+
+  /// Researcher-supplied credential, in memory for the request only.
+  final String uploadToken;
 
   bool get isValid =>
       RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(participantCode) &&
       studyScenario.trim().isNotEmpty &&
       studyScenario.trim().length <= 80;
 
+  /// UX courtesy only — 43–128 token-safe characters, no padding. Mirrors
+  /// `isValidUploadTokenShape` in the ingest function, which is the trust
+  /// boundary; a token that passes here is still checked server-side.
+  bool get hasValidUploadToken =>
+      RegExp(r'^[A-Za-z0-9_-]{43,128}$').hasMatch(uploadToken);
+
   Map<String, dynamic> toJson() => {
     'participantCode': participantCode.trim(),
     'studyScenario': studyScenario.trim(),
   };
+
+  @override
+  String toString() =>
+      'ResearchSessionMetadata(participantCode: $participantCode, '
+      'studyScenario: $studyScenario)';
 }
 
 class TelemetryUploadResult {
@@ -228,6 +254,10 @@ class TelemetryUploadService {
   /// the server's `413` is never the first signal a session was lost.
   static const int maxUploadBodyBytes = 2000000;
 
+  /// Header carrying the researcher-issued study upload token. The token is not
+  /// a build-time define: it is entered per upload and never persisted.
+  static const String uploadTokenHeaderName = 'X-Eyecue-Upload-Token';
+
   /// Local refusal text; reused when the server answers `413` itself.
   static const String _tooLargeMessage =
       'This session is too large to upload. Save a local export to keep the data.';
@@ -281,6 +311,14 @@ class TelemetryUploadService {
         'Enter a valid participant code and study scenario.',
       );
     }
+    if (!metadata.hasValidUploadToken) {
+      // Refused locally as a courtesy: the token shape, not its validity, is all
+      // the client can judge. Nothing is sent and the session is untouched.
+      return const TelemetryUploadResult.failure(
+        'Enter the study upload token supplied by the study coordinator. The '
+        'session was not uploaded. Save a local export.',
+      );
+    }
 
     // Already validated above: absolute, `https` (or the debug loopback case),
     // hosted and credential-free — so this parse cannot disagree with it.
@@ -312,6 +350,9 @@ class TelemetryUploadService {
                 'Bearer ${_configuration.publishableKey}',
             'apikey': _configuration.publishableKey,
             HttpHeaders.contentTypeHeader: 'application/json',
+            // The study credential. Kept out of the body, the export and every
+            // message; only the server hashes it.
+            uploadTokenHeaderName: metadata.uploadToken,
           },
           body: body,
         ),
@@ -367,6 +408,11 @@ class TelemetryUploadService {
   /// still recovers it.
   static TelemetryUploadResult _mapFailure(TelemetryUploadResponse response) {
     final status = response.statusCode;
+    // A study-token refusal has its own actionable answer and is never folded
+    // into the generic authorisation message: "your token expired" and "this
+    // build is not authorised" need different actions from the researcher.
+    final tokenFailure = _uploadTokenFailure(response.body);
+    if (tokenFailure != null) return tokenFailure;
     if (status == 401 || status == 403) {
       return const TelemetryUploadResult.failure(
         'This build is not authorised for the research upload. Save a local export and try again later.',
@@ -397,18 +443,77 @@ class TelemetryUploadService {
     );
   }
 
-  /// True when a `400` body reports `unsupported_schema_version`.
-  static bool _mentionsUnsupportedSchema(String? body) {
-    if (body == null || body.isEmpty) return false;
+  /// Every code the ingest function may answer with. Used only to recover a
+  /// code from a plain-text body.
+  static const List<String> _errorCodes = [
+    'unsupported_schema_version',
+    'missing_upload_token',
+    'invalid_upload_token',
+    'expired_upload_token',
+    'revoked_upload_token',
+    'upload_token_exhausted',
+    'participant_mismatch',
+    'rate_limited',
+  ];
+
+  /// The machine-readable `error` code of a response body, or `null`.
+  ///
+  /// Bodies are read for the code only and never shown to the user, so no
+  /// server-controlled text reaches the screen.
+  static String? _errorCode(String? body) {
+    if (body == null || body.isEmpty) return null;
     try {
       final decoded = jsonDecode(body);
-      return decoded is Map && decoded['error'] == 'unsupported_schema_version';
+      if (decoded is Map && decoded['error'] is String) {
+        return decoded['error'] as String;
+      }
+      return null;
     } on FormatException {
       // A proxy or an older function may answer with plain text; fall back to
       // the code name rather than losing the diagnosis.
-      return body.contains('unsupported_schema_version');
+      for (final code in _errorCodes) {
+        if (body.contains(code)) return code;
+      }
+      return null;
     }
   }
+
+  /// True when a `400` body reports `unsupported_schema_version`.
+  static bool _mentionsUnsupportedSchema(String? body) =>
+      _errorCode(body) == 'unsupported_schema_version';
+
+  /// One distinct, actionable message per study-upload-token refusal, or `null`
+  /// when the body carries no token code.
+  ///
+  /// Every message is a fixed sentence: the token is never interpolated, so no
+  /// failure path can show (or log) it. Each keeps the local-export fallback and
+  /// leaves the in-memory session untouched.
+  static TelemetryUploadResult? _uploadTokenFailure(
+    String? body,
+  ) => switch (_errorCode(body)) {
+    'missing_upload_token' => const TelemetryUploadResult.failure(
+      'No study upload token was sent. Enter the token the study coordinator gave you; the session was not uploaded. Save a local export.',
+    ),
+    'invalid_upload_token' => const TelemetryUploadResult.failure(
+      'The research server did not recognise the study upload token. Check it with the study coordinator; the session was not uploaded. Save a local export.',
+    ),
+    'expired_upload_token' => const TelemetryUploadResult.failure(
+      'The study upload token has expired. Ask the study coordinator for a new one; the session was not uploaded. Save a local export.',
+    ),
+    'revoked_upload_token' => const TelemetryUploadResult.failure(
+      'The study upload token has been revoked. Ask the study coordinator for a new one; the session was not uploaded. Save a local export.',
+    ),
+    'upload_token_exhausted' => const TelemetryUploadResult.failure(
+      'This study upload token has no uploads left. Ask the study coordinator for a new one; the session was not uploaded. Save a local export.',
+    ),
+    'participant_mismatch' => const TelemetryUploadResult.failure(
+      'The study upload token belongs to a different participant code. Check both values; the session was not uploaded. Save a local export.',
+    ),
+    'rate_limited' => const TelemetryUploadResult.failure(
+      'Too many upload attempts from this token. Wait a few minutes and try again; the session was not uploaded. Save a local export to keep the data.',
+    ),
+    _ => null,
+  };
 
   /// Response bodies are read only for a machine-readable error code, so the
   /// read is capped: a hostile or accidentally huge answer must not be buffered
