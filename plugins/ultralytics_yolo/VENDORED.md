@@ -64,8 +64,8 @@ not cover this directory, see above).
 ### 1. `android/src/main/kotlin/com/ultralytics/yolo/YOLOStreamConfig.kt`
 
 - **Deviation:** three data-class fields — `depthInstanceId: String? = null`,
-  `depthIntervalMs: Int? = null`, `depthMaxDim: Int = 96` — plus the same three
-  parameters on `custom(...)`.
+  `depthIntervalMs: Int? = null`, `depthMaxDim: Int = 96` (longest side of the grid; the
+  short side follows the crop aspect ratio) — plus the same three parameters on `custom(...)`.
 - **Why:** the view needs a target instance, a cadence and a grid cap. Upstream has no
   vocabulary for any of them, and a Dart-side scheduler cannot reach the analysis bitmap.
 - **On upgrade:** re-add the fields after `analysisHeight` and the builder parameters +
@@ -73,16 +73,22 @@ not cover this directory, see above).
 
 ### 2. `YOLOView.kt`
 
-- **Deviation:** `@Volatile latestAnalysisBitmap`, a lazily created single-thread depth
-  executor, an `AtomicBoolean` in-flight guard, `lastDepthStartMs`, the
-  `maybeRunDepthTick(...)` call after the stream callback, `maybeRunDepthTick` +
-  `emitDepthEvent`, and the executor shutdown/state reset in `stop()`.
+- **Deviation:** `@Volatile latestAnalysisBitmap`, a `@Volatile` lazily created
+  single-thread daemon depth executor, an `AtomicBoolean` in-flight guard,
+  `lastDepthStartMs`, a `depthDisabled` failure latch, the `maybeRunDepthTick()` call after
+  the stream callback, `maybeRunDepthTick` + `emitDepthEvent` + `emitDepthFailure`, the
+  latch reset in `setStreamConfig`, and the executor `shutdown()` + state reset in `stop()`.
 - **Why:** only the view holds the decoded analysis `Bitmap`, and only the view knows the
   detector result and the stream callback have already been delivered — the two facts that
   make a zero-copy depth tick possible without touching detection latency. The deviating
-  lines are the four field declarations, one call site (after `callback.invoke`), the two
-  new private methods, and the teardown block at the top of `stop()`.
-- **On upgrade:** re-apply all four; `emitDepthEvent` is the payload contract.
+  lines are the field declarations, one call site (after `callback.invoke`), the three new
+  private methods, and the teardown block at the top of `stop()`.
+- **On upgrade:** re-apply all of it. `emitDepthEvent` is the frame payload contract; a
+  failed inference emits `{type: depth, error: inference_failed, timestamp}` **once**
+  (`depthDisabled` suppresses the rest of the episode) and the next `setStreamConfig` is
+  what clears the latch. `stop()` calls `shutdown()` only — never `shutdownNow()` or
+  `awaitTermination()` — because it runs on the platform thread and the tick is allowed to
+  finish and discard its own result.
 
 ### 3. `YOLOPlatformView.kt`
 
@@ -95,12 +101,13 @@ not cover this directory, see above).
 
 ### 4. `YOLOInstanceManager.kt`
 
-- **Deviation:** `companion object { val shared = YOLOInstanceManager() }` and an
-  `includeRawData: Boolean = true` parameter on `predict(...)`, forwarded to
-  `YOLO.predict(bitmap, includeRawData = ...)`.
+- **Deviation:** `companion object { val shared = YOLOInstanceManager() }` and the
+  `includeRawData: Boolean = true` / `drawOverlays: Boolean = true` parameters on
+  `predict(...)`, forwarded to `YOLO.predict(...)`.
 - **Why:** the view must reach the same instance registry the plugin owns (it cannot see
-  the plugin's field), and the depth tick must opt out of the dense `values` copy.
-- **On upgrade:** re-add the companion and the parameter pass-through.
+  the plugin's field), and the depth tick must opt out of both the dense `values` copy and
+  the annotated-image render.
+- **On upgrade:** re-add the companion and both parameter pass-throughs.
 
 ### 5. `YOLOPlugin.kt`
 
@@ -114,29 +121,46 @@ not cover this directory, see above).
 
 - **Deviation:** `DepthMap` gains `grid: FloatArray? = null`, `gridWidth: Int = 0`,
   `gridHeight: Int = 0` (all defaulted, so existing constructor calls are unchanged).
+  `grid` is populated only when the caller opts out of the dense copy
+  (`includeRawMaskData = false`, i.e. the native depth stream); the upstream
+  `predictSingleImage` dense path leaves it null and pays nothing extra.
 - **Why:** the grid and its dimensions must travel with the result without a second
   channel or a dense `values` array.
-- **On upgrade:** re-add the three fields.
+- **On upgrade:** re-add the three fields, and keep the grid build gated on
+  `!includeRawMaskData`.
 
 ### 7. `DepthEstimator.kt`
 
 - **Deviation:** `var gridMaxDim: Int = DEFAULT_GRID_MAX_DIM` (96) and
-  `blockMeanGrid(...)`; `postProcessDepth` now always builds the grid, keeps the crop and
+  `blockMeanGrid(...)`; `postProcessDepth` builds the grid **only** when
+  `includeRawMaskData` is false (the native-stream case), keeps the crop and
   `minDepth`/`maxDepth` exactly as before, and leaves `values` gated on
-  `includeRawMaskData`.
+  `includeRawMaskData` as upstream does.
 - **Why:** computing the block means straight from the model output avoids allocating a
-  ~1.6 MB `FloatArray` per inference (the grid is ≤96²×4 ≈ 37 KB). The grid spans the same
-  crop as `values`, so sensor/upright box mapping is unchanged.
+  ~1.6 MB `FloatArray` per inference, and gating them off the dense path keeps the upstream
+  still-image caller free of the extra pass and the allocation.
+- **Grid aspect (must not regress):** one scale for both axes, derived from the longest
+  side — `scale = gridMaxDim / max(width, height)`, then `gridW = round(width × scale)`,
+  `gridH = round(height × scale)`, each clamped to `1..extent`. A 640×360 crop yields
+  96×54 and a 360×640 crop yields 54×96; per-axis scaling would force both sides to
+  `gridMaxDim` and squash every crop into a 96×96 square. The bound stays
+  `gridW × gridH ≤ 96² = 36 864` bytes.
 - **On upgrade:** re-add the field, the helper and the grid fields on the returned
-  `DepthMap`; keep the 0.1–80 m valid-range filter and NaN-for-empty-block rule.
+  `DepthMap`; keep the single-scale aspect math, the 0.1–80 m valid-range filter and the
+  NaN-for-empty-block rule.
 
 ### 8. `YOLO.kt`
 
-- **Deviation:** `predict(bitmap, rotateForCamera = false, includeRawData: Boolean = true)`;
-  the flag is assigned to `predictor.includeRawMaskData` instead of a hard-coded `true`.
-- **Why:** the depth tick needs the result without the dense raw copy; every existing
-  caller keeps the upstream default.
-- **On upgrade:** re-add the parameter (named-argument call sites stay source-compatible).
+- **Deviation:** `predict(bitmap, rotateForCamera = false, includeRawData: Boolean = true,
+  drawOverlays: Boolean = true)`; `includeRawData` is assigned to
+  `predictor.includeRawMaskData` instead of a hard-coded `true`, and `drawOverlays = false`
+  skips `drawAnnotations` entirely (no `bitmap.copy(ARGB_8888, true)`, no Canvas work).
+- **Why:** the depth tick consumes only the depth map, so the dense raw copy and the
+  annotated full-frame bitmap (1–3.7 MB per tick) would both be allocated and discarded.
+  Every existing caller — `predictSingleImage`, the detector path, the ImageProxy/Uri/URL
+  entry points — keeps the upstream default `true`, so its behaviour is bit-identical.
+- **On upgrade:** re-add both parameters (named-argument call sites stay source-compatible)
+  and keep the `!drawOverlays ||` arm in the `annotatedImage` branch.
 
 ### Dart surface (not native, recorded for the same upgrade review)
 

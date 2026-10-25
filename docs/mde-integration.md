@@ -114,7 +114,7 @@ detection output, so detection latency cannot be affected.
 | Format | `FlatBuffer (TFL3)` + appended **deflated** zip entry `metadata.json` (563 bytes): `task: depth`, `imgsz` 640×640, `w8a32`, `names {"0":"depth"}`, AGPL-3.0, version `8.4.104` |
 | Source | official Ultralytics export from the pinned plugin release `v0.6.6` |
 | Load | lazy, once per depth-enabled session; its instance id then reaches the streaming config and the native tick |
-| Accelerator | GPU first, one CPU retry, then degraded |
+| Accelerator | GPU first, with an automatic CPU fallback inside the native model open; a depth inference that still fails raises the native failure event once and the estimator degrades to bounding-box distance until the user retries |
 
 The metadata entry is deflated, so a raw byte grep misses it; `inspectModel` and
 `YOLOFileUtils.loadModelLabels` decompress it normally. The estimator still

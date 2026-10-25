@@ -139,7 +139,9 @@ class YOLOStreamingConfig {
   /// Minimum gap between native depth ticks in milliseconds. Null disables the tick.
   final int? depthIntervalMs;
 
-  /// Longest side of the block-mean depth grid the native side emits.
+  /// Longest side of the block-mean depth grid the native side emits. The short
+  /// side is scaled by the same factor, so the grid keeps the analysed frame's
+  /// aspect ratio (a 640x360 crop yields 96x54, never a square 96x96).
   final int depthMaxDim;
 
   /// Creates a YOLOStreamingConfig with custom settings.

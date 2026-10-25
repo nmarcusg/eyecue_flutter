@@ -38,7 +38,7 @@ data class YOLOStreamConfig(
     // emit a compact block-mean grid. A null `depthInstanceId` keeps the tick disabled.
     val depthInstanceId: String? = null,
     val depthIntervalMs: Int? = null,     // minimum gap between depth ticks
-    val depthMaxDim: Int = 96             // longest side of the emitted grid
+    val depthMaxDim: Int = 96             // longest side of the emitted grid; the short side keeps the crop aspect
     
     // Note: annotatedImage is intentionally excluded for YOLOView
     // YOLOView uses Canvas drawing (real-time overlay), not bitmap generation

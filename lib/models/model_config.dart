@@ -21,9 +21,10 @@ abstract final class EyeCueModelConfig {
   /// The gap is enforced natively by the view's depth tick, not by a Dart timer.
   static const depthMinIntervalMs = 500;
 
-  /// Longest side of the block-mean depth grid the native transport emits.
-  /// 96 × 96 × 4 bytes ≈ 37 KB per depth event, versus a dense map of hundreds
-  /// of KB.
+  /// Longest side of the block-mean depth grid the native transport emits. The
+  /// short side keeps the analysed frame's aspect ratio, so a 640×360 crop
+  /// yields 96×54 (20 736 bytes) and a square crop is the 96×96 worst case
+  /// (36 864 bytes) — versus a dense map of hundreds of KB.
   static const depthGridMaxDim = 96;
 
   /// A depth map older than this is stale: boxes fall back to bbox distance and

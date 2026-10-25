@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:eyecue_flutter/services/monocular_depth_estimator.dart';
@@ -13,9 +14,9 @@ YOLODepthEvent _event({
   double maxDepth = 4.0,
   int imageWidth = 640,
   int imageHeight = 480,
-  int rotationDegrees = 90,
   int latencyMs = 12,
   int timestamp = 1000,
+  String? error,
 }) => YOLODepthEvent(
   depthGrid: grid ?? Float32List.fromList([1.0, 2.0, 3.0, 4.0]),
   width: width,
@@ -24,13 +25,13 @@ YOLODepthEvent _event({
   maxDepth: maxDepth,
   imageWidth: imageWidth,
   imageHeight: imageHeight,
-  rotationDegrees: rotationDegrees,
   latencyMs: latencyMs,
   preMs: 1,
   inferenceMs: 8,
   postMs: 3,
   accelerator: 'gpu',
   timestampMs: timestamp,
+  error: error,
 );
 
 MonocularDepthEstimator _estimator({
@@ -167,6 +168,54 @@ void main() {
     _feed(estimator, _event());
     await pumpEventQueue();
     expect(estimator.frame.value, isNotNull);
+
+    estimator.dispose();
+  });
+
+  test('a native failure marker degrades and builds no frame', () async {
+    final estimator = _estimator();
+
+    // The view emits `error` instead of a grid once, then stops ticking.
+    _feed(estimator, _event(error: 'inference_failed'));
+    await pumpEventQueue();
+
+    expect(estimator.state.value, DepthRunState.degraded);
+    expect(estimator.frame.value, isNull);
+
+    // retry() leaves degraded, which is what re-pushes the instance id native-side.
+    estimator.retry();
+    expect(estimator.state.value, DepthRunState.idle);
+    _feed(estimator, _event());
+    await pumpEventQueue();
+    expect(estimator.frame.value, isNotNull);
+
+    estimator.dispose();
+  });
+
+  test('an event arriving during a publish is dropped, not raced', () async {
+    final firstPublish = Completer<void>();
+    final estimator = MonocularDepthEstimator(
+      heatmapBuilder: (_) async {
+        await firstPublish.future;
+        return null;
+      },
+    );
+
+    _feed(estimator, _event(timestamp: 1000));
+    // Overlaps the first publish: skipped (latest-frame-wins), never queued.
+    _feed(estimator, _event(timestamp: 2000));
+    firstPublish.complete();
+    await pumpEventQueue();
+
+    expect(
+      estimator.frame.value?.timestampMs,
+      1000,
+      reason: 'an older frame must not land after a newer one',
+    );
+
+    _feed(estimator, _event(timestamp: 3000));
+    await pumpEventQueue();
+    expect(estimator.frame.value?.timestampMs, 3000);
 
     estimator.dispose();
   });

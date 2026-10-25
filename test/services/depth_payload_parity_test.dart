@@ -1,22 +1,31 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/model_config.dart';
 import 'package:eyecue_flutter/services/ultralytics_detection_adapter.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ultralytics_yolo/ultralytics_yolo.dart';
 
 /// A native depth event with the exact keys the Android view emits.
-Map<String, dynamic> _depthEvent() => {
+///
+/// `imageWidth`/`imageHeight` are the analysed analysis-bitmap dims in sensor
+/// orientation, i.e. the grid's source.
+Map<String, dynamic> _depthEvent({
+  int width = 96,
+  int height = 54,
+  int imageWidth = 640,
+  int imageHeight = 360,
+}) => {
   'type': 'depth',
-  'depthGrid': Float32List.fromList(List<double>.filled(96 * 72, 2.5)),
-  'width': 96,
-  'height': 72,
+  'depthGrid': Float32List.fromList(List<double>.filled(width * height, 2.5)),
+  'width': width,
+  'height': height,
   'minDepth': 0.5,
   'maxDepth': 12.0,
-  'imageWidth': 640,
-  'imageHeight': 480,
-  'rotationDegrees': 90,
+  'imageWidth': imageWidth,
+  'imageHeight': imageHeight,
   'latencyMs': 41,
   'preMs': 6,
   'inferenceMs': 30,
@@ -33,7 +42,6 @@ const _depthEventKeys = {
   'maxDepth',
   'imageWidth',
   'imageHeight',
-  'rotationDegrees',
   'latencyMs',
   'preMs',
   'inferenceMs',
@@ -129,28 +137,101 @@ void main() {
       expect(event.toMap().keys.toSet(), _depthEventKeys);
       // `type` is the channel routing discriminator, not part of the payload.
       expect(event.toMap().containsKey('type'), isFalse);
+      // The detector frame's rotation is not part of the depth payload any more:
+      // the grid is described by the analysed bitmap's own dims.
+      expect(event.toMap().containsKey('rotationDegrees'), isFalse);
       expect(event.width, 96);
-      expect(event.height, 72);
+      expect(event.height, 54);
       expect(event.minDepth, 0.5);
       expect(event.maxDepth, 12.0);
       expect(event.imageWidth, 640);
-      expect(event.imageHeight, 480);
-      expect(event.rotationDegrees, 90);
+      expect(event.imageHeight, 360);
       expect(event.latencyMs, 41);
       expect(event.accelerator, 'gpu');
       expect(event.timestampMs, 1234567890);
+      expect(event.error, isNull);
     });
 
-    test('the grid is bounded by depthMaxDim', () {
-      final event = YOLODepthEvent.fromMap(_depthEvent());
-
-      expect(event.depthGrid.length, event.width * event.height);
-      expect(
-        event.depthGrid.length,
-        lessThanOrEqualTo(
-          EyeCueModelConfig.depthGridMaxDim * EyeCueModelConfig.depthGridMaxDim,
+    /// Payload-shape check: the grid is the crop scaled so its LONGEST side is
+    /// `depthMaxDim` and its short side keeps the crop's aspect ratio. This is
+    /// the regression guard for the always-96x96 bug (per-axis scaling).
+    void expectAspectCorrectGrid({
+      required int imageWidth,
+      required int imageHeight,
+      required int width,
+      required int height,
+    }) {
+      const maxDim = EyeCueModelConfig.depthGridMaxDim;
+      final event = YOLODepthEvent.fromMap(
+        _depthEvent(
+          width: width,
+          height: height,
+          imageWidth: imageWidth,
+          imageHeight: imageHeight,
         ),
       );
+
+      expect(event.depthGrid.length, width * height);
+      expect(
+        math.max(event.width, event.height),
+        maxDim,
+        reason: 'the longest side is capped at depthMaxDim',
+      );
+      expect(
+        math.min(event.width, event.height),
+        lessThan(maxDim),
+        reason: 'a non-square crop must not become a square grid',
+      );
+      expect(
+        event.width / event.height,
+        closeTo(imageWidth / imageHeight, 0.1),
+        reason: 'the grid keeps the crop aspect ratio within rounding',
+      );
+
+      // Whole-event bound: the grid cap plus the handful of scalar keys. A dense
+      // 640x480 float map would be 1 228 800 bytes, so this is the payload win.
+      final encoded = const StandardMessageCodec().encodeMessage({
+        'type': 'depth',
+        ...event.toMap(),
+      });
+      expect(
+        encoded!.lengthInBytes,
+        lessThanOrEqualTo(maxDim * maxDim * 4 + 2048),
+        reason: 'serialized depth event stays bounded',
+      );
+    }
+
+    test('a 640x360 analysis frame yields a 96x54 grid', () {
+      expectAspectCorrectGrid(
+        imageWidth: 640,
+        imageHeight: 360,
+        width: 96,
+        height: 54,
+      );
+    });
+
+    test('a 360x640 analysis frame yields a 54x96 grid', () {
+      expectAspectCorrectGrid(
+        imageWidth: 360,
+        imageHeight: 640,
+        width: 54,
+        height: 96,
+      );
+    });
+
+    test('a failure marker degrades without a grid', () {
+      final event = YOLODepthEvent.fromMap({
+        'type': 'depth',
+        'error': 'inference_failed',
+        'timestamp': 1234567890,
+      });
+
+      expect(event.error, 'inference_failed');
+      expect(event.depthGrid, isEmpty);
+      // The failure payload carries no grid and no frame fields; the parsed event
+      // only adds the `error` marker to the frame key set.
+      expect(event.toMap().keys.toSet(), {..._depthEventKeys, 'error'});
+      expect(event.toMap()['depthGrid'], isEmpty);
     });
 
     test('a dense values map or an originalImage is never accepted', () {

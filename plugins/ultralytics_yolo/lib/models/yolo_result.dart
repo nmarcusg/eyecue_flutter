@@ -376,6 +376,10 @@ class YOLODepthMap {
 /// where a block had no valid sample — never the dense per-pixel map. The event rides
 /// the same view event channel as the typed `zoom`/`lens`/`focus` events, tagged
 /// `type: 'depth'`.
+///
+/// [imageWidth]/[imageHeight] are the analysed analysis-bitmap dims in sensor
+/// orientation, i.e. the grid's own source. A failed inference sets [error] and omits
+/// [depthGrid] entirely.
 class YOLODepthEvent {
   final Float32List depthGrid;
   final int width;
@@ -384,13 +388,15 @@ class YOLODepthEvent {
   final double maxDepth;
   final int imageWidth;
   final int imageHeight;
-  final int rotationDegrees;
   final int latencyMs;
   final int preMs;
   final int inferenceMs;
   final int postMs;
   final String accelerator;
   final int timestampMs;
+
+  /// Native failure marker (e.g. `inference_failed`); null on a usable frame.
+  final String? error;
 
   YOLODepthEvent({
     required this.depthGrid,
@@ -400,13 +406,13 @@ class YOLODepthEvent {
     required this.maxDepth,
     required this.imageWidth,
     required this.imageHeight,
-    required this.rotationDegrees,
     required this.latencyMs,
     required this.preMs,
     required this.inferenceMs,
     required this.postMs,
     required this.accelerator,
     required this.timestampMs,
+    this.error,
   });
 
   factory YOLODepthEvent.fromMap(Map<dynamic, dynamic> map) {
@@ -427,13 +433,13 @@ class YOLODepthEvent {
       maxDepth: MapConverter.safeGetDouble(map, 'maxDepth'),
       imageWidth: MapConverter.safeGetInt(map, 'imageWidth'),
       imageHeight: MapConverter.safeGetInt(map, 'imageHeight'),
-      rotationDegrees: MapConverter.safeGetInt(map, 'rotationDegrees'),
       latencyMs: MapConverter.safeGetInt(map, 'latencyMs'),
       preMs: MapConverter.safeGetInt(map, 'preMs'),
       inferenceMs: MapConverter.safeGetInt(map, 'inferenceMs'),
       postMs: MapConverter.safeGetInt(map, 'postMs'),
       accelerator: (map['accelerator'] as String?) ?? 'cpu',
       timestampMs: MapConverter.safeGetInt(map, 'timestamp'),
+      error: map['error'] as String?,
     );
   }
 
@@ -446,13 +452,13 @@ class YOLODepthEvent {
     'maxDepth': maxDepth,
     'imageWidth': imageWidth,
     'imageHeight': imageHeight,
-    'rotationDegrees': rotationDegrees,
     'latencyMs': latencyMs,
     'preMs': preMs,
     'inferenceMs': inferenceMs,
     'postMs': postMs,
     'accelerator': accelerator,
     'timestamp': timestampMs,
+    if (error != null) 'error': error,
   };
 }
 
