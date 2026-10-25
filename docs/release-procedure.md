@@ -13,7 +13,7 @@ build evidence lives in [`play-store-readiness.md`](play-store-readiness.md)
 | `android:label` (launcher) | `EyeCue` | set |
 | Kotlin package / `MainActivity` | `app.eyecue.mobile` | moved with the id |
 | `taskAffinity` | `""` (unchanged) | deliberate: the app never merges into another task's affinity |
-| Launcher icon | `@mipmap/ic_launcher` (unchanged) | generic Flutter icon is still an L10 asset item |
+| Launcher icon | `@mipmap/ic_launcher` + `@mipmap/ic_launcher_round`, adaptive (API 26+) and monochrome layers | generated from `assets/logo.png` — see [`icon-generation.md`](icon-generation.md) |
 | Deep links / providers / authorities | none declared | nothing to rename |
 
 The owner approved `app.eyecue.mobile` as the permanent application ID; gate D1 is

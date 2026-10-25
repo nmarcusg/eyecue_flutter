@@ -153,8 +153,10 @@ shipped UI). Play's count/size/format rules:
 dimensions and the feature-graphic size are policy values.
 
 Assets that exist and can be reused: `assets/logo.png` (app mark, 13 446 B in the
-bundle). Launcher icon is still the generic Flutter icon (open item recorded in
-[`release-procedure.md`](release-procedure.md) §1).
+bundle). The launcher, adaptive and monochrome icons and the 512 Play icon are now
+generated from it ([`icon-generation.md`](icon-generation.md)); the listing text,
+feature graphic and screenshots are drafted in
+[`play-store-listing.md`](play-store-listing.md).
 
 ## 11. Data deletion behaviour (no accounts)
 
