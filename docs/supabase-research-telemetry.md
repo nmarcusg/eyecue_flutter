@@ -55,13 +55,15 @@ unauthenticated runs before it has to:
 3. study upload token header present and well-formed →
    `401 missing_upload_token` / `401 invalid_upload_token`
 4. rate limit for that token hash → `429 rate_limited`
-5. body size (2 000 000 B) → `413 payload_too_large`
+5. declared body size (2 000 000 B; a missing or unusable `content-length` is
+   refused here rather than buffered) → `413 payload_too_large`
 6. JSON parse → `400 invalid_json`
 7. envelope, consent, forbidden keys, schema version →
    `400 invalid_telemetry_payload` / `400 unsupported_schema_version`
 8. token consumption (atomic, `for update`) → `401/403` per status below
-9. idempotent upsert (unchanged)
-10. one `research_ingest_attempts` row for the outcome (best effort)
+9. idempotent probe + upsert (unchanged), with a use refunded on a replay
+10. one `research_ingest_attempts` row, only for an outcome on a token the
+    database confirmed (best effort)
 
 Steps 3–8 are what stops an APK holder from writing rows: the publishable key
 alone now answers `missing_upload_token`.
@@ -81,14 +83,33 @@ creates:
 |---|---|
 | `research_upload_tokens` | `token_hash` (unique), `study_scenario`, optional `participant_code`, `max_uses`, `uses`, `expires_at`, `revoked_at`, `created_at`, `note`. RLS enabled, **no client policy** |
 | `consume_research_upload_token(p_token_hash, p_participant_code)` | `security definer`; `select … for update`, then expiry → revocation → participant binding → `uses`; increments `uses`; returns `ok`, `invalid`, `expired`, `revoked`, `exhausted` or `participant_mismatch`. Never returns token data |
-| `research_ingest_attempts` | rolling-window ledger: `token_hash`, `participant_code`, `outcome`, `created_at`. RLS enabled, no client policy |
-| `research_ingest_rate_limited(p_token_hash, p_participant_code)` | `security definer`; `true` when the window is exhausted: **10 attempts / 10 min per token**, **20 / 10 min per participant**. The constants are mirrored in `validate.js` (`RATE_LIMIT_TOKEN_MAX`, `RATE_LIMIT_PARTICIPANT_MAX`, `RATE_LIMIT_WINDOW_MINUTES`) and a test asserts the two copies agree |
+| `research_ingest_attempts` | rolling-window ledger: `token_hash`, `participant_code`, `outcome`, `created_at`. RLS enabled, no client policy. Indexed on `(token_hash, created_at)` for the window and on `(created_at)` for the retention delete |
+| `research_ingest_rate_limited(p_token_hash)` | `security definer`; `true` when the window is exhausted: **10 recorded attempts / 10 min per token hash**. The constants are mirrored in `validate.js` (`RATE_LIMIT_TOKEN_MAX`, `RATE_LIMIT_WINDOW_MINUTES`) and a test asserts the two copies agree |
+| `refund_research_upload_token(p_token_hash)` | `security definer`; `uses = uses - 1` with a floor of 0, only for a token that is not revoked. Called when the idempotency probe finds the session already stored, so a replay does not cost a use |
 
-Both functions are `revoke`d from `public`, `anon` and `authenticated`, and granted
-to `service_role` only, so the Edge Function is the only caller. The participant
-window is only consulted when a code is supplied; the function passes `null`
-because it asks *before* parsing the body, and a code taken from an unvalidated
-body would be chosen by the caller.
+**There is no per-participant rate limit.** The participant code does not exist
+until the envelope is parsed, so the only value available before the body is read
+is one the caller chose; a window keyed on a caller-chosen value limits nothing.
+The earlier `where participant_code = p_participant_code` branch (always `null`
+from the function, and `= NULL` is never true in SQL) could not fire and was
+deleted rather than left documented as a control. The per-token-hash window is
+the limiter.
+
+All three functions are `revoke`d from `public`, `anon` and `authenticated`, and
+granted to `service_role` only, so the Edge Function is the only caller. Every one
+of them pins `set search_path = ''` (all names inside are schema-qualified).
+
+**Ledger retention.** Only outcomes for a token the database confirmed are
+recorded — a made-up hash is never written, because there is no budget to limit.
+The window reads 10 minutes, so older rows are dead weight; keep 30 days:
+
+```sh
+psql "$DB_URL" -c "delete from public.research_ingest_attempts
+  where created_at < now() - interval '30 days'"
+```
+
+The `(created_at)` index is what keeps that from being a sequential scan. Run it
+on a schedule (pg_cron) or by hand before an export.
 
 Issuing and revoking a token is an operator action, documented at the end of the
 migration file:
@@ -125,6 +146,29 @@ never creates a second row and never overwrites the stored payload — the probe
 short-circuits it, and `on conflict do nothing` covers the narrow race where a
 concurrent write lands between the probe and the insert (that write wins; the
 race loser still answers `201`).
+
+**A replay costs no use.** Token consumption runs *before* the probe, and it has
+to stay that way: probing first would answer "this
+`(participant_code, client_session_id)` pair exists" to anyone holding a token.
+Two cases follow from that order, and both answer `200 { "accepted": true,
+"duplicated": true }`:
+
+| Token state on the retry | What happens |
+|---|---|
+| a use was still available | consume spends it, the probe finds the stored row, and `refund_research_upload_token()` hands the use back — `uses` is unchanged (floor 0, revoked tokens untouched) |
+| `uses` already at `max_uses` (the default `max_uses = 1`) | consume refuses with `exhausted`, so nothing was spent and nothing needs refunding; the function probes once on that refusal and answers the same `200 duplicated` when the pair is already stored |
+
+So a network timeout after a successful write never forces a researcher to
+re-issue a token for data the database already holds. The probe on the
+`exhausted` path is safe because `consume` has already proved the token is real
+*and* that its participant binding matches; a token hash the table does not know
+returns `invalid` and is never probed, so the answer stays useless as an
+existence oracle for an unknown caller. What it does allow is for the holder of a
+real token to confirm a `(participant_code, client_session_id)` pair they can
+already name — accept that rather than the retry burning a token.
+
+A use is still spent when the *write* fails: that is a server fault, not a
+replay.
 
 **What a replay means for the user.** `client_session_id` is minted **once per
 app run**, and the upload button re-arms after every attempt. "Upload → keep
@@ -190,8 +234,8 @@ Every non-2xx answer is a single-machine-readable-code body.
 | 401 | `{"error":"revoked_upload_token"}` | `revoked_at` is set | "The study upload token has been revoked. Ask the study coordinator for a new one; the session was not uploaded. Save a local export." |
 | 403 | `{"error":"upload_token_exhausted"}` | `uses >= max_uses` | "This study upload token has no uploads left. Ask the study coordinator for a new one; the session was not uploaded. Save a local export." |
 | 403 | `{"error":"participant_mismatch"}` | the token is bound to a different participant code | "The study upload token belongs to a different participant code. Check both values; the session was not uploaded. Save a local export." |
-| 429 | `{"error":"rate_limited"}` | 10 attempts / 10 min for this token hash (or 20 / 10 min for the participant, when one is supplied) | "Too many upload attempts from this token. Wait a few minutes and try again; the session was not uploaded. Save a local export to keep the data." |
-| 413 | `{"error":"payload_too_large"}` | `content-length` or UTF-8 body above 2 000 000 B | "This session is too large to upload. Save a local export to keep the data." |
+| 429 | `{"error":"rate_limited"}` | 10 recorded attempts / 10 min for this token hash | "Too many upload attempts from this token. Wait a few minutes and try again; the session was not uploaded. Save a local export to keep the data." |
+| 413 | `{"error":"payload_too_large"}` | `content-length` or UTF-8 body above 2 000 000 B, **or** no usable `content-length` at all (a chunked body is refused, not buffered) | "This session is too large to upload. Save a local export to keep the data." |
 | 400 | `{"error":"invalid_json"}` | body is not JSON | "The research server rejected this session as invalid. Save a local export; sending it again will not help." |
 | 400 | `{"error":"invalid_telemetry_payload"}` | envelope shape/type/consent problem, a forbidden key, or a **syntactically valid body that is not a JSON object** (`[]`, `"text"`, `42` — the parse succeeds, the envelope check fails) | same validation message |
 | 400 | `{"error":"unsupported_schema_version","supported":[3,4]}` | header schema outside `{3,4}` | "This app build uses a telemetry format the research server does not accept. Update the app, or save a local export." |
@@ -295,6 +339,11 @@ psql "$DB_URL" -c 'select count(*) from public.telemetry_sessions'   # stays 1
 psql "$DB_URL" -c 'select uses, max_uses from public.research_upload_tokens'
 # expired / revoked / participant_mismatch -> update the row and repeat
 # rate limit -> 11 POSTs in 10 min -> 429 {"error":"rate_limited"}
+# replay with max_uses = 1 -> 200 {"duplicated":true} and uses stays at 1
+psql "$DB_URL" -c 'select uses, max_uses from public.research_upload_tokens'
+# retention -> old ledger rows only
+psql "$DB_URL" -c "delete from public.research_ingest_attempts
+  where created_at < now() - interval '30 days'"
 
 # maxed-payload proof: one worst-case envelope, then the stored text size
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
@@ -347,7 +396,7 @@ bytes itself, and its **stored** `payload::text` must stay under the table's
 ## Verification status
 
 The envelope **and token** rules are covered by `node --test
-supabase/functions/ingest-telemetry/validate.test.mjs` (**52 cases**: every
+supabase/functions/ingest-telemetry/validate.test.mjs` (**54 cases**: every
 forbidden key at three depths, the `frameNumber` allowance, case-variant and
 padded spellings that pass by design, each mistyped envelope field, both
 supported and three unsupported schema versions, the 2 000 000 / 2 000 001-byte
@@ -360,10 +409,14 @@ record, returning the value unmodified (never trimmed), the 43/128-character
 boundaries, empty/padded/oversized/non-token-safe values, every status →
 `{error, status}` mapping including an unrecognised status never reading as
 success, the assertion that no helper logs or echoes the token, that `index.ts`
-hashes it and never puts it in an answer body or a row, and two coupling guards
+hashes it and never puts it in an answer body or a row, and four coupling guards
 on the new migration (additive only, RLS with no client policy, `for update`,
-`security definer`, `revoke`/`grant` for both RPCs, and the rate-limit
-thresholds matching the JS constants).
+`security definer`, `revoke`/`grant` for all three RPCs each with an empty
+`search_path`, and the rate-limit threshold matching the JS constant with no
+per-participant branch left). The replay guard asserts the refund call sits
+*after* the probe and *before* the `duplicated` answer, and that the RPC floors
+`uses` at 0 and skips a revoked token; the ledger guard asserts no outcome
+before consume is recorded and that the retention index and delete exist.
 
 The Flutter suite covers the client error mapping for every token code, the
 dialog requiring the field, the header actually carrying the token, the token

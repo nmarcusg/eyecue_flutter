@@ -150,8 +150,10 @@ Two different limits apply to that `payload`; they are not interchangeable:
 * **2 000 000 B — the wire cap.** The size of the JSON body the app sends. Refused on
   the client before the request is built
   ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:255))
-  and again by the ingest function (which now checks the size *after* the token and
-  rate-limit gates, so an unauthenticated caller cannot make it read a 2 MB body).
+  and again by the ingest function (which checks the size *after* the token and
+  rate-limit gates, so a caller without a well-formed token cannot make it read a
+  2 MB body; a request with no declared `content-length` is refused rather than
+  buffered whole).
 * **2 400 000 B — the table's storage bound.** The
   `telemetry_sessions_payload_size` check on the stored `jsonb`
   ([`202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql:56)),
@@ -163,7 +165,8 @@ There is **no** device-model, Android-version, IP, or advertising-id column, and
 ingest function does not add one
 (`grep -rn 'device_model\|android_version' supabase/migrations/` → no matches).
 `research_ingest_attempts` records only a token hash, an optional participant code,
-an outcome string and a timestamp — no IP, no user agent, no device data. The app has
+an outcome string and a timestamp — no IP, no user agent, no device data. It records
+only attempts on a token that exists, so a made-up token leaves no row at all. The app has
 no accounts: `research_members` rows are created by the owner in the database, not by
 the app, and the mobile client never authenticates as a user — it sends the
 publishable key (client identity) and a study upload token (authorisation).
@@ -173,10 +176,14 @@ publishable key (client identity) and a study upload token (authorisation).
 * **In the app**: telemetry lives only in memory; it disappears when the process
   ends. Export files live in the app's documents directory and are removed by
   uninstalling the app (or by the user deleting them).
-* **In the study database**: nothing deletes rows automatically — no TTL, no
-  scheduled job, no cron (`grep -rn 'retention\|pg_cron' supabase/` → no matches).
-  Rows persist until a research member deletes them, and there is **no in-app
-  deletion path** for an uploaded session.
+* **In the study database**: uploaded session rows are never deleted
+  automatically — no TTL, no scheduled job — and there is **no in-app deletion
+  path** for an uploaded session. The one exception is the rate-limit ledger:
+  `research_ingest_attempts` carries no research data and has a documented
+  30-day delete snippet at the end of
+  [`202610260001_research_upload_tokens.sql`](../supabase/migrations/202610260001_research_upload_tokens.sql),
+  but it is a command an operator runs, not a scheduled job that ships with the
+  migrations.
 * Because there are **no user accounts**, there is no "delete my account" flow to
   implement; a participant's deletion request has to be executed by a research
   member against `telemetry_sessions` (rows are keyed by `participant_code` +

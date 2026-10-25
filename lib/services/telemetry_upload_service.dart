@@ -192,6 +192,13 @@ class TelemetryUploadResult {
       'This session was already uploaded earlier and was not stored again. '
       'Save a local export if you have recorded more data since.';
 
+  /// The `invalid_upload_token` sentence, shared with the dialog's local shape
+  /// check so a mistyped token reads the same before and after it is sent.
+  static const String invalidUploadTokenMessage =
+      'The research server did not recognise the study upload token. Check it '
+      'with the study coordinator; the session was not uploaded. Save a local '
+      'export.';
+
   final String? errorMessage;
 
   /// Non-null only for [alreadyUploaded]: what to show instead of the plain
@@ -495,7 +502,7 @@ class TelemetryUploadService {
       'No study upload token was sent. Enter the token the study coordinator gave you; the session was not uploaded. Save a local export.',
     ),
     'invalid_upload_token' => const TelemetryUploadResult.failure(
-      'The research server did not recognise the study upload token. Check it with the study coordinator; the session was not uploaded. Save a local export.',
+      TelemetryUploadResult.invalidUploadTokenMessage,
     ),
     'expired_upload_token' => const TelemetryUploadResult.failure(
       'The study upload token has expired. Ask the study coordinator for a new one; the session was not uploaded. Save a local export.',

@@ -17,7 +17,6 @@ import {
   FORBIDDEN_KEYS,
   MAX_BODY_BYTES,
   MISSING_UPLOAD_TOKEN,
-  RATE_LIMIT_PARTICIPANT_MAX,
   RATE_LIMIT_TOKEN_MAX,
   RATE_LIMIT_WINDOW_MINUTES,
   SUPPORTED_SCHEMA_VERSIONS,
@@ -599,22 +598,30 @@ test('the token migration is additive, locked down and lock-safe', () => {
   }
   // SECURITY DEFINER functions must not be reachable by a client role.
   for (const fn of [
-    'consume_research_upload_token',
-    'research_ingest_rate_limited',
+    'consume_research_upload_token(text, text)',
+    'research_ingest_rate_limited(text)',
+    'refund_research_upload_token(text)',
   ]) {
     assert.ok(
       tokenSql.includes(
-        `revoke all on function public.${fn}(text, text)\n  from public, anon, authenticated;`,
+        `revoke all on function public.${fn}\n  from public, anon, authenticated;`,
       ),
       `${fn} must be revoked from every client role`,
     )
     assert.ok(
       tokenSql.includes(
-        `grant execute on function public.${fn}(text, text)\n  to service_role;`,
+        `grant execute on function public.${fn}\n  to service_role;`,
       ),
       `${fn} must be executable by service_role only`,
     )
   }
+  // Every definer function pins an empty search_path; all names inside are
+  // schema-qualified, so the path cannot be used to shadow one.
+  assert.equal(tokenSql.match(/set search_path = ''/g)?.length, 3)
+  assert.ok(
+    !/set search_path = public/.test(tokenSql),
+    'no definer function may keep a writable search_path',
+  )
 })
 
 test('the rate-limit thresholds in SQL match the JS constants', () => {
@@ -622,10 +629,7 @@ test('the rate-limit thresholds in SQL match the JS constants', () => {
     join(functionDir, '../../migrations/202610260001_research_upload_tokens.sql'),
     'utf8',
   )
-  assert.deepEqual(
-    [RATE_LIMIT_TOKEN_MAX, RATE_LIMIT_PARTICIPANT_MAX, RATE_LIMIT_WINDOW_MINUTES],
-    [10, 20, 10],
-  )
+  assert.deepEqual([RATE_LIMIT_TOKEN_MAX, RATE_LIMIT_WINDOW_MINUTES], [10, 10])
   // The SQL is the enforcer; the constants above are the documentation the
   // function and the docs quote. A silent divergence would either throttle real
   // uploads or quietly disable the limit.
@@ -634,11 +638,84 @@ test('the rate-limit thresholds in SQL match the JS constants', () => {
     'window must match RATE_LIMIT_WINDOW_MINUTES',
   )
   assert.ok(
-    tokenSql.includes(') >= 10,'),
+    tokenSql.includes('select count(*) >= 10'),
     'per-token ceiling must match RATE_LIMIT_TOKEN_MAX',
   )
+  // The per-participant branch was inert (`where participant_code = NULL` is
+  // never true) and is gone: no documented control may fail to fire.
   assert.ok(
-    tokenSql.includes(') >= 20,'),
-    'per-participant ceiling must match RATE_LIMIT_PARTICIPANT_MAX',
+    !/count\(\*[^)]*participant_code/.test(tokenSql),
+    'no per-participant window may remain',
   )
+  assert.ok(
+    !tokenSql.includes('>= 20'),
+    'the removed participant ceiling must not linger',
+  )
+})
+
+test('a replay refunds the use that consume already spent', () => {
+  // consume must precede the idempotency probe (probing first would answer
+  // whether a (participant_code, client_session_id) pair exists to any token
+  // holder), so a retry of a stored session has to give the use back.
+  const refundCall = indexSource.indexOf("'refund_research_upload_token'")
+  const consumeCall = indexSource.indexOf("'consume_research_upload_token'")
+  const firstProbeCall = indexSource.indexOf('await sessionExists(')
+  const normalProbe = indexSource.indexOf('= await sessionExists(')
+  assert.ok(refundCall > 0, 'index.ts must call the refund RPC')
+  // Consume stays first: a probe before it would turn the answer into a
+  // pair-existence oracle for any caller.
+  assert.ok(
+    consumeCall > 0 && firstProbeCall > consumeCall,
+    'consume must precede every probe',
+  )
+  assert.ok(
+    normalProbe > 0 && refundCall > normalProbe,
+    'the refund belongs after the probe that finds the stored row',
+  )
+  assert.ok(
+    refundCall < indexSource.lastIndexOf('duplicated: true'),
+    'the refund must precede the duplicated answer',
+  )
+  // At the default max_uses = 1 there is no use left to refund, so that replay
+  // is answered from a probe on the exhausted refusal instead.
+  assert.match(
+    indexSource,
+    /tokenStatus === 'exhausted' &&\s*\(await sessionExists\(/,
+    'an exhausted replay of a stored session must still answer 200 duplicated',
+  )
+
+  const tokenSql = readFileSync(
+    join(functionDir, '../../migrations/202610260001_research_upload_tokens.sql'),
+    'utf8',
+  )
+  assert.match(
+    tokenSql,
+    /function public\.refund_research_upload_token\(\s*p_token_hash text\s*\) returns void/,
+  )
+  assert.match(tokenSql, /set uses = uses - 1/)
+  assert.match(tokenSql, /and uses > 0;/, 'the refund floors at 0')
+  assert.match(tokenSql, /and revoked_at is null/, 'a revoked token is left alone')
+})
+
+test('the ledger keeps only outcomes a real token can spend', () => {
+  // A random hash never reaches the database, so recording those attempts would
+  // grow the table for a window that can never trip.
+  assert.match(
+    indexSource,
+    /if \(tokenStatus !== 'invalid'\) \{\s*await recordAttempt/,
+  )
+  assert.ok(
+    !/recordAttempt\('unsupported_schema_version'\)/.test(indexSource),
+    'no outcome before consume may be recorded',
+  )
+  // Retention needs an index it can use.
+  const tokenSql = readFileSync(
+    join(functionDir, '../../migrations/202610260001_research_upload_tokens.sql'),
+    'utf8',
+  )
+  assert.match(
+    tokenSql,
+    /create index research_ingest_attempts_created_at_idx\s+on public\.research_ingest_attempts \(created_at\);/,
+  )
+  assert.match(tokenSql, /delete from public\.research_ingest_attempts/)
 })
