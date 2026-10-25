@@ -640,10 +640,9 @@ packages:
   ultralytics_yolo:
     dependency: "direct main"
     description:
-      name: ultralytics_yolo
-      sha256: c554f9897004f6697d9951718f20b9ec22fa3f9ea183166f2f8d2f77eea8b27f
-      url: "https://pub.dev"
-    source: hosted
+      path: "plugins/ultralytics_yolo"
+      relative: true
+    source: path
     version: "0.6.13"
   url_launcher:
     dependency: transitive
