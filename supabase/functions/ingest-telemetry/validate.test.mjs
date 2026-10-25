@@ -355,14 +355,34 @@ test('the migration unique index matches the onConflict target', () => {
   assert.equal(columns(indexColumns[1]), columns(onConflict[1]))
 })
 
+test('the migration drops the original payload check by name, unguarded', () => {
+  // 202610200001 left the check unnamed, so PostgreSQL named it after the
+  // table. The drop must carry no `if exists`: a name mismatch has to abort the
+  // migration, because a silent no-op would leave the old 2,000,000-byte bound
+  // in force beside the new one.
+  assert.match(
+    migrationSql,
+    /alter table public\.telemetry_sessions\s+drop constraint telemetry_sessions_check;/,
+    'the migration must drop telemetry_sessions_check by name',
+  )
+  assert.ok(
+    !/drop constraint if exists/i.test(migrationSql),
+    'the drop must not be guarded, or a renamed constraint would be skipped silently',
+  )
+})
+
 test('the storage bound leaves headroom above the wire cap', () => {
   // `jsonb` text output is larger than the compact body, so a storage check at
-  // exactly MAX_BODY_BYTES would reject a body the function accepted.
+  // exactly MAX_BODY_BYTES would reject a body the function accepted. A real
+  // margin, not just "greater than": at least 20 % above the wire cap.
   const bound = migrationSql.match(
     /check \(octet_length\(payload::text\) <= (\d+)\)/,
   )
   assert.ok(bound, 'the migration must carry the payload size bound')
-  assert.ok(Number(bound[1]) > MAX_BODY_BYTES)
+  assert.ok(
+    Number(bound[1]) >= MAX_BODY_BYTES * 1.2,
+    `storage bound ${bound[1]} needs >= ${MAX_BODY_BYTES * 1.2} bytes of headroom`,
+  )
 })
 
 test('the body bound is 2 000 000 bytes, inclusive', () => {

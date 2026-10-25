@@ -227,7 +227,9 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
           const Text(
             'This manually sends the current image-free session to the '
             'research database. It does not include camera frames or device IDs. '
-            'Use only a study participant code, never a name or email address.',
+            'Use only a study participant code, never a name or email address. '
+            'Only the first upload per app run is stored; export locally to keep '
+            'later data.',
           ),
           const SizedBox(height: kSpace12),
           TextField(

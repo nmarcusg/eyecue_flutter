@@ -139,7 +139,7 @@ a separate storage bound the client does not mirror (see *Payload size*).
 
 **Neither the migration nor the function has been executed anywhere.** This
 host has no PostgreSQL server, no Supabase CLI and no cached Supabase container
-images, and the volume holds 3.9 GB free of 91 GB (96 % used) — not enough for
+images, and the volume holds 4.3 GB free of 91 GB (96 % used) — not enough for
 the CLI plus its images. Nothing was installed and no image was pulled; the
 production project was never contacted.
 
@@ -164,10 +164,11 @@ psql "$DB_URL" -c "select octet_length(payload::text) from public.telemetry_sess
 npx supabase@latest stop
 ```
 
-`@maxed-envelope.json` is the envelope built by the Flutter worst-case test
-(2 000 detections, 400 samples with every schema-4 key, 500 alert records, 2 000
-corrections); it must be under 2 000 000 bytes itself, and its **stored**
-`payload::text` must stay under the table's 2 400 000-byte bound.
+`maxed-envelope.json` is the file the `--data @` sigil above reads: the envelope
+built by the Flutter worst-case test (2 000 detections, 400 samples with every
+schema-4 key, 500 alert records, 2 000 corrections); it must be under 2 000 000
+bytes itself, and its **stored** `payload::text` must stay under the table's
+2 400 000-byte bound.
 
 ## Provisioning
 
@@ -199,13 +200,15 @@ corrections); it must be under 2 000 000 bytes itself, and its **stored**
 ## Verification status
 
 The envelope rules are covered by `node --test
-supabase/functions/ingest-telemetry/validate.test.mjs` (40 cases: every
+supabase/functions/ingest-telemetry/validate.test.mjs` (41 cases: every
 forbidden key at three depths, the `frameNumber` allowance, case-variant and
 padded spellings that pass by design, each mistyped envelope field, both
 supported and three unsupported schema versions, the 2 000 000 / 2 000 001-byte
-boundary, and three coupling guards that read the migration SQL and `index.ts`
+boundary, and four coupling guards that read the migration SQL and `index.ts`
 from disk — schema list, unique-index columns against the `onConflict` target,
-and the storage bound against the wire cap). The Flutter suite covers the client
+the storage bound at least 20 % above the wire cap, and the unguarded `drop
+constraint telemetry_sessions_check` that must abort on a renamed constraint).
+The Flutter suite covers the client
 error mapping, the duplicate-versus-success states, and re-reads both Edge
 Function sources. **Not executed**: the SQL and the TypeScript function
 themselves — see *Local execution: BLOCKED-EXTERNAL* above.
@@ -216,17 +219,45 @@ Two different limits apply, and they are not the same number:
 
 | Limit | Value | Measured on | Enforced by |
 |---|---|---|---|
-| Wire cap | 2,000,000 B | the compact JSON body the app sends | `TelemetryUploadService` (client, before sending) **and** `isBodyTooLarge` in the Edge Function |
-| Storage bound | 2,400,000 B | `octet_length(payload::text)`, i.e. `jsonb` text output | the `telemetry_sessions_payload_size` check constraint |
+| Wire cap | 2,000,000 B — `CONFIRMED-BY-TEST` | the compact JSON body the app sends | `TelemetryUploadService` (client, before sending) **and** `isBodyTooLarge` in the Edge Function |
+| Storage bound | 2,400,000 B — `INFERRED-UNVERIFIED` | `octet_length(payload::text)`, i.e. `jsonb` text output | the `telemetry_sessions_payload_size` check constraint |
 
 The gap is deliberate. The wire cap is the authoritative limit; the
-storage bound exists only to stop unbounded storage and is set above it, because
-`jsonb` re-spaces the JSON on text output so the stored form is roughly 10–15 %
-larger than the compact body. A storage bound set at the wire cap would reject,
-as a `500 database_write_failed`, a body the function had just accepted. The
-client guard is *identical* to the function's wire cap — not stricter — and its
-only advantage is ordering: it fires before the request is sent, so the server's
-`413` is never the first signal that a session was too large.
+storage bound exists only to stop unbounded storage and is set above it.
+
+**`INFERRED-UNVERIFIED` — both numbers in that sentence are reasoned, not
+measured.** Nothing on this host has ever executed the migration, so no session
+has been stored and no `payload::text` has been read back:
+
+- the **2,400,000 B** bound comes from the arithmetic in the next paragraph
+  (2,000,000 × 1.2), not from an observed stored size;
+- the **10–15 % `jsonb` re-spacing factor** is the assumed per-character cost of
+  `jsonb`'s text output (a space after every `:` and `,`, added quotes on some
+  values), applied to a compact body whose key/value mix is assumed from the
+  worst-case fixture. It has not been measured on PostgreSQL.
+
+Proof step, on a machine with capacity — the only thing that converts the label
+to `CONFIRMED-BY-MEASUREMENT`: upload one worst-case envelope and read the stored
+size back, as in the blocked reproduction above:
+
+```sh
+psql "$DB_URL" -c "select octet_length(payload::text),
+                          length(payload::text)::numeric
+                          / length('<compact-body>') as spacing_factor
+                   from public.telemetry_sessions
+                   where client_session_id = '<maxed-session-id>'"
+#   first column must stay below 2400000; second should land in 1.10–1.15
+```
+
+If the measured factor is at or above 1.20, the bound is too tight and the
+migration must be re-cut with a wider number — that is why the factor is quoted
+as an assumption rather than a fact.
+
+A storage bound set at the wire cap would reject, as a `500
+database_write_failed`, a body the function had just accepted. The client guard
+is *identical* to the function's wire cap — not stricter — and its only advantage
+is ordering: it fires before the request is sent, so the server's `413` is never
+the first signal that a session was too large.
 
 The largest session the app can build is bounded by fixed collection caps. A test
 fills every one of them (2,000 detections, 400 samples, 500 alert lifecycle

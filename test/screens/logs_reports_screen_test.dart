@@ -778,6 +778,34 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('the confirm dialog states the one-upload-per-run rule', (
+      tester,
+    ) async {
+      // The rule has to be readable *before* the researcher commits, not only
+      // in the duplicate message after the second attempt.
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(),
+        uploadService: _FakeUploadService(
+          const TelemetryUploadResult.success(),
+        ),
+      );
+      final button = find.text('Upload session to research database');
+      await scrollOverviewTo(tester, button);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining(
+          'Only the first upload per app run is stored; export locally to keep '
+          'later data.',
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a duplicate upload says so instead of reporting success', (
       tester,
     ) async {
@@ -793,6 +821,26 @@ void main() {
         find.text('Session uploaded to the research database.'),
         findsNothing,
       );
+
+      // A duplicate is success-like: the row exists in the database. It must
+      // not be painted with the SnackBar's error container, and it must stay a
+      // polite live region so a screen reader announces it without alert tone.
+      final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
+      expect(
+        snackBar.backgroundColor,
+        isNull,
+        reason: 'a duplicate is not an error and must not be error-coloured',
+      );
+      final liveRegions = tester
+          .widgetList<Semantics>(find.byType(Semantics))
+          .where(
+            (widget) => (widget.properties.label ?? '').contains(
+              'already uploaded earlier',
+            ),
+          )
+          .toList();
+      expect(liveRegions, hasLength(1));
+      expect(liveRegions.single.properties.liveRegion, isTrue);
     });
 
     testWidgets('a stored upload keeps the plain success text', (tester) async {
