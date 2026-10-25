@@ -179,7 +179,8 @@ publishable key (client identity) and a study upload token (authorisation).
 * **In the study database**: uploaded session rows are never deleted
   automatically — no TTL, no scheduled job — and there is **no in-app deletion
   path** for an uploaded session. The one exception is the rate-limit ledger:
-  `research_ingest_attempts` carries no research data and has a documented
+  `research_ingest_attempts` carries no session content — only a token hash, an
+  optional participant code, an outcome and a timestamp — and has a documented
   30-day delete snippet at the end of
   [`202610260001_research_upload_tokens.sql`](../supabase/migrations/202610260001_research_upload_tokens.sql),
   but it is a command an operator runs, not a scheduled job that ships with the

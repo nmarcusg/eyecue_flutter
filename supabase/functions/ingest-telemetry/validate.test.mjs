@@ -697,6 +697,13 @@ test('a replay refunds the use that consume already spent', () => {
   assert.match(tokenSql, /and revoked_at is null/, 'a revoked token is left alone')
 })
 
+test('a missing content-length is a 411, an over-large one a 413', () => {
+  // Both gates bound the same body, but only one is a size problem: keeping them
+  // apart is what keeps the app's "too large" sentence truthful.
+  assert.match(indexSource, /return reject\('length_required', 411\)/)
+  assert.match(indexSource, /return reject\('payload_too_large', 413\)/)
+})
+
 test('the ledger keeps only outcomes a real token can spend', () => {
   // A random hash never reaches the database, so recording those attempts would
   // grow the table for a window that can never trip.
@@ -704,9 +711,15 @@ test('the ledger keeps only outcomes a real token can spend', () => {
     indexSource,
     /if \(tokenStatus !== 'invalid'\) \{\s*await recordAttempt/,
   )
+  // Position, not the absence of one known call: any `recordAttempt(` before
+  // consume would answer whether a token is real to a caller who cannot spend
+  // it, so a future pre-consume write has to fail here.
+  const consumeCall = indexSource.indexOf("'consume_research_upload_token'")
+  const firstLedgerWrite = indexSource.indexOf('await recordAttempt(')
+  assert.ok(consumeCall > 0, 'index.ts must call the consume RPC')
   assert.ok(
-    !/recordAttempt\('unsupported_schema_version'\)/.test(indexSource),
-    'no outcome before consume may be recorded',
+    firstLedgerWrite > consumeCall,
+    'no recordAttempt( call may precede the consume RPC',
   )
   // Retention needs an index it can use.
   const tokenSql = readFileSync(

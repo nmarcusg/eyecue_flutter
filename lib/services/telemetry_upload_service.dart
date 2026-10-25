@@ -192,12 +192,18 @@ class TelemetryUploadResult {
       'This session was already uploaded earlier and was not stored again. '
       'Save a local export if you have recorded more data since.';
 
-  /// The `invalid_upload_token` sentence, shared with the dialog's local shape
-  /// check so a mistyped token reads the same before and after it is sent.
+  /// The `invalid_upload_token` sentence: a real answer from the server.
   static const String invalidUploadTokenMessage =
       'The research server did not recognise the study upload token. Check it '
       'with the study coordinator; the session was not uploaded. Save a local '
       'export.';
+
+  /// The dialog's local shape refusal. Distinct from
+  /// [invalidUploadTokenMessage] on purpose: nothing was sent, so no server
+  /// sentence describes what happened.
+  static const String tokenShapeMessage =
+      'This doesn\'t look like a study token — check it against the one your '
+      'coordinator gave you.';
 
   final String? errorMessage;
 
@@ -215,11 +221,19 @@ class TelemetryUploadRequest {
     required this.uri,
     required this.headers,
     required this.body,
+    required this.contentLengthBytes,
   });
 
   final Uri uri;
   final Map<String, String> headers;
   final String body;
+
+  /// UTF-8 length of [body], encoded once by [TelemetryUploadService.upload].
+  ///
+  /// The real sender declares it as `content-length`; without a declared
+  /// length `dart:io` sends the body chunked, which the ingest function
+  /// refuses with `411 length_required`.
+  final int contentLengthBytes;
 }
 
 class TelemetryUploadResponse {
@@ -342,9 +356,12 @@ class TelemetryUploadService {
     };
 
     final body = jsonEncode(payload);
+    // Encoded once: the same byte count is the local size cap and the declared
+    // `content-length`, so the two cannot disagree.
+    final bodyBytes = utf8.encode(body).length;
     // Never truncate: a shortened payload would be silently wrong research
     // data, so an oversized session is reported and the local export kept.
-    if (utf8.encode(body).length > maxBodyBytes) {
+    if (bodyBytes > maxBodyBytes) {
       return const TelemetryUploadResult.failure(_tooLargeMessage);
     }
 
@@ -357,11 +374,16 @@ class TelemetryUploadService {
                 'Bearer ${_configuration.publishableKey}',
             'apikey': _configuration.publishableKey,
             HttpHeaders.contentTypeHeader: 'application/json',
+            // Declared here as well as in the sender: a body written without a
+            // declared length goes out chunked, and the ingest function refuses
+            // that with `411 length_required`.
+            HttpHeaders.contentLengthHeader: '$bodyBytes',
             // The study credential. Kept out of the body, the export and every
             // message; only the server hashes it.
             uploadTokenHeaderName: metadata.uploadToken,
           },
           body: body,
+          contentLengthBytes: bodyBytes,
         ),
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -437,6 +459,13 @@ class TelemetryUploadService {
         'The research server rejected this session as invalid. Save a local export; sending it again will not help.',
       );
     }
+    if (status == 411) {
+      // The server received no usable declared length. Nothing is wrong with the
+      // session's size, so the "too large" text would be a lie.
+      return const TelemetryUploadResult.failure(
+        'The upload could not be sent in a form the server accepts. Save a local export.',
+      );
+    }
     if (status == 413) {
       return const TelemetryUploadResult.failure(_tooLargeMessage);
     }
@@ -461,6 +490,7 @@ class TelemetryUploadService {
     'upload_token_exhausted',
     'participant_mismatch',
     'rate_limited',
+    'length_required',
   ];
 
   /// The machine-readable `error` code of a response body, or `null`.
@@ -551,6 +581,10 @@ class TelemetryUploadService {
           .postUrl(request.uri)
           .timeout(const Duration(seconds: 15));
       request.headers.forEach(requestHandle.headers.set);
+      // Declared before the body: `write` with no length set makes `dart:io`
+      // use `Transfer-Encoding: chunked` and send no `content-length`, which the
+      // ingest function refuses with `411 length_required`.
+      requestHandle.contentLength = request.contentLengthBytes;
       requestHandle.write(request.body);
       final response = await requestHandle.close().timeout(
         const Duration(seconds: 20),

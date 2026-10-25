@@ -108,17 +108,22 @@ Deno.serve(async (request) => {
   if (rateLimited === true) return json({ error: 'rate_limited' }, 429)
 
   // A chunked body carries no length, so it cannot be bounded before it is
-  // buffered: it is refused rather than read whole. The app always declares one.
+  // buffered: it is refused rather than read whole. The app's sender declares
+  // one (`requestHandle.contentLength`, set before the body is written).
   const declaredLength = request.headers.get('content-length')
   const contentLength = Number(declaredLength)
   if (
     declaredLength === null ||
     !Number.isInteger(contentLength) ||
-    contentLength < 0 ||
-    isBodyTooLarge(contentLength)
+    contentLength < 0
   ) {
-    return reject('payload_too_large', 413)
+    // Distinct from 413 on purpose: a missing length is a transport problem,
+    // and answering "too large" would make the app's size message a lie.
+    return reject('length_required', 411)
   }
+  // Declared length is the cheap gate; the actual bytes below stay the
+  // authoritative bound.
+  if (isBodyTooLarge(contentLength)) return reject('payload_too_large', 413)
 
   let body: unknown
   try {

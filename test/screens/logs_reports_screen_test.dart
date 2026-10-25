@@ -919,10 +919,16 @@ void main() {
       await confirm();
       expect(find.byType(AlertDialog), findsOneWidget);
       expect(fake.uploads, 0);
-      // The field says why instead of the button doing nothing…
+      // The field says why instead of the button doing nothing, and it says it
+      // in its own words: nothing was sent, so the server's sentence would
+      // misdescribe this refusal.
+      expect(
+        find.text(TelemetryUploadResult.tokenShapeMessage),
+        findsOneWidget,
+      );
       expect(
         find.text(TelemetryUploadResult.invalidUploadTokenMessage),
-        findsOneWidget,
+        findsNothing,
       );
 
       // A well-formed token closes the dialog and reaches the service.

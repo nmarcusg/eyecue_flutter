@@ -4,6 +4,11 @@
 --
 -- Additive only: nothing here alters or drops an existing object.
 --
+-- Not idempotent: apply once. A re-apply aborts on the first `create table`; to
+-- run it again, first drop the two tables it creates —
+-- `public.research_ingest_attempts` and `public.research_upload_tokens` (the two
+-- indexes go with their table; the three functions are `create or replace`).
+--
 -- Why SHA-256 and not bcrypt/argon2: a token is 256 random bits, not a
 -- user-chosen password. It has no dictionary to attack and no low entropy to
 -- stretch, so the only thing a slow KDF would add is latency on every upload
