@@ -647,10 +647,12 @@ class _UltralyticsDetectionScreenState
     _lastDistanceMode = _settings.distanceEstimationMode;
     _syncHeatmapGate();
     if (modeChanged && !_mdeEnabled) {
-      // Bounding-box mode stops depth inference entirely.
+      // Bounding-box mode stops depth inference entirely and releases the
+      // interpreter, so its weights and delegate do not stay resident.
       _depth.stop();
       _depth.clearFrame();
       _depthSmoother.reset();
+      unawaited(_depth.releaseModel());
     } else if (modeChanged) {
       _depth.retry();
       _resolveRotation();
@@ -936,9 +938,19 @@ class _UltralyticsDetectionScreenState
     return bestDistance <= 0.04 ? bestId : null;
   }
 
+  /// Retry after a depth failure.
+  ///
+  /// A model-load failure leaves no instance at all, so `retry()` on its own
+  /// would only drop the banner and leave depth dead with no further
+  /// affordance: the load has to be re-armed here. A native inference failure
+  /// keeps its instance, so the state change alone re-pushes the instance id.
+  /// `prepare()` shares one in-flight load, so repeated taps cannot spawn
+  /// duplicate loads.
   void _retryDepth() {
+    final modelMissing = _depth.instanceId == null;
     _depth.retry();
     _resolveRotation();
+    if (modelMissing) _armDepth();
     if (mounted) setState(() {});
   }
 

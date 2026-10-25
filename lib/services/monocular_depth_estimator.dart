@@ -50,6 +50,62 @@ class DepthFrame {
       this.uprightHeight == uprightHeight;
 }
 
+/// A loaded depth model instance: the surface the estimator actually drives.
+///
+/// The real implementation wraps a plugin [YOLO] instance; tests inject a fake
+/// through [MonocularDepthEstimator.modelFactory].
+abstract class DepthModelHandle {
+  /// Id the native tick must be given to run inference on this instance.
+  String get instanceId;
+
+  /// Frees the interpreter (weights + delegate) behind this instance.
+  Future<void> dispose();
+}
+
+/// Loads a depth model. Defaults to the real plugin path, so production call
+/// sites never pass it; tests inject it to count loads and releases.
+typedef DepthModelFactory =
+    Future<DepthModelHandle> Function({
+      required String modelId,
+      required bool useGpu,
+    });
+
+Future<DepthModelHandle> _loadYoloDepthModel({
+  required String modelId,
+  required bool useGpu,
+}) async {
+  final yolo = YOLO(
+    modelPath: modelId,
+    task: YOLOTask.depth,
+    useGpu: useGpu,
+    useMultiInstance: true,
+  );
+  try {
+    final ok = await yolo.loadModel();
+    if (!ok) throw StateError('depth model did not load');
+  } catch (error) {
+    // A missing/incompatible bundled asset will not fix itself on retry.
+    debugPrint('[Depth] model load failed: $error');
+    try {
+      await yolo.dispose();
+    } catch (_) {}
+    rethrow;
+  }
+  return _YoloDepthModel(yolo);
+}
+
+class _YoloDepthModel implements DepthModelHandle {
+  _YoloDepthModel(this._yolo);
+
+  final YOLO _yolo;
+
+  @override
+  String get instanceId => _yolo.instanceId;
+
+  @override
+  Future<void> dispose() => _yolo.dispose();
+}
+
 /// Runs the official depth model in a SECOND [YOLO] instance fed by the analysis
 /// frame inside the plugin view.
 ///
@@ -63,6 +119,7 @@ class MonocularDepthEstimator {
     this.onFrame,
     this.heatmapBuilder,
     this.modelId = EyeCueModelConfig.depthModelAssetPath,
+    this.modelFactory = _loadYoloDepthModel,
   });
 
   /// Bundled asset path of the depth model, resolved by the plugin's
@@ -74,6 +131,9 @@ class MonocularDepthEstimator {
   /// keep loading the stale cached copy.
   final String modelId;
   final void Function(DepthFrame frame)? onFrame;
+
+  /// Test seam: defaults to loading a real [YOLO] depth instance.
+  final DepthModelFactory modelFactory;
 
   static const double _observedHzAlpha = 0.3;
 
@@ -98,11 +158,15 @@ class MonocularDepthEstimator {
   /// Test seam: defaults to the real colourisation/decode path.
   final Future<ui.Image?> Function(YOLODepthMap map)? heatmapBuilder;
 
-  YOLO? _yolo;
+  DepthModelHandle? _yolo;
   Future<void>? _preparing;
   bool _useGpu = true;
   bool _modelLoadFailed = false;
   bool _loggedFirstFrame = false;
+
+  /// Bumped by [releaseModel] so a load that was already in flight when depth
+  /// was switched off cannot resurrect the model it was loading.
+  int _releaseEpoch = 0;
 
   int? _lastLatencyMs;
   double? _observedHz;
@@ -137,7 +201,7 @@ class MonocularDepthEstimator {
   Future<void> _load() async {
     if (_disposed || _modelLoadFailed) return;
     try {
-      await _ensureModel(_useGpu);
+      await _ensureModel(_useGpu, _releaseEpoch);
     } catch (error) {
       debugPrint('[Depth] inference failed: $error');
       _degrade();
@@ -267,34 +331,34 @@ class MonocularDepthEstimator {
         : ema + (sample - ema) * _observedHzAlpha;
   }
 
-  Future<YOLO> _ensureModel(bool useGpu) async {
+  Future<void> _ensureModel(bool useGpu, int epoch) async {
     final existing = _yolo;
-    if (existing != null && _useGpu == useGpu) return existing;
+    if (existing != null && _useGpu == useGpu) return;
     await _disposeModel();
     state.value = DepthRunState.loading;
     debugPrint('[Depth] loading model: $modelId (useGpu=$useGpu)');
-    final yolo = YOLO(
-      modelPath: modelId,
-      task: YOLOTask.depth,
-      useGpu: useGpu,
-      useMultiInstance: true,
-    );
+    final DepthModelHandle handle;
     try {
-      final ok = await yolo.loadModel();
-      if (!ok) throw StateError('depth model did not load');
+      handle = await modelFactory(modelId: modelId, useGpu: useGpu);
     } catch (error) {
       // A missing/incompatible bundled asset will not fix itself on retry.
-      debugPrint('[Depth] model load failed: $error');
       _modelLoadFailed = true;
-      try {
-        await yolo.dispose();
-      } catch (_) {}
       rethrow;
     }
-    _yolo = yolo;
+    if (epoch != _releaseEpoch) {
+      // Depth was switched off while the model loaded: honour the release
+      // instead of resurrecting an interpreter nobody asked for.
+      try {
+        await handle.dispose();
+      } catch (error) {
+        debugPrint('[Depth] dispose failed: $error');
+      }
+      if (!_disposed) state.value = DepthRunState.idle;
+      return;
+    }
+    _yolo = handle;
     _useGpu = useGpu;
     state.value = DepthRunState.ready;
-    return yolo;
   }
 
   void _degrade() {
@@ -314,6 +378,28 @@ class MonocularDepthEstimator {
     final previous = frame.value;
     frame.value = null;
     previous?.heatmap?.dispose();
+  }
+
+  /// Frees the loaded model when depth is switched off.
+  ///
+  /// MDE off used to stop only the tick, so the interpreter (5.3 MB of weights
+  /// plus its GPU delegate) stayed resident for the rest of the session. This
+  /// disposes it, drops the frame and its heatmap texture, clears the
+  /// pending/failure state, and parks [state] at [DepthRunState.idle].
+  ///
+  /// Unlike [dispose] the [ValueNotifier]s survive, so the estimator stays
+  /// reusable: [retry] plus a re-arm loads the model again. [stop] is the pause
+  /// path and keeps the model; only a disable releases. Telemetry history
+  /// ([observedHz], [lastLatencyMs]) is preserved exactly as [stop] preserves
+  /// it. Idempotent: with no model loaded it only re-parks the state.
+  Future<void> releaseModel() async {
+    if (_disposed) return;
+    _releaseEpoch++;
+    _modelLoadFailed = false;
+    stop();
+    clearFrame();
+    state.value = DepthRunState.idle;
+    await _disposeModel();
   }
 
   /// Re-arms a previously failed model load or a native inference failure (used by
