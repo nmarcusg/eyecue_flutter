@@ -1,0 +1,25 @@
+# EyeCue — no application licence has been chosen
+
+**This repository has no licence for its own code.** Choosing one is an OWNER
+DECISION, not something this project or its implementation agents may pick: see
+gate **D2** in [`docs/play-store-readiness.md`](docs/play-store-readiness.md) and
+the AGPL-3.0 interaction recorded in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+Until the owner adds a licence, default copyright applies: no permission to copy,
+modify or redistribute this application's own source is granted by this file.
+
+## Third-party components are licensed independently
+
+The components below carry their own licences, and those terms apply regardless of
+whatever licence the owner later chooses for the application:
+
+| Component | Licence | Where the terms are |
+| --- | --- | --- |
+| `plugins/ultralytics_yolo` (vendored `ultralytics_yolo` 0.6.13) | AGPL-3.0 | [`plugins/ultralytics_yolo/LICENSE`](plugins/ultralytics_yolo/LICENSE), preserved verbatim |
+| `assets/yolo26n-depth_w8a32.tflite` | AGPL-3.0 (Ultralytics weights) | recorded in [`docs/model-assets.md`](docs/model-assets.md) |
+| `assets/yolov8n_int8_new_metadata.tflite` | treated as AGPL-3.0 (Ultralytics weights; see notices) | [`docs/model-assets.md`](docs/model-assets.md) |
+| Full pub / native dependency inventory | per package | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
+
+No legal opinion is given in this repository. The AGPL-3.0 obligations, the open
+questions and the items that need qualified legal review are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
