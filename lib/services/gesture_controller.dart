@@ -68,8 +68,6 @@ class GestureController {
   final Set<int> _activePointers = {};
   final Map<int, Offset> _downPositions = {};
   int _groupMaxPointers = 0;
-  bool _swipeFired = false;
-  bool _suppressTapAfterSwipe = false;
   DateTime? _lastTwoFingerTapAt;
   Timer? _singleTapTimer;
 
@@ -77,6 +75,12 @@ class GestureController {
   /// committed for the current sequence. Locks the sequence so a later
   /// perpendicular move cannot emit a second, conflicting intent.
   bool _directionCommitted = false;
+
+  /// The directional intent classified during the sequence, if any.
+  ///
+  /// Held until the group ends so navigation/repeat commit only on a valid
+  /// pointer-up: crossing the displacement threshold mid-drag never fires.
+  EyeCueGesture? _pendingDirectional;
 
   /// True when a second pointer joined a sequence that had begun as a
   /// one-pointer sequence. Invalidates one-pointer directional classification
@@ -94,8 +98,7 @@ class GestureController {
     _cancelPendingSingleTap();
     if (wasEmpty) {
       _groupMaxPointers = 1;
-      _swipeFired = false;
-      _suppressTapAfterSwipe = false;
+      _pendingDirectional = null;
       _directionCommitted = false;
       _multiPointerInvalidated = false;
     } else {
@@ -110,13 +113,14 @@ class GestureController {
 
   /// Handles a pointer-move event (one-finger swipe-down or horizontal move).
   ///
-  /// The first committed directional intent locks the sequence: a horizontal
-  /// commit prevents a later downward repeat, and a downward commit prevents a
-  /// later horizontal navigation. Ambiguous diagonals emit nothing.
+  /// Classification only: the first committed directional intent locks the
+  /// sequence (a horizontal commit prevents a later downward repeat and vice
+  /// versa) and is held until the pointer is released. Ambiguous diagonals
+  /// classify nothing.
   void onPointerMove(int pointer, Offset position) {
     if (!_activePointers.contains(pointer)) return;
-    if (_activePointers.length != 1 || _swipeFired) return;
-    if (_multiPointerInvalidated || _directionCommitted) return;
+    if (_activePointers.length != 1 || _directionCommitted) return;
+    if (_multiPointerInvalidated) return;
     final start = _downPositions[pointer];
     if (start == null) return;
     final dx = position.dx - start.dx;
@@ -126,20 +130,18 @@ class GestureController {
 
     // Downward-dominant: preserve the existing repeat action.
     if (dy > swipeDownThreshold && absDy >= absDx * directionalDominanceRatio) {
-      _swipeFired = true;
-      _suppressTapAfterSwipe = true;
       _directionCommitted = true;
-      _fire(EyeCueGesture.swipeDown);
+      _pendingDirectional = EyeCueGesture.swipeDown;
       return;
     }
 
     // Horizontal-dominant: request one relative primary-tab move.
     if (absDx > swipeHorizontalThreshold &&
         absDx >= absDy * directionalDominanceRatio) {
-      _swipeFired = true;
-      _suppressTapAfterSwipe = true;
       _directionCommitted = true;
-      _fire(dx < 0 ? EyeCueGesture.swipeLeft : EyeCueGesture.swipeRight);
+      _pendingDirectional = dx < 0
+          ? EyeCueGesture.swipeLeft
+          : EyeCueGesture.swipeRight;
     }
   }
 
@@ -165,11 +167,14 @@ class GestureController {
 
   void _handleGroupEnd() {
     _cancelPendingSingleTap();
-    if (_swipeFired) {
-      _swipeFired = false;
-      _suppressTapAfterSwipe = false;
-      _directionCommitted = false;
-      _multiPointerInvalidated = false;
+    // Exactly one pointer owned this sequence; releasing it commits at most one
+    // classified directional intent and never falls through to a tap.
+    final pending = _pendingDirectional;
+    _pendingDirectional = null;
+    _directionCommitted = false;
+    _multiPointerInvalidated = false;
+    if (pending != null) {
+      _fire(pending);
       return;
     }
     if (_groupMaxPointers >= 3) {
@@ -188,11 +193,7 @@ class GestureController {
       }
       return;
     }
-    // Single pointer.
-    if (_suppressTapAfterSwipe) {
-      _suppressTapAfterSwipe = false;
-      return;
-    }
+    // Single pointer with no classified direction: a tap.
     _singleTapTimer = _createTimer(singleTapConfirmDelay, () {
       _singleTapTimer = null;
       _fire(EyeCueGesture.singleTap);
@@ -212,8 +213,7 @@ class GestureController {
     _activePointers.clear();
     _downPositions.clear();
     _groupMaxPointers = 0;
-    _swipeFired = false;
-    _suppressTapAfterSwipe = false;
+    _pendingDirectional = null;
     _lastTwoFingerTapAt = null;
     _directionCommitted = false;
     _multiPointerInvalidated = false;
