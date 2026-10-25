@@ -1,6 +1,7 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/navigation/app_shell.dart';
+import 'package:eyecue_flutter/screens/help_screen.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
 import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/gesture_controller.dart';
@@ -10,6 +11,7 @@ import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
+import 'package:eyecue_flutter/widgets/safety_disclosure.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,6 +94,10 @@ void main() {
 
   setUp(() async {
     settings = SettingsService(store: InMemorySettingsStore());
+    // The first-use safety disclosure is exercised by its own group below; the
+    // shell behaviour here is about navigation, so the acknowledgement is
+    // pre-recorded to keep the modal out of the way.
+    await settings.setSafetyAcknowledged(true);
     tts = TtsService(engine: _FakeTtsEngine());
     // init() installs the lifecycle handlers the scheduler depends on.
     await tts.init();
@@ -742,6 +748,81 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.element(find.text('PAGE1')), same(detectElement));
+    });
+  });
+
+  group('first-use safety disclosure', () {
+    Widget shellFor(SettingsService service) {
+      return MaterialApp(
+        home: AppShell(
+          settings: service,
+          tts: tts,
+          telemetry: telemetry,
+          haptics: haptics,
+          pagesOverride: stubPages(),
+        ),
+      );
+    }
+
+    testWidgets('appears once, needs the explicit action, and persists', (
+      tester,
+    ) async {
+      // Tall phone-sized surface so the Help copy is fully built at the end.
+      tester.view.physicalSize = const Size(390 * 3, 1600 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final store = InMemorySettingsStore();
+      final fresh = SettingsService(store: store);
+      await tester.pumpWidget(shellFor(fresh));
+      await tester.pumpAndSettle();
+
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      expect(find.text('I understand'), findsOneWidget);
+      for (final point in kSafetyDisclosurePoints) {
+        expect(find.textContaining(point), findsOneWidget);
+      }
+
+      // No implicit dismissal: a barrier tap leaves the surface on screen.
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      expect(fresh.safetyAcknowledged, isFalse);
+
+      await tester.tap(find.text('I understand'));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+      expect(fresh.safetyAcknowledged, isTrue);
+
+      // Persisted: a reload from the same store does not show it again.
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.safetyAcknowledged, isTrue);
+      await tester.pumpWidget(shellFor(reloaded));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+
+      // The permanent copy is still readable on Help afterwards.
+      await tester.pumpWidget(const MaterialApp(home: HelpScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      for (final point in kSafetyDisclosurePoints) {
+        expect(find.textContaining(point), findsOneWidget);
+      }
+    });
+
+    testWidgets('is skipped when the acknowledgement is already persisted', (
+      tester,
+    ) async {
+      final service = SettingsService(store: InMemorySettingsStore());
+      await service.setSafetyAcknowledged(true);
+      await tester.pumpWidget(shellFor(service));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+      // The shell stays usable immediately.
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE1'), findsOneWidget);
     });
   });
 }

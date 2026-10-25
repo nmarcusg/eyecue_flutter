@@ -19,6 +19,7 @@ import 'package:eyecue_flutter/widgets/detection_card.dart';
 import 'package:eyecue_flutter/widgets/detection_correction_sheet.dart';
 import 'package:eyecue_flutter/widgets/detection_state_panel.dart';
 import 'package:eyecue_flutter/widgets/status_pill.dart';
+import 'package:eyecue_flutter/widgets/safety_disclosure.dart';
 import 'package:eyecue_flutter/widgets/warning_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -615,6 +616,53 @@ void main() {
           find.semantics.byLabel('Gesture Controls').evaluate(),
           hasLength(1),
         );
+      });
+    });
+
+    testWidgets('safety disclosure is one heading plus body, in reading order', (
+      tester,
+    ) async {
+      await pumpHelp(tester);
+      await withSemantics(tester, () async {
+        final heading = expectSemanticNode(kSafetyDisclosureTitle);
+        expect(heading.getSemanticsData().flagsCollection.isHeader, isTrue);
+        // The heading is announced exactly once (the visual title is excluded).
+        expect(
+          find.semantics.byLabel(kSafetyDisclosureTitle).evaluate(),
+          hasLength(1),
+        );
+
+        // The heading and all five points live in one group, and the group
+        // reads heading first, then the points in order.
+        final group = tester.getSemantics(find.byType(SafetyDisclosureBody));
+
+        final labels = <String>[];
+        void collect(SemanticsNode node) {
+          final label = node.getSemanticsData().label;
+          if (label.isNotEmpty) labels.add(label);
+          node.visitChildren((child) {
+            collect(child);
+            return true;
+          });
+        }
+
+        collect(group);
+        final joined = labels.join('\n');
+        var cursor = joined.indexOf(kSafetyDisclosureTitle);
+        expect(
+          cursor,
+          greaterThanOrEqualTo(0),
+          reason: 'The heading is outside the disclosure group',
+        );
+        for (final point in kSafetyDisclosurePoints) {
+          final index = joined.indexOf(point);
+          expect(
+            index,
+            greaterThan(cursor),
+            reason: 'Point missing or out of order in the group: $point',
+          );
+          cursor = index;
+        }
       });
     });
 

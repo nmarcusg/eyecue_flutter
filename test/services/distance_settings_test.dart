@@ -13,7 +13,7 @@ void main() {
       );
       expect(service.showBoundingBoxes, isTrue);
       expect(service.showDepthHeatmap, isTrue);
-      expect(AppSettings.currentSchemaVersion, 5);
+      expect(AppSettings.currentSchemaVersion, 6);
     });
 
     test('setters persist every new field', () async {

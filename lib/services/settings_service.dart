@@ -78,6 +78,7 @@ class SettingsService extends ChangeNotifier {
       _settings.distanceEstimationMode;
   int? get detectionTargetHz => _settings.detectionTargetHz;
   int get depthTargetHz => _settings.depthTargetHz;
+  bool get safetyAcknowledged => _settings.safetyAcknowledged;
 
   /// Loads persisted settings. Safe to call once at startup; on any failure
   /// (missing/corrupt file) the defaults are kept.
@@ -129,6 +130,11 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setDepthTargetHz(int value) =>
       _update(_settings.copyWith(depthTargetHz: value));
+
+  /// Records that the user has read and acknowledged the first-use safety
+  /// disclosure, so it is never shown again.
+  Future<void> setSafetyAcknowledged(bool value) =>
+      _update(_settings.copyWith(safetyAcknowledged: value));
 
   Future<void> _update(AppSettings next) async {
     if (next == _settings) return;
