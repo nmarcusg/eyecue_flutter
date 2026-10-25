@@ -14,7 +14,7 @@ enum DepthRunState { idle, loading, ready, degraded }
 /// One completed depth inference.
 class DepthFrame {
   const DepthFrame({
-    required this.map,
+    required this.grid,
     required this.heatmap,
     required this.timestampMs,
     required this.rotationDegrees,
@@ -22,7 +22,11 @@ class DepthFrame {
     required this.uprightHeight,
   });
 
-  final YOLODepthMap map;
+  /// Block-mean depth grid in metres (`NaN` where a block had no valid sample).
+  ///
+  /// It covers the same sensor/upright geometry the dense map covered, so
+  /// [DepthDistanceService.sensorSpaceBox] mapping stays valid.
+  final YOLODepthMap grid;
 
   /// Colourised, alpha-baked heatmap image in SENSOR orientation.
   final ui.Image? heatmap;
@@ -46,25 +50,20 @@ class DepthFrame {
       this.uprightHeight == uprightHeight;
 }
 
-/// Raw single-image predictor seam so the scheduler is unit-testable without
-/// natives.
-typedef DepthPredictor =
-    Future<Map<String, dynamic>> Function(Uint8List jpeg, bool useGpu);
-
-/// Runs the official depth model in a SECOND [YOLO] instance fed by the JPEG
-/// frames the detection stream delivers.
+/// Runs the official depth model in a SECOND [YOLO] instance fed by the analysis
+/// frame inside the plugin view.
 ///
-/// cadence: latest-frame-wins with a single pending slot, one in-flight
-/// request, and a periodic timer that only starts a predict while idle.
+/// Transport: the view ticks that instance at the configured depth cadence and
+/// emits a compact block-mean grid on the view event channel. No image and no
+/// dense float map crosses the platform channel, and cadence, latest-frame-wins
+/// and the in-flight guard all live natively. This class only derives frames,
+/// heatmaps and metrics from the events.
 class MonocularDepthEstimator {
   MonocularDepthEstimator({
     this.onFrame,
-    DepthPredictor? predictor,
     this.heatmapBuilder,
     this.modelId = EyeCueModelConfig.depthModelAssetPath,
-    int minIntervalMs = EyeCueModelConfig.depthMinIntervalMs,
-  }) : _predict = predictor,
-       _intervalMs = minIntervalMs;
+  });
 
   /// Bundled asset path of the depth model, resolved by the plugin's
   /// `YOLOModelResolver` through the same asset path detection already uses.
@@ -76,166 +75,128 @@ class MonocularDepthEstimator {
   final String modelId;
   final void Function(DepthFrame frame)? onFrame;
 
-  /// Guard range applied by [configure]: a zero or sub-frame period would spin
-  /// the scheduler, and a minute-long period would stall depth entirely.
-  static const int minIntervalFloorMs = 50;
-  static const int minIntervalCeilingMs = 5000;
-
   static const double _observedHzAlpha = 0.3;
-
-  static int _clampInterval(int ms) =>
-      ms.clamp(minIntervalFloorMs, minIntervalCeilingMs);
-
-  int _intervalMs;
 
   final ValueNotifier<DepthRunState> state = ValueNotifier(DepthRunState.idle);
   final ValueNotifier<DepthFrame?> frame = ValueNotifier(null);
-
-  final DepthPredictor? _predict;
 
   /// Test seam: defaults to the real colourisation/decode path.
   final Future<ui.Image?> Function(YOLODepthMap map)? heatmapBuilder;
 
   YOLO? _yolo;
+  Future<void>? _preparing;
   bool _useGpu = true;
   bool _modelLoadFailed = false;
   bool _loggedFirstFrame = false;
 
-  Timer? _timer;
   int? _lastLatencyMs;
   double? _observedHz;
   int? _lastCompletionMs;
   final Stopwatch _clock = Stopwatch()..start();
-  Uint8List? _pendingJpeg;
-  int _pendingTimestampMs = 0;
-  int _pendingRotation = 0;
-  int _pendingWidth = 0;
-  int _pendingHeight = 0;
-  bool _running = false;
   bool _disposed = false;
 
-  /// Number of queued frames. Never exceeds one by design.
-  @visibleForTesting
-  int get debugPendingFrames => _pendingJpeg == null ? 0 : 1;
-
-  @visibleForTesting
-  bool get debugRunning => _running;
-
-  @visibleForTesting
-  int get debugMinIntervalMs => _intervalMs;
-
-  @visibleForTesting
-  bool get debugTimerActive => _timer != null;
-
-  /// Wall-clock milliseconds of the last completed predict. Survives [stop].
+  /// Wall-clock milliseconds of the last native depth inference. Survives [stop].
   int? get lastLatencyMs => _lastLatencyMs;
 
-  /// EMA of the observed completion cadence. Survives [stop].
+  /// EMA of the observed native depth event cadence. Survives [stop].
   double? get observedHz => _observedHz;
 
   /// Accelerator of a loaded model instance; null while none exists.
   String? get accelerator => _yolo == null ? null : (_useGpu ? 'gpu' : 'cpu');
 
-  /// Applies a new interval to the live scheduler.
+  /// Instance id the view must tick; null until the model is loaded.
+  String? get instanceId => _yolo?.instanceId;
+
+  /// Loads the depth model so [instanceId] can reach the streaming config.
   ///
-  /// A queued frame and an in-flight request survive: only the periodic timer
-  /// is replaced, exactly once, and a stopped scheduler stays lazy until the
-  /// next [submitFrame].
-  void configure({required int minIntervalMs}) {
-    final clamped = _clampInterval(minIntervalMs);
-    if (clamped == _intervalMs) return;
-    _intervalMs = clamped;
-    final timer = _timer;
-    if (timer == null) return;
-    timer.cancel();
-    _timer = null;
-    _ensureTimer();
-  }
+  /// Concurrent calls share one load. A failed load is reported through [state]
+  /// (degraded) and is not retried until [retry].
+  Future<void> prepare() => _preparing ??= _load().whenComplete(() {
+    _preparing = null;
+  });
 
-  /// Offers the newest analysis frame. Older pending frames are dropped.
-  void submitFrame(
-    Uint8List jpeg, {
-    required int uprightWidth,
-    required int uprightHeight,
-    required int rotationDegrees,
-    required int timestampMs,
-  }) {
+  Future<void> _load() async {
     if (_disposed || _modelLoadFailed) return;
-    if (jpeg.isEmpty || uprightWidth <= 0 || uprightHeight <= 0) return;
-    // The slot is replaced as a unit, so a queued frame is always paired with
-    // the geometry it was submitted with.
-    _pendingJpeg = jpeg;
-    _pendingTimestampMs = timestampMs;
-    _pendingRotation = rotationDegrees;
-    _pendingWidth = uprightWidth;
-    _pendingHeight = uprightHeight;
-    _ensureTimer();
-  }
-
-  void _ensureTimer() {
-    _timer ??= Timer.periodic(
-      Duration(milliseconds: _intervalMs),
-      (_) => _drain(),
-    );
-  }
-
-  Future<void> _drain() async {
-    if (_disposed || _running) return;
-    final jpeg = _pendingJpeg;
-    if (jpeg == null) return;
-    final rotation = _pendingRotation;
-    final width = _pendingWidth;
-    final height = _pendingHeight;
-    final submittedAt = _pendingTimestampMs;
-    _pendingJpeg = null;
-    _running = true;
-    final stopwatch = Stopwatch()..start();
     try {
-      final result = await _run(jpeg);
-      _recordCompletion(stopwatch.elapsedMilliseconds);
-      if (_disposed) return;
-      final depthMap = YOLODetectionResults.fromMap(result).depthMap;
-      if (depthMap == null || depthMap.values.isEmpty) {
-        _degrade();
-        return;
-      }
-      final heatmap = await (heatmapBuilder ?? _buildHeatmap)(depthMap);
-      if (_disposed) {
-        heatmap?.dispose();
-        return;
-      }
-      final next = DepthFrame(
-        map: depthMap,
-        heatmap: heatmap,
-        timestampMs: submittedAt,
-        rotationDegrees: rotation,
-        uprightWidth: width,
-        uprightHeight: height,
-      );
-      final previous = frame.value;
-      frame.value = next;
-      previous?.heatmap?.dispose();
-      if (!_loggedFirstFrame) {
-        _loggedFirstFrame = true;
-        debugPrint(
-          '[Depth] first frame ${depthMap.width}x${depthMap.height} '
-          'minDepth=${depthMap.minDepth.toStringAsFixed(2)} '
-          'maxDepth=${depthMap.maxDepth.toStringAsFixed(2)} '
-          'in ${stopwatch.elapsedMilliseconds} ms (useGpu=$_useGpu)',
-        );
-      }
-      state.value = DepthRunState.ready;
-      onFrame?.call(next);
+      await _ensureModel(_useGpu);
     } catch (error) {
       debugPrint('[Depth] inference failed: $error');
       _degrade();
-    } finally {
-      _running = false;
     }
   }
 
-  /// Records completion latency and the observed cadence (EMA, first sample
-  /// seeded directly). Bounded storage: two ints and one double.
+  /// Consumes one native depth event and publishes the derived frame.
+  ///
+  /// Silent while degraded, so a broken depth instance cannot keep producing
+  /// work; [retry] re-arms it.
+  void onNativeDepth(
+    YOLODepthEvent event, {
+    required int rotationDegrees,
+    required int uprightWidth,
+    required int uprightHeight,
+  }) {
+    if (_disposed || state.value == DepthRunState.degraded) return;
+    if (event.depthGrid.isEmpty || event.width <= 0 || event.height <= 0) {
+      _degrade();
+      return;
+    }
+    _recordCompletion(event.latencyMs);
+    final grid = YOLODepthMap(
+      values: event.depthGrid,
+      width: event.width,
+      height: event.height,
+      minDepth: event.minDepth,
+      maxDepth: event.maxDepth,
+    );
+    unawaited(
+      _publish(
+        grid,
+        timestampMs: event.timestampMs,
+        rotationDegrees: rotationDegrees,
+        uprightWidth: uprightWidth,
+        uprightHeight: uprightHeight,
+      ),
+    );
+  }
+
+  Future<void> _publish(
+    YOLODepthMap grid, {
+    required int timestampMs,
+    required int rotationDegrees,
+    required int uprightWidth,
+    required int uprightHeight,
+  }) async {
+    final heatmap = await (heatmapBuilder ?? _buildHeatmap)(grid);
+    if (_disposed) {
+      heatmap?.dispose();
+      return;
+    }
+    final next = DepthFrame(
+      grid: grid,
+      heatmap: heatmap,
+      timestampMs: timestampMs,
+      rotationDegrees: rotationDegrees,
+      uprightWidth: uprightWidth,
+      uprightHeight: uprightHeight,
+    );
+    final previous = frame.value;
+    frame.value = next;
+    previous?.heatmap?.dispose();
+    if (!_loggedFirstFrame) {
+      _loggedFirstFrame = true;
+      debugPrint(
+        '[Depth] first frame ${grid.width}x${grid.height} '
+        'minDepth=${grid.minDepth.toStringAsFixed(2)} '
+        'maxDepth=${grid.maxDepth.toStringAsFixed(2)} '
+        'in ${_lastLatencyMs ?? 0} ms (useGpu=$_useGpu)',
+      );
+    }
+    state.value = DepthRunState.ready;
+    onFrame?.call(next);
+  }
+
+  /// Records the native latency and the observed event cadence (EMA, seeded by
+  /// the first measured delta). Bounded storage: two ints and one double.
   void _recordCompletion(int latencyMs) {
     final now = _clock.elapsedMilliseconds;
     final previous = _lastCompletionMs;
@@ -249,21 +210,6 @@ class MonocularDepthEstimator {
     _observedHz = ema == null
         ? sample
         : ema + (sample - ema) * _observedHzAlpha;
-  }
-
-  /// Runs the predictor once, retrying once on CPU when the GPU instance
-  /// fails.
-  Future<Map<String, dynamic>> _run(Uint8List jpeg) async {
-    if (_predict != null) return _predict(jpeg, _useGpu);
-    try {
-      return await _ensureModel(_useGpu).then((yolo) => yolo.predict(jpeg));
-    } catch (error) {
-      if (!_useGpu) rethrow;
-      debugPrint('[Depth] GPU run failed ($error); retrying on CPU');
-      _useGpu = false;
-      await _disposeModel();
-      return _ensureModel(false).then((yolo) => yolo.predict(jpeg));
-    }
   }
 
   Future<YOLO> _ensureModel(bool useGpu) async {
@@ -300,11 +246,11 @@ class MonocularDepthEstimator {
     state.value = DepthRunState.degraded;
   }
 
-  /// Clears queued work (pause/stop/background). The model stays loaded.
+  /// Marks the end of a live depth session (pause/stop/background).
+  ///
+  /// Nothing is scheduled on the Dart side any more: the native tick stops as
+  /// soon as the streaming config drops the instance id. The model stays loaded.
   void stop() {
-    _timer?.cancel();
-    _timer = null;
-    _pendingJpeg = null;
     _loggedFirstFrame = false;
   }
 
@@ -347,8 +293,8 @@ class MonocularDepthEstimator {
     return 8;
   }
 
-  /// RGBA bytes of the downsampled heatmap. Distance sampling keeps using the
-  /// full-resolution [map]; only this display overlay is reduced.
+  /// RGBA bytes of the downsampled heatmap. Distance sampling reads the grid
+  /// itself; only this display overlay is reduced.
   @visibleForTesting
   static ({int width, int height, Uint8List pixels}) buildHeatmapPixels(
     YOLODepthMap map,

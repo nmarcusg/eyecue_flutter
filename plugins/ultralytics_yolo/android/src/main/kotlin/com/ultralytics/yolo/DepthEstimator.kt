@@ -22,6 +22,9 @@ class DepthEstimator(
     private val depthWidth: Int
     private var colorPixels = IntArray(0)
 
+    /** Longest side of the block-mean grid emitted by the native depth stream. */
+    var gridMaxDim: Int = DEFAULT_GRID_MAX_DIM
+
     init {
         YOLOFileUtils.loadModelLabels(context, modelPath)?.let { labels = it }
         val model = InferenceModel.create(context, modelPath, useGpu, "DepthEstimator")
@@ -115,6 +118,11 @@ class DepthEstimator(
                 output.copyInto(values, y * width, source + left, source + right)
             }
         }
+        // The compact grid is always built (it costs one pass over the crop) so the native depth
+        // stream never needs the dense copy above.
+        val gridWidth = gridDim(width)
+        val gridHeight = gridDim(height)
+        val gridValues = blockMeanGrid(output, depthWidth, left, top, width, height, gridWidth, gridHeight)
         val size = width * height
         if (colorPixels.size != size) colorPixels = IntArray(size)
         val range = colorizeDepth(
@@ -129,7 +137,56 @@ class DepthEstimator(
             minDepth = range[0],
             maxDepth = range[1],
             image = Bitmap.createBitmap(colorPixels, width, height, Bitmap.Config.ARGB_8888),
+            grid = gridValues,
+            gridWidth = gridWidth,
+            gridHeight = gridHeight,
         )
+    }
+
+    private fun gridDim(extent: Int): Int {
+        val scale = gridMaxDim.coerceAtLeast(1).toFloat() / maxOf(extent, 1)
+        return (extent * scale).roundToInt().coerceIn(1, extent.coerceAtLeast(1))
+    }
+
+    /**
+     * Block means of [output]'s crop region, laid out row-major in a [gridWidth] x [gridHeight] grid.
+     * Only finite samples inside [MIN_VALID_DEPTH_M]..[MAX_VALID_DEPTH_M] contribute; a block with no
+     * valid sample is NaN. The grid spans exactly the crop, so it keeps the same upright/sensor
+     * geometry the dense map had and existing box mapping stays valid.
+     */
+    private fun blockMeanGrid(
+        output: FloatArray,
+        depthWidth: Int,
+        left: Int,
+        top: Int,
+        width: Int,
+        height: Int,
+        gridWidth: Int,
+        gridHeight: Int,
+    ): FloatArray {
+        val grid = FloatArray(gridWidth * gridHeight)
+        for (gy in 0 until gridHeight) {
+            val y0 = top + gy * height / gridHeight
+            val y1 = maxOf(y0 + 1, top + (gy + 1) * height / gridHeight)
+            for (gx in 0 until gridWidth) {
+                val x0 = left + gx * width / gridWidth
+                val x1 = maxOf(x0 + 1, left + (gx + 1) * width / gridWidth)
+                var sum = 0.0
+                var count = 0
+                for (y in y0 until y1) {
+                    val row = y * depthWidth
+                    for (x in x0 until x1) {
+                        val value = output[row + x]
+                        if (value.isFinite() && value >= MIN_VALID_DEPTH_M && value <= MAX_VALID_DEPTH_M) {
+                            sum += value
+                            count++
+                        }
+                    }
+                }
+                grid[gy * gridWidth + gx] = if (count == 0) Float.NaN else (sum / count).toFloat()
+            }
+        }
+        return grid
     }
 
     private external fun colorizeDepth(
@@ -144,6 +201,10 @@ class DepthEstimator(
     ): FloatArray?
 
     companion object {
+        const val DEFAULT_GRID_MAX_DIM = 96
+        private const val MIN_VALID_DEPTH_M = 0.1f
+        private const val MAX_VALID_DEPTH_M = 80f
+
         private val colors = IntArray(256).also { table ->
             val stops = arrayOf(
                 intArrayOf(48, 18, 59),

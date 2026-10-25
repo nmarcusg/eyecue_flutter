@@ -184,7 +184,7 @@ item as `DONE`.
 | --- | --- | --- | --- | --- | --- | --- |
 | L0 baseline ledger | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
 | L1a vendored plugin + reviewer notes | Replace the hosted `ultralytics_yolo` pin with the in-tree path dependency and apply the 7 L0 reviewer findings to this document | L0 | DONE | `d5390d4` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
-| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; hand the live camera frame to native depth inference | L0, L1a | PENDING | — | — | `CONFIRMED-BY-INSPECTION` (target), `CONFIRMED-BY-TEST` (required) |
+| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (payload ≤ 36 864 bytes) | L0, L1a | DONE | `L1B_SHA` | awaiting reviewer | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
 | L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
@@ -335,12 +335,35 @@ artefact produced from this tree cannot be published; both lines are L9 work.
 makes a shared-frame transport cheap: the bitmap L1b needs is the one the stream path
 already has, so no new capture is required.
 
-**Depth entry point to extend.** L1b extends the `YOLOPlugin` handler for
-`predictSingleImage`
+**Depth entry point (as extended by L1b).** L1b does **not** go through the `YOLOPlugin`
+`predictSingleImage` handler
 (`plugins/ultralytics_yolo/android/src/main/kotlin/com/ultralytics/yolo/YOLOPlugin.kt:192`,
-decode at `:206`) and the `instanceManager.predict(...)` call it fronts (`:214`). The
-Dart dispatch side stays as-is
-(`plugins/ultralytics_yolo/lib/core/yolo_inference.dart:56`–`:58`).
+decode at `:206`) any more: the analysis frame never becomes bytes, so the Dart dispatch
+side (`plugins/ultralytics_yolo/lib/core/yolo_inference.dart:56`–`:58`) is off the depth
+path. The tick calls `instanceManager.predict(...)` directly from the view.
+
+### 6.9 L1b outcome (closes 6.1–6.4 for the depth path)
+
+`CONFIRMED-BY-INSPECTION` in the vendored plugin, `CONFIRMED-BY-TEST` for the payload
+contract, `CONFIRMED-BY-BUILD` for the Kotlin.
+
+| Finding | Status after L1b |
+| --- | --- |
+| 6.1 JPEG encode per detection result | closed for the depth path — `includeOriginalImage` is no longer set from `lib/` (`grep -rn "includeOriginalImage" lib` is empty); upstream keeps supporting the flag for other consumers |
+| 6.2 encodes discarded by the estimator | closed — there is no Dart-side frame slot any more |
+| 6.3 Android → Dart → Android round trip | closed — the depth instance runs on the analysis bitmap inside the view |
+| 6.4 dense `Float32` depth map per frame | closed for the stream — the event carries a block-mean grid (`depthGrid`), `values` is not allocated on the tick path (`includeRawData = false`) and is never serialized |
+| 6.5 heatmap built unconditionally | **open** — L2 |
+| 6.6 MDE off does not release the model | **open** — L3 |
+
+Transport facts (`CONFIRMED-BY-INSPECTION`): the interval and the in-flight guard are
+native, the tick runs after the detector result and the stream callback, and the event
+rides the existing view event channel as `type: 'depth'`.
+
+Payload fact (`CONFIRMED-BY-TEST`): `depthMaxDim` 96 ⇒ grid ≤ 96 × 96 × 4 =
+**36 864 bytes** per depth event, versus the JPEG plus its native re-decode it replaces.
+The key set is pinned by
+[`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:96).
 
 ## 7. External gates register
 

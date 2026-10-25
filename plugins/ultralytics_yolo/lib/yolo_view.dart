@@ -494,6 +494,12 @@ class _YOLOViewState extends State<YOLOView> {
         streamConfig['analysisWidth'] = analysisResolution.width.round();
         streamConfig['analysisHeight'] = analysisResolution.height.round();
       }
+      if (widget.streamingConfig!.depthInstanceId != null) {
+        streamConfig['depthInstanceId'] =
+            widget.streamingConfig!.depthInstanceId;
+      }
+      streamConfig['depthIntervalMs'] = widget.streamingConfig!.depthIntervalMs;
+      streamConfig['depthMaxDim'] = widget.streamingConfig!.depthMaxDim;
 
       creationParams['streamingConfig'] = streamConfig;
     }

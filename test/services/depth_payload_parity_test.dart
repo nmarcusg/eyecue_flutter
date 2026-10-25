@@ -1,7 +1,46 @@
+import 'dart:typed_data';
+
 import 'package:eyecue_flutter/models/detection.dart';
+import 'package:eyecue_flutter/models/model_config.dart';
 import 'package:eyecue_flutter/services/ultralytics_detection_adapter.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ultralytics_yolo/ultralytics_yolo.dart';
+
+/// A native depth event with the exact keys the Android view emits.
+Map<String, dynamic> _depthEvent() => {
+  'type': 'depth',
+  'depthGrid': Float32List.fromList(List<double>.filled(96 * 72, 2.5)),
+  'width': 96,
+  'height': 72,
+  'minDepth': 0.5,
+  'maxDepth': 12.0,
+  'imageWidth': 640,
+  'imageHeight': 480,
+  'rotationDegrees': 90,
+  'latencyMs': 41,
+  'preMs': 6,
+  'inferenceMs': 30,
+  'postMs': 5,
+  'accelerator': 'gpu',
+  'timestamp': 1234567890,
+};
+
+const _depthEventKeys = {
+  'depthGrid',
+  'width',
+  'height',
+  'minDepth',
+  'maxDepth',
+  'imageWidth',
+  'imageHeight',
+  'rotationDegrees',
+  'latencyMs',
+  'preMs',
+  'inferenceMs',
+  'postMs',
+  'accelerator',
+  'timestamp',
+};
 
 /// A streaming payload with the same keys/shape the native Android side emits.
 Map<String, dynamic> _streamPayload() => {
@@ -81,5 +120,49 @@ void main() {
       UltralyticsDetectionAdapter.convert(results.detections, const []),
       <Detection>[],
     );
+  });
+
+  group('native depth event contract', () {
+    test('parses exactly the native key set', () {
+      final event = YOLODepthEvent.fromMap(_depthEvent());
+
+      expect(event.toMap().keys.toSet(), _depthEventKeys);
+      // `type` is the channel routing discriminator, not part of the payload.
+      expect(event.toMap().containsKey('type'), isFalse);
+      expect(event.width, 96);
+      expect(event.height, 72);
+      expect(event.minDepth, 0.5);
+      expect(event.maxDepth, 12.0);
+      expect(event.imageWidth, 640);
+      expect(event.imageHeight, 480);
+      expect(event.rotationDegrees, 90);
+      expect(event.latencyMs, 41);
+      expect(event.accelerator, 'gpu');
+      expect(event.timestampMs, 1234567890);
+    });
+
+    test('the grid is bounded by depthMaxDim', () {
+      final event = YOLODepthEvent.fromMap(_depthEvent());
+
+      expect(event.depthGrid.length, event.width * event.height);
+      expect(
+        event.depthGrid.length,
+        lessThanOrEqualTo(
+          EyeCueModelConfig.depthGridMaxDim * EyeCueModelConfig.depthGridMaxDim,
+        ),
+      );
+    });
+
+    test('a dense values map or an originalImage is never accepted', () {
+      final payload = _depthEvent()
+        ..['values'] = Float32List(640 * 480)
+        ..['originalImage'] = Uint8List(1024);
+
+      final event = YOLODepthEvent.fromMap(payload);
+
+      expect(event.toMap().containsKey('values'), isFalse);
+      expect(event.toMap().containsKey('originalImage'), isFalse);
+      expect(event.toMap().keys.toSet(), _depthEventKeys);
+    });
   });
 }

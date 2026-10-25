@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:ultralytics_yolo/core/yolo_model_resolver.dart';
+import 'package:ultralytics_yolo/models/yolo_result.dart';
 import 'package:ultralytics_yolo/models/yolo_task.dart';
 import 'package:ultralytics_yolo/utils/logger.dart';
 import 'package:ultralytics_yolo/yolo_streaming_config.dart';
@@ -45,6 +46,8 @@ class YOLOViewController {
       StreamController<String>.broadcast();
   final StreamController<Offset> _focusController =
       StreamController<Offset>.broadcast();
+  final StreamController<YOLODepthEvent> _depthController =
+      StreamController<YOLODepthEvent>.broadcast();
 
   double get confidenceThreshold => _confidenceThreshold;
   double get iouThreshold => _iouThreshold;
@@ -65,6 +68,12 @@ class YOLOViewController {
 
   /// Emits the normalized (0..1) view-relative tap-to-focus point.
   Stream<Offset> get focusEvents => _focusController.stream;
+
+  /// Emits compact depth frames from the native shared-frame transport.
+  ///
+  /// Silent unless a streaming config with a `depthInstanceId` and `depthIntervalMs`
+  /// is applied to the view.
+  Stream<YOLODepthEvent> get depthEvents => _depthController.stream;
 
   YOLOViewController();
 
@@ -225,6 +234,9 @@ class YOLOViewController {
         'skipFrames': config.skipFrames,
         'analysisWidth': config.analysisResolution?.width.round(),
         'analysisHeight': config.analysisResolution?.height.round(),
+        'depthInstanceId': config.depthInstanceId,
+        'depthIntervalMs': config.depthIntervalMs,
+        'depthMaxDim': config.depthMaxDim,
       });
 
   Future<void> stop() => _invoke('stop');
@@ -269,6 +281,11 @@ class YOLOViewController {
           _focusController.add(Offset(x, y));
         }
         break;
+      case 'depth':
+        if (!_depthController.isClosed) {
+          _depthController.add(YOLODepthEvent.fromMap(event));
+        }
+        break;
     }
   }
 
@@ -277,5 +294,6 @@ class YOLOViewController {
     _zoomController.close();
     _lensController.close();
     _focusController.close();
+    _depthController.close();
   }
 }

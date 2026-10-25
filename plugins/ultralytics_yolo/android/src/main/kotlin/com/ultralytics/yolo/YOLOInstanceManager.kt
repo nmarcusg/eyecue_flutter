@@ -14,6 +14,14 @@ import kotlinx.coroutines.withContext
  * Manages multiple YOLO instances with unique IDs
  */
 class YOLOInstanceManager {
+    companion object {
+        /**
+         * Process-wide instance registry. The plugin owns the model lifecycle and the platform view
+         * runs the depth tick against the same instances, so both must share one registry.
+         */
+        val shared = YOLOInstanceManager()
+    }
+
     private val tag = "YOLOInstanceManager"
 
     // Store YOLO instances by their ID
@@ -80,7 +88,8 @@ class YOLOInstanceManager {
         instanceId: String,
         bitmap: Bitmap,
         confidenceThreshold: Float? = null,
-        iouThreshold: Float? = null
+        iouThreshold: Float? = null,
+        includeRawData: Boolean = true
     ): YOLOResult? {
         val yolo = instances[instanceId] ?: run {
             Log.e(tag, "No model loaded for instance: $instanceId")
@@ -93,7 +102,7 @@ class YOLOInstanceManager {
             confidenceThreshold?.let { yolo.setConfidenceThreshold(it) }
             iouThreshold?.let { yolo.setIouThreshold(it) }
             try {
-                yolo.predict(bitmap)
+                yolo.predict(bitmap, includeRawData = includeRawData)
             } catch (e: Exception) {
                 Log.e(tag, "Prediction failed for instance $instanceId: ${e.message}")
                 null
