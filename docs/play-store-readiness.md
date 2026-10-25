@@ -184,7 +184,7 @@ item as `DONE`.
 | --- | --- | --- | --- | --- | --- | --- |
 | L0 baseline ledger | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
 | L1a vendored plugin + reviewer notes | Replace the hosted `ultralytics_yolo` pin with the in-tree path dependency and apply the 7 L0 reviewer findings to this document | L0 | DONE | `d5390d4` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
-| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (grid ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` (`3f81cc3` docs; remediation sha recorded in the next docs commit) | CHANGES_REQUIRED on `fcf4cd0`/`63131d5`/`3f81cc3` → all findings fixed in the remediation commit, re-review pending | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
+| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (grid ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` (`3f81cc3` docs; remediation `15fcf39`) | CHANGES_REQUIRED on `fcf4cd0`/`63131d5`/`3f81cc3` → all findings fixed in `15fcf39`, re-review pending | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
 | L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
@@ -379,7 +379,10 @@ the JPEG plus its native re-decode it replaces.
 
 Build fact (`CONFIRMED-BY-BUILD`): `flutter build apk --debug` on the L1b tree →
 `build/app/outputs/flutter-apk/app-debug.apk`, 116 s incremental (the planner
-preflight's from-cache figure in §4.6 was 625 s), exit 0.
+preflight's from-cache figure in §4.6 was 625 s), exit 0. Re-verified on the remediation
+commit `15fcf39`: Gradle `assembleDebug` 39.8 s (45.5 s wall), exit 0, with the vendored
+Kotlin recompiled (`build/ultralytics_yolo/.../YOLOView*.class` rewritten), which is the
+only compile gate that covers `plugins/**`.
 The key set, the aspect-correct grid shape (portrait and landscape) and the failure marker
 are pinned by
 [`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:133).
@@ -416,7 +419,7 @@ other than the author of the commit being reviewed.
 | --- | --- | --- | --- | --- |
 | `a8e0571` | L0 baseline ledger | PASS_WITH_NOTES | 7 findings (5 minor/nit citation precision, 1 unlabelled claim, 1 cell-shape inconsistency); all applied in `e03bc36` | reviewer |
 | `fcf4cd0`, `63131d5`, `3f81cc3` | L1 native shared-frame MDE transport | CHANGES_REQUIRED | 4 major: (1) grid aspect broken — per-axis scaling forced every crop to 96×96; (2) a failing depth inference was invisible and never stopped; (3) `stop()` blocked the platform thread and interrupted in-flight inference; (4) per-tick full-frame annotation copy. 5 minor: non-volatile `depthExecutor`; out-of-order `_publish`; misleading `imageWidth`/`imageHeight`/`rotationDegrees` keys; grid built on the dense path too; tautological grid test. 2 nits: two drifted doc statements | reviewer |
-| L1b remediation commit (`fix(mde)`) | L1 remediation of the findings above | pending re-review | Finding → fix map: MAJOR-1 single scale from the longest side in `DepthEstimator.kt:135` (640×360 → 96×54); MAJOR-2 one-shot `{type: depth, error: inference_failed}` event + `depthDisabled` latch (`YOLOView.kt:1659`) mapped to `_degrade()` in `monocular_depth_estimator.dart:144`; MAJOR-3 `shutdown()` only, never `shutdownNow()`/`awaitTermination` (`YOLOView.kt:2567`); MAJOR-4 `drawOverlays = false` on the depth tick (`YOLO.kt:75`, `YOLOView.kt:1622`); MINOR-5 `@Volatile depthExecutor` + create/teardown lock (`YOLOView.kt:173`, `:1598`); MINOR-6 single-in-flight publish guard (`monocular_depth_estimator.dart:100`, `:163`); MINOR-7 `rotationDegrees` removed, `imageWidth`/`imageHeight` = analysed bitmap dims (`YOLOView.kt:1672`, `yolo_result.dart:399`); MINOR-8 grid only when `!includeRawMaskData` (`DepthEstimator.kt:130`); MINOR-9 portrait + landscape payload-shape tests (`depth_payload_parity_test.dart:204`, `:213`) | reviewer |
+| `15fcf39` | L1 remediation of the findings above | pending re-review | Finding → fix map: MAJOR-1 single scale from the longest side in `DepthEstimator.kt:135` (640×360 → 96×54); MAJOR-2 one-shot `{type: depth, error: inference_failed}` event + `depthDisabled` latch (`YOLOView.kt:1659`) mapped to `_degrade()` in `monocular_depth_estimator.dart:144`; MAJOR-3 `shutdown()` only, never `shutdownNow()`/`awaitTermination` (`YOLOView.kt:2567`); MAJOR-4 `drawOverlays = false` on the depth tick (`YOLO.kt:75`, `YOLOView.kt:1622`); MINOR-5 `@Volatile depthExecutor` + create/teardown lock (`YOLOView.kt:173`, `:1598`); MINOR-6 single-in-flight publish guard (`monocular_depth_estimator.dart:100`, `:163`); MINOR-7 `rotationDegrees` removed, `imageWidth`/`imageHeight` = analysed bitmap dims (`YOLOView.kt:1672`, `yolo_result.dart:399`); MINOR-8 grid only when `!includeRawMaskData` (`DepthEstimator.kt:130`); MINOR-9 portrait + landscape payload-shape tests (`depth_payload_parity_test.dart:204`, `:213`) | reviewer |
 
 ## 10. Rollback instructions
 
