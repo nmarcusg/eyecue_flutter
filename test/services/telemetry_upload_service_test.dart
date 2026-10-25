@@ -637,12 +637,54 @@ void main() {
       expect(localTelemetry.alertRecords, hasLength(1));
     });
 
-    test('a 200 duplicated replay is a success', () async {
+    test('a 200 duplicated replay is a distinct, non-error state', () async {
+      final localTelemetry = telemetry();
+      populateEveryRecordType(localTelemetry);
+
       final result = await uploadAnswering(
         200,
         body: '{"accepted":true,"duplicated":true}',
+        localTelemetry: localTelemetry,
       );
+
+      // Success-like: the session is in the database …
       expect(result.isSuccess, isTrue);
+      expect(result.errorMessage, isNull);
+      // … but nothing was stored on this attempt, so it must not read as one.
+      expect(result.isAlreadyUploaded, isTrue);
+      expect(result.message, contains('already uploaded earlier'));
+      expect(result.message, contains('was not stored again'));
+      expect(result.message, contains('local export'));
+      expect(localTelemetry.totalDetections, 1);
+      expect(localTelemetry.samples, hasLength(1));
+      expect(localTelemetry.alertRecords, hasLength(1));
     });
+
+    test('a 201 first write is the plain success', () async {
+      final localTelemetry = telemetry();
+      populateEveryRecordType(localTelemetry);
+
+      final result = await uploadAnswering(
+        201,
+        body: '{"accepted":true}',
+        localTelemetry: localTelemetry,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.isAlreadyUploaded, isFalse);
+      expect(result.message, isNull);
+      expect(localTelemetry.totalDetections, 1);
+      expect(localTelemetry.samples, hasLength(1));
+    });
+
+    test(
+      'a 2xx body without the duplicated flag stays a plain success',
+      () async {
+        final result = await uploadAnswering(200, body: 'not json');
+
+        expect(result.isSuccess, isTrue);
+        expect(result.isAlreadyUploaded, isFalse);
+      },
+    );
   });
 }

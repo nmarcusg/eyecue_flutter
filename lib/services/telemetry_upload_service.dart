@@ -54,16 +54,36 @@ class ResearchSessionMetadata {
 }
 
 class TelemetryUploadResult {
-  const TelemetryUploadResult._({this.errorMessage});
+  const TelemetryUploadResult._({this.errorMessage, this.message});
 
   const TelemetryUploadResult.success() : this._();
+
+  /// The server already stored this `(participant_code, client_session_id)`
+  /// pair, so nothing was written this time.
+  ///
+  /// Success-like — the session is in the database — but deliberately distinct
+  /// from [success]: the button re-arms after every attempt, so a second upload
+  /// of a grown session is discarded by the idempotency key. Reporting that as
+  /// the plain success text would hide lost data.
+  const TelemetryUploadResult.alreadyUploaded()
+    : this._(message: duplicateMessage);
 
   const TelemetryUploadResult.failure(String message)
     : this._(errorMessage: message);
 
+  static const String duplicateMessage =
+      'This session was already uploaded earlier and was not stored again. '
+      'Save a local export if you have recorded more data since.';
+
   final String? errorMessage;
 
+  /// Non-null only for [alreadyUploaded]: what to show instead of the plain
+  /// success text.
+  final String? message;
+
   bool get isSuccess => errorMessage == null;
+
+  bool get isAlreadyUploaded => message != null;
 }
 
 class TelemetryUploadRequest {
@@ -191,27 +211,41 @@ class TelemetryUploadService {
         ),
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        // `200 {duplicated: true}` is the replay answer: the session was stored
-        // by an earlier attempt, so this is a success for the caller too.
-        return const TelemetryUploadResult.success();
+        // `200 {duplicated: true}` is the replay answer: a row for this session
+        // id already exists, so nothing was written. That is not the same thing
+        // as this snapshot being stored, and must not say so.
+        return _reportsDuplicate(response.body)
+            ? const TelemetryUploadResult.alreadyUploaded()
+            : const TelemetryUploadResult.success();
       }
       return _mapFailure(response);
     } on TimeoutException {
       return const TelemetryUploadResult.failure(
-        'The upload timed out. Save an offline export and try again later.',
+        'The upload timed out. Save a local export and try again later.',
       );
     } on SocketException {
       return const TelemetryUploadResult.failure(
-        'No network connection is available. Save an offline export and try again later.',
+        'No network connection is available. Save a local export and try again later.',
       );
     } on HttpException {
       return const TelemetryUploadResult.failure(
-        'The research server could not be reached. Save an offline export and try again later.',
+        'The research server could not be reached. Save a local export and try again later.',
       );
     } catch (_) {
       return const TelemetryUploadResult.failure(
-        'The session could not be uploaded. Save an offline export and try again later.',
+        'The session could not be uploaded. Save a local export and try again later.',
       );
+    }
+  }
+
+  /// True when a 2xx body reports `{"duplicated": true}`.
+  static bool _reportsDuplicate(String? body) {
+    if (body == null || body.isEmpty) return false;
+    try {
+      final decoded = jsonDecode(body);
+      return decoded is Map && decoded['duplicated'] == true;
+    } on FormatException {
+      return false;
     }
   }
 
@@ -232,8 +266,10 @@ class TelemetryUploadService {
           'This app build uses a telemetry format the research server does not accept. Update the app, or save a local export.',
         );
       }
+      // A payload-shape defect is deterministic: sending the same session again
+      // cannot change the answer, so no "try again later" here.
       return const TelemetryUploadResult.failure(
-        'The research server rejected this session as invalid. Save a local export and try again later.',
+        'The research server rejected this session as invalid. Save a local export; sending it again will not help.',
       );
     }
     if (status == 413) {
@@ -245,7 +281,7 @@ class TelemetryUploadService {
       );
     }
     return const TelemetryUploadResult.failure(
-      'The research server could not accept this session. Save an offline export and try again later.',
+      'The research server could not accept this session. Save a local export and try again later.',
     );
   }
 
@@ -262,6 +298,11 @@ class TelemetryUploadService {
     }
   }
 
+  /// Response bodies are read only for a machine-readable error code, so the
+  /// read is capped: a hostile or accidentally huge answer must not be buffered
+  /// whole.
+  static const int _maxResponseBytes = 4096;
+
   static Future<TelemetryUploadResponse> _send(
     TelemetryUploadRequest request,
   ) async {
@@ -275,8 +316,18 @@ class TelemetryUploadService {
       final response = await requestHandle.close().timeout(
         const Duration(seconds: 20),
       );
-      final responseBody = await response.transform(utf8.decoder).join();
-      return TelemetryUploadResponse(response.statusCode, responseBody);
+      final bytes = <int>[];
+      await for (final chunk in response) {
+        bytes.addAll(chunk);
+        if (bytes.length >= _maxResponseBytes) break;
+      }
+      final head = bytes.length > _maxResponseBytes
+          ? bytes.sublist(0, _maxResponseBytes)
+          : bytes;
+      return TelemetryUploadResponse(
+        response.statusCode,
+        utf8.decode(head, allowMalformed: true),
+      );
     } finally {
       client.close(force: true);
     }
