@@ -80,6 +80,21 @@ class MonocularDepthEstimator {
   final ValueNotifier<DepthRunState> state = ValueNotifier(DepthRunState.idle);
   final ValueNotifier<DepthFrame?> frame = ValueNotifier(null);
 
+  /// Whether the next publishes build the display heatmap.
+  ///
+  /// The heatmap is presentation only: while it is disabled a frame still
+  /// carries the grid, so distance estimation is unchanged, but no colour
+  /// buffer, decode or GPU texture is produced. Turning it off also drops the
+  /// image already held, so a hidden overlay cannot show a stale one.
+  bool get heatmapEnabled => _heatmapEnabled;
+  set heatmapEnabled(bool enabled) {
+    if (_heatmapEnabled == enabled) return;
+    _heatmapEnabled = enabled;
+    if (!enabled) _dropHeatmap();
+  }
+
+  bool _heatmapEnabled = true;
+
   /// Test seam: defaults to the real colourisation/decode path.
   final Future<ui.Image?> Function(YOLODepthMap map)? heatmapBuilder;
 
@@ -179,10 +194,17 @@ class MonocularDepthEstimator {
     required int uprightWidth,
     required int uprightHeight,
   }) async {
-    final heatmap = await (heatmapBuilder ?? _buildHeatmap)(grid);
+    var heatmap = heatmapEnabled
+        ? await (heatmapBuilder ?? _buildHeatmap)(grid)
+        : null;
     if (_disposed) {
       heatmap?.dispose();
       return;
+    }
+    // Disabled while the builder ran: publish the grid without the image.
+    if (!heatmapEnabled) {
+      heatmap?.dispose();
+      heatmap = null;
     }
     final next = DepthFrame(
       grid: grid,
@@ -204,8 +226,28 @@ class MonocularDepthEstimator {
         'in ${_lastLatencyMs ?? 0} ms (useGpu=$_useGpu)',
       );
     }
-    state.value = DepthRunState.ready;
+    // A degrade that landed while this frame was in flight wins: publishing
+    // `ready` would re-arm the instance id and clear the native failure latch.
+    if (state.value != DepthRunState.degraded) {
+      state.value = DepthRunState.ready;
+    }
     onFrame?.call(next);
+  }
+
+  /// Replaces the current frame with a heatmap-less copy and frees the texture.
+  void _dropHeatmap() {
+    final previous = frame.value;
+    final image = previous?.heatmap;
+    if (previous == null || image == null) return;
+    frame.value = DepthFrame(
+      grid: previous.grid,
+      heatmap: null,
+      timestampMs: previous.timestampMs,
+      rotationDegrees: previous.rotationDegrees,
+      uprightWidth: previous.uprightWidth,
+      uprightHeight: previous.uprightHeight,
+    );
+    image.dispose();
   }
 
   /// Records the native latency and the observed event cadence (EMA, seeded by

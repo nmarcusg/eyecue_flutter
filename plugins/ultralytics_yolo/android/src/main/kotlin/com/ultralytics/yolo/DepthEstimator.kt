@@ -137,12 +137,24 @@ class DepthEstimator(
             gridHeight = (height * scale).roundToInt().coerceIn(1, height)
             grid = blockMeanGrid(output, depthWidth, left, top, width, height, gridWidth, gridHeight)
         }
-        val size = width * height
-        if (colorPixels.size != size) colorPixels = IntArray(size)
-        val range = colorizeDepth(
-            output, depthWidth, left, top, width, height, colorPixels, colors
-        )
-            ?: error("Depth output contains no valid values")
+        // The native stream reads only `grid`/`minDepth`/`maxDepth`, so it pays neither the
+        // colourisation pass over the crop, nor the persistent IntArray, nor the ~0.8 MB
+        // ARGB bitmap. One scan for the valid range is all that path needs.
+        val range: FloatArray
+        val image: Bitmap?
+        if (includeRawMaskData) {
+            val size = width * height
+            if (colorPixels.size != size) colorPixels = IntArray(size)
+            range = colorizeDepth(
+                output, depthWidth, left, top, width, height, colorPixels, colors
+            )
+                ?: error("Depth output contains no valid values")
+            image = Bitmap.createBitmap(colorPixels, width, height, Bitmap.Config.ARGB_8888)
+        } else {
+            range = depthRange(output, depthWidth, left, top, width, height)
+                ?: error("Depth output contains no valid values")
+            image = null
+        }
 
         return DepthMap(
             values = values,
@@ -150,11 +162,40 @@ class DepthEstimator(
             height = height,
             minDepth = range[0],
             maxDepth = range[1],
-            image = Bitmap.createBitmap(colorPixels, width, height, Bitmap.Config.ARGB_8888),
+            image = image,
             grid = grid,
             gridWidth = gridWidth,
             gridHeight = gridHeight,
         )
+    }
+
+    /**
+     * Min/max over the crop's finite, positive samples — the same predicate `colorize_depth`
+     * uses to pick its range, minus the colourisation. Returns null when the crop has no valid
+     * sample, which keeps the "no valid values" failure identical on both paths.
+     */
+    private fun depthRange(
+        output: FloatArray,
+        depthWidth: Int,
+        left: Int,
+        top: Int,
+        width: Int,
+        height: Int,
+    ): FloatArray? {
+        var min = Float.MAX_VALUE
+        var max = -Float.MAX_VALUE
+        for (y in 0 until height) {
+            val row = (y + top) * depthWidth + left
+            for (x in 0 until width) {
+                val value = output[row + x]
+                if (value.isFinite() && value > 0f) {
+                    if (value < min) min = value
+                    if (value > max) max = value
+                }
+            }
+        }
+        if (min == Float.MAX_VALUE) return null
+        return floatArrayOf(min, max)
     }
 
     /**

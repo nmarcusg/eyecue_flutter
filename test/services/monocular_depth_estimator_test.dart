@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:eyecue_flutter/services/monocular_depth_estimator.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -265,6 +266,127 @@ void main() {
     expect(MonocularDepthEstimator.heatmapStrideFor(320, 240), 1);
     expect(MonocularDepthEstimator.heatmapStrideFor(1280, 960), 4);
     expect(MonocularDepthEstimator.heatmapStrideFor(2560, 1920), 8);
+  });
+
+  group('heatmap gating', () {
+    /// A real (tiny) image, so disposal is observable through `debugDisposed`.
+    Future<ui.Image> testImage() {
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        Uint8List.fromList(const [255, 0, 0, 255]),
+        1,
+        1,
+        ui.PixelFormat.rgba8888,
+        completer.complete,
+      );
+      return completer.future;
+    }
+
+    test(
+      'a hidden heatmap is never built and the grid still publishes',
+      () async {
+        var builds = 0;
+        final estimator = MonocularDepthEstimator(
+          heatmapBuilder: (_) async {
+            builds++;
+            return testImage();
+          },
+        )..heatmapEnabled = false;
+
+        _feed(estimator, _event());
+        await pumpEventQueue();
+
+        expect(builds, 0, reason: 'a hidden overlay must cost no heatmap');
+        final frame = estimator.frame.value!;
+        expect(frame.heatmap, isNull);
+        expect(frame.grid.values, Float32List.fromList([1.0, 2.0, 3.0, 4.0]));
+        expect(estimator.state.value, DepthRunState.ready);
+
+        estimator.dispose();
+      },
+    );
+
+    test('re-enabling makes the next frame carry a heatmap again', () async {
+      var builds = 0;
+      final estimator = MonocularDepthEstimator(
+        heatmapBuilder: (_) async {
+          builds++;
+          return testImage();
+        },
+      )..heatmapEnabled = false;
+
+      _feed(estimator, _event(timestamp: 1000));
+      await pumpEventQueue();
+      expect(builds, 0);
+
+      estimator.heatmapEnabled = true;
+      _feed(estimator, _event(timestamp: 2000));
+      await pumpEventQueue();
+
+      expect(builds, 1);
+      expect(estimator.frame.value!.timestampMs, 2000);
+      expect(estimator.frame.value!.heatmap, isNotNull);
+
+      estimator.dispose();
+    });
+
+    test('disabling drops the held image and keeps the grid', () async {
+      late ui.Image built;
+      final estimator = MonocularDepthEstimator(
+        heatmapBuilder: (_) async => built = await testImage(),
+      );
+
+      _feed(estimator, _event());
+      await pumpEventQueue();
+      final grid = estimator.frame.value!.grid;
+      expect(estimator.frame.value!.heatmap, isNotNull);
+      expect(built.debugDisposed, isFalse);
+
+      estimator.heatmapEnabled = false;
+      await pumpEventQueue();
+
+      expect(
+        built.debugDisposed,
+        isTrue,
+        reason: 'the GPU texture is released',
+      );
+      expect(estimator.frame.value!.heatmap, isNull);
+      expect(identical(estimator.frame.value!.grid, grid), isTrue);
+
+      estimator.dispose();
+    });
+
+    test('a frame in flight cannot resurrect a degraded state', () async {
+      final inFlight = Completer<void>();
+      final estimator = MonocularDepthEstimator(
+        heatmapBuilder: (_) async {
+          await inFlight.future;
+          return null;
+        },
+      );
+
+      _feed(estimator, _event(timestamp: 1000));
+      // The native failure lands while the publish is still building.
+      _feed(estimator, _event(error: 'inference_failed'));
+      expect(estimator.state.value, DepthRunState.degraded);
+
+      inFlight.complete();
+      await pumpEventQueue();
+
+      expect(
+        estimator.state.value,
+        DepthRunState.degraded,
+        reason: 'a publish must not re-arm the instance id and clear the latch',
+      );
+
+      estimator.retry();
+      expect(estimator.state.value, DepthRunState.idle);
+      _feed(estimator, _event(timestamp: 3000));
+      await pumpEventQueue();
+      expect(estimator.state.value, DepthRunState.ready);
+
+      estimator.dispose();
+    });
   });
 
   test('heatmap buffer uses the downsampled grid', () {
