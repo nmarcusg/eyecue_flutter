@@ -36,10 +36,115 @@ than `0`. Release
 builds request `android.permission.INTERNET` solely for this optional manual
 upload; detection and depth stay bundled and work offline.
 
+## Ingestion contract (L6)
+
+### Idempotency
+
+`telemetry_sessions` holds at most one row per
+`(participant_code, client_session_id)`.
+[`202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql)
+creates the unique index that makes the pair a real conflict target, and the
+function upserts on it with `ignoreDuplicates: true` (`on conflict do nothing`).
+
+| Situation | Response |
+|---|---|
+| First write for the pair | `201 { "accepted": true }` |
+| Replay: the pair is already stored | `200 { "accepted": true, "duplicated": true }` |
+
+201 vs 200 is decided by a `select id … maybeSingle()` probe **before** the
+upsert. That two-step check is the cheapest reliable signal: with
+`ignoreDuplicates` the write itself cannot report whether the row was new
+without depending on how PostgREST returns conflicting rows. A replay therefore
+never creates a second row and never overwrites the stored payload — the probe
+short-circuits it, and `on conflict do nothing` covers the narrow race where a
+concurrent write lands between the probe and the insert (that write wins; the
+race loser still answers `201`, which is why the app treats both codes as a
+success).
+
+`validate.js` — not `index.ts` — owns the envelope rules, so
+`node --test supabase/functions/ingest-telemetry/validate.test.mjs` exercises
+them with no Deno, no Docker and no database.
+
+### Supported schema versions
+
+`telemetry.schemaVersion` must be **3 or 4**
+(`SUPPORTED_SCHEMA_VERSIONS` in [`validate.js`](../supabase/functions/ingest-telemetry/validate.js)).
+Anything else is
+`400 { "error": "unsupported_schema_version", "supported": [3, 4] }`. The
+migration repeats the set as a `check` constraint on
+`telemetry_schema_version`, so a writer that bypasses the function cannot store
+an unknown version either.
+
+The row shape is **never inferred from the header**. `TelemetryExport.toJson`
+stamps the current version, so a re-exported schema-3 file says `4` while its
+sample rows stay schema 3; that payload is accepted, and only the header value
+is constrained.
+
+### Forbidden keys
+
+Matched by **exact name**, at any depth, in objects and arrays inside
+`telemetry`:
+
+`image`, `images`, `screenshot`, `screenshots`, `frame`, `frames`, `audio`,
+`utterance`, `path`, `paths`, `deviceId`, `technicalDetail`, `serviceRole`,
+`secret`, `secrets`, `token`, `tokens`, `apiKey`, `password`
+
+`frameNumber` is the single allowlisted key (`ALLOWED_KEYS` in `validate.js`):
+it is a pre-existing frame counter on alert-lifecycle records. The allowance is
+one exact name, not a prefix rule — `frame` stays forbidden.
+
+### Error catalogue
+
+Every non-2xx answer is a single-machine-readable-code body.
+
+| Status | Body | Cause | App message |
+|---|---|---|---|
+| 405 | `{"error":"method_not_allowed"}` | not a `POST` | — (not reachable from the app) |
+| 401 | `{"error":"unauthorized"}` | missing/incorrect `apikey` | "This build is not authorised for the research upload. Save a local export and try again later." |
+| 413 | `{"error":"payload_too_large"}` | `content-length` or UTF-8 body above 2 000 000 B | "This session is too large to upload. Save a local export to keep the data." |
+| 400 | `{"error":"invalid_json"}` | body is not JSON | "The research server rejected this session as invalid. Save a local export and try again later." |
+| 400 | `{"error":"invalid_telemetry_payload"}` | envelope shape/type/consent problem, or a forbidden key | same validation message |
+| 400 | `{"error":"unsupported_schema_version","supported":[3,4]}` | header schema outside `{3,4}` | "This app build uses a telemetry format the research server does not accept. Update the app, or save a local export." |
+| 500 | `{"error":"database_write_failed"}` | the probe or the upsert failed | "The research server could not accept this session. Save a local export and try again later." |
+| 500 | `{"error":"server_configuration_error"}` | the server secret key env var is absent | same server message |
+| 200 / 201 | `{"accepted":true}` (+ `"duplicated":true` on replay) | stored / already stored | success |
+
+`TelemetryUploadService` maps `401`/`403` → authorisation, `400` →
+validation (with the schema-version body split out), `413` → the local size
+message and `5xx` → server failure. Every branch keeps the in-memory session,
+so the JSON/CSV export still recovers it, and the client-side guard stays the
+stricter bound: the app refuses an over-cap body before the request is sent.
+
+### Local execution: BLOCKED-EXTERNAL — disk capacity
+
+**Neither the migration nor the function has been executed anywhere.** This
+host has no PostgreSQL server, no Supabase CLI and no cached Supabase container
+images, and the volume holds 3.9 GB free of 91 GB (96 % used) — not enough for
+the CLI plus its images. Nothing was installed and no image was pulled; the
+production project was never contacted.
+
+Exact reproduction on a machine with capacity (throwaway project only):
+
+```sh
+npx supabase@latest --version
+npx supabase@latest start        # Postgres/Studio/Edge images, ≈10 GB
+npx supabase@latest db reset     # applies 202610200001, then 202610250001
+npx supabase@latest db lint
+npx supabase@latest functions serve ingest-telemetry
+# idempotency proof: two identical POSTs, then count the rows
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$URL" \
+  -H "apikey: $PUBLISHABLE" -H 'content-type: application/json' --data @envelope.json
+#   first answer 201, replay 200 {"duplicated":true}
+psql "$DB_URL" -c 'select count(*) from public.telemetry_sessions'   # stays 1
+npx supabase@latest stop
+```
+
 ## Provisioning
 
-1. Create a Supabase project and apply
-   [`supabase/migrations/202610200001_create_research_telemetry.sql`](../supabase/migrations/202610200001_create_research_telemetry.sql).
+1. Create a Supabase project and apply, in order,
+   [`supabase/migrations/202610200001_create_research_telemetry.sql`](../supabase/migrations/202610200001_create_research_telemetry.sql)
+   and
+   [`supabase/migrations/202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql).
 2. Create authenticated accounts for researchers, then insert their user IDs
    in `public.research_members` with `researcher` or `admin` role. Do not give
    participant devices database accounts or table privileges.
@@ -63,11 +168,14 @@ upload; detection and depth stay bundled and work offline.
 
 ## Verification status
 
-The schema-4 envelope, its forbidden-key guard, and the 2 MB body bound are
-covered by CLI-free Flutter tests that also read the Edge Function source. Local
-database migration and function execution remain **unverified**: the Supabase
-CLI is not installed, and no local Supabase stack was started or executed, so
-the migration and function behaviour have never run against a live project.
+The envelope rules are covered by `node --test
+supabase/functions/ingest-telemetry/validate.test.mjs` (36 cases: every
+forbidden key at three depths, the `frameNumber` allowance, each mistyped
+envelope field, both supported and three unsupported schema versions, and the
+2 000 000 / 2 000 001-byte boundary). The Flutter suite covers the client error
+mapping and re-reads both Edge Function sources. **Not executed**: the SQL and
+the TypeScript function themselves — see *Local execution: BLOCKED-EXTERNAL*
+above.
 
 ## Payload size
 
