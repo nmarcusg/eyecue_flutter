@@ -376,11 +376,18 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       final second = await tester.startGesture(center + const Offset(0, 40));
       await tester.pump(const Duration(milliseconds: 16));
+      // The first pointer must still complete a full-length swipe on its own,
+      // otherwise "nothing changed" would pass even with no invalidation.
+      for (var i = 0; i < 6; i++) {
+        await first.moveBy(const Offset(-40, 0)); // -240 px, past commit
+        await tester.pump(const Duration(milliseconds: 16));
+      }
       await first.up();
       await tester.pump(const Duration(milliseconds: 16));
       await second.up();
       await tester.pumpAndSettle();
       expect(find.text('PAGE0'), findsOneWidget);
+      expect(hapticCalls, isEmpty);
     });
 
     testWidgets('system Back returns to Home from another tab', (tester) async {

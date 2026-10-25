@@ -43,12 +43,12 @@ class _SingleFingerHorizontalDragRecognizer
 
   /// Whether the shell may own a horizontal drag at all.
   ///
-  /// Detection (index 1) owns horizontal navigation inside its own viewport
+  /// Detection (index 1) owns horizontal navigation over its whole main area
   /// through its raw [GestureSurface] `Listener`. That surface does not compete
   /// in the gesture arena, so if the shell recognizer also accepted the same
   /// physical swipe it would produce two primary-tab moves. When this returns
   /// `false` the recognizer never claims the pointer, so Detection is the
-  /// single owner of horizontal navigation inside its viewport.
+  /// single owner of horizontal navigation over its whole main area.
   final bool Function()? enabled;
 
   /// True once a second pointer has joined the current sequence.

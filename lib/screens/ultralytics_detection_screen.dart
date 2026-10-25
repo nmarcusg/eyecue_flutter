@@ -1203,21 +1203,35 @@ class _UltralyticsDetectionScreenState
             child: Column(
               children: [
                 _buildTopBar(context),
+                // Non-blocking depth notice. It is a sibling of the flexible
+                // area, like the top bar and the control row, so it sits outside
+                // the gesture region and its Retry tap is never also classified
+                // as a single tap.
+                if (_showsLiveViewport && _depthDegraded) ...[
+                  WarningBanner(message: kDepthDegradedMessage),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: kSpace16),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AccessibleButton(
+                        label: 'Retry depth estimate',
+                        icon: Icons.refresh,
+                        onPressed: _retryDepth,
+                      ),
+                    ),
+                  ),
+                ],
                 // The viewport is the only flexible region; the control row
                 // below derives its height from its content and the minimum
                 // touch targets rather than a fixed percentage allocation.
                 //
-                // The gesture region is this whole flexible area, not just the
-                // camera viewport: thesis gestures must work wherever the user
-                // swipes on Detection. The top bar (audio pill) and the action
-                // controls row stay outside it, so their taps are never also
-                // classified as a full-screen gesture.
-                Expanded(
-                  child: GestureSurface(
-                    controller: _gestureController,
-                    child: _buildMainArea(context),
-                  ),
-                ),
+                // In the live state the gesture region is this whole flexible
+                // area, not just the camera viewport: thesis gestures must work
+                // wherever the user swipes on Detection. The top bar (audio
+                // pill), the depth notice and the action controls row stay
+                // outside it, and the state panels are outside it too, so their
+                // taps are never also classified as a full-screen gesture.
+                Expanded(child: _buildMainArea(context)),
                 _buildActionControlsRow(context),
               ],
             ),
@@ -1280,6 +1294,16 @@ class _UltralyticsDetectionScreenState
     );
   }
 
+  /// Whether the main area currently shows the live camera viewport.
+  ///
+  /// Only this state has a camera to swipe, so only this state keeps the
+  /// gesture region. The failed, permission-denied and camera-pending panels
+  /// render their buttons outside the [GestureSurface].
+  bool get _showsLiveViewport =>
+      widget.coordinator.state != DetectionRuntimeState.failed &&
+      !_permissionDenied &&
+      (_detectionActive || _nativeViewMounted);
+
   Widget _buildMainArea(BuildContext context) {
     // The visible lifecycle/status panel renders the shared coordinator
     // snapshot, never engine-local runtime state.
@@ -1304,9 +1328,9 @@ class _UltralyticsDetectionScreenState
     // native texture after stop may render frozen, cleared, or inactive on a
     // physical device. This must be observed on the target device; the shell is
     // retained regardless so gesture/layout ownership is preserved.
-    if (!_detectionActive && !_nativeViewMounted) {
-      return _buildCameraPending(context);
-    }
+    // The failed and permission-denied panels returned above, so the only
+    // remaining non-live state is a never-started screen.
+    if (!_showsLiveViewport) return _buildCameraPending(context);
     // Rounded dark card around the native YOLOView. When the depth heatmap is
     // hidden the native overlay draws boxes as before; when it is visible the
     // native overlay is turned off and boxes are painted in Flutter above the
@@ -1402,26 +1426,10 @@ class _UltralyticsDetectionScreenState
         ],
       ),
     );
-    if (!_depthDegraded) return viewport;
-    // Non-blocking degraded notice: detection continues with the bbox
-    // estimator; only the metric estimate is unavailable.
-    return Column(
-      children: [
-        WarningBanner(message: kDepthDegradedMessage),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: kSpace16),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: AccessibleButton(
-              label: 'Retry depth estimate',
-              icon: Icons.refresh,
-              onPressed: _retryDepth,
-            ),
-          ),
-        ),
-        Expanded(child: viewport),
-      ],
-    );
+    // Only the live branch is inside the gesture surface. The viewport fills
+    // the whole flexible area, so a swipe works over the viewport and over its
+    // state-panel area alike, while every other panel stays outside it.
+    return GestureSurface(controller: _gestureController, child: viewport);
   }
 
   Widget _buildPermissionDenied(BuildContext context) {

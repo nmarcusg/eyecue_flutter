@@ -1,4 +1,5 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/screens/ultralytics_detection_screen.dart'
     as detection_engine;
 import 'package:eyecue_flutter/screens/ultralytics_detection_screen.dart';
@@ -11,11 +12,14 @@ import 'package:eyecue_flutter/services/tts_service.dart';
 import 'package:eyecue_flutter/widgets/detection_action_controls.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Fake engine that models the real lifecycle signal order so `TtsService`
-/// never leaves a start-confirmation timer pending.
+/// never leaves a start-confirmation timer pending, and records every spoken
+/// phrase so a pause announcement is observable.
 class _FakeTtsEngine implements TtsEngine {
+  final List<String> spoken = [];
   VoidCallback? _onStart;
   VoidCallback? _onComplete;
 
@@ -30,6 +34,7 @@ class _FakeTtsEngine implements TtsEngine {
 
   @override
   Future<int> speak(String text) async {
+    spoken.add(text);
     _onStart?.call();
     _onComplete?.call();
     return 1;
@@ -56,9 +61,9 @@ class _FakeTtsEngine implements TtsEngine {
 /// the previous tab (`-1`).
 ///
 /// The pure `relativeDirectionForGesture` mapping is tested without a
-/// camera/native dependency; the widget group below pumps the real screen (the
-/// never-started screen renders no platform view) to pin the gesture region and
-/// the commit-on-release contract.
+/// camera/native dependency; the widget group below pumps the real screen to pin
+/// where the gesture region is (the live viewport branch only) and the
+/// commit-on-release contract.
 void main() {
   group('Detection gesture → direction', () {
     test('a left swipe advances to the next tab', () {
@@ -90,26 +95,63 @@ void main() {
   group('Detection gesture region and commit-on-release', () {
     late SettingsService settings;
     late TtsService tts;
+    late _FakeTtsEngine ttsEngine;
     late HapticsService haptics;
+    late List<String> hapticCalls;
     late List<int> directions;
+    late EngineCoordinator coordinator;
 
     setUp(() async {
       settings = SettingsService(store: InMemorySettingsStore());
-      tts = TtsService(engine: _FakeTtsEngine());
+      ttsEngine = _FakeTtsEngine();
+      tts = TtsService(engine: ttsEngine);
       await tts.init();
+      hapticCalls = [];
       haptics = HapticsService(
-        light: () async {},
-        medium: () async {},
-        heavy: () async {},
+        light: () async => hapticCalls.add('light'),
+        medium: () async => hapticCalls.add('medium'),
+        heavy: () async => hapticCalls.add('heavy'),
       );
       directions = [];
+      coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
     });
 
     tearDown(() => tts.dispose());
 
-    /// Pumps the real screen on a phone-sized surface. The never-started screen
-    /// renders no native platform view, so this needs no plugin mocks.
-    Future<void> pumpScreen(WidgetTester tester) async {
+    /// Answers the two platform channels the screen touches on start.
+    ///
+    /// The camera channel reports no cameras: no native platform view is
+    /// involved, and the unresolved display rotation makes the depth estimator
+    /// report degraded, which is the state that shows the Retry affordance.
+    void mockPlatformChannels({bool permissionGranted = true}) {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('flutter.baseflow.com/permissions/methods'),
+        (call) async {
+          if (call.method == 'checkPermissionStatus') {
+            return permissionGranted ? 1 : 0;
+          }
+          if (call.method == 'requestPermissions') {
+            return <int, int>{1: permissionGranted ? 1 : 0};
+          }
+          return null;
+        },
+      );
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/camera'),
+        (call) async => <Object?>[],
+      );
+    }
+
+    /// Pumps the real screen on a phone-sized surface.
+    Future<void> pumpScreen(
+      WidgetTester tester, {
+      bool permissionGranted = true,
+    }) async {
+      mockPlatformChannels(permissionGranted: permissionGranted);
       tester.view.physicalSize = const Size(390 * 3, 844 * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
@@ -120,15 +162,22 @@ void main() {
             tts: tts,
             telemetry: TelemetryService(),
             haptics: haptics,
-            coordinator: EngineCoordinator(
-              preferredEngine: InferenceEngine.ultralytics,
-            ),
+            coordinator: coordinator,
             onNavigateRelative: directions.add,
           ),
         ),
       );
       await tester.pump(const Duration(milliseconds: 50));
       expect(tester.takeException(), isNull);
+    }
+
+    /// Starts a live session from the never-started screen.
+    Future<void> startSession(WidgetTester tester) async {
+      await tester.tap(find.text('Start Detection'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.takeException(), isNull);
+      expect(hapticCalls, ['medium'], reason: 'start is not a tap gesture');
     }
 
     /// One horizontal drag of [totalDx] split into `steps` equal moves.
@@ -148,23 +197,29 @@ void main() {
     }
 
     testWidgets(
-      'the gesture surface covers the whole main area, not just a viewport',
+      'the gesture region covers the whole main area, only while live',
       (tester) async {
+        // Never started: no camera to swipe, so there is no gesture region and
+        // every panel button (Start, Retry, Stop, Open Settings) is outside it.
         await pumpScreen(tester);
+        expect(find.text('Start Detection'), findsOneWidget);
+        expect(find.byType(GestureSurface), findsNothing);
+
+        await startSession(tester);
         final surface = tester.getRect(find.byType(GestureSurface));
         final controls = tester.getRect(find.byType(DetectionActionControls));
-        // The region is everything between the top bar and the control row, so
-        // a swipe anywhere on the working area is a Detection gesture.
+        // The region is everything between the top bar and the control row, so a
+        // swipe anywhere on the working area is a Detection gesture.
         expect(surface.top, lessThan(controls.top - 400));
         expect(surface.bottom, lessThanOrEqualTo(controls.top));
         expect(surface.width, 390);
       },
     );
 
-    testWidgets('a swipe in the main area navigates exactly once, on release', (
-      tester,
-    ) async {
+    testWidgets('a swipe in the live main area navigates exactly once, on '
+        'release', (tester) async {
       await pumpScreen(tester);
+      await startSession(tester);
       final surface = tester.getRect(find.byType(GestureSurface));
 
       final gesture = await tester.startGesture(Offset(320, surface.center.dy));
@@ -182,6 +237,7 @@ void main() {
       tester,
     ) async {
       await pumpScreen(tester);
+      await startSession(tester);
       final surface = tester.getRect(find.byType(GestureSurface));
 
       await swipe(tester, Offset(360, surface.center.dy), -300, steps: 20);
@@ -195,6 +251,7 @@ void main() {
     testWidgets('a swipe starting on the action controls row does not '
         'navigate', (tester) async {
       await pumpScreen(tester);
+      await startSession(tester);
       final controls = tester.getRect(find.byType(DetectionActionControls));
       await swipe(tester, Offset(320, controls.center.dy), -260);
       expect(directions, isEmpty);
@@ -204,6 +261,7 @@ void main() {
       tester,
     ) async {
       await pumpScreen(tester);
+      await startSession(tester);
       final surface = tester.getRect(find.byType(GestureSurface));
       final y = surface.center.dy;
 
@@ -217,6 +275,73 @@ void main() {
       await first.up();
       await second.up();
       await tester.pump(const Duration(milliseconds: 350));
+      expect(directions, isEmpty);
+    });
+
+    testWidgets('tapping Start Detection starts the session and never pauses '
+        'it', (tester) async {
+      await pumpScreen(tester);
+      await tester.tap(find.text('Start Detection'));
+      await tester.pump();
+      // Past the single-tap confirmation window: a tap classified by the
+      // gesture region would have paused the session by now.
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(ttsEngine.spoken, ['Detection started']);
+      expect(coordinator.state, isNot(DetectionRuntimeState.paused));
+      expect(hapticCalls, ['medium'], reason: 'no light pause tick');
+      expect(find.byType(GestureSurface), findsOneWidget);
+    });
+
+    testWidgets('tapping Retry depth estimate keeps the live session running', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      await startSession(tester);
+
+      final retry = find.text('Retry depth estimate');
+      expect(
+        find.text(kDepthDegradedMessage),
+        findsOneWidget,
+        reason: 'the degraded depth notice is the state under test',
+      );
+      await tester.tap(retry);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(ttsEngine.spoken, ['Detection started']); // never "paused"
+      expect(coordinator.state, isNot(DetectionRuntimeState.paused));
+      expect(hapticCalls, ['medium'], reason: 'no light pause tick');
+      expect(find.byType(GestureSurface), findsOneWidget);
+    });
+
+    testWidgets('a tap or swipe on a panel button is never a gesture', (
+      tester,
+    ) async {
+      // Permission denied: the panel's own buttons own their pointers.
+      await pumpScreen(tester, permissionGranted: false);
+      await tester.tap(find.text('Start Detection'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.takeException(), isNull);
+      expect(find.text('Camera permission is required.'), findsOneWidget);
+      expect(find.byType(GestureSurface), findsNothing);
+      expect(ttsEngine.spoken, isEmpty); // no start, and no pause announcement
+
+      for (final label in ['Open Settings', 'Retry']) {
+        await tester.tap(find.text(label));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(directions, isEmpty, reason: '$label tap is not a swipe');
+        expect(
+          ttsEngine.spoken,
+          isEmpty,
+          reason: '$label tap is not a single tap',
+        );
+      }
+
+      await swipe(tester, tester.getCenter(find.text('Retry')), -260);
+      expect(directions, isEmpty);
+      await swipe(tester, tester.getCenter(find.text('Open Settings')), 260);
       expect(directions, isEmpty);
     });
   });
