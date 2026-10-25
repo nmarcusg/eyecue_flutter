@@ -725,6 +725,20 @@ void main() {
       },
     );
 
+    test('retry and heatmap changes after dispose are inert', () async {
+      final estimator = _estimator();
+      _feed(estimator, _event());
+      await pumpEventQueue();
+      expect(estimator.frame.value, isNotNull);
+      estimator.dispose();
+
+      // A late retry tap or a settings push can arrive after the screen is torn
+      // down; both used to write a disposed notifier and throw.
+      expect(estimator.retry, returnsNormally);
+      expect(() => estimator.heatmapEnabled = false, returnsNormally);
+      expect(estimator.modelLoadFailed, isFalse);
+    });
+
     test('a disable during the load does not strand the re-enable', () async {
       final firstGate = Completer<void>();
       final models = <_FakeDepthModel>[];

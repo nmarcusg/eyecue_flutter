@@ -51,7 +51,8 @@ The defines are **build-time only** (no settings, no persistence, no UI). Verify
 each build carries what you think it does before measuring:
 
 ```sh
-# The reported accelerator comes from native; logcat prints it on the first frame.
+# The reported accelerator comes from native, never from the build define:
+# logcat prints it once, on the first depth event that carries a value.
 adb logcat -s flutter:V | grep '\[Depth\]'
 ```
 
@@ -116,17 +117,17 @@ Per-run record (all mandatory; write `NOT MEASURED` rather than leaving a blank)
 | Requested detector Hz | the settings value (Automatic or the number) |
 | Effective detector Hz | resolved cadence (`effectiveDetectionHz` in the export) |
 | Observed detector FPS | `inferenceFps` in the export |
-| Detector stage timings | `preMs` / `inferenceMs` / `postMs` (median of the run) |
+| Detector stage timings | `detectorPreMs` / `detectorInferenceMs` / `detectorPostMs` (median of the run; `detectorObservedFps` is the native rate) |
 | Depth requested Hz | the settings value |
 | Depth effective Hz | resolved cadence (`effectiveDepthHz` in the export) |
 | Depth observed Hz | `depthObservedHz` (EMA — not a steady-state throughput claim) |
 | Depth latency | `depthLatencyMs` |
-| Depth stage timings | `stageTimings.preMs` / `.inferenceMs` / `.postMs` (L5 carries them into the export; until then read them from logcat or the debugger) |
-| Accelerator actually reported | `depthStatus` in the export (`gpu`/`cpu`) — the native value, never the requested policy |
+| Depth stage timings | `depthPreMs` / `depthInferenceMs` / `depthPostMs` in the export (median of the run; `heatmapBuildMs` is Dart-side presentation cost) |
+| Accelerator actually reported | `depthAccelerator` in the export (`gpu`/`cpu`); `depthStatus` carries the same value plus `disabled`/`loading`/`degraded`. Both are the native value, never the requested policy |
 | Heatmap state | on/off as set in the row |
 | Thermals | `adb shell dumpsys thermalservice` before and after; treat as advisory |
 | Memory | `adb shell dumpsys meminfo com.example.eyecue_flutter` before and after (`TOTAL PSS`) |
-| Dropped frames | `droppedTicks` delta over the run (native cumulative counter; see `mde-integration.md`) |
+| Dropped depth ticks | `depthDroppedTicks` — a **cumulative native counter**, not a per-sample drop count. Report the last sample minus the first sample of the run (see `mde-integration.md`) |
 | Crashes / ANRs | `adb logcat -b crash -d` plus the run's own log |
 
 ## 5. Copy-pasteable commands
@@ -168,8 +169,12 @@ device run says otherwise):
   instance, including the detection instance.
 - `GPU accelerator could not run model, falling back to CPU: …` — the fallback
   that must make `depthStatus == 'cpu'` while the build request was `gpu`.
+- `[Depth] accelerator reported by native: <gpu|cpu> (requested useGpu=…)` —
+  printed once per loaded instance, on the first depth event that carries an
+  accelerator. This is the only log line that states what actually ran.
 - `[Depth] first frame … in <latency> ms (useGpu=…)` — the *requested* value,
-  useful only to prove the knob reached the factory.
+  useful only to prove the knob reached the factory. It is **not** an
+  accelerator claim: a `useGpu=true` line can still be a CPU run.
 
 ## 6. Reporting rules
 
@@ -182,25 +187,32 @@ device run says otherwise):
   not a GPU one.
 - Stage timings are nullable: `null` means "not reported", never `0 ms`.
 
-## 7. Where the data comes from today
+## 7. Where the data comes from
+
+Every per-run cell above is read from the export (schema 4); no `debugPrint` and
+no debugger session is needed.
 
 | Value | Produced by | Recorded in telemetry? |
 |---|---|---|
-| Detector `preMs`/`inferenceMs`/`postMs`/`fps` | `DetectorStageTimings.fromMetrics` in the screen's metrics handler | No — L5 adds the fields |
-| Depth `preMs`/`inferenceMs`/`postMs`/`accelerator` | `YOLODepthEvent` → `MonocularDepthEstimator.stageTimings` | No — L5 adds the fields |
-| Depth `droppedTicks` | native `YOLOView` cumulative counter → `DepthStageTimings.droppedTicks` | No — L5 adds the fields |
-| Cadence + `depthLatencyMs` + `depthObservedHz` + `depthStatus` | existing telemetry cadence sample | Yes (current payload schema) |
+| Detector `preMs`/`inferenceMs`/`postMs`/`fps` | `DetectorStageTimings.fromMetrics` in the screen's metrics handler | Yes — `detectorPreMs`, `detectorInferenceMs`, `detectorPostMs`, `detectorObservedFps` |
+| Depth `preMs`/`inferenceMs`/`postMs` | `YOLODepthEvent` → `MonocularDepthEstimator.stageTimings` | Yes — `depthPreMs`, `depthInferenceMs`, `depthPostMs` |
+| Depth `accelerator` | native `YOLOView.emitDepthEvent` → `DepthStageTimings.accelerator` | Yes — `depthAccelerator` (and `depthStatus`) |
+| Depth grid size | `DepthFrame.grid` | Yes — `depthGridWidth`, `depthGridHeight` |
+| Heatmap build cost | `MonocularDepthEstimator` around its heatmap builder | Yes — `heatmapBuildMs` |
+| Depth `droppedTicks` (cumulative) | native `YOLOView` counter → `DepthStageTimings.droppedTicks` | Yes — `depthDroppedTicks` |
+| Cadence + `depthLatencyMs` + `depthObservedHz` + `depthStatus` | existing telemetry cadence sample | Yes |
 
-Until L5 lands, the per-stage depth values have to be read from a debugger or a
-temporary `debugPrint` in the run build — they are correct in the app but not yet
-in the export.
+`depthQueueWaitMs` is exported as `null` on every sample: the depth tick is
+native and latest-frame-wins, so there is no Dart-side queue to wait in and no
+honest value to report. Session wall-clock is `session.durationMs` on the export
+header, not per sample.
 
 ## 8. Results table
 
 Every cell is `NOT MEASURED — device gate` because no device is attached. Do not
 replace a cell with a number unless the run was performed and its record filled.
 
-| # | Device / Android | Detector req / eff / obs Hz | Detector stages (pre / inf / post) | Depth req / eff / obs Hz | Depth latency | Depth stages (pre / inf / post) | Accelerator reported | Heatmap | Dropped frames | Memory (PSS) | Thermals | Crashes / ANRs |
+| # | Device / Android | Detector req / eff / obs Hz | Detector stages (pre / inf / post) | Depth req / eff / obs Hz | Depth latency | Depth stages (pre / inf / post) | Accelerator reported | Heatmap | Dropped depth ticks (cumulative → run delta) | Memory (PSS) | Thermals | Crashes / ANRs |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | NOT MEASURED — device gate | NOT MEASURED — device gate | NOT MEASURED — device gate | n/a | n/a | n/a | n/a | n/a | n/a | NOT MEASURED — device gate | NOT MEASURED — device gate | NOT MEASURED — device gate |
 | 2 | NOT MEASURED — device gate | NOT MEASURED — device gate | NOT MEASURED — device gate | n/a | n/a | n/a | n/a | n/a | n/a | NOT MEASURED — device gate | NOT MEASURED — device gate | NOT MEASURED — device gate |

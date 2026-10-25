@@ -179,7 +179,8 @@ class MonocularDepthEstimator {
   /// image already held, so a hidden overlay cannot show a stale one.
   bool get heatmapEnabled => _heatmapEnabled;
   set heatmapEnabled(bool enabled) {
-    if (_heatmapEnabled == enabled) return;
+    // A dispose during a settings push must not touch the disposed notifiers.
+    if (_disposed || _heatmapEnabled == enabled) return;
     _heatmapEnabled = enabled;
     if (!enabled) _dropHeatmap();
   }
@@ -386,6 +387,15 @@ class MonocularDepthEstimator {
     _lastCompletionMs = now;
     _lastLatencyMs = event.latencyMs;
     final accel = event.accelerator;
+    // Log the accelerator native actually reported, once per loaded instance:
+    // the first-frame line only carries the requested policy, so an operator
+    // could otherwise "confirm" a GPU run that silently fell back to CPU.
+    if (accel != null && _reportedAccelerator == null) {
+      debugPrint(
+        '[Depth] accelerator reported by native: $accel '
+        '(requested useGpu=$_useGpu)',
+      );
+    }
     if (accel != null) _reportedAccelerator = accel;
     _stageTimings = DepthStageTimings(
       preMs: event.preMs,
@@ -496,6 +506,7 @@ class MonocularDepthEstimator {
   /// A loaded instance keeps its accelerator: a CPU instance stays CPU, so the
   /// retry cannot relabel it as GPU without reloading.
   void retry() {
+    if (_disposed) return;
     _modelLoadFailed = false;
     _loggedFirstFrame = false;
     state.value = _yolo == null ? DepthRunState.idle : DepthRunState.ready;

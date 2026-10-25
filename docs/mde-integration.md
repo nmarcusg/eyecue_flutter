@@ -110,7 +110,8 @@ square.
 
 Payload keys (exactly): `depthGrid`, `width`, `height`, `minDepth`, `maxDepth`,
 `imageWidth`, `imageHeight`, `latencyMs`, `preMs`, `inferenceMs`, `postMs`,
-`accelerator`, `timestamp` (plus `type` for routing). Grid values are metres; a
+`accelerator`, `droppedTicks`, `timestamp` (plus `type` for routing). Grid
+values are metres; a
 block with no valid sample (finite, 0.1–80 m) is `NaN`. The bound at the 96-cap
 is ≤96 × 96 × 4 = **36 864 bytes** per event; the 4:3 stream emits
 96 × 72 × 4 = 27 648 bytes, versus hundreds of KB for the dense map and ~
@@ -338,10 +339,24 @@ fell back to CPU therefore reports `cpu`, and `depthStatusFor` passes that
 through to telemetry unchanged. Requested policy, build define and reported value
 are three different things; only the last one is evidence.
 
+The estimator logs the reported value once per loaded instance —
+`[Depth] accelerator reported by native: gpu|cpu (requested useGpu=…)` — on the
+first depth event that carries it. The separate `[Depth] first frame …` line
+prints `useGpu=`, which is the **requested** policy: it proves the build define
+reached the factory, not that the GPU ran.
+
+**`depthStatus` vs. the reported accelerator.** `depthStatus` is a derived
+status, not the raw value. While the state is `ready` but no depth event has
+arrived yet, the accelerator is still unknown, and `depthStatus` reports
+`loading` for that window rather than guessing `gpu`. Telemetry carries the raw
+value separately as `depthAccelerator`, so an unknown accelerator stays `null`
+instead of becoming a fabricated one.
+
 ## Stage timings surface
 
-Produced now, **not recorded**: adding telemetry fields is L5. Nothing below
-changes the current payload.
+Produced and **recorded** in the schema-4 telemetry sample (see
+[`benchmark-procedure.md`](benchmark-procedure.md) §7). Every field below is
+nullable end to end: unknown is `null`, never `0`.
 
 | Side | Value | Null policy |
 |---|---|---|
