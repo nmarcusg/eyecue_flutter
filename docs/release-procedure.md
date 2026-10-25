@@ -138,7 +138,7 @@ unzip -p build/app/outputs/flutter-apk/app-release-testsigned.apk 'classes*.dex'
 | `applicationId` (D1) — **decided**: `app.eyecue.mobile` | nothing left to decide; irreversible per listing, so it must not change |
 | Provide the upload keystore / `EYECUE_KEYSTORE_*` | a bundle Play will accept |
 | Enrol the app in Play App Signing | production distribution |
-| Final licence (D2) | [`LICENSE`](../LICENSE) grants nothing yet; [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 R1–R7 need legal review |
+| Licence (D2) — **decided**: `AGPL-3.0-only` | nothing left to decide; the obligations are in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §1 and §7, and R1–R7 there still warrant qualified legal review |
 | Privacy policy + Data Safety answers (D3) | [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8 and [`play-store-checklist.md`](play-store-checklist.md) §2 |
 | Store listing, screenshots, content rating, support contact | [`play-store-checklist.md`](play-store-checklist.md) §6–§10 |
 | Device install smoke test | the `CONFIRMED-ON-DEVICE` rows in the ledger |
@@ -416,3 +416,43 @@ they are `app-release.aab` / `app-release.apk`. The digests change on every real
 rebuild (timestamps, signing block); the model-asset, ABI, manifest and R8 facts
 above are the parts expected to be stable. A rename-only run reuses the packaged
 bytes and therefore does not change a digest.
+
+## 7. Publishing the corresponding source (AGPL-3.0-only)
+
+The application is licensed **`AGPL-3.0-only`** ([`LICENSE`](../LICENSE)), the same
+licence as the vendored plugin and the bundled models. The inventory, the obligations
+and the review items are in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §1,
+§6 and §7. Every released binary must map to the complete corresponding source of that
+exact build.
+
+1. **Tag ↔ `versionName`+`versionCode`.** Tag the commit that is built, before
+   building it:
+
+   ```sh
+   git tag -a v<versionName>+<versionCode> -m "EyeCue <versionName>+<versionCode> source"
+   git show v<versionName>+<versionCode>:pubspec.yaml | head -5   # same pair as the artefact (§2)
+   ```
+
+2. **What to publish.** The source archive produced from that tag. It already contains
+   the application code, the **modified vendored plugin** with its deviation record
+   ([`plugins/ultralytics_yolo/VENDORED.md`](../plugins/ultralytics_yolo/VENDORED.md)),
+   both model assets and the build instructions in §3–§4 above:
+
+   ```sh
+   TAG=v<versionName>+<versionCode>
+   git archive --format=tar.gz --prefix="eyecue-${TAG}/" -o "eyecue-${TAG}-source.tar.gz" "${TAG}"
+   sha256sum "eyecue-${TAG}-source.tar.gz"
+   ```
+
+   Publish that archive, together with
+   [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md), wherever the AGPL-3.0 §6
+   written offer names — an offer is only valid if it names a place and a period — and
+   keep it available for as long as the matching binaries are distributed.
+
+3. **`-testsigned` artefacts are never releases.** The debug-signed fallback in §3
+   (`versionName …-testsigned`) must not be tagged, published or offered as source:
+   tagging one would assert a release that does not exist.
+
+No legal review has been performed. This section records the mechanics and where the
+evidence lives; it does not state that AGPL compliance is verified
+([`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6).

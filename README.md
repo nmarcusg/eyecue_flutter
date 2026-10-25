@@ -171,4 +171,15 @@ tool/
 
 ## License
 
-Thesis project — not yet licensed for distribution beyond its dependencies' terms. `ultralytics_yolo` and the YOLO26n weights are **AGPL-3.0**, so distributing the app requires releasing the complete corresponding source under AGPL-3.0. The third-party notices and the AGPL-compatibility statement are in [`docs/mde-integration.md`](docs/mde-integration.md#third-party-notices).
+The EyeCue application source is licensed **`AGPL-3.0-only`** (SPDX), © the EyeCue
+project owner. The complete canonical GNU Affero General Public License version 3 text
+is in [`LICENSE`](LICENSE).
+
+The vendored [`ultralytics_yolo`](plugins/ultralytics_yolo) plugin and the bundled YOLO
+model weights are also AGPL-3.0, so the AGPL obligations apply to the application
+itself as well: every distributed build has to be accompanied by the complete
+corresponding source — including the modified vendored plugin and the instructions to
+build it ([`docs/release-procedure.md`](docs/release-procedure.md) §7). Third-party
+components keep their own copyright notices and terms; the inventory, the obligations
+and the items that still warrant qualified legal review are in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No legal review has been performed.

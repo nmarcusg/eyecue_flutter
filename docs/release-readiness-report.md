@@ -215,19 +215,21 @@ field, so dashboard compatibility is unchanged by this run.
 
 | Item | State |
 | --- | --- |
-| Application licence | **OWNER DECISION (D2)** — [`LICENSE`](../LICENSE) grants nothing |
+| Application licence | **`AGPL-3.0-only`** (D2 decided) — canonical AGPL v3 in [`LICENSE`](../LICENSE), byte-identical to the vendored plugin's copy (sha256 `4df3c306dddaaf4baffdff5ca820cc679ac8cd6dc263c6a74517783e42fa7a3b`, 660 lines) |
 | Vendored plugin (AGPL-3.0) | licence text preserved verbatim; eight native deviations plus four Dart-surface files recorded in `plugins/ultralytics_yolo/VENDORED.md` and [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §2.1 |
 | Bundled models | both AGPL-3.0 (Ultralytics); provenance, sizes and digests in the notices §3 |
 | Pub / native inventories | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §4–§5 |
-| AGPL source-distribution procedure | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §7 (tag ↔ `versionCode`, in-repo sources, archive step) |
-| Legal review | **NOT PERFORMED** — R1–R7 open in the notices §6 |
+| AGPL source-distribution procedure | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §7 (tag ↔ `versionCode`, in-repo sources, archive step) and [`release-procedure.md`](release-procedure.md) §7 (what to publish, `-testsigned` never tagged) |
+| Legal review | **NOT PERFORMED** — obligations identified (R1–R7 in the notices §6), not reviewed by counsel; nothing here claims AGPL compliance is verified |
 
 ## 11. Remaining owner actions
 
 1. `applicationId` (D1) is **decided** — `app.eyecue.mobile`, owner-approved and
    final; it must not change (irreversible per listing).
 2. Provide the upload keystore / `EYECUE_KEYSTORE_*` and enrol Play App Signing.
-3. Choose the application licence (D2) after legal review of R1–R7.
+3. Licence (D2) is **decided** (`AGPL-3.0-only`); what remains is the qualified legal
+   review of R1–R7 in the notices §6 and publishing the corresponding source per
+   release ([`release-procedure.md`](release-procedure.md) §7).
 4. Answer the Data Safety form (D3) — items P1–P5 in
    [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1: P3 (`https`
    enforcement) is **resolved in code**; P1 retention, P2 participant-code
@@ -248,7 +250,7 @@ field, so dashboard compatibility is unchanged by this run.
 | 2 | Permissions were removed by manifest rule only — a future camerax upgrade could reintroduce another permission, and no device test checks this |
 | 3 | Removing `RECORD_AUDIO`/storage permissions would break camerax video-with-audio and shared-storage capture paths (unused today) |
 | 4 | Every artefact is debug-signed; Play will refuse it |
-| 5 | AGPL-3.0 obligations for the plugin and models are unanalysed by counsel |
+| 5 | AGPL-3.0 obligations — for the app's own code, the vendored plugin and the models — are unanalysed by counsel |
 | 6 | Data Safety answers cannot all be given truthfully yet (no retention policy, no deletion process). The former third clause — `https` not enforced — is closed: the client validates the ingest endpoint and refuses any non-`https` scheme (see the B row in [`play-store-readiness.md`](play-store-readiness.md) §5) |
 | 7 | `flutter test` carries one known failing TTS test; a real regression there would not be distinguishable from it |
 | 8 | Dashboard contract verified only in the separate repository, not deployed |
@@ -313,11 +315,11 @@ artefacts are debug-signed because no keystore exists, the `applicationId` is de
 (`app.eyecue.mobile`) and irreversible per listing, the Data Safety answers cannot be
 given truthfully until retention and deletion are decided (`https` enforcement no
 longer blocks them — it is enforced in code), and the AGPL-3.0 obligations on the
-vendored plugin and the bundled models have had no legal review. Those are owner
-gates, not engineering defects — but they are gates.
+application itself, the vendored plugin and the bundled models have had no legal
+review. Those are owner gates, not engineering defects — but they are gates.
 
 **`READY_FOR_PLAY_STORE_SUBMISSION` is not available for this tree.** The app cannot
 be submitted today: the artefact Play would receive is debug-signed and would be
-rejected, startup has never run on a device, and the privacy, Data Safety and
-licensing positions are undecided. None of that is softened by the green checks in
-§3.
+rejected, startup has never run on a device, the privacy and Data Safety positions are
+undecided, and the AGPL-3.0 obligations the app now inherits have had no legal review.
+None of that is softened by the green checks in §3.
