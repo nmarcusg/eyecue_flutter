@@ -1,0 +1,287 @@
+# Release readiness report (L11)
+
+Final statement for the `feat/play-store-readiness` programme: what was built,
+what was measured, what was **not** verified, and one classification.
+
+## 1. Identity
+
+| Field | Value |
+| --- | --- |
+| Branch | `feat/play-store-readiness` |
+| Worktree | `/home/nico/repos/eyecue_flutter-playstore` |
+| HEAD at the start of this (resumed L10/L11) run | `423d97a1c1ce162a3646fef78ecea1d7ffe81b9f` |
+| HEAD at the end of this run | `842d38b` (L10/L11 docs) + this report commit |
+| Base commit | `adfbc5d` (`docs(status): retire obsolete XNNPACK items and dead links`) |
+| History | additive only — no commit rewritten, no force-push, nothing merged into `dev`/`main` |
+| Flutter | 3.44.2, stable channel |
+| Artefact source | same worktree, no `--dart-define`, no keystore, no Play Console access |
+
+## 2. Commit ledger (L0–L11)
+
+| Item | Commits | Reviewer verdict |
+| --- | --- | --- |
+| L0 baseline ledger | `a8e0571`, corrections `e03bc36`, `d3a987a` | `a8e0571` PASS_WITH_NOTES (7 findings, applied) |
+| L1a vendored plugin + reviewer notes | `d5390d4`, `fcf4cd0` | PASS_WITH_NOTES |
+| L1 native shared-frame depth transport | `63131d5`, docs `3f81cc3`, remediation `15fcf39`, `79eb9c0`, docs `2540470`, `614a6ca` | round 1 CHANGES_REQUIRED (4 major / 5 minor / 2 nit) → round 2 CHANGES_REQUIRED (8 of 9 fixed) → PASS_WITH_NOTES |
+| L2 compact depth payload + heatmap gating | `ca35e75`, docs `b523f5e`, housekeeping `8b8e1be` | PASS_WITH_NOTES |
+| L3 MDE enable/disable lifecycle | `82dd272`, remediation `f0b659b` | round 1 CHANGES_REQUIRED → PASS_WITH_NOTES |
+| L4 accelerator policy + timings + dispose-during-load | `99a40d9`, `fca8ddd`, follow-ups `8f2ab0a` | `99a40d9`/`fca8ddd` pending review; the accepted L4 evidence is carried in the L5 row |
+| L5 telemetry perf fields + schema v4 | `3d4d516`, `1f3d279`, `f179e24`, follow-ups `8f2ab0a`, docs `9868c48` | CHANGES_REQUIRED → CHANGES_REQUIRED → PASS_WITH_NOTES; docs follow-up not separately reviewed |
+| L6 Supabase idempotency + schema gating | `b0c09c4`, `ff567d8`, `efbcc6e` | CHANGES_REQUIRED → remediation reviewed as part of L7 |
+| L7 dashboard contract compatibility | `ebfcc6e`, `efb3fb5` (Flutter) + `21a3263`, `1581498` (separate dashboard repo) | CHANGES_REQUIRED (11 findings) → PASS_WITH_NOTES |
+| L8 R8/WorkManager/Room release verification | `2d0d0cd`, `870c24e` | CHANGES_REQUIRED (2 medium, 5 low) |
+| L9 Play Store configuration | `2d0d0cd`, `870c24e` | CHANGES_REQUIRED (same round) |
+| L10 attribution + naming | `423d97a` | pending review (L8/L9 round-1 findings applied) |
+| **L10 permission removal + licence/notices/privacy/checklist** | **`8766586`, `842d38b`** | **pending review — implementer may not approve its own commits** |
+| **L11 final readiness report** | **this commit** | **pending review** |
+
+### 2.1 Source histories incorporated
+
+Each was verified as an ancestor of `HEAD` in the L0 row:
+
+| Source | Commit |
+| --- | --- |
+| `codex/mde-integration` | `85b48ae` |
+| `feat/supabase-research-telemetry` | `12f568b` |
+| `feat/waste-reduction` (via merge) | `c325b11` |
+| `dev` | `94f74d8` |
+
+The MDE and telemetry histories are joined by merge commit `2722a7b`.
+
+### 2.2 Every commit on the branch, with its reviewer verdict
+
+| Commit | Verdict |
+| --- | --- |
+| `a8e0571` | PASS_WITH_NOTES |
+| `e03bc36` | no separate reviewer row (L0 corrections, applied under `a8e0571`) |
+| `d5390d4` | PASS_WITH_NOTES |
+| `fcf4cd0` | CHANGES_REQUIRED |
+| `63131d5` | CHANGES_REQUIRED |
+| `3f81cc3` | CHANGES_REQUIRED |
+| `15fcf39` | CHANGES_REQUIRED (round 2) |
+| `2540470` | PASS_WITH_NOTES |
+| `79eb9c0` | PASS_WITH_NOTES |
+| `614a6ca` | PASS_WITH_NOTES |
+| `ca35e75` | PASS_WITH_NOTES |
+| `b523f5e` | no separate reviewer row (L2 evidence docs) |
+| `8b8e1be` | CHANGES_REQUIRED (round 1) |
+| `82dd272` | CHANGES_REQUIRED |
+| `f0b659b` | PASS_WITH_NOTES |
+| `99a40d9` | pending review |
+| `fca8ddd` | no separate reviewer row |
+| `8f2ab0a` | CHANGES_REQUIRED (as part of the L5 round) |
+| `3d4d516` | CHANGES_REQUIRED |
+| `1f3d279` | CHANGES_REQUIRED |
+| `f179e24` | PASS_WITH_NOTES |
+| `9868c48` | no separate reviewer row (L5 evidence docs) |
+| `b0c09c4` | CHANGES_REQUIRED |
+| `ff567d8` | pending review (remediation, reviewed with L7) |
+| `efbcc6e` | CHANGES_REQUIRED → PASS_WITH_NOTES (with `efb3fb5`) |
+| `efb3fb5` | PASS_WITH_NOTES |
+| `2d0d0cd` | CHANGES_REQUIRED (L8/L9 round 1) |
+| `870c24e` | CHANGES_REQUIRED (L8/L9 round 1) |
+| `423d97a` | pending review |
+| `8766586` | pending review |
+| `842d38b` | pending review |
+| this commit | pending review |
+
+## 3. Verification
+
+All commands run in `/home/nico/repos/eyecue_flutter-playstore` on 2026-10-25.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Formatting | `dart format --output=none --set-exit-if-changed lib test` | **PASS** — `Formatted 104 files (0 changed)`, exit 0 |
+| Static analysis | `flutter analyze` | **PASS** — `4 issues found`, **0 errors**, 0 warnings; all four are `info` (e.g. `unnecessary_import` in `test/services/tts_service_test.dart:11`) |
+| Unit/widget suite | `flutter test` | **589 passed, 1 failed** — `test/services/tts_service_test.dart: alert lifecycle telemetry a partial signal pair records a reconciliation timeout`, the known pre-existing TTS failure recorded since L0; not introduced here and not fixed here |
+| Ingest validator | `node --test supabase/functions/ingest-telemetry/validate.test.mjs` | **PASS** — `1..41`, 41 pass, 0 fail |
+| Dashboard contract | `node --test` in the separate dashboard repo | 21/21 as recorded in the L7 row; **not re-run in this workspace** (different repository, not modified by L10/L11) |
+| Whitespace | `git diff --check` | **PASS** — exit 0, no output |
+| Conflict markers | `grep -rn` for the seven-`<` / seven-`>` merge-marker runs over `--include=*.dart --include=*.kt --include=*.ts --include=*.js --include=*.md` | **PASS** — 0 hits outside this sentence's own wording (the pattern is described, not quoted, so the scan stays clean) |
+| Secret scan (decompressed AAB) | `unzip -p <aab> '*' \| grep -ac 'service_role\|SUPABASE_SECRET\|BEGIN PRIVATE KEY\|eyJhbGciOi'` | **PASS** — 0 hits |
+| Worktree state | `git status --porcelain` | clean after the commit series |
+
+## 4. Artefacts
+
+Built from the L10 tree; both are **debug-signed test artefacts** (`-testsigned`)
+because no keystore exists on the host.
+
+```sh
+flutter build appbundle --release              # Gradle bundleRelease 27.6 s (incremental)
+flutter build apk --release                    # Gradle assembleRelease  9.9 s (incremental)
+(cd android && ./gradlew markTestSignedApk)    # marks the APK (§3 of release-procedure.md)
+```
+
+| Artefact | Path | Size | sha256 |
+| --- | --- | --- | --- |
+| AAB | `build/app/outputs/bundle/release/app-release-testsigned.aab` | 78 607 313 B | `6d566ed416f7aa7fc2452f47b43fe80a872576bd8639ef2e67b9772e23ba22c6` |
+| APK (inspection only) | `build/app/outputs/flutter-apk/app-release-testsigned.apk` | 91 191 189 B | `3c932ed4c2ef3b3057cf0653577a246128769145b08236caa507546a7c3d2974` |
+
+Signing status: `apksigner verify --print-certs` →
+`Signer #1 certificate DN: C=US, O=Android, CN=Android Debug`, certificate SHA-256
+`868520e241cd5ddaeae5df20322077885bb87b2f7207919934e75a7dc07e2bea`. Play refuses a
+debug-signed bundle. Both earlier digests (`feaab199…`, `99ac0da9…` at `870c24e`)
+are superseded by these and are no longer valid for any file in the tree.
+
+These two digests are **reproducible on this host for this tree**: the final
+verification pass re-ran both builds (and re-marked the APK) and both files came
+back byte-identical, with the same sha256 values and the same 8-permission
+manifest.
+
+## 5. Bundle inspection
+
+`aapt2 dump badging` on the APK:
+
+```
+package: name='app.eyecue.mobile' versionCode='1' versionName='1.0.0-testsigned'
+         compileSdkVersion='36' platformBuildVersionCode='36'
+minSdkVersion:'24'   targetSdkVersion:'36'
+application-label:'EyeCue'
+launchable-activity: name='app.eyecue.mobile.MainActivity'
+```
+
+Effective permissions — **8**, down from 11:
+
+```
+CAMERA, INTERNET, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC,
+WAKE_LOCK, ACCESS_NETWORK_STATE, RECEIVE_BOOT_COMPLETED,
+app.eyecue.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+```
+
+`RECORD_AUDIO`, `WRITE_EXTERNAL_STORAGE` and the merger-implied
+`READ_EXTERNAL_STORAGE` are gone; the injectors, the removal rules, the proof and
+the residual risk are in [`release-procedure.md`](release-procedure.md) §6.2.
+
+AAB contents: `base` module + 23 `BUNDLE-METADATA` debug-symbol entries, 229 files.
+Model assets are exactly:
+
+| Asset | Size |
+| --- | --- |
+| `base/assets/flutter_assets/assets/yolo26n-depth_w8a32.tflite` | 5 474 749 B |
+| `base/assets/flutter_assets/assets/yolov8n_int8_new_metadata.tflite` | 3 483 114 B |
+
+together with `labels.txt`, `logo.png` and four IBM Plex `.ttf` files. The
+tooling-only models are absent; no `docs/`, `tool/`, `test/` or `design-reference/`
+entry is bundled. Three ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`), no `x86`.
+
+## 6. R8 / WorkManager — class stripping closed by DEX evidence, startup NOT verified
+
+`unzip -p <apk> 'classes*.dex' | strings | grep -c`: `androidx/work/impl/WorkDatabase`
+→ 2, `androidx/work/impl/WorkDatabase_Impl` → 1. The single `classes.dex` defines
+`androidx.work.impl.WorkDatabase_Impl` with a public no-arg constructor, so the
+reflective lookup that once failed should find its target.
+
+**Verdict: class-stripping is closed by evidence. Installed startup at app launch is
+NOT VERIFIED** — only a running app exercises that construction.
+
+## 7. Device gate
+
+No Android device and no AVD exist on this host, and creating one is not permitted
+(disk). `CONFIRMED-ON-DEVICE` does not exist anywhere in this programme. The exact
+commands to close it are in [`benchmark-procedure.md`](benchmark-procedure.md) §5.1.
+This is why §6 and the camera/TTS/model-load claims remain proxies.
+
+## 8. Supabase local-stack gate
+
+**BLOCKED-EXTERNAL — disk capacity.** No PostgreSQL server, no Supabase CLI and no
+cached Supabase images on this host; nothing was installed. The Edge Function and
+migrations are verified only by the 41-case validator and by reading the SQL. The
+deployed-project behaviour (RLS, idempotency, RPC) is unverified.
+
+## 9. Dashboard compatibility
+
+The research dashboard is a **separate repository**
+(`/home/nico/Documents/ChatGPT/Eyecue/research-dashboard-cadence`, branch
+`feat/dashboard-cadence`), verified with `node --test` only (21/21 at L7) and **not
+deployed**. The Flutter side keeps the schema-4 contract; L10/L11 changed no payload
+field, so dashboard compatibility is unchanged by this run.
+
+## 10. Licensing and source compliance
+
+| Item | State |
+| --- | --- |
+| Application licence | **OWNER DECISION (D2)** — [`LICENSE`](../LICENSE) grants nothing |
+| Vendored plugin (AGPL-3.0) | licence text preserved verbatim; eight deviations recorded in `plugins/ultralytics_yolo/VENDORED.md` and [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §2.1 |
+| Bundled models | both AGPL-3.0 (Ultralytics); provenance, sizes and digests in the notices §3 |
+| Pub / native inventories | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §4–§5 |
+| AGPL source-distribution procedure | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §7 (tag ↔ `versionCode`, in-repo sources, archive step) |
+| Legal review | **NOT PERFORMED** — R1–R7 open in the notices §6 |
+
+## 11. Remaining owner actions
+
+1. Confirm the production `applicationId` (D1) — irreversible per listing.
+2. Provide the upload keystore / `EYECUE_KEYSTORE_*` and enrol Play App Signing.
+3. Choose the application licence (D2) after legal review of R1–R7.
+4. Answer the Data Safety form (D3) — items P1–P5 in
+   [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1 are open, notably
+   retention, deletion process and `https` enforcement.
+5. Publish the privacy policy and fill the store listing
+   ([`play-store-checklist.md`](play-store-checklist.md) §1, §6–§10).
+6. Run the device gate (install, launch, camera path, TTS, model load).
+7. Stand up the Supabase project (or a local stack on a host with disk) and re-run
+   the ingestion tests against it.
+8. Deploy the research dashboard if researchers are to use it.
+
+## 12. Known risks
+
+| # | Risk |
+| --- | --- |
+| 1 | Installed startup is unverified; the R8 result is DEX evidence, not a launch |
+| 2 | Permissions were removed by manifest rule only — a future camerax upgrade could reintroduce another permission, and no device test checks this |
+| 3 | Removing `RECORD_AUDIO`/storage permissions would break camerax video-with-audio and shared-storage capture paths (unused today) |
+| 4 | Every artefact is debug-signed; Play will refuse it |
+| 5 | AGPL-3.0 obligations for the plugin and models are unanalysed by counsel |
+| 6 | Data Safety answers cannot all be given truthfully yet (no retention policy, no deletion process, `https` not enforced) |
+| 7 | `flutter test` carries one known failing TTS test; a real regression there would not be distinguishable from it |
+| 8 | Dashboard contract verified only in the separate repository, not deployed |
+| 9 | `applicationId` is provisional; `auditor.md`, `chat_spec.md` and four dated audit documents still quote the old `com.example.eyecue_flutter` (historical snapshots, deliberately not rewritten) |
+
+## 13. Rollback
+
+The branch is additive on `adfbc5d` and rewrites no history.
+
+```sh
+# discard the whole programme
+git worktree remove /home/nico/repos/eyecue_flutter-playstore
+git branch -D feat/play-store-readiness
+```
+
+To drop only the L10/L11 work, `git revert --no-commit 842d38b 8766586` followed by
+a single revert commit restores the pre-L10 tree (undoes the manifest rules, the
+Gradle naming change, the new docs and this report) without touching L0–L9.
+Blast radius (`CONFIRMED-BY-INSPECTION`): no protected branch modified, no commit
+rewritten, no stash created or dropped, no external system (Supabase project, Play
+Console, signing infrastructure) touched. Artefacts under `build/` are regenerated,
+not tracked.
+
+## 14. Safety confirmation
+
+* No push, no deploy, no Play Console interaction, no keystore created, no history
+  rewrite, no new dependency.
+* Nothing outside this worktree was modified except the on-disk release artefacts,
+  which the build regenerates in place.
+* The pre-existing `.aab`/`.apk` were replaced by a rebuild from the L10 tree; the
+  old digests are recorded as superseded (§4).
+* No secret, token or keystore path was written into the tree (secret scan: 0 hits).
+
+## 15. Classification
+
+**`CODE_READY_WITH_EXTERNAL_GATES`**
+
+The release engineering work is complete and measured: the tree formats, analyses
+clean (0 errors), passes 589 of 590 tests (the single failure is the known
+pre-existing TTS test), builds both release artefacts reproducibly enough to
+inspect, and now declares eight permissions with the three unused ones removed and
+proved absent by `aapt2`. Everything that remains cannot be produced from inside
+this repository: installed startup is unverified because no device exists, the
+artefacts are debug-signed because no keystore exists, the `applicationId` is still
+provisional, the Data Safety answers cannot be given truthfully until retention,
+deletion and `https` enforcement are decided, and the AGPL-3.0 obligations on the
+vendored plugin and the bundled models have had no legal review. Those are owner
+gates, not engineering defects — but they are gates.
+
+**`READY_FOR_PLAY_STORE_SUBMISSION` is not available for this tree.** The app cannot
+be submitted today: the artefact Play would receive is debug-signed and would be
+rejected, startup has never run on a device, the final `applicationId` is unconfirmed
+and irreversible per listing, and the privacy, Data Safety and licensing positions
+are undecided. None of that is softened by the green checks in §3.
