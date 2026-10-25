@@ -5,9 +5,9 @@ import '../services/gesture_controller.dart';
 /// A transparent touch surface that feeds raw pointer events into a
 /// [GestureController].
 ///
-/// Placed over the camera viewport so thesis gestures work without relying on
-/// visible buttons. It is translucent, so the camera preview and overlays stay
-/// fully visible beneath it.
+/// Wraps the whole main area (the camera viewport and its state-panel area) so
+/// thesis gestures work without relying on visible buttons. It is translucent,
+/// so the camera preview and overlays stay fully visible beneath it.
 class GestureSurface extends StatefulWidget {
   final GestureController controller;
   final Widget child;

@@ -106,8 +106,11 @@ class GestureController {
           ? _activePointers.length
           : _groupMaxPointers;
       // A second pointer invalidates one-pointer directional classification
-      // for the rest of this sequence, even if it later lifts.
+      // for the rest of this sequence, even if it later lifts. An intent
+      // already classified before the second pointer arrived is discarded with
+      // it, so the ordering of the pointers cannot smuggle a commit through.
       _multiPointerInvalidated = true;
+      _pendingDirectional = null;
     }
   }
 

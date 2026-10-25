@@ -157,6 +157,13 @@ void main() {
       controller.onPointerDown(1, const Offset(100, 100));
       controller.onPointerMove(1, const Offset(200, 190)); // dx=100, dy=90
       expect(fired, isEmpty);
+      // The release must not turn the ambiguous diagonal into a directional
+      // intent: it falls back to the tap it always was.
+      controller.onPointerUp(1, const Offset(200, 190));
+      expect(fired, isEmpty);
+      now = now.add(const Duration(milliseconds: 300));
+      firePendingTimers();
+      expect(fired, [EyeCueGesture.singleTap]);
     });
 
     test('a horizontal commit prevents a later downward repeat', () {
@@ -179,6 +186,10 @@ void main() {
       controller.onPointerDown(1, const Offset(300, 100));
       controller.onPointerDown(2, const Offset(320, 120)); // second pointer
       controller.onPointerMove(1, const Offset(100, 100)); // would be left
+      expect(fired, isEmpty);
+      controller.onPointerUp(1, const Offset(100, 100));
+      controller.onPointerUp(2, const Offset(320, 120));
+      // The released sequence fires nothing at all.
       expect(fired, isEmpty);
     });
 
@@ -240,6 +251,18 @@ void main() {
       controller.onPointerMove(1, const Offset(40, 200));
       controller.onPointerUp(2, const Offset(380, 220));
       controller.onPointerUp(1, const Offset(40, 200));
+      expect(fired, isEmpty);
+    });
+
+    test('a second pointer discards a classification already made', () {
+      // down → move past the threshold → second pointer down → both up. The
+      // intent classified before the second pointer joined is discarded with
+      // the invalidation, so the ordering of the pointers cannot commit it.
+      controller.onPointerDown(1, const Offset(360, 200));
+      controller.onPointerMove(1, const Offset(40, 200)); // classified left
+      controller.onPointerDown(2, const Offset(380, 220));
+      controller.onPointerUp(1, const Offset(40, 200));
+      controller.onPointerUp(2, const Offset(380, 220));
       expect(fired, isEmpty);
     });
 
