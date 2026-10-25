@@ -21,9 +21,10 @@ a binary embedding it is distributed (owner decision D4 approved the fork).
 
 ## Scope of the copy
 
-Everything except build/example clutter is byte-identical to upstream 0.6.13. Omitted
-relative to upstream: `example/`, `.dart_tool/`, `build/`, `*.iml`, `.idea/`, and
-`android/.cxx/`. Retained: `LICENSE`, `README.md`, `README.zh-CN.md`, `CHANGELOG.md`,
+Everything except build/example clutter is byte-identical to upstream 0.6.13. Absent
+upstream: `example/`. Excluded: `android/.cxx/`. (`.dart_tool/`, `build/`, `*.iml` and
+`.idea/` never existed in the upstream package extract, so they are not omissions.)
+Retained: `LICENSE`, `README.md`, `README.zh-CN.md`, `CHANGELOG.md`,
 `pubspec.yaml`, `analysis_options.yaml`, `lib/`, `android/`, `ios/`, `assets/`,
 `scripts/`, `test/`, `doc/`.
 
@@ -38,6 +39,20 @@ file):
 ```sh
 diff -r --brief ~/.pub-cache/hosted/pub.dev/ultralytics_yolo-0.6.13 plugins/ultralytics_yolo
 ```
+
+## Verification gates for this directory
+
+Neither `flutter analyze` nor `flutter test` covers `plugins/**`: the repository's
+analysis options and test suite walk `lib/` and `test/` only. A change in this directory
+is therefore invisible to the default gates, and "analyze/test are clean" is not
+evidence about it.
+
+Coverage for a change here has to be named explicitly:
+
+| Change kind | Covering check |
+| --- | --- |
+| Kotlin / CMake source | compile only — `flutter build apk --debug` (`CONFIRMED-BY-BUILD`); there is no Kotlin unit suite wired into this repository |
+| Dart surface mirrored by the app | the app-side suite that exercises it. For the L1b depth transport: `test/services/depth_payload_parity_test.dart` (payload shape) and `test/services/monocular_depth_estimator_test.dart` (event → frame derivation) |
 
 ## Native deviation list
 
