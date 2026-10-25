@@ -26,7 +26,8 @@ dependencies:
   fl_chart: ^1.2.0
 
   # 7. Alternative native YOLO pipeline (runtime-comparable with custom mode)
-  ultralytics_yolo: 0.6.13
+  ultralytics_yolo:
+    path: plugins/ultralytics_yolo
   marionette_flutter: ^0.6.0
 
   # 8. Offline IBM Plex Sans typography for the Home-local light theme
