@@ -116,6 +116,16 @@ is ≤96 × 96 × 4 = **36 864 bytes** per event; the 4:3 stream emits
 96 × 72 × 4 = 27 648 bytes, versus hundreds of KB for the dense map and ~
 hundreds of KB for the JPEG.
 
+The stream also allocates **no colour buffer and no bitmap**:
+`DepthEstimator.postProcessDepth` builds `DepthMap.image` only when
+`includeRawMaskData` is true (the still-image/overlay path). On the native-stream
+path it skips `colorizeDepth` and the `Bitmap.createBitmap(..., ARGB_8888)`
+entirely (≈0.8 MB per inference at a 518×389 crop, plus the persistent
+`colorPixels` `IntArray` it reuses) and takes `minDepth`/`maxDepth` from one scan
+of the same crop, because the event reads only `grid`/`minDepth`/`maxDepth`.
+`DepthMap.image` is therefore `null` on that path only; the still-image and
+overlay paths keep both the bitmap and the dense `values`.
+
 Cadence ownership moved with the transport: the interval is native, so there is
 no Dart timer, no pending frame slot and no queue. Latest frame wins (a tick in
 flight makes the next one a no-op), and depth work is scheduled only after
@@ -264,6 +274,20 @@ so labels stay above the heatmap. When it is hidden, native overlays render
 boxes as before. Hiding boxes is not "detection off"; hiding the heatmap is not
 "MDE off".
 
+The heatmap is **constructed only when it is displayed**. The screen sets
+`MonocularDepthEstimator.heatmapEnabled` from `heatmapRequested(mdeEnabled,
+showDepthHeatmap)` on every settings change, so while the overlay is hidden
+`_publish` never calls the heatmap builder, the frame carries `heatmap: null`
+and the grid is untouched — distance estimation and the box layer keep working
+exactly as before. Turning it off also replaces the held frame with a
+heatmap-less copy and disposes the image, so the GPU texture is released and no
+stale overlay can be shown in between; re-enabling fills the very next frame.
+The gate is presentation-only: it is not part of the streaming-config key, so
+toggling the heatmap never restarts the camera and never stops the depth tick.
+Freshness is not part of the gate — a stale map is hidden by
+`DepthOverlayState.resolve` for display, and gating construction on freshness
+would need the frame the gate governs.
+
 ## Distance in the assistive layer
 
 - Meters map onto the existing band vocabulary: `≤ 1.5 m → near`,
@@ -304,6 +328,14 @@ test-covered and must not be read as such:
   required before any payload-size tuning.
 - the **`depthMaxDim` → estimator wiring** is compile-checked and inspected, not
   executed.
+- the **native allocation skip** (L2: no colourisation, no `ARGB` bitmap on the
+  stream) is `CONFIRMED-BY-INSPECTION` for the same reason — no Kotlin test
+  source set. Its Dart-side counterpart is test-covered: the heatmap builder is
+  **not invoked** while disabled, re-enabling rebuilds, disabling disposes the
+  held image (`test/services/monocular_depth_estimator_test.dart`), and the
+  screen-side gate, the heatmap-agnostic streaming key and the independence of
+  the box/heatmap toggles are pinned in
+  `test/screens/depth_overlay_state_test.dart`.
 
 Depth accuracy and the achieved on-device cadence remain **unmeasured** — see the
 table below.
