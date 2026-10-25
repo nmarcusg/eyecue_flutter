@@ -25,15 +25,15 @@ what was measured, what was **not** verified, and one classification.
 | L1 native shared-frame depth transport | `63131d5`, docs `3f81cc3`, remediation `15fcf39`, `79eb9c0`, docs `2540470`, `614a6ca` | round 1 CHANGES_REQUIRED (4 major / 5 minor / 2 nit) → round 2 CHANGES_REQUIRED (8 of 9 fixed) → PASS_WITH_NOTES |
 | L2 compact depth payload + heatmap gating | `ca35e75`, docs `b523f5e`, housekeeping `8b8e1be` | PASS_WITH_NOTES |
 | L3 MDE enable/disable lifecycle | `82dd272`, remediation `f0b659b` | round 1 CHANGES_REQUIRED → PASS_WITH_NOTES |
-| L4 accelerator policy + timings + dispose-during-load | `99a40d9`, `fca8ddd`, follow-ups `8f2ab0a` | `99a40d9`/`fca8ddd` pending review; the accepted L4 evidence is carried in the L5 row |
+| L4 accelerator policy + timings + dispose-during-load | `99a40d9`, `fca8ddd`, follow-ups `8f2ab0a` | PASS_WITH_NOTES (backlog review: the `99a40d9` dispose-during-load fix and the `fca8ddd` accelerator/timings work were read at HEAD); the accepted L4 follow-up evidence is carried in the L5 row |
 | L5 telemetry perf fields + schema v4 | `3d4d516`, `1f3d279`, `f179e24`, follow-ups `8f2ab0a`, docs `9868c48` | CHANGES_REQUIRED → CHANGES_REQUIRED → PASS_WITH_NOTES; docs follow-up not separately reviewed |
-| L6 Supabase idempotency + schema gating | `b0c09c4`, `ff567d8`, `efbcc6e` | CHANGES_REQUIRED → remediation reviewed as part of L7 |
+| L6 Supabase idempotency + schema gating | `b0c09c4`, `ff567d8`, `efbcc6e` | CHANGES_REQUIRED → PASS_WITH_NOTES (backlog review of `ff567d8`; its guarded constraint drop was hardened to an unguarded one in `efbcc6e`) |
 | L7 dashboard contract compatibility | `ebfcc6e`, `efb3fb5` (Flutter) + `21a3263`, `1581498` (separate dashboard repo) | CHANGES_REQUIRED (11 findings) → PASS_WITH_NOTES |
 | L8 R8/WorkManager/Room release verification | `2d0d0cd`, `870c24e` | CHANGES_REQUIRED (2 medium, 5 low) |
 | L9 Play Store configuration | `2d0d0cd`, `870c24e` | CHANGES_REQUIRED (same round) |
-| L10 attribution + naming | `423d97a` | pending review (L8/L9 round-1 findings applied) |
-| **L10 permission removal + licence/notices/privacy/checklist** | **`8766586`, `842d38b`** | **pending review — implementer may not approve its own commits** |
-| **L11 final readiness report** | **this commit** | **pending review** |
+| L10 attribution + naming | `423d97a` | PASS_WITH_NOTES (backlog review — the L8/L9 round-1 findings are applied) |
+| **L10 permission removal + licence/notices/privacy/checklist** | **`8766586`, `842d38b`** | **PASS_WITH_NOTES for `8766586`; CHANGES_REQUIRED (LOW, docs only) for `842d38b` — backlog review** |
+| **L11 final readiness report** | **this commit** | **PASS_WITH_NOTES (backlog review)** |
 
 ### 2.1 Source histories incorporated
 
@@ -54,6 +54,7 @@ The MDE and telemetry histories are joined by merge commit `2722a7b`.
 | --- | --- |
 | `a8e0571` | PASS_WITH_NOTES |
 | `e03bc36` | no separate reviewer row (L0 corrections, applied under `a8e0571`) |
+| `d3a987a` | no separate reviewer row (L0 correction docs) |
 | `d5390d4` | PASS_WITH_NOTES |
 | `fcf4cd0` | CHANGES_REQUIRED |
 | `63131d5` | CHANGES_REQUIRED |
@@ -64,32 +65,35 @@ The MDE and telemetry histories are joined by merge commit `2722a7b`.
 | `614a6ca` | PASS_WITH_NOTES |
 | `ca35e75` | PASS_WITH_NOTES |
 | `b523f5e` | no separate reviewer row (L2 evidence docs) |
-| `8b8e1be` | CHANGES_REQUIRED (round 1) |
+| `8b8e1be` | CHANGES_REQUIRED (round 1, with `82dd272`); the commit's own content is PASS_WITH_NOTES (backlog review) |
 | `82dd272` | CHANGES_REQUIRED |
 | `f0b659b` | PASS_WITH_NOTES |
-| `99a40d9` | pending review |
-| `fca8ddd` | no separate reviewer row |
+| `99a40d9` | PASS_WITH_NOTES (backlog review) |
+| `fca8ddd` | PASS_WITH_NOTES (backlog review, with `99a40d9`) |
 | `8f2ab0a` | CHANGES_REQUIRED (as part of the L5 round) |
 | `3d4d516` | CHANGES_REQUIRED |
 | `1f3d279` | CHANGES_REQUIRED |
 | `f179e24` | PASS_WITH_NOTES |
 | `9868c48` | no separate reviewer row (L5 evidence docs) |
 | `b0c09c4` | CHANGES_REQUIRED |
-| `ff567d8` | pending review (remediation, reviewed with L7) |
+| `ff567d8` | PASS_WITH_NOTES (backlog review) |
 | `efbcc6e` | CHANGES_REQUIRED → PASS_WITH_NOTES (with `efb3fb5`) |
 | `efb3fb5` | PASS_WITH_NOTES |
 | `2d0d0cd` | CHANGES_REQUIRED (L8/L9 round 1) |
 | `870c24e` | CHANGES_REQUIRED (L8/L9 round 1) |
-| `423d97a` | pending review |
-| `8766586` | pending review |
-| `842d38b` | pending review |
-| this commit | pending review |
+| `423d97a` | PASS_WITH_NOTES (backlog review) |
+| `8766586` | PASS_WITH_NOTES (backlog review) |
+| `842d38b` | CHANGES_REQUIRED (LOW, docs only) |
+| this commit (`f1ff670`) | PASS_WITH_NOTES (backlog review) |
+| `d28baa4` | PASS_WITH_NOTES (backlog review) |
 
 Reviewer-log note: `f1ff670` (this commit) is an amendment of `8c69a28`, which was
 itself an amendment of `a77024c`. All three were local and unpushed, and both
 amendments happened before this commit was handed to review. No L0–L10 commit and no
 published commit was rewritten: every SHA in §2.1 and §2.2 belonging to an earlier
 item is unchanged.
+
+The backlog pass that closed the `pending review` rows re-measured every number in §3 and §4 and recorded its verdicts in [`play-store-readiness.md`](play-store-readiness.md) §9. It also added the two commits this table originally omitted (`d3a987a`, `d28baa4`), so §2.2 now covers every commit on the branch.
 
 ## 3. Verification
 
@@ -243,9 +247,10 @@ field, so dashboard compatibility is unchanged by this run.
 | 8 | Dashboard contract verified only in the separate repository, not deployed |
 | 9 | `applicationId` is provisional; `auditor.md`, `chat_spec.md` and four dated audit documents still quote the old `com.example.eyecue_flutter` (historical snapshots, deliberately not rewritten) |
 | 10 | The APK `-testsigned` name depends on the manual `markTestSignedApk` task: `flutter build apk --release` alone still yields a plain-named, debug-signed `app-release.apk`. The AAB, which is what Play consumes, is renamed automatically by `bundleRelease` |
-| 11 | The marking task now fails closed (§3), but that only catches a moved artefact at task-run time — a renamed *directory* is not detected at configuration time |
+| 11 | The marking task now fails closed (§3), but that only catches a moved artefact at task-run time — a renamed *directory* is not detected at configuration time; a second `markTestSignedApk` run against an already-marked set also fails, because the task declares no outputs |
 | 12 | The AAB is discovered by globbing the release directory with a "first `.aab` wins" fallback, so a stale `-testsigned.aab` sitting beside a fresh plain one would be the file reported |
 | 13 | The two analyzer warnings are now described accurately (§3), but they are permanent fixtures of the "4 issues" count: a genuinely new warning is indistinguishable from them, so they must be fixed before that count is used as a regression gate |
+| 14 | Telemetry ingest is authenticated by the publishable key alone, and that key ships inside the APK: any holder of a build can insert sessions, and the `consent` field is self-asserted. No token, attestation or rate limit exists, so the study table is an open write target until the ingestion threat model lands |
 
 ## 13. Rollback
 
