@@ -187,16 +187,28 @@ class MonocularDepthEstimator {
   /// Accelerator of a loaded model instance; null while none exists.
   String? get accelerator => _yolo == null ? null : (_useGpu ? 'gpu' : 'cpu');
 
+  /// Whether the last model load failed. Cleared by [retry] and [releaseModel].
+  bool get modelLoadFailed => _modelLoadFailed;
+
   /// Instance id the view must tick; null until the model is loaded.
   String? get instanceId => _yolo?.instanceId;
 
   /// Loads the depth model so [instanceId] can reach the streaming config.
   ///
   /// Concurrent calls share one load. A failed load is reported through [state]
-  /// (degraded) and is not retried until [retry].
-  Future<void> prepare() => _preparing ??= _load().whenComplete(() {
-    _preparing = null;
-  });
+  /// (degraded) and is not retried until [retry]. A [releaseModel] invalidates
+  /// the in-flight load, so the next call starts a fresh one instead of joining
+  /// the release it was already doomed by.
+  Future<void> prepare() {
+    final inFlight = _preparing;
+    if (inFlight != null) return inFlight;
+    late final Future<void> load;
+    load = _load().whenComplete(() {
+      // A release may already have dropped this slot and started a newer load.
+      if (identical(_preparing, load)) _preparing = null;
+    });
+    return _preparing = load;
+  }
 
   Future<void> _load() async {
     if (_disposed || _modelLoadFailed) return;
@@ -247,6 +259,7 @@ class MonocularDepthEstimator {
         rotationDegrees: rotationDegrees,
         uprightWidth: uprightWidth,
         uprightHeight: uprightHeight,
+        releaseEpoch: _releaseEpoch,
       ).whenComplete(() => _publishing = false),
     );
   }
@@ -257,11 +270,15 @@ class MonocularDepthEstimator {
     required int rotationDegrees,
     required int uprightWidth,
     required int uprightHeight,
+    required int releaseEpoch,
   }) async {
     var heatmap = heatmapEnabled
         ? await (heatmapBuilder ?? _buildHeatmap)(grid)
         : null;
-    if (_disposed) {
+    // A release landed while the builder ran: this frame belongs to a session
+    // that no longer exists, so publishing it would repopulate `frame` and
+    // report `ready` with no model behind it.
+    if (_disposed || releaseEpoch != _releaseEpoch) {
       heatmap?.dispose();
       return;
     }
@@ -353,7 +370,13 @@ class MonocularDepthEstimator {
       } catch (error) {
         debugPrint('[Depth] dispose failed: $error');
       }
-      if (!_disposed) state.value = DepthRunState.idle;
+      // Re-park only when no newer load owns the state, so a stale arrival
+      // cannot overwrite the ready/degraded a later load established.
+      if (!_disposed &&
+          _yolo == null &&
+          state.value != DepthRunState.degraded) {
+        state.value = DepthRunState.idle;
+      }
       return;
     }
     _yolo = handle;
@@ -385,7 +408,8 @@ class MonocularDepthEstimator {
   /// MDE off used to stop only the tick, so the interpreter (5.3 MB of weights
   /// plus its GPU delegate) stayed resident for the rest of the session. This
   /// disposes it, drops the frame and its heatmap texture, clears the
-  /// pending/failure state, and parks [state] at [DepthRunState.idle].
+  /// pending/failure state, invalidates any load still in flight, and parks
+  /// [state] at [DepthRunState.idle].
   ///
   /// Unlike [dispose] the [ValueNotifier]s survive, so the estimator stays
   /// reusable: [retry] plus a re-arm loads the model again. [stop] is the pause
@@ -395,6 +419,9 @@ class MonocularDepthEstimator {
   Future<void> releaseModel() async {
     if (_disposed) return;
     _releaseEpoch++;
+    // Drop the in-flight slot: a `prepare()` after this must start its own
+    // load, because the one in flight is already doomed by the epoch bump.
+    _preparing = null;
     _modelLoadFailed = false;
     stop();
     clearFrame();
