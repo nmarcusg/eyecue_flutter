@@ -208,9 +208,12 @@ const uploadTokenPattern = /^[A-Za-z0-9_-]+$/
  * `202610260001_research_upload_tokens.sql`. A test asserts the two copies
  * agree, because a silent divergence would either throttle real uploads or
  * quietly disable the limit.
+ *
+ * Per token hash only: a per-participant window is not implemented, because the
+ * participant code is not trustworthy before the envelope is validated and a
+ * window keyed on a caller-chosen value limits nothing.
  */
 export const RATE_LIMIT_TOKEN_MAX = 10
-export const RATE_LIMIT_PARTICIPANT_MAX = 20
 export const RATE_LIMIT_WINDOW_MINUTES = 10
 
 /**

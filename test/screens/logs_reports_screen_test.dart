@@ -919,6 +919,11 @@ void main() {
       await confirm();
       expect(find.byType(AlertDialog), findsOneWidget);
       expect(fake.uploads, 0);
+      // The field says why instead of the button doing nothing…
+      expect(
+        find.text(TelemetryUploadResult.invalidUploadTokenMessage),
+        findsOneWidget,
+      );
 
       // A well-formed token closes the dialog and reaches the service.
       await tester.enterText(find.byType(TextField).at(2), screenUploadToken);

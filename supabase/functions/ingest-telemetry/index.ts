@@ -52,10 +52,12 @@ Deno.serve(async (request) => {
   if (typeof secretKey !== 'string') return json({ error: 'server_configuration_error' }, 500)
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, secretKey)
 
-  // One ledger row per finished attempt, so the rolling window counts repeated
-  // failures as well as successes. Best effort: recording must never change the
-  // answer, and a ledger write failure must not turn a stored session into an
-  // error the researcher sees.
+  // The ledger is a bound on spend, not an audit log: a row is written only for
+  // an outcome on a token the database has confirmed. A random, non-existent
+  // token hash appends nothing — there is no budget to limit — which is also
+  // what stops the table growing without bound under a flood of made-up tokens.
+  // Best effort: recording must never change the answer, and a ledger write
+  // failure must not turn a stored session into an error the researcher sees.
   const recordAttempt = async (
     outcome: string,
     participantCode: string | null = null,
@@ -73,33 +75,56 @@ Deno.serve(async (request) => {
       // Nothing to do: the ledger is advisory.
     }
   }
-  const reject = async (
-    code: string,
-    status: number,
-    participantCode: string | null = null,
-  ) => {
-    await recordAttempt(code, participantCode)
-    return json({ error: code }, status)
+  const reject = (code: string, status: number) => json({ error: code }, status)
+
+  // Idempotency probe: does this (participant_code, client_session_id) pair
+  // already have a row? Called only where the token has proven itself real, so
+  // the answer never becomes an existence oracle for an arbitrary caller.
+  const sessionExists = async (
+    participantCode: string,
+    clientSessionId: string,
+  ): Promise<'found' | 'absent' | 'error'> => {
+    const { data, error } = await supabase
+      .from('telemetry_sessions')
+      .select('id')
+      .eq('participant_code', participantCode)
+      .eq('client_session_id', clientSessionId)
+      .maybeSingle()
+    if (error) return 'error'
+    return data ? 'found' : 'absent'
   }
 
   // Rate limiting (T5) before the body is read: the cheapest way to shed a
-  // flood. The participant code is null here on purpose — it does not exist
-  // until the body is parsed, and a value taken from an unvalidated body would
-  // be chosen by the caller.
+  // flood. Keyed on the token hash only. There is no per-participant window:
+  // the participant code does not exist until the body is parsed, so the only
+  // value available here is one the caller chose, and a window keyed on a
+  // caller-chosen value limits nothing.
   const { data: rateLimited, error: rateLimitError } = await supabase.rpc(
     'research_ingest_rate_limited',
-    { p_token_hash: tokenHash, p_participant_code: null },
+    { p_token_hash: tokenHash },
   )
   if (rateLimitError) return json({ error: 'database_write_failed' }, 500)
   // Not recorded: a `rate_limited` row would keep the window permanently full.
   if (rateLimited === true) return json({ error: 'rate_limited' }, 429)
 
-  const contentLength = Number(request.headers.get('content-length') ?? 0)
-  if (isBodyTooLarge(contentLength)) return reject('payload_too_large', 413)
+  // A chunked body carries no length, so it cannot be bounded before it is
+  // buffered: it is refused rather than read whole. The app always declares one.
+  const declaredLength = request.headers.get('content-length')
+  const contentLength = Number(declaredLength)
+  if (
+    declaredLength === null ||
+    !Number.isInteger(contentLength) ||
+    contentLength < 0 ||
+    isBodyTooLarge(contentLength)
+  ) {
+    return reject('payload_too_large', 413)
+  }
 
   let body: unknown
   try {
     const text = await request.text()
+    // The declared length is the fast gate; this is the check on what actually
+    // arrived, for a caller whose header lies.
     if (isBodyTooLarge(new TextEncoder().encode(text).byteLength)) {
       return reject('payload_too_large', 413)
     }
@@ -113,7 +138,6 @@ Deno.serve(async (request) => {
   const validation = validateEnvelope(body)
   if (!validation.ok) {
     if (validation.error === 'unsupported_schema_version') {
-      await recordAttempt('unsupported_schema_version')
       return json(
         { error: 'unsupported_schema_version', supported: validation.supported ?? [] },
         400,
@@ -123,9 +147,24 @@ Deno.serve(async (request) => {
   }
   const envelope = validation.envelope
 
+  const row = {
+    participant_code: envelope.participantCode,
+    study_scenario: envelope.studyScenario,
+    client_submitted_at: envelope.submittedAt,
+    telemetry_schema_version: envelope.schemaVersion,
+    app_version: envelope.appVersion,
+    // validateEnvelope has already rejected a non-string session id; the JSDoc
+    // envelope type only widens it to `unknown`.
+    client_session_id: envelope.session.id as string,
+    session_started_at: envelope.session.start ?? null,
+    session_duration_ms: envelope.session.durationMs,
+    payload: envelope.telemetry,
+  }
+
   // Atomic consumption: the row lock inside the RPC is what makes `uses` a real
-  // ceiling under concurrent uploads. A use is spent even if the write below
-  // then fails, so max_uses should exceed the attempts a researcher needs.
+  // ceiling under concurrent uploads. A use stays spent if the write below then
+  // fails (a database fault is not the researcher's budget to absorb), so
+  // max_uses should exceed the attempts a researcher needs.
   const { data: tokenStatus, error: consumeError } = await supabase.rpc(
     'consume_research_upload_token',
     {
@@ -134,38 +173,54 @@ Deno.serve(async (request) => {
     },
   )
   if (consumeError) {
-    return reject('database_write_failed', 500, envelope.participantCode)
+    return reject('database_write_failed', 500)
   }
   const tokenFailure = uploadTokenFailure(tokenStatus)
   if (tokenFailure) {
-    return reject(tokenFailure.error, tokenFailure.status, envelope.participantCode)
-  }
-
-  const row = {
-    participant_code: envelope.participantCode,
-    study_scenario: envelope.studyScenario,
-    client_submitted_at: envelope.submittedAt,
-    telemetry_schema_version: envelope.schemaVersion,
-    app_version: envelope.appVersion,
-    client_session_id: envelope.session.id,
-    session_started_at: envelope.session.start ?? null,
-    session_duration_ms: envelope.session.durationMs,
-    payload: envelope.telemetry,
+    // `exhausted` can still be a replay of the session this token already
+    // stored: that write spent the last use, so consume has nothing left to
+    // give and the refund below is never reached. The probe is safe here — the
+    // token is real and its participant binding already matched — and it is what
+    // keeps a retry at the default max_uses = 1 answering 200 duplicated
+    // instead of 403 for data the database already holds. A failed probe falls
+    // through to the refusal, which is still a correct answer.
+    if (
+      tokenStatus === 'exhausted' &&
+      (await sessionExists(row.participant_code, row.client_session_id)) ===
+        'found'
+    ) {
+      await recordAttempt('duplicated', envelope.participantCode)
+      return json({ accepted: true, duplicated: true }, 200)
+    }
+    // `invalid` means no row has this hash, so there is no budget to limit and
+    // nothing worth recording; every other refusal is a real token spending
+    // down, which is what the rolling window counts.
+    if (tokenStatus !== 'invalid') {
+      await recordAttempt(tokenFailure.error, envelope.participantCode)
+    }
+    return reject(tokenFailure.error, tokenFailure.status)
   }
 
   // Idempotency. Checked in two steps because a probe is the cheapest reliable
   // way to tell "first write" from "replay": the upsert itself cannot report it
   // without depending on how PostgREST returns conflicting rows.
-  const { data: existing, error: probeError } = await supabase
-    .from('telemetry_sessions')
-    .select('id')
-    .eq('participant_code', row.participant_code)
-    .eq('client_session_id', row.client_session_id)
-    .maybeSingle()
-  if (probeError) {
-    return reject('database_write_failed', 500, envelope.participantCode)
+  const existing = await sessionExists(row.participant_code, row.client_session_id)
+  if (existing === 'error') {
+    return reject('database_write_failed', 500)
   }
-  if (existing) {
+  if (existing === 'found') {
+    // A replay on a token that still had headroom spent a use above for nothing,
+    // so give it back: `uses` ends where it started and the retry stays 200
+    // duplicated. Best effort like the ledger — the answer is 200 either way.
+    // The narrow probe/insert race below still keeps its use, and the exhausted
+    // case has no use to return (it was answered before this point).
+    const { error: refundError } = await supabase.rpc(
+      'refund_research_upload_token',
+      { p_token_hash: tokenHash },
+    )
+    if (refundError) {
+      console.error('ingest: token refund failed', refundError.code)
+    }
     await recordAttempt('duplicated', envelope.participantCode)
     return json({ accepted: true, duplicated: true }, 200)
   }
@@ -181,7 +236,7 @@ Deno.serve(async (request) => {
       ignoreDuplicates: true,
     })
   if (error) {
-    return reject('database_write_failed', 500, envelope.participantCode)
+    return reject('database_write_failed', 500)
   }
   await recordAttempt('accepted', envelope.participantCode)
   return json({ accepted: true }, 201)

@@ -206,6 +206,10 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
   /// disposing the dialog drops it.
   final TextEditingController _tokenController = TextEditingController();
 
+  /// Set when confirm is pressed with a token of the wrong shape, so the field
+  /// says why instead of the button doing nothing.
+  String? _tokenError;
+
   @override
   void dispose() {
     _participantController.dispose();
@@ -220,7 +224,13 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
       studyScenario: _scenarioController.text,
       uploadToken: _tokenController.text,
     );
-    if (!value.isValid || !value.hasValidUploadToken) return;
+    if (!value.hasValidUploadToken) {
+      setState(
+        () => _tokenError = TelemetryUploadResult.invalidUploadTokenMessage,
+      );
+      return;
+    }
+    if (!value.isValid) return;
     Navigator.pop(context, value);
   }
 
@@ -261,9 +271,15 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
             maxLength: 128,
             autocorrect: false,
             enableSuggestions: false,
-            decoration: const InputDecoration(
+            // Typing clears the refusal, so the field stops shouting as soon as
+            // the researcher acts on it.
+            onChanged: (_) {
+              if (_tokenError != null) setState(() => _tokenError = null);
+            },
+            decoration: InputDecoration(
               labelText: 'Study upload token',
               helperText: 'Required. Supplied by the study coordinator.',
+              errorText: _tokenError,
             ),
           ),
         ],
