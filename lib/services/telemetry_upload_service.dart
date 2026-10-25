@@ -79,9 +79,15 @@ class TelemetryUploadRequest {
 }
 
 class TelemetryUploadResponse {
-  const TelemetryUploadResponse(this.statusCode);
+  const TelemetryUploadResponse(this.statusCode, [this.body]);
 
   final int statusCode;
+
+  /// Raw response body, when the sender kept it.
+  ///
+  /// Read only for the machine-readable `error` code (`400` answers carry
+  /// `unsupported_schema_version`); it is never shown to the user verbatim.
+  final String? body;
 }
 
 typedef TelemetryUploadSender =
@@ -109,6 +115,10 @@ class TelemetryUploadService {
   /// The ingest function's own body limit. A larger body is refused locally so
   /// the server's `413` is never the first signal a session was lost.
   static const int maxUploadBodyBytes = 2000000;
+
+  /// Local refusal text; reused when the server answers `413` itself.
+  static const String _tooLargeMessage =
+      'This session is too large to upload. Save a local export to keep the data.';
 
   final TelemetryUploadConfiguration _configuration;
   final TelemetryExportService _exportService;
@@ -164,9 +174,7 @@ class TelemetryUploadService {
     // Never truncate: a shortened payload would be silently wrong research
     // data, so an oversized session is reported and the local export kept.
     if (utf8.encode(body).length > maxBodyBytes) {
-      return const TelemetryUploadResult.failure(
-        'This session is too large to upload. Save a local export to keep the data.',
-      );
+      return const TelemetryUploadResult.failure(_tooLargeMessage);
     }
 
     try {
@@ -183,11 +191,11 @@ class TelemetryUploadService {
         ),
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
+        // `200 {duplicated: true}` is the replay answer: the session was stored
+        // by an earlier attempt, so this is a success for the caller too.
         return const TelemetryUploadResult.success();
       }
-      return const TelemetryUploadResult.failure(
-        'The research server could not accept this session. Save an offline export and try again later.',
-      );
+      return _mapFailure(response);
     } on TimeoutException {
       return const TelemetryUploadResult.failure(
         'The upload timed out. Save an offline export and try again later.',
@@ -207,6 +215,53 @@ class TelemetryUploadService {
     }
   }
 
+  /// Turns a non-2xx answer into one distinct, actionable message.
+  ///
+  /// The local session is untouched on every branch, so the JSON/CSV export
+  /// still recovers it.
+  static TelemetryUploadResult _mapFailure(TelemetryUploadResponse response) {
+    final status = response.statusCode;
+    if (status == 401 || status == 403) {
+      return const TelemetryUploadResult.failure(
+        'This build is not authorised for the research upload. Save a local export and try again later.',
+      );
+    }
+    if (status == 400) {
+      if (_mentionsUnsupportedSchema(response.body)) {
+        return const TelemetryUploadResult.failure(
+          'This app build uses a telemetry format the research server does not accept. Update the app, or save a local export.',
+        );
+      }
+      return const TelemetryUploadResult.failure(
+        'The research server rejected this session as invalid. Save a local export and try again later.',
+      );
+    }
+    if (status == 413) {
+      return const TelemetryUploadResult.failure(_tooLargeMessage);
+    }
+    if (status >= 500) {
+      return const TelemetryUploadResult.failure(
+        'The research server could not accept this session. Save a local export and try again later.',
+      );
+    }
+    return const TelemetryUploadResult.failure(
+      'The research server could not accept this session. Save an offline export and try again later.',
+    );
+  }
+
+  /// True when a `400` body reports `unsupported_schema_version`.
+  static bool _mentionsUnsupportedSchema(String? body) {
+    if (body == null || body.isEmpty) return false;
+    try {
+      final decoded = jsonDecode(body);
+      return decoded is Map && decoded['error'] == 'unsupported_schema_version';
+    } on FormatException {
+      // A proxy or an older function may answer with plain text; fall back to
+      // the code name rather than losing the diagnosis.
+      return body.contains('unsupported_schema_version');
+    }
+  }
+
   static Future<TelemetryUploadResponse> _send(
     TelemetryUploadRequest request,
   ) async {
@@ -220,8 +275,8 @@ class TelemetryUploadService {
       final response = await requestHandle.close().timeout(
         const Duration(seconds: 20),
       );
-      await response.drain<void>();
-      return TelemetryUploadResponse(response.statusCode);
+      final responseBody = await response.transform(utf8.decoder).join();
+      return TelemetryUploadResponse(response.statusCode, responseBody);
     } finally {
       client.close(force: true);
     }

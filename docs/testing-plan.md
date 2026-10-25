@@ -32,6 +32,19 @@
 | Error propagation and bounded recovery | 🟡 P1 | Verify typed isolate errors reach the main isolate, worker generations reject stale messages, retries are bounded, and disposal cancels pending recovery |
 | Buffer reuse | 🟢 P2 | Verify pre-allocated buffers are reused (no new allocations per frame) |
 
+### Edge Function contract tests (CLI-free)
+
+```sh
+node --test supabase/functions/ingest-telemetry/validate.test.mjs
+```
+
+36 cases over [`validate.js`](../supabase/functions/ingest-telemetry/validate.js): every
+forbidden key at three depths, the `frameNumber` allowance, each mistyped envelope
+field, supported and unsupported schema versions, and the 2 000 000 / 2 000 001-byte
+body boundary. No Deno, Docker, Supabase CLI or `package.json` is involved. The SQL
+migration and the function's own TypeScript are still not executed anywhere
+(`BLOCKED-EXTERNAL` — see [`play-store-readiness.md`](play-store-readiness.md) §7).
+
 ## Widget Testing Strategy
 
 | Test | Priority | Description |

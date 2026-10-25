@@ -149,13 +149,30 @@ void main() {
     );
   }
 
+  // Mirrors the server-side set in
+  // `supabase/functions/ingest-telemetry/validate.js`; the client envelope must
+  // stay free of every one of them. `frameNumber` is deliberately absent — it is
+  // an allowed counter, not a frame.
   const forbiddenKeys = {
     'image',
     'images',
+    'screenshot',
+    'screenshots',
+    'frame',
+    'frames',
+    'audio',
+    'utterance',
+    'path',
+    'paths',
     'deviceId',
     'technicalDetail',
-    'path',
-    'utterance',
+    'serviceRole',
+    'secret',
+    'secrets',
+    'token',
+    'tokens',
+    'apiKey',
+    'password',
   };
 
   void expectNoForbiddenKeys(Object? value) {
@@ -468,35 +485,48 @@ void main() {
     expect(TelemetryUploadService.maxUploadBodyBytes, 2000000);
   });
 
-  test('the Edge Function still accepts numeric schema-3 payloads', () {
+  test('the Edge Function delegates envelope and schema gating', () {
     final source = File(
       'supabase/functions/ingest-telemetry/index.ts',
     ).readAsStringSync();
+    final validator = File(
+      'supabase/functions/ingest-telemetry/validate.js',
+    ).readAsStringSync();
 
-    expect(source, contains('body.ingestionSchemaVersion !== 1'));
-    expect(source, contains('consent.manualSessionUpload !== true'));
+    // Auth and the machine-readable error catalogue are unchanged.
+    expect(source, contains("from './validate.js'"));
+    expect(source, contains('validateEnvelope(body)'));
+    expect(source, contains('isBodyTooLarge'));
+    expect(source, contains('publishableKeys.default'));
+    for (final error in const [
+      'unauthorized',
+      'payload_too_large',
+      'invalid_telemetry_payload',
+      'unsupported_schema_version',
+      'database_write_failed',
+      'server_configuration_error',
+    ]) {
+      expect(source, contains("error: '$error'"), reason: error);
+    }
+    // Idempotency: one row per session, a replay only reports it.
     expect(
       source,
-      contains(
-        "['image', 'images', 'deviceId', 'technicalDetail', 'path', 'utterance']",
-      ),
+      contains("onConflict: 'participant_code,client_session_id'"),
     );
-    expect(source, contains("typeof telemetry.schemaVersion !== 'number'"));
-    // The numeric-type guard is the only permitted schemaVersion comparison.
-    // Any literal comparison would start requiring an exact schema and reject
-    // the older exports that must still parse.
-    final withoutTypeGuard = source.replaceAll(
-      "typeof telemetry.schemaVersion !== 'number'",
-      '',
-    );
-    expect(
-      withoutTypeGuard,
-      isNot(matches(RegExp(r'\bschemaVersion\s*(===|!==|==|!=)'))),
-      reason: 'the Edge Function must not require an exact telemetry schema',
-    );
+    expect(source, contains('ignoreDuplicates: true'));
+    expect(source, contains('duplicated: true'));
+    // Schema gating is a membership test, so a re-exported schema-3 payload
+    // stamped 4 is still accepted: the row shape is never inferred from the
+    // header. A literal comparison would reject those exports.
+    expect(validator, contains('SUPPORTED_SCHEMA_VERSIONS = [3, 4]'));
+    expect(source, isNot(contains('schemaVersion ===')));
     // The whole telemetry object is stored as JSONB, so schema 3 needs no
     // migration.
-    expect(source, contains('payload: telemetry'));
+    expect(source, contains('payload: envelope.telemetry'));
+    // The forbidden-key list lives in the validator, matched by exact name.
+    expect(validator, contains("'screenshots'"));
+    expect(validator, contains("'technicalDetail'"));
+    expect(validator, contains("ALLOWED_KEYS = new Set(['frameNumber'])"));
   });
 
   test('metadata excludes unsafe participant identifiers', () {
@@ -508,5 +538,111 @@ void main() {
       ).isValid,
       isFalse,
     );
+  });
+
+  group('a non-2xx answer maps to a distinct, actionable failure', () {
+    Future<TelemetryUploadResult> uploadAnswering(
+      int statusCode, {
+      String? body,
+      TelemetryService? localTelemetry,
+    }) {
+      final service = localTelemetry ?? telemetry();
+      return TelemetryUploadService(
+        configuration: const TelemetryUploadConfiguration(
+          ingestUrl:
+              'https://example.supabase.co/functions/v1/ingest-telemetry',
+          publishableKey: 'publishable-key',
+        ),
+        exportService: TelemetryExportService(clock: () => now),
+        clock: () => now,
+        sender: (_) async => TelemetryUploadResponse(statusCode, body),
+      ).upload(telemetry: service, metadata: metadata);
+    }
+
+    test('401 and 403 report an authorisation failure', () async {
+      for (final status in const [401, 403]) {
+        final result = await uploadAnswering(status);
+        expect(result.isSuccess, isFalse, reason: 'status $status');
+        expect(result.errorMessage, contains('not authorised'));
+        expect(result.errorMessage, contains('local export'));
+      }
+    });
+
+    test('400 unsupported_schema_version reports a format mismatch', () async {
+      final result = await uploadAnswering(
+        400,
+        body: '{"error":"unsupported_schema_version","supported":[3,4]}',
+      );
+      expect(result.isSuccess, isFalse);
+      expect(
+        result.errorMessage,
+        contains('telemetry format the research server does not accept'),
+      );
+    });
+
+    test('a plain-text 400 body still finds the schema code', () async {
+      final result = await uploadAnswering(
+        400,
+        body: 'unsupported_schema_version',
+      );
+      expect(
+        result.errorMessage,
+        contains('telemetry format the research server does not accept'),
+      );
+    });
+
+    test(
+      '400 invalid_telemetry_payload reports a validation failure',
+      () async {
+        final result = await uploadAnswering(
+          400,
+          body: '{"error":"invalid_telemetry_payload"}',
+        );
+        expect(result.isSuccess, isFalse);
+        expect(
+          result.errorMessage,
+          contains('rejected this session as invalid'),
+        );
+        expect(
+          result.errorMessage,
+          isNot(
+            contains('telemetry format the research server does not accept'),
+          ),
+        );
+      },
+    );
+
+    test('413 reuses the local size message', () async {
+      final result = await uploadAnswering(
+        413,
+        body: '{"error":"payload_too_large"}',
+      );
+      expect(result.isSuccess, isFalse);
+      expect(result.errorMessage, contains('too large to upload'));
+      expect(result.errorMessage, contains('local export'));
+    });
+
+    test('5xx reports a server failure and keeps the session', () async {
+      final localTelemetry = telemetry();
+      populateEveryRecordType(localTelemetry);
+      final result = await uploadAnswering(
+        500,
+        body: '{"error":"database_write_failed"}',
+        localTelemetry: localTelemetry,
+      );
+      expect(result.isSuccess, isFalse);
+      expect(result.errorMessage, contains('server could not accept'));
+      expect(localTelemetry.totalDetections, 1);
+      expect(localTelemetry.samples, hasLength(1));
+      expect(localTelemetry.alertRecords, hasLength(1));
+    });
+
+    test('a 200 duplicated replay is a success', () async {
+      final result = await uploadAnswering(
+        200,
+        body: '{"accepted":true,"duplicated":true}',
+      );
+      expect(result.isSuccess, isTrue);
+    });
   });
 }
