@@ -151,6 +151,18 @@ YOLOStreamingConfig buildStreamingConfig({
   depthIntervalMs: mdeEnabled ? cadence.depthInterval?.inMilliseconds : null,
 );
 
+/// Whether a heatmap should be constructed at all: MDE on and the overlay on.
+///
+/// Pure so the presentation→construction gate is testable without a camera. It
+/// deliberately ignores staleness: freshness only decides whether the map is
+/// shown, and gating construction on it would need the very frame the gate
+/// governs (a hidden heatmap would then never be rebuilt).
+@visibleForTesting
+bool heatmapRequested({
+  required bool mdeEnabled,
+  required bool showDepthHeatmap,
+}) => mdeEnabled && showDepthHeatmap;
+
 /// Depth status recorded with a telemetry sample.
 ///
 /// `disabled` wins when depth work is off; the model state then decides
@@ -436,6 +448,19 @@ class _UltralyticsDetectionScreenState
     _controller.setStreamingConfig(_streamingConfig);
   }
 
+  /// Builds heatmaps only while the overlay is on screen.
+  ///
+  /// Presentation-only: the depth tick, its cadence and the streaming-config key
+  /// are untouched, so toggling the heatmap never restarts the camera or stops
+  /// depth inference. While it is off a frame carries the grid alone, which
+  /// keeps distance estimation and the box layer working.
+  void _syncHeatmapGate() {
+    _depth.heatmapEnabled = heatmapRequested(
+      mdeEnabled: _mdeEnabled,
+      showDepthHeatmap: _settings.showDepthHeatmap,
+    );
+  }
+
   /// Loads the depth model (once) so its instance id can reach the native tick,
   /// then re-syncs the config. Bounding-box mode passes a null instance, which
   /// stops the tick immediately.
@@ -455,6 +480,7 @@ class _UltralyticsDetectionScreenState
       depthInstanceId: _depthInstanceId,
     );
     _lastDistanceMode = _settings.distanceEstimationMode;
+    _syncHeatmapGate();
     _settings.addListener(_handleSettingsChanged);
     _depth.frame.addListener(_handleDepthFrame);
     _depth.state.addListener(_handleDepthStateChanged);
@@ -619,6 +645,7 @@ class _UltralyticsDetectionScreenState
   void _handleSettingsChanged() {
     final modeChanged = _settings.distanceEstimationMode != _lastDistanceMode;
     _lastDistanceMode = _settings.distanceEstimationMode;
+    _syncHeatmapGate();
     if (modeChanged && !_mdeEnabled) {
       // Bounding-box mode stops depth inference entirely.
       _depth.stop();

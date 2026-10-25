@@ -1,4 +1,6 @@
+import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/screens/ultralytics_detection_screen.dart';
+import 'package:eyecue_flutter/services/inference_cadence.dart';
 import 'package:eyecue_flutter/theme/app_home_theme.dart';
 import 'package:eyecue_flutter/widgets/depth_heatmap_view.dart';
 import 'package:eyecue_flutter/widgets/detection_information_overlay.dart';
@@ -75,6 +77,82 @@ void main() {
       expect(state.heatmapVisible, isFalse);
       expect(state.nativeOverlays, isFalse);
       expect(state.flutterBoxes, isFalse);
+    });
+
+    test('the heatmap and the boxes toggle independently', () {
+      for (final heatmap in [false, true]) {
+        for (final boxes in [false, true]) {
+          final state = DepthOverlayState.resolve(
+            mdeEnabled: true,
+            showDepthHeatmap: heatmap,
+            showBoundingBoxes: boxes,
+            heatmapFresh: true,
+          );
+          final reason = 'heatmap=$heatmap boxes=$boxes';
+          expect(state.heatmapVisible, heatmap, reason: reason);
+          // Boxes are drawn by whichever layer owns them, never turned off by
+          // the heatmap toggle and never left on by hiding them.
+          expect(
+            state.flutterBoxes || state.nativeOverlays,
+            boxes,
+            reason: reason,
+          );
+        }
+      }
+    });
+  });
+
+  group('heatmap construction gate', () {
+    test('only MDE on plus the heatmap toggled on builds a heatmap', () {
+      expect(
+        heatmapRequested(mdeEnabled: true, showDepthHeatmap: true),
+        isTrue,
+      );
+      expect(
+        heatmapRequested(mdeEnabled: true, showDepthHeatmap: false),
+        isFalse,
+      );
+      expect(
+        heatmapRequested(mdeEnabled: false, showDepthHeatmap: true),
+        isFalse,
+      );
+      expect(
+        heatmapRequested(mdeEnabled: false, showDepthHeatmap: false),
+        isFalse,
+      );
+    });
+
+    test('the heatmap toggle cannot change the streaming config key', () {
+      final resolved = InferenceCadence.resolve(
+        requestedDetectionHz: 15,
+        requestedDepthHz: 5,
+        lowPowerMode: false,
+        distanceEstimationMode: DistanceEstimationMode.monocularDepth,
+      );
+
+      // The toggle does change the gate ...
+      expect(
+        heatmapRequested(mdeEnabled: true, showDepthHeatmap: true),
+        isNot(heatmapRequested(mdeEnabled: true, showDepthHeatmap: false)),
+      );
+      // ... but it is not an input to the key (heatmap visibility only gates
+      // Dart-side construction), so both presentation states yield one key:
+      // no camera restart and no stopped depth tick.
+      final key = streamingConfigKey(
+        cadence: resolved,
+        mdeEnabled: true,
+        depthInstanceId: 'depth-instance',
+      );
+      expect(key.depthInstanceId, 'depth-instance');
+      expect(
+        streamingConfigKey(
+          cadence: resolved,
+          mdeEnabled: true,
+          depthInstanceId: 'depth-instance',
+        ),
+        key,
+        reason: 'only the cadence, the mode and the instance reach native',
+      );
     });
   });
 
