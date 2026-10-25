@@ -1,4 +1,4 @@
-package com.example.eyecue_flutter
+package app.eyecue.mobile
 
 import io.flutter.embedding.android.FlutterActivity
 
