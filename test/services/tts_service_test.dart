@@ -1148,7 +1148,9 @@ void main() {
       expect(counters.last.failedAfterStart, 1);
       expect(counters.last.reconciliationTimeout, 1);
       expect(counters.last.watchdogRecovery, 1);
-      expect(await pending, isFalse);
+      // The caller future reports the confirmed-start flag, so an utterance
+      // that did start resolves true; its failure is the record/counters above.
+      expect(await pending, isTrue);
     });
 
     test('a late result after the terminal publishes its counter', () async {
