@@ -35,6 +35,7 @@ what was measured, what was **not** verified, and one classification.
 | **L10 permission removal + licence/notices/privacy/checklist** | **`8766586`, `842d38b`** | **PASS_WITH_NOTES for `8766586`; CHANGES_REQUIRED (LOW, docs only) for `842d38b` — backlog review** |
 | **L11 final readiness report** | **`f1ff670`** | **PASS_WITH_NOTES (backlog review)** |
 | **B secure telemetry transport** | **the commit carrying this row** | **implementer summary — no reviewer verdict yet (no self-approval)** |
+| **F primary gesture defects: commit-on-release, whole-main-area Detection region, second-pointer invalidation** | **`6a0fe65`** | **implementer summary — no reviewer verdict yet (no self-approval)** |
 
 ### 2.1 Source histories incorporated
 
