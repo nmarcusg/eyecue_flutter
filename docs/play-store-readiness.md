@@ -184,8 +184,8 @@ item as `DONE`.
 | --- | --- | --- | --- | --- | --- | --- |
 | L0 baseline ledger | Record consolidation base, measured baseline, root-cause findings and gates in this document | — | DONE | `a8e0571` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST` |
 | L1a vendored plugin + reviewer notes | Replace the hosted `ultralytics_yolo` pin with the in-tree path dependency and apply the 7 L0 reviewer findings to this document | L0 | DONE | `d5390d4` | PASS_WITH_NOTES | `CONFIRMED-BY-INSPECTION`, `CONFIRMED-BY-TEST`, `CONFIRMED-BY-BUILD` |
-| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (grid ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` (`3f81cc3` docs; remediation `15fcf39`, `2540470`, `79eb9c0`) | round 1 on `fcf4cd0`/`63131d5`/`3f81cc3` → CHANGES_REQUIRED (4 major/5 minor/2 nit); round 2 on `15fcf39`/`2540470` → CHANGES_REQUIRED (8 of 9 fixed, 4 open); round 3 remediation `79eb9c0`, re-review pending | `CONFIRMED-BY-INSPECTION` (grid arithmetic, `depthMaxDim` wiring, pause→failure→resume order), `CONFIRMED-BY-TEST` (payload key set/shape), `CONFIRMED-BY-BUILD` (vendored Kotlin compiles) |
-| L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
+| L1 native shared-frame MDE transport | Stop JPEG-encoding and re-decoding the analysis frame; run depth on the analysis frame inside the view and emit a compact block-mean grid (grid ≤ 36 864 bytes) | L0, L1a | DONE | `63131d5` (`3f81cc3` docs; remediation `15fcf39`, `2540470`, `79eb9c0`) | round 1 on `fcf4cd0`/`63131d5`/`3f81cc3` → CHANGES_REQUIRED (4 major/5 minor/2 nit); round 2 on `15fcf39`/`2540470` → CHANGES_REQUIRED (8 of 9 fixed, 4 open); round 3 remediation `79eb9c0` -> PASS_WITH_NOTES (docs `2540470`, `614a6ca`); 2 minors carried to L2 | `CONFIRMED-BY-INSPECTION` (grid arithmetic, `depthMaxDim` wiring, pause→failure→resume order), `CONFIRMED-BY-TEST` (payload key set/shape), `CONFIRMED-BY-BUILD` (vendored Kotlin compiles) |
+| L2 compact depth payload + heatmap gating | Replace the dense Float32 depth return with a compact payload; build the heatmap only when it is displayed | L1 | DONE | `ca35e75` | `CONFIRMED-BY-TEST` (heatmap builder not invoked while hidden, re-enable rebuilds, disable disposes through `Image.debugDisposed`, degraded interleaving, boxes/heatmap independence, `streamingConfigKey` heatmap-agnostic), `CONFIRMED-BY-BUILD` (debug APK, vendored Kotlin recompiled), `CONFIRMED-BY-INSPECTION` (native colourisation/bitmap skip, `DepthMap.image` consumer list, screen wiring). `CONFIRMED-ON-DEVICE` is still required for the frame-time effect |
 | L3 MDE enable/disable resource lifecycle | Release the depth model when MDE is turned off, not just the scheduler | L1 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
 | L4 accelerator policy + stage timings | Deterministic CPU/GPU selection with fallback, and per-stage inference timings | L2 | PENDING | — | — | `CONFIRMED-BY-TEST`, `CONFIRMED-ON-DEVICE` (required) |
 | L5 telemetry perf fields + schema v4 | Carry cadence and stage-timing fields into the telemetry payload and bump the payload schema | L4 | PENDING | — | — | `CONFIRMED-BY-TEST` (required) |
@@ -359,7 +359,7 @@ contract (key set, rejection of `values`/`originalImage`, failure marker shape),
 | 6.2 encodes discarded by the estimator | closed — there is no Dart-side frame slot any more |
 | 6.3 Android → Dart → Android round trip | closed — the depth instance runs on the analysis bitmap inside the view |
 | 6.4 dense `Float32` depth map per frame | closed for the stream — the event carries a block-mean grid (`depthGrid`), `values` is not allocated on the tick path (`includeRawData = false`) and is never serialized |
-| 6.5 heatmap built unconditionally | **open** — L2 |
+| 6.5 heatmap built unconditionally | closed by L2 (`ca35e75`) — the estimator builds an RGBA buffer and a `ui.Image` only while the overlay asks for one, and the native streaming path no longer colourises the crop or allocates the ARGB bitmap at all |
 | 6.6 MDE off does not release the model | **open** — L3 |
 
 Transport facts (`CONFIRMED-BY-INSPECTION`): the interval and the in-flight guard are
@@ -409,6 +409,59 @@ its primary grid fixture is the production 4:3 stream (640×480 → 96×72), wit
 it cannot catch a regression in `DepthEstimator.blockMeanGrid`, so the aspect guarantee
 itself is `CONFIRMED-BY-INSPECTION` (see the payload fact above).
 
+### 6.10 L2 outcome (`ca35e75`)
+
+**Native (`DepthEstimator.postProcessDepth`).** When `includeRawMaskData` is false — exactly the
+native stream, which already skips the dense `values` copy — the crop is no longer colourised:
+`colorizeDepth` (the LUT pass that also wrote the persistent `colorPixels` `IntArray`) is not
+called, `Bitmap.createBitmap(...ARGB_8888)` (≈0.8 MB at 518×389 per inference) is not allocated,
+and `DepthMap.image` stays `null`. `minDepth`/`maxDepth` come from a single scan
+(`depthRange`) that applies the same predicate as the colouriser (`isfinite && > 0`), and a crop
+with no valid sample still fails with the same `error("Depth output contains no valid values")`.
+The still-image/overlay path (`includeRawMaskData = true`) is unchanged: same `colorizeDepth`
+call, same bitmap, same `values`.
+
+Every `DepthMap.image` consumer checked before making it null on this path
+(`grep -rn "depthMap\\?\\.image\\|depthMap?.image" plugins/ultralytics_yolo`): `YOLO.kt:405`
+(`drawAnnotations` DENSE MAPS arm — not reached on the tick, which passes
+`drawOverlays = false`), `YOLOView.kt:1935` (the view's own overlay for its detection task, not
+the depth instance), and no Dart consumer: `YOLODepthMap.fromMap` in
+`plugins/ultralytics_yolo/lib/models/yolo_result.dart:297` reads only the numeric fields.
+`YOLOPlugin.kt:295` and `YOLOView.kt:2414` serialise `requireNotNull(depthMap.values)`, not the
+image, and both sit on the dense (`includeRawMaskData = true`) paths, which keep `values`.
+
+**Dart (`MonocularDepthEstimator`).** A settable `heatmapEnabled` gates construction: while it is
+false `_publish` never calls the builder (`heatmapBuilder ?? _buildHeatmap`), the frame carries
+`heatmap: null`, and the grid plus all distance sampling is unchanged. Disabling drops the held
+image (a heatmap-less copy replaces the frame, then `ui.Image.dispose()`), so the GPU texture is
+released and no stale overlay can be shown. Re-enabling makes the very next frame carry a
+heatmap; a builder that completes after the toggle is disowned. The screen sets the flag from
+`heatmapRequested(mdeEnabled, showDepthHeatmap)` in `initState` and
+`_handleSettingsChanged`, so the toggle is presentation-only: the streaming-config key does not
+contain it, the camera is not restarted and the depth tick keeps running.
+
+Freshness is deliberately **not** part of the gate. `DepthOverlayState.resolve` already hides a
+stale heatmap for display; gating construction on it would need the frame the gate governs, so a
+hidden heatmap could never be rebuilt.
+
+**Degraded guard.** `_publish` only publishes `ready` when the state is not `degraded`, so a good
+frame in flight when an `error` event lands can no longer re-arm the instance id and clear the
+native latch. `loading`/`idle` transitions are untouched, and a successful frame after `retry()`
+still publishes `ready`.
+
+**Evidence.** `CONFIRMED-BY-TEST`: four new cases in
+[`test/services/monocular_depth_estimator_test.dart`](../test/services/monocular_depth_estimator_test.dart:270)
+(builder count 0 while hidden with a valid grid; re-enable rebuilds; disable disposes and keeps
+the grid; the frame-in-flight/degrade interleaving) and three in
+[`test/screens/depth_overlay_state_test.dart`](../test/screens/depth_overlay_state_test.dart:81)
+(the gate truth table, the key staying heatmap-agnostic, boxes/heatmap independence over all four
+combinations). Verification on `ca35e75`: `dart format` clean, `flutter analyze` 4 issues / 0
+errors (all pre-existing), `flutter test` 541 passing + the 1 known pre-existing TTS failure,
+targeted suite 46/46, `flutter build apk --debug` exit 0 — Gradle `assembleDebug` 26.5 s
+(31.0 s wall), which recompiled the vendored Kotlin. `CONFIRMED-BY-INSPECTION` covers the native
+skip (no Kotlin test source set) and the per-frame cost that is skipped; the wall-clock saving on
+a device is still `CONFIRMED-ON-DEVICE`-only and unmeasured.
+
 ## 7. External gates register
 
 Gates that cannot be closed inside this repository. Each row names a single
@@ -442,7 +495,10 @@ other than the author of the commit being reviewed.
 | `a8e0571` | L0 baseline ledger | PASS_WITH_NOTES | 7 findings (5 minor/nit citation precision, 1 unlabelled claim, 1 cell-shape inconsistency); all applied in `e03bc36` | reviewer |
 | `fcf4cd0`, `63131d5`, `3f81cc3` | L1 native shared-frame MDE transport | CHANGES_REQUIRED | 4 major: (1) grid aspect broken — per-axis scaling forced every crop to 96×96; (2) a failing depth inference was invisible and never stopped; (3) `stop()` blocked the platform thread and interrupted in-flight inference; (4) per-tick full-frame annotation copy. 5 minor: non-volatile `depthExecutor`; out-of-order `_publish`; misleading `imageWidth`/`imageHeight`/`rotationDegrees` keys; grid built on the dense path too; tautological grid test. 2 nits: two drifted doc statements | reviewer |
 | `15fcf39` | L1 remediation of the findings above | CHANGES_REQUIRED (round 2: 8 of 9 fixed, 4 open) | Finding → fix map: MAJOR-1 single scale from the longest side in `DepthEstimator.kt:135` (640×360 → 96×54); MAJOR-2 one-shot `{type: depth, error: inference_failed}` event + `depthDisabled` latch (`YOLOView.kt:1659`) mapped to `_degrade()` in `monocular_depth_estimator.dart:144`; MAJOR-3 `shutdown()` only, never `shutdownNow()`/`awaitTermination` (`YOLOView.kt:2567`); MAJOR-4 `drawOverlays = false` on the depth tick (`YOLO.kt:75`, `YOLOView.kt:1622`); MINOR-5 `@Volatile depthExecutor` + create/teardown lock (`YOLOView.kt:173`, `:1598`); MINOR-6 single-in-flight publish guard (`monocular_depth_estimator.dart:100`, `:163`); MINOR-7 `rotationDegrees` removed, `imageWidth`/`imageHeight` = analysed bitmap dims (`YOLOView.kt:1672`, `yolo_result.dart:399`); MINOR-8 grid only when `!includeRawMaskData` (`DepthEstimator.kt:130`); MINOR-9 portrait + landscape payload-shape tests (`depth_payload_parity_test.dart:204`, `:213`) | reviewer |
-| `79eb9c0` | L1 remediation round 2 — the four findings left open by the round-2 review | pending re-review | NEW-1 `YOLOInstanceManager.predictorInstance(instanceId): Predictor?` (was `Unit`) and `gridMaxDim = config.depthMaxDim` applied to the resolved `DepthEstimator` on the tick path, with a one-shot `Log.w` instead of a swallowing `runCatching`; compiled artefact checked with `javap` (`public final com.ultralytics.yolo.Predictor predictorInstance(java.lang.String)`). NEW-2 `depthDisabled = false` in `pauseCamera()` and the Dart depth handler now maps an `error` event before its `_paused`/`!_detectionActive` early return, so pause → failure → resume ends in a visible `degraded` state. NEW-3/MINOR-9 primary fixture is the production 4:3 stream (640×480 → 96×72), the impossible 360×640 case is gone, and the aspect guarantee is relabelled `CONFIRMED-BY-INSPECTION`. NIT `private val depthLock = Any()` replaces both `synchronized(this)` blocks. | reviewer |
+| `79eb9c0` | L1 remediation round 2 — the four findings left open by the round-2 review | PASS_WITH_NOTES | NEW-1 `YOLOInstanceManager.predictorInstance(instanceId): Predictor?` (was `Unit`) and `gridMaxDim = config.depthMaxDim` applied to the resolved `DepthEstimator` on the tick path, with a one-shot `Log.w` instead of a swallowing `runCatching`; compiled artefact checked with `javap` (`public final com.ultralytics.yolo.Predictor predictorInstance(java.lang.String)`). NEW-2 `depthDisabled = false` in `pauseCamera()` and the Dart depth handler now maps an `error` event before its `_paused`/`!_detectionActive` early return, so pause → failure → resume ends in a visible `degraded` state. NEW-3/MINOR-9 primary fixture is the production 4:3 stream (640×480 → 96×72), the impossible 360×640 case is gone, and the aspect guarantee is relabelled `CONFIRMED-BY-INSPECTION`. NIT `private val depthLock = Any()` replaces both `synchronized(this)` blocks. | reviewer |
+
+| `79eb9c0`, `2540470`, `614a6ca` | L1b final verdict — the accepted stack (3 review rounds) | PASS_WITH_NOTES | L1b accepted: round 3 cleared NEW-1/NEW-2/NEW-3 and the `depthLock` nit (see the `79eb9c0` row above); `2540470` and `614a6ca` carry the remediation sha and the round-2 review log. Two minors were carried forward and are **resolved in L2 (`ca35e75`)**: (1) the streaming path still colourised the full crop and allocated an ARGB bitmap nothing read; (2) `_publish` published `ready` unconditionally, so a good frame in flight could flip `degraded` back to `ready` and clear the native latch. Also noted and **not** fixed here: `_retryDepth` never calls `_armDepth()` (pre-existing since `1e4b54e`) — **handed to L3** | reviewer |
+| `ca35e75` | L2 heatmap gating + unused depth work | pending review | Implementation only; no self-approval (rule above). Scope: native `postProcessDepth` skips colourisation + bitmap on the `!includeRawMaskData` path, Dart `heatmapEnabled` gate with image disposal, `_publish` degraded guard, 7 new tests, docs. Evidence: `flutter test` 541 + 1 known TTS failure, targeted 46/46, `flutter analyze` 4 / 0 errors, `flutter build apk --debug` exit 0 (Gradle 26.5 s) | reviewer (pending) |
 
 ## 10. Rollback instructions
 

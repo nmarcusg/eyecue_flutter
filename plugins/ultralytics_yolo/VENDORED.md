@@ -155,14 +155,30 @@ not cover this directory, see above).
 
 ### 7. `DepthEstimator.kt`
 
-- **Deviation:** `var gridMaxDim: Int = DEFAULT_GRID_MAX_DIM` (96) and
-  `blockMeanGrid(...)`; `postProcessDepth` builds the grid **only** when
-  `includeRawMaskData` is false (the native-stream case), keeps the crop and
-  `minDepth`/`maxDepth` exactly as before, and leaves `values` gated on
-  `includeRawMaskData` as upstream does.
+- **Deviation:** `var gridMaxDim: Int = DEFAULT_GRID_MAX_DIM` (96), `blockMeanGrid(...)`
+  and `depthRange(...)`; `postProcessDepth` builds the grid **only** when
+  `includeRawMaskData` is false (the native-stream case). On that same path it also skips
+  `colorizeDepth` and the `Bitmap.createBitmap(colorPixels, width, height, ARGB_8888)`
+  allocation (~0.8 MB at a 518×389 crop) and never resizes the reusable `colorPixels`
+  `IntArray`, so `DepthMap.image` stays `null`; `minDepth`/`maxDepth` come from
+  `depthRange`, which applies the colouriser's own predicate (`isfinite && > 0`) to the
+  same crop, and a crop with no valid sample still fails with the same
+  `error("Depth output contains no valid values")`. `values` stays gated on
+  `includeRawMaskData` as upstream does, and the still-image/overlay path
+  (`includeRawMaskData = true`) keeps the upstream `colorizeDepth` call, the bitmap and
+  the dense `values` byte-for-byte.
 - **Why:** computing the block means straight from the model output avoids allocating a
-  ~1.6 MB `FloatArray` per inference, and gating them off the dense path keeps the upstream
-  still-image caller free of the extra pass and the allocation.
+  ~1.6 MB `FloatArray` per inference, gating them off the dense path keeps the upstream
+  still-image caller free of the extra pass and the allocation, and the stream reads only
+  `grid`/`minDepth`/`maxDepth` — so the colourisation pass and the ARGB bitmap it wrote
+  were pure waste on the per-tick path.
+- **`DepthMap.image` consumers (checked when it became nullable on this path):**
+  `YOLO.kt:405` and `YOLOView.kt:1935` are the two `depthMap?.image` reads, both
+  null-safe `?.let`, and neither runs for the depth instance (the tick passes
+  `drawOverlays = false` and never routes its result through the view overlay).
+  `YOLOPlugin.kt:295` and `YOLOView.kt:2414` serialise `requireNotNull(depthMap.values)`,
+  not the image, and sit on the dense paths that keep `values`. No Dart consumer exists:
+  `YOLODepthMap.fromMap` reads only the numeric fields.
 - **`gridMaxDim` is applied from the config.** `YOLOView.maybeRunDepthTick` resolves the
   instance's predictor (`YOLOInstanceManager.predictorInstance`, deviation 4) and assigns
   `gridMaxDim = config.depthMaxDim` on every tick before the inference, so a non-default
@@ -181,9 +197,11 @@ not cover this directory, see above).
   is handed, not the maths above. The aspect guarantee is `CONFIRMED-BY-INSPECTION` only;
   a real-device capture or a JVM/Robolectric test of `blockMeanGrid` is required before any
   payload-size or `depthMaxDim` tuning is claimed as measured.
-- **On upgrade:** re-add the field, the helper and the grid fields on the returned
-  `DepthMap`; keep the single-scale aspect math, the 0.1–80 m valid-range filter and the
-  NaN-for-empty-block rule.
+- **On upgrade:** re-add the field, both helpers and the grid fields on the returned
+  `DepthMap`; keep the single-scale aspect math, the 0.1–80 m valid-range filter, the
+  NaN-for-empty-block rule, and the split that keeps colourisation + bitmap (and the
+  `error(...)` on an empty crop) on the `includeRawMaskData` path only, with `depthRange`
+  using the identical `isfinite && > 0` predicate.
 
 ### 8. `YOLO.kt`
 
