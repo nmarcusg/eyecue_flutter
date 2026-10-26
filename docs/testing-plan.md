@@ -105,7 +105,8 @@ migration and the function's own TypeScript are still not executed anywhere
 - [x] All tested interactive elements have TalkBack labels — broad semantics coverage is automated; device TalkBack validation remains manual
 - [ ] Gesture controls work (double-tap, swipe)
 - [ ] Primary gesture navigation works on-device — automated coverage is complete (`CONFIRMED-BY-TEST`, `6a0fe65`: commit-on-release, whole-main-area Detection region, second-pointer invalidation); this checkbox is the **device gate only** — the committed feel, haptic/TTS timing and TalkBack interaction still need one physical Android pass. See [`known-issues.md`](known-issues.md)
-- [x] Safety disclosure is reachable and understandable with TalkBack — automated semantics coverage exists (one heading node, five body nodes in reading order, no duplicate announcements at 200 % text scale); the first-use acknowledgement and the Help section still need one physical TalkBack read-through
+- [x] Safety disclosure semantics are complete for TalkBack — automated only (`CONFIRMED-BY-TEST`): one heading node read before the five body nodes, in reading order, with no duplicate announcement at 200 % text scale, for both the Help section and the first-use acknowledgement
+- [ ] Safety disclosure is understandable in one physical TalkBack read-through — **device gate only**, not covered by the automation above; the read-through is still owed
 - [ ] High-contrast mode is readable
 - [ ] App is fully navigable without vision
 

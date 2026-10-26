@@ -90,6 +90,12 @@ The MDE and telemetry histories are joined by merge commit `2722a7b`.
 | `d28baa4` | PASS_WITH_NOTES (backlog review) |
 | the commit carrying this row | no separate reviewer row (B secure telemetry transport; the implementer summary in §2 stands until it is reviewed) |
 | the commit carrying the G row | no separate reviewer row (G accessible safety disclosure; the implementer summary in the G row of [`play-store-readiness.md`](play-store-readiness.md) §5 stands until it is reviewed) |
+| `3a41366` | PASS_WITH_NOTES (I — Detection gesture region; verdict in [`play-store-readiness.md`](play-store-readiness.md) §9) |
+| `a5ec498` | CHANGES_REQUIRED (J — the launch policy ran behind the unacknowledged disclosure) → remediated in `3eafed0`; no reviewer row for the remediation yet |
+| `5ad07bf`, `fc2e948`, `5c78769` | PASS (K — application ID, licence, generated icons) |
+| `30d340f` | PASS_WITH_NOTES (K — store material documents; the notes are the reconciliation in the docs commit after `3eafed0`) |
+| `3eafed0` | no separate reviewer row yet (remediation of the `a5ec498` finding, §16.1) — review is the next stage, no self-approval |
+| the docs commit after `3eafed0` | no separate reviewer row yet (document reconciliation of items 4–9 of the final remediation pass, §16) |
 
 Reviewer-log note: `f1ff670` (this commit) is an amendment of `8c69a28`, which was
 itself an amendment of `a77024c`. All three were local and unpushed, and both
@@ -138,10 +144,14 @@ Signing status: `apksigner verify --print-certs` →
 debug-signed bundle. Both earlier digests (`feaab199…`, `99ac0da9…` at `870c24e`)
 are superseded by these and are no longer valid for any file in the tree.
 
-These two digests are **reproducible on this host for this tree**: the final
+These two digests were **reproducible on this host for that tree**: the final
 verification pass re-ran both builds (and re-marked the APK) and both files came
 back byte-identical, with the same sha256 values and the same 8-permission
 manifest.
+
+**Both are now superseded** — the safety fix `3eafed0` and (for the earlier pair)
+the generated icons in `5c78769` changed the build input. The current artefacts, their
+digests, build times and 16 KB alignment evidence are in §16.4–§16.5.
 
 ## 5. Bundle inspection
 
@@ -252,7 +262,7 @@ field, so dashboard compatibility is unchanged by this run.
 | 4 | Every artefact is debug-signed; Play will refuse it |
 | 5 | AGPL-3.0 obligations — for the app's own code, the vendored plugin and the models — are unanalysed by counsel |
 | 6 | Data Safety answers cannot all be given truthfully yet (no retention policy, no deletion process). The former third clause — `https` not enforced — is closed: the client validates the ingest endpoint and refuses any non-`https` scheme (see the B row in [`play-store-readiness.md`](play-store-readiness.md) §5) |
-| 7 | `flutter test` carries one known failing TTS test; a real regression there would not be distinguishable from it |
+| 7 | ~~`flutter test` carries one known failing TTS test~~ — **closed**: `8595c47` aligned the test with the caller-future contract, and the final pass ran that file 10 consecutive times green (§16.3) |
 | 8 | Dashboard contract verified only in the separate repository, not deployed |
 | 9 | `applicationId` is the owner-approved final `app.eyecue.mobile`; `auditor.md`, `chat_spec.md` and the dated audit documents still quote the historical `com.example.eyecue_flutter` (time-stamped snapshots, deliberately not rewritten) |
 | 10 | The APK `-testsigned` name depends on the manual `markTestSignedApk` task: `flutter build apk --release` alone still yields a plain-named, debug-signed `app-release.apk`. The AAB, which is what Play consumes, is renamed automatically by `bundleRelease` |
@@ -305,8 +315,8 @@ or published commit rewritten, no stash created or dropped, no external system
 **`CODE_READY_WITH_EXTERNAL_GATES`**
 
 The release engineering work is complete and measured: the tree formats, analyses
-with 0 errors and 2 pre-existing warnings (§3), passes 589 of 590 tests (the single
-failure is the known pre-existing TTS test), builds both release artefacts
+with **0 issues** and passes **653 of 653** tests (§16.3 — the §3 numbers are the
+L10/L11 snapshot, superseded by the final pass), builds both release artefacts
 reproducibly enough to inspect, and now declares eight permissions with the three
 unused ones removed and
 proved absent by `aapt2`. Everything that remains cannot be produced from inside
@@ -323,3 +333,133 @@ be submitted today: the artefact Play would receive is debug-signed and would be
 rejected, startup has never run on a device, the privacy and Data Safety positions are
 undecided, and the AGPL-3.0 obligations the app now inherits have had no legal review.
 None of that is softened by the green checks in §3.
+
+## 16. Final remediation pass (2026-10-26)
+
+Recorded after the review round that returned `a5ec498` as CHANGES_REQUIRED and
+after the I/J/K store-material review. The only code commit in this pass is
+`3eafed0`; the documentation commits that follow it change no build input.
+
+### 16.1 The defect that was fixed
+
+`_applyLaunchPolicy()` in [`../lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart:186)
+ran in `initState`, before the first-use disclosure was scheduled. On a fresh install
+`autoStartDetection` defaults to `true`, so the launch start intent, the
+camera-permission prompt, a medium haptic and the "Detection started" speech all fired
+**behind** the unacknowledged modal — over the announcement the user was being asked to
+read, and before any consent to run the camera.
+
+The policy is now applied only when `safetyAcknowledged` is true: from `initState`
+when it was already persisted, otherwise from `onAcknowledge` after the acknowledgement
+is recorded. The new case `withholds the launch policy until the acknowledgement`
+drives a fresh `SettingsService` over the **real** pages (no `pagesOverride`): while the
+modal is up `pendingStartIntent` is null, the coordinator is `idle` and no haptic is
+emitted; after "I understand" exactly one `launch` intent exists and
+`EngineDetectionScreen` is cached offstage behind Home. The pre-fix build fails its
+first assertion. The shared suite `setUp` still pre-acknowledges, so the navigation
+cases keep one modal-free path.
+
+Also in `3eafed0`: the two stale "state-panel area" comments now state that the surface
+wraps the live viewport only (non-live panels and the depth notice are outside);
+[`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart:28) carries a
+`shortcut:` note that any interactive child added inside the wrapped subtree
+re-introduces tap→pause classification, backed by a new case asserting the live subtree
+holds no button or tappable; and the second-pointer case in
+[`../test/services/gesture_controller_test.dart`](../test/services/gesture_controller_test.dart:185)
+now moves the second pointer in *after* a committing move, so it fails against the
+pre-fix controller instead of passing by accident.
+
+### 16.2 Machine constraints this pass ran under
+
+7.6 GB RAM (≈2.4 GB available, 11 GB swap) and 6.1 GB free of 91 GB on `/home`
+(94 % used). Every Flutter test run used `flutter test --concurrency=2`; a higher
+concurrency has OOM-killed this host. **No Gradle setting was changed**: the tracked
+[`../android/gradle.properties`](../android/gradle.properties) keeps
+`-Xmx8G`, both release builds completed with it, and the file is unmodified in the
+tree — no local lowering and no restore was required.
+
+### 16.3 Re-measured verification
+
+| Check | Result |
+| --- | --- |
+| `flutter analyze` | **0 issues** (the 4 in §3 were fixed in `c07ea1e`/`8595c47`) |
+| `dart format --output=none --set-exit-if-changed lib test` | 106 files, 0 changed |
+| `flutter test --concurrency=2` | **653 passed, 0 failed** |
+| `test/services/tts_service_test.dart`, 10 consecutive `--concurrency=1` runs | 10/10 green, no flake — the known failure recorded in §3 is closed |
+| `node --test supabase/functions/ingest-telemetry/validate.test.mjs` | 55/55 |
+| `git diff --check` | clean |
+
+§3 is the L10/L11 snapshot and is left as history; the numbers above are the final
+state.
+
+### 16.4 Artefacts rebuilt at `3eafed0`
+
+```sh
+flutter build appbundle --release              # Gradle bundleRelease 219.3 s (221.7 s wall)
+flutter build apk --release                    # Gradle assembleRelease  46.7 s ( 49.2 s wall)
+(cd android && ./gradlew markTestSignedApk)    # marks the APK (§3 of release-procedure.md)
+```
+
+| Artefact | Path | Size | sha256 |
+| --- | --- | --- | --- |
+| AAB | `build/app/outputs/bundle/release/app-release-testsigned.aab` | 78 762 272 B | `6425a1e5f6420935b32f547a965e5be5bc11b80dcdc9d0ef9a04caf8d0c0ec56` |
+| APK (inspection only) | `build/app/outputs/flutter-apk/app-release-testsigned.apk` | 91 345 913 B | `4df0f2c8a3b7767c5579dc059bd316d8903f9aab14b88afbe7a73bc5d526a573` |
+
+A second pair of builds in the same tree reproduced both files byte-for-byte
+(incremental: 15.1 s and 8.3 s Gradle), so the digests are reproducible for this tree.
+
+Superseded (kept as history, valid for no file in the tree): AAB
+`6d566ed416f7aa7fc2452f47b43fe80a872576bd8639ef2e67b9772e23ba22c6` (78 607 313 B) and
+APK `3c932ed4c2ef3b3057cf0653577a246128769145b08236caa507546a7c3d2974` (91 191 189 B).
+They were built before `5c78769` (generated icons) and `3eafed0`, which is also why
+this rebuild is ≈155 KB larger per artefact.
+
+### 16.5 16 KB page-size alignment (`targetSdk 36`)
+
+`zipalign -c -P 16 4 build/app/outputs/flutter-apk/app-release-testsigned.apk` →
+exit 0 (`16KB-ALIGNED-OK`). Per-library `LOAD` segment alignment from
+`readelf -lW` over the APK's libraries (the AAB carries byte-identical copies —
+md5-compared for all 29 files):
+
+| ABI | Libraries | `LOAD` align | Verdict |
+| --- | --- | --- | --- |
+| arm64-v8a | `libapp.so`, `libflutter.so` | `0x10000` | 16 KB aligned (64 KB, a multiple of 16 KB) |
+| arm64-v8a | `libc++_shared`, `libdartjni`, `libdatastore_shared_counter`, `libimage_processing_util_jni`, `libLiteRt`, `libLiteRtClGlAccelerator`, `libsurface_util_jni`, `libultralytics` | `0x4000` | 16 KB aligned |
+| x86_64 | `libapp.so`, `libflutter.so` | `0x10000` | 16 KB aligned |
+| x86_64 | the other eight | `0x4000` | 16 KB aligned |
+| armeabi-v7a | `libapp`, `libdartjni`, `libdatastore_shared_counter`, `libimage_processing_util_jni`, `libLiteRt`, `libsurface_util_jni`, `libflutter` | `0x4000` / `0x10000` | not applicable (32-bit ABI) |
+| armeabi-v7a | **`libc++_shared.so`, `libultralytics.so`** | `0x1000` | **4 KB — the only two libraries not 16 KB aligned** |
+
+**Every 64-bit library (arm64-v8a and x86_64) is 16 KB aligned**, which is what the
+Android 15+ 16 KB page-size requirement covers, and the packaged APK passes
+`zipalign -c -P 16`. The two 4 KB objects are `armeabi-v7a` (32-bit) only; 16 KB-page
+devices run the 64-bit split, so this is not a blocker. It is stated plainly rather
+than glossed: if `armeabi-v7a` were ever in scope for 16 KB, those two libraries would
+need to be rebuilt with that alignment.
+
+### 16.6 Bundle inspection at the new HEAD
+
+| Item | Observed |
+| --- | --- |
+| `applicationId` | `app.eyecue.mobile` |
+| Version | `versionCode='1'`, `versionName='1.0.0-testsigned'`; `minSdkVersion='24'`, `targetSdkVersion='36'`, `compileSdkVersion='36'` |
+| Permissions | **8** — `CAMERA`, `INTERNET`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED`, `app.eyecue.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (same set as L10; `RECORD_AUDIO`/`WRITE_EXTERNAL_STORAGE`/`READ_EXTERNAL_STORAGE` absent) |
+| Icons | manifest `android:icon` → `mipmap/ic_launcher`, `android:roundIcon` → `mipmap/ic_launcher_round`; `ic_launcher`, `ic_launcher_foreground`, `ic_launcher_monochrome`, `ic_launcher_round` each at mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi; adaptive XML present for both `ic_launcher` and `ic_launcher_round` (`anydpi-v26`) with `background`/`foreground`/`monochrome` |
+| Model assets | exactly `yolo26n-depth_w8a32.tflite` (5 474 749 B) and `yolov8n_int8_new_metadata.tflite` (3 483 114 B); `yolov8n.tflite`, `yolov8n_int8.tflite`, `yolov8n_int8_new.tflite` absent |
+| ABIs / native libs | `arm64-v8a`, `armeabi-v7a`, `x86_64` (no `x86`), 29 libraries; `libLiteRtClGlAccelerator.so` only on the two 64-bit ABIs |
+| Unwanted assets | no `docs/`, `tool/`, `test/` or `design-reference/` entry under `flutter_assets` (scan: 0 hits) |
+| R8 | enabled — `isMinifyEnabled = true` + `isShrinkResources = true`, `proguard-android-optimize.txt` + `proguard-rules.pro`; `BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map` (28 876 614 B) is bundled and `build/app/outputs/mapping/release/{mapping,usage,seeds}.txt` were written |
+| WorkManager/Room | `apkanalyzer dex packages --defined-only` still reports `C d 33 33 2268 androidx.work.impl.WorkDatabase_Impl` — the class is **defined**, with 33 methods |
+| Secret scan (decompressed) | `service_role` / `SUPABASE_SECRET` / `BEGIN PRIVATE KEY` / `eyJhbGciOi`: **0 hits** in the AAB and 0 in the APK |
+
+### 16.7 Still not verified
+
+* **Installed startup: `NOT VERIFIED` — device gate.** No device or AVD on this host;
+  the DEX evidence above is not a launch.
+* Both artefacts remain **debug-signed test artefacts** (`-testsigned`) — no keystore.
+* Data Safety (D3) is undecided; the legal review R1–R7 remains open; the privacy
+  policy URL does not exist.
+* The Supabase migration and ingest function have never been executed; the research
+  dashboard is a separate repository and is not deployed.
+* TalkBack read-through of the safety disclosure, and the device feel of the gesture
+  and start-up paths, are owed.

@@ -12,18 +12,27 @@ Related documents: [`privacy-and-data-safety.md`](privacy-and-data-safety.md)
 [`release-readiness-report.md`](release-readiness-report.md) (what is and is not
 verified), [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) (licensing).
 
-## 0. Prerequisites that are still open
+## 0. Prerequisites and gate status
+
+Decided — recorded so no later step re-litigates them (the owner decision register
+is [`play-store-readiness.md`](play-store-readiness.md) §8):
+
+| # | Decision | State |
+| --- | --- | --- |
+| D1 | Final `applicationId` | **DECIDED** — owner-approved `app.eyecue.mobile`; it cannot change after the first upload |
+| D2 | App licence | **DECIDED** — `AGPL-3.0-only`; text in [`../LICENSE`](../LICENSE) |
+
+Still open — these are the actual pre-submission gates:
 
 | # | Gate | State |
 | --- | --- | --- |
 | 1 | Production upload keystore + Play App Signing enrolment | **OWNER ACTION** — no keystore exists; every artefact so far is debug-signed (`-testsigned`) |
-| 2 | Final `applicationId` (D1) | **DECIDED** — owner-approved `app.eyecue.mobile`; it cannot change after the first upload |
-| 3 | App licence (D2) | **DECIDED** — `AGPL-3.0-only`; text in [`../LICENSE`](../LICENSE) |
-| 4 | Installed-startup verification on a real device | **NOT VERIFIED** — no device/AVD on the build host |
-| 5 | Privacy policy published at a public URL | **OWNER ACTION** — does not exist |
-| 6 | Legal review of AGPL-3.0 obligations | **OWNER ACTION** — items R1–R7 in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 |
+| 2 | Privacy / Data Safety answers (D3) | **OWNER DECISION** — undecided; §2 below is the answer sheet |
+| 3 | Installed-startup verification on a real device | **NOT VERIFIED** — no device/AVD on the build host |
+| 4 | Privacy policy published at a public URL | **OWNER ACTION** — does not exist |
+| 5 | Legal review of AGPL-3.0 obligations | **OWNER ACTION** — items R1–R7 in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 |
 
-Do not open a Play Console listing before item 1 is settled; items 4–6 determine
+Do not open a Play Console listing before gate 1 is settled; gates 2–5 determine
 what can honestly be *declared*.
 
 ## 1. Privacy policy
