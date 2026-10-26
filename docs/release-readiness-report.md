@@ -94,8 +94,9 @@ The MDE and telemetry histories are joined by merge commit `2722a7b`.
 | `a5ec498` | CHANGES_REQUIRED (J — the launch policy ran behind the unacknowledged disclosure) → remediated in `3eafed0`; no reviewer row for the remediation yet |
 | `5ad07bf`, `fc2e948`, `5c78769` | PASS (K — application ID, licence, generated icons) |
 | `30d340f` | PASS_WITH_NOTES (K — store material documents; the notes are the reconciliation in the docs commit after `3eafed0`) |
-| `3eafed0` | no separate reviewer row yet (remediation of the `a5ec498` finding, §16.1) — review is the next stage, no self-approval |
-| the docs commit after `3eafed0` | no separate reviewer row yet (document reconciliation of items 4–9 of the final remediation pass, §16) |
+| `3eafed0` | PASS (J remediation — the `a5ec498` finding, §16.1; verdict row in [`play-store-readiness.md`](play-store-readiness.md) §9) |
+| `1cda344` | PASS (document reconciliation of the final remediation pass, §16) |
+| `4a33839` | PASS (final rebuild and the measured evidence for it, §16.4) |
 
 Reviewer-log note: `f1ff670` (this commit) is an amendment of `8c69a28`, which was
 itself an amendment of `a77024c`. All three were local and unpushed, and both
@@ -355,9 +356,9 @@ is recorded. The new case `withholds the launch policy until the acknowledgement
 drives a fresh `SettingsService` over the **real** pages (no `pagesOverride`): while the
 modal is up `pendingStartIntent` is null, the coordinator is `idle` and no haptic is
 emitted; after "I understand" exactly one `launch` intent exists and
-`EngineDetectionScreen` is cached offstage behind Home. The pre-fix build fails its
-first assertion. The shared suite `setUp` still pre-acknowledges, so the navigation
-cases keep one modal-free path.
+`EngineDetectionScreen` is cached offstage behind Home. The pre-fix build fails its first
+launch-policy assertion. The shared suite `setUp` still pre-acknowledges, so the
+navigation cases keep one modal-free path.
 
 Also in `3eafed0`: the two stale "state-panel area" comments now state that the surface
 wraps the live viewport only (non-live panels and the depth notice are outside);
@@ -466,3 +467,45 @@ need to be rebuilt with that alignment.
   dashboard is a separate repository and is not deployed.
 * TalkBack read-through of the safety disclosure, and the device feel of the gesture
   and start-up paths, are owed.
+
+### 16.8 Final review — verdicts, corrections and accepted nits
+
+Verdicts for the three commits that close this pass: `3eafed0` **PASS** (J remediation —
+the launch policy is withheld until the disclosure is acknowledged), `1cda344`
+**PASS** (document reconciliation of this pass) and `4a33839` **PASS** (final rebuild and
+the measured evidence for it; no digest moved). The full reviewer rows are in
+[`play-store-readiness.md`](play-store-readiness.md) §9 and the commits are listed in §2.2
+above.
+
+The same review found three overstatements, corrected in the wording commit that
+carries this section:
+
+1. [`release-procedure.md`](release-procedure.md) §6.8 said "The packaged APK is 16 KB
+   aligned end to end". It is not: the same APK carries `armeabi-v7a/libc++_shared.so`
+   and `armeabi-v7a/libultralytics.so` with `LOAD` align `0x1000`. The sentence now
+   reads that the APK passes `zipalign -c -P 16` and every 64-bit library is 16 KB
+   aligned, and that the two 32-bit objects are not — the one line a store reviewer
+   could quote back, so it has to be exactly true.
+2. The historical `842d38b` row in
+   [`play-store-readiness.md`](play-store-readiness.md) §9 read that `LICENSE` grants
+   nothing with the licence decision still open, which reads as a live gate. It now says
+   the decision was open at `842d38b` and was decided in `fc2e948`.
+3. The §16.1 paragraph above said "The pre-fix build fails its first assertion". The
+   first two expectations (the dialog is present, the acknowledgement is not yet
+   recorded) pass; it fails at `pendingStartIntent isNull`. The sentence now says
+   "fails its first launch-policy assertion".
+
+Two review nits were accepted as known non-issues and are recorded here so they are not
+re-litigated:
+
+* [`../lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart:219) still runs
+  `if (mounted) setState(() {})` after the acknowledgement, which is redundant because
+  the settings notifier already rebuilds. It is redundant, not wrong: retained as
+  belt-and-braces.
+* The `the live subtree holds no button or tappable` predicate
+  ([`../test/screens/gesture_navigation_direction_test.dart`](../test/screens/gesture_navigation_direction_test.dart:219))
+  covers the house `AccessibleButton` but not `Semantics(onTap:)`, `Switch` or `Slider`.
+  The `// shortcut:` note in
+  [`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart:28) already
+  states that adding interactive children inside the wrapped subtree re-introduces
+  tap→pause classification, so the limit is documented where a future change starts.
