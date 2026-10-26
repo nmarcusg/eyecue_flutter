@@ -428,7 +428,7 @@ bytes and therefore does not change a digest.
 
 ### 6.8 16 KB page-size alignment (`targetSdk 36`, Android 15+)
 
-The packaged APK is 16 KB aligned end to end:
+The packaged APK passes `zipalign -c -P 16` and every 64-bit library is 16 KB aligned; the two 32-bit (`armeabi-v7a`) objects listed below are not:
 
 ```
 $ $ANDROID_HOME/build-tools/36.1.0/zipalign -c -P 16 4 build/app/outputs/flutter-apk/app-release-testsigned.apk
