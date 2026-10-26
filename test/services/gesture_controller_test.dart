@@ -184,11 +184,13 @@ void main() {
 
     test('a second pointer invalidates one-pointer direction', () {
       controller.onPointerDown(1, const Offset(300, 100));
+      // Commit first: a second pointer that joins *after* the classification
+      // must discard it, which is the order this test has to exercise.
+      controller.onPointerMove(1, const Offset(100, 100)); // classified left
       controller.onPointerDown(2, const Offset(320, 120)); // second pointer
-      controller.onPointerMove(1, const Offset(100, 100)); // would be left
       expect(fired, isEmpty);
-      controller.onPointerUp(1, const Offset(100, 100));
       controller.onPointerUp(2, const Offset(320, 120));
+      controller.onPointerUp(1, const Offset(100, 100));
       // The released sequence fires nothing at all.
       expect(fired, isEmpty);
     });

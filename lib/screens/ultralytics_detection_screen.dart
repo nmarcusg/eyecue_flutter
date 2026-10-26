@@ -1426,9 +1426,9 @@ class _UltralyticsDetectionScreenState
         ],
       ),
     );
-    // Only the live branch is inside the gesture surface. The viewport fills
-    // the whole flexible area, so a swipe works over the viewport and over its
-    // state-panel area alike, while every other panel stays outside it.
+    // Only the live branch is inside the gesture surface. A swipe works over
+    // the live viewport only; the non-live panels and the depth notice are
+    // outside it.
     return GestureSurface(controller: _gestureController, child: viewport);
   }
 

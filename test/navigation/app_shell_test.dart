@@ -1,7 +1,9 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/navigation/app_shell.dart';
+import 'package:eyecue_flutter/screens/engine_detection_screen.dart';
 import 'package:eyecue_flutter/screens/help_screen.dart';
+import 'package:eyecue_flutter/screens/home_screen.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
 import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/gesture_controller.dart';
@@ -823,6 +825,81 @@ void main() {
       await tester.tap(find.text('Detect'));
       await tester.pumpAndSettle();
       expect(find.text('PAGE1'), findsOneWidget);
+    });
+
+    /// Answers the two platform channels the real Detection page touches.
+    ///
+    /// No camera is reported, so no native platform view is involved.
+    void mockCameraChannels() {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('flutter.baseflow.com/permissions/methods'),
+        (call) async {
+          if (call.method == 'checkPermissionStatus') return 1;
+          if (call.method == 'requestPermissions') return <int, int>{1: 1};
+          return null;
+        },
+      );
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/camera'),
+        (call) async => <Object?>[],
+      );
+    }
+
+    testWidgets('withholds the launch policy until the acknowledgement', (
+      tester,
+    ) async {
+      // Real pages and a fresh (unacknowledged) SettingsService: this is the
+      // fresh-install path, where a launch policy applied in initState would
+      // run the camera, the start haptic and the start speech behind the
+      // unacknowledged consent modal.
+      tester.view.physicalSize = const Size(390 * 3, 1600 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      mockCameraChannels();
+
+      final fresh = SettingsService(store: InMemorySettingsStore());
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppShell(
+            settings: fresh,
+            tts: tts,
+            telemetry: telemetry,
+            haptics: haptics,
+            coordinatorOverride: coordinator,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Disclosure up, nothing running behind it: no start intent, idle
+      // coordinator, and no start feedback.
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      expect(fresh.safetyAcknowledged, isFalse);
+      expect(coordinator.pendingStartIntent, isNull);
+      expect(coordinator.state, DetectionRuntimeState.idle);
+      expect(hapticCalls, isEmpty);
+
+      await tester.tap(find.text('I understand'));
+      // Bounded pumps, not pumpAndSettle: the real Detection page that the
+      // policy now caches keeps its own timers/animations running.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Consent recorded → the withheld policy applies: Detect is cached and
+      // exactly one silent launch intent is issued while Home stays selected.
+      expect(fresh.safetyAcknowledged, isTrue);
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+      expect(coordinator.pendingStartIntent?.origin, StartIntentOrigin.launch);
+      expect(
+        find.byType(EngineDetectionScreen, skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.byType(HomeScreen), findsOneWidget);
     });
   });
 }

@@ -216,6 +216,30 @@ void main() {
       },
     );
 
+    testWidgets('the live subtree holds no button or tappable', (tester) async {
+      // The placement fix only holds while nothing interactive sits inside the
+      // surface: an inner button would compete with the raw Listener and turn
+      // its taps into tap→pause classification.
+      await pumpScreen(tester);
+      await startSession(tester);
+      final surface = find.byType(GestureSurface);
+      expect(surface, findsOneWidget);
+      expect(
+        find.descendant(
+          of: surface,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is GestureDetector ||
+                widget is InkWell ||
+                widget is ButtonStyleButton ||
+                widget is IconButton ||
+                widget is FloatingActionButton,
+          ),
+        ),
+        findsNothing,
+      );
+    });
+
     testWidgets('a swipe in the live main area navigates exactly once, on '
         'release', (tester) async {
       await pumpScreen(tester);
