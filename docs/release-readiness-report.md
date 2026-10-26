@@ -405,8 +405,11 @@ flutter build apk --release                    # Gradle assembleRelease  46.7 s 
 | AAB | `build/app/outputs/bundle/release/app-release-testsigned.aab` | 78 762 272 B | `6425a1e5f6420935b32f547a965e5be5bc11b80dcdc9d0ef9a04caf8d0c0ec56` |
 | APK (inspection only) | `build/app/outputs/flutter-apk/app-release-testsigned.apk` | 91 345 913 B | `4df0f2c8a3b7767c5579dc059bd316d8903f9aab14b88afbe7a73bc5d526a573` |
 
-A second pair of builds in the same tree reproduced both files byte-for-byte
-(incremental: 15.1 s and 8.3 s Gradle), so the digests are reproducible for this tree.
+Re-running both builds in the same tree returned the same two digests, but that run
+was fully incremental (15.1 s / 8.3 s Gradle) and repackaged nothing, so it shows the
+tree still matches the packaged artefacts — **not** byte-level determinism across a
+cold rebuild. §6.7 of [`release-procedure.md`](release-procedure.md) states the same
+limit.
 
 Superseded (kept as history, valid for no file in the tree): AAB
 `6d566ed416f7aa7fc2452f47b43fe80a872576bd8639ef2e67b9772e23ba22c6` (78 607 313 B) and

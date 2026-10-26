@@ -211,10 +211,23 @@ item as `DONE`.
 | K Play Store material package | Final application ID, AGPL-3.0 licence text, generated launcher/adaptive/monochrome/round icons, and the store-facing document set (listing, checklist, privacy/Data Safety, release procedure) | §8 D1, D2 | DONE | `5ad07bf` (application ID), `fc2e948` (licence), `5c78769` (icons), `30d340f` (documents) | PASS for `5ad07bf`/`fc2e948`/`5c78769`; PASS_WITH_NOTES for `30d340f`, whose notes are the document reconciliation in the docs commit after `3eafed0` (§9) | `CONFIRMED-BY-BUILD` (both current artefacts carry `mipmap/ic_launcher`, `ic_launcher_foreground`, `ic_launcher_monochrome` and `ic_launcher_round` at mdpi–xxxhdpi plus the `anydpi-v26` adaptive XML, and `android:roundIcon` resolves to `ic_launcher_round`), `CONFIRMED-BY-INSPECTION` ([`../LICENSE`](../LICENSE) is the canonical AGPL-3.0 text and §8 records D2; `package: name='app.eyecue.mobile'` matches D1), `BLOCKED-EXTERNAL` (Data Safety D3, legal review R1–R7) |
 
 The L8/L9 digests recorded in the two rows above (`feaab199…`, `99ac0da9…`) describe
-the artefacts built at `870c24e`. The L10 manifest change forced a rebuild; the
-current files are AAB `6d566ed4…` / APK `3c932ed4…`, recorded in
-[`release-procedure.md`](release-procedure.md) §6 and
-[`release-readiness-report.md`](release-readiness-report.md) §4.
+the artefacts built at `870c24e`, and the L10 pair recorded in the L10 row
+(`6d566ed4…`, `3c932ed4…`) describes the tree before `5c78769` (generated icons) and
+`3eafed0` (the safety gate). **Both pairs are superseded and valid for no file in the
+tree.** The current artefacts, built at `3eafed0`, are:
+
+| Artefact | Size | sha256 | Build |
+| --- | --- | --- | --- |
+| AAB `build/app/outputs/bundle/release/app-release-testsigned.aab` | 78 762 272 B | `6425a1e5f6420935b32f547a965e5be5bc11b80dcdc9d0ef9a04caf8d0c0ec56` | `bundleRelease` 219.3 s (221.7 s wall) |
+| APK `build/app/outputs/flutter-apk/app-release-testsigned.apk` | 91 345 913 B | `4df0f2c8a3b7767c5579dc059bd316d8903f9aab14b88afbe7a73bc5d526a573` | `assembleRelease` 46.7 s (49.2 s wall) |
+
+Both are `-testsigned` (no keystore on the host). `zipalign -c -P 16 4` exits 0, every
+64-bit `LOAD` segment reports `0x4000` or `0x10000`, and the two `armeabi-v7a`
+libraries that stay at `0x1000` are recorded in
+[`release-procedure.md`](release-procedure.md) §6.8. **Installed startup remains
+`NOT VERIFIED` — device gate**; the DEX/`aapt2` evidence is inspection, not a launch.
+See [`release-procedure.md`](release-procedure.md) §6 and
+[`release-readiness-report.md`](release-readiness-report.md) §16.
 
 The G disclosure is one source of truth: [`lib/widgets/safety_disclosure.dart`](../lib/widgets/safety_disclosure.dart)
 holds the heading and the five points, and both the permanent Help section and
