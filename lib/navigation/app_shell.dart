@@ -188,7 +188,10 @@ class AppShellState extends State<AppShell> {
     _syncAudio();
     widget.settings.addListener(_syncAudio);
     widget.settings.addListener(_handleSettingsChanged);
-    _applyLaunchPolicy();
+    // The launch policy can start detection, so on a fresh install it waits for
+    // the first-use disclosure instead of firing behind the unacknowledged
+    // modal (see [_applyLaunchPolicy]).
+    if (widget.settings.safetyAcknowledged) _applyLaunchPolicy();
     _scheduleFirstUseSafetyDisclosure();
   }
 
@@ -211,6 +214,9 @@ class AppShellState extends State<AppShell> {
           onAcknowledge: () {
             Navigator.of(dialogContext).pop();
             widget.settings.setSafetyAcknowledged(true);
+            // Consent is recorded, so the withheld launch policy applies now.
+            _applyLaunchPolicy();
+            if (mounted) setState(() {});
           },
         ),
       );
@@ -218,6 +224,11 @@ class AppShellState extends State<AppShell> {
   }
 
   /// Applies the finalized startup policy from the already-loaded preference.
+  ///
+  /// Only ever called once the first-use disclosure is acknowledged: starting
+  /// detection behind an unacknowledged consent modal would run the camera,
+  /// the start haptic and the "Detection started" speech over the announcement
+  /// the user is being asked to read.
   ///
   /// Auto-start ON: mark Detect visited/cached before the first shell build and
   /// issue one silent launch start intent while Home remains selected. The
