@@ -103,8 +103,12 @@ WHAT IT DOES
   one session at a time, with a study participant code and a study token supplied
   by the study coordinator. The upload contains numeric detection and performance
   records only — no camera frames, no name, no email address, no device ID. It is
-  opt-in, can be declined, and only the first upload per app run is stored; export
-  locally to keep later data.
+  opt-in and can be declined. Each app run sends one session: a repeated upload
+  from the same run may be treated as the same session rather than stored again,
+  so export locally to keep later data. *BLOCKED-EXTERNAL* — the duplicate-upload
+  behaviour is implemented in the ingest function but has never been executed
+  against a running database, so this description must be confirmed before it is
+  published.
 
 SAFETY AND LIMITATIONS
 The following is the wording the app itself shows, in Help → Safety and
