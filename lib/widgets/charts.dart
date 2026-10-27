@@ -241,11 +241,14 @@ String _engineSummary(List<RuntimeSample> samples) {
   final namesById = <String, String?>{};
   for (final sample in samples) {
     final id = sample.detectorModelId;
-    if (id != null) namesById.putIfAbsent(id, () => sample.detectorModelName);
+    if (id == null) continue;
+    final name = sample.detectorModelName;
+    // The latest recorded name wins, so a renamed graph shows its current name.
+    if (name != null || !namesById.containsKey(id)) namesById[id] = name;
   }
   final models = namesById.values.whereType<String>().toSet();
   if (models.isEmpty) return engineText;
-  final mixed = namesById.length > 1 || models.length > 1;
+  final mixed = namesById.length > 1;
   // A chart drawn from more than one detector never claims one model's data.
   return '$engineText; detector model ${models.join(', ')}'
       '${mixed ? ' (mixed-model data)' : ''}';

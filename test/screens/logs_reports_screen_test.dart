@@ -14,6 +14,7 @@ import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -1307,8 +1308,10 @@ void main() {
 
       // The averages above combine both detectors, and say so.
       expect(find.textContaining('Mixed-model data —'), findsOneWidget);
-      // The Engine Comparison card blends the same two models, and says so.
-      expect(find.textContaining('frames — Mixed-model data'), findsOneWidget);
+      // The Engine Comparison card blends the same two models, and says so on
+      // its own line — not appended to the ellipsized value.
+      expect(find.text('Mixed-model data'), findsOneWidget);
+      expect(find.textContaining('frames —'), findsNothing);
 
       await selectTab(tester, 'Charts');
       expect(
@@ -1345,14 +1348,130 @@ void main() {
       );
     });
 
+    /// The paragraph that actually paints [text], so a test can assert on what
+    /// is rendered instead of on the string a widget happens to carry.
+    RenderParagraph paintedParagraph(WidgetTester tester, String text) {
+      final finder = find.text(text);
+      expect(finder, findsOneWidget);
+      return tester.renderObject<RenderParagraph>(finder);
+    }
+
     testWidgets('a single model is named on the engine comparison card', (
       tester,
     ) async {
       final telemetry = buildTelemetryFor(const [customRef]);
       await pumpLogsScreen(tester, telemetry: telemetry);
 
+      expect(find.text('Obstacle Detector v2'), findsOneWidget);
+      expect(find.textContaining('Mixed-model data'), findsNothing);
+      expect(find.textContaining('frames —'), findsNothing);
+    });
+
+    testWidgets('the mixed-model claim is painted whole at 390 px', (
+      tester,
+    ) async {
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTwoModelTelemetry(),
+        size: const Size(390 * 3, 844 * 3),
+      );
+      await scrollOverviewTo(tester, find.text('Mixed-model data'));
+
+      final claim = paintedParagraph(tester, 'Mixed-model data');
+      expect(claim.didExceedMaxLines, isFalse);
+      expect(claim.size.width, greaterThan(0));
+    });
+
+    testWidgets('a 40-character model name is painted whole at 390 px', (
+      tester,
+    ) async {
+      // 40 characters is the longest name the importer accepts.
+      const longName = DetectorModelRef(
+        id: 'custom:0a1b2c3d4e5f',
+        name: 'Obstacle Detector v2 corrected import r2',
+        fingerprint: '0a1b2c3d4e5f6071-4200',
+        classCount: 12,
+      );
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetryFor(const [longName]),
+        size: const Size(390 * 3, 844 * 3),
+      );
+      await scrollOverviewTo(tester, find.text(longName.name));
+
+      final claim = paintedParagraph(tester, longName.name);
+      expect(claim.didExceedMaxLines, isFalse);
+      expect(find.textContaining('Mixed-model data'), findsNothing);
+    });
+
+    testWidgets('a renamed graph is named, not called mixed, on both surfaces', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      const renamed = DetectorModelRef(
+        id: 'custom:0a1b2c3d4e5f',
+        name: 'Obstacle Detector v2 fixed',
+        fingerprint: '0a1b2c3d4e5f6071-4200',
+        classCount: 12,
+      );
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetryFor(const [customRef, renamed]),
+      );
+      await selectTab(tester, 'Charts');
+
+      // One identity under two names: the card title names its current name...
       expect(
-        find.textContaining('frames — Obstacle Detector v2'),
+        find.text(
+          'Inference Latency — Obstacle Detector v2 fixed (300 ms benchmark)',
+        ),
+        findsOneWidget,
+      );
+      // ...and the chart summaries agree with the title.
+      expect(
+        find.bySemanticsLabel(
+          RegExp('detector model Obstacle Detector v2 fixed'),
+        ),
+        findsNWidgets(2),
+      );
+      expect(find.textContaining('Mixed-model data'), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('mixed-model data')), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('a stale filter draws all models and says so', (tester) async {
+      final telemetry = buildTelemetryFor(const [customRef]);
+      await pumpLogsScreen(tester, telemetry: telemetry);
+      await selectTab(tester, 'Charts');
+
+      await tester.tap(find.byType(DropdownButton<String?>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Obstacle Detector v2').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Inference Latency — Obstacle Detector v2 (300 ms benchmark)',
+        ),
+        findsOneWidget,
+      );
+
+      // 402 samples is past the 400-sample cap, so the oldest row — the filtered
+      // model's only sample — is evicted while its key stays selected. The
+      // charts fall back to every model, and the title follows.
+      for (var i = 0; i <= 400; i++) {
+        telemetry.recordSample(
+          latencyMs: 100,
+          inferenceFps: 10,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: builtInRef,
+        );
+      }
+      await tester.pumpAndSettle();
+
+      expect(find.text('All models (mixed)'), findsOneWidget);
+      expect(
+        find.text('Inference Latency — Built-in YOLOv8n (300 ms benchmark)'),
         findsOneWidget,
       );
       expect(find.textContaining('Mixed-model data'), findsNothing);

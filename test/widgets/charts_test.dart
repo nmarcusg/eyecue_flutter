@@ -96,4 +96,40 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('mixed-model data')), findsOneWidget);
     handle.dispose();
   });
+
+  testWidgets('the chart summary names one identity by its latest name', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    final renamedGraph = [
+      RuntimeSample(
+        timestamp: DateTime(2026, 1, 1),
+        latencyMs: 30,
+        inferenceFps: 12,
+        objectCount: 1,
+        engine: InferenceEngine.ultralytics,
+        detectorModelId: 'custom:000000000001',
+        detectorModelName: 'Obstacle Detector v2',
+      ),
+      RuntimeSample(
+        timestamp: DateTime(2026, 1, 1, 0, 0, 1),
+        latencyMs: 30,
+        inferenceFps: 12,
+        objectCount: 1,
+        engine: InferenceEngine.ultralytics,
+        // The same graph, renamed mid-session: one identity, not two models.
+        detectorModelId: 'custom:000000000001',
+        detectorModelName: 'Obstacle Detector v2 fixed',
+      ),
+    ];
+    await tester.pumpWidget(wrap(FpsChart(samples: renamedGraph)));
+    expect(
+      find.bySemanticsLabel(
+        RegExp('detector model Obstacle Detector v2 fixed'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel(RegExp('mixed-model data')), findsNothing);
+    handle.dispose();
+  });
 }
