@@ -277,7 +277,9 @@ class AppSettings {
     // so settings can never claim a model that cannot be resolved.
     final kindName = json['detectorModelKind'];
     final customName = _stringOrNull(json['customModelName']);
-    final customFingerprint = _stringOrNull(json['customModelFingerprint']);
+    final customFingerprint = _fingerprintOrNull(
+      json['customModelFingerprint'],
+    );
     final customClassCount = json['customModelClassCount'];
     // Older files may still carry `customModelPath`; unknown keys are ignored.
     final customComplete =
@@ -333,6 +335,17 @@ class AppSettings {
 
   static String? _stringOrNull(Object? value) =>
       value is String && value.trim().isNotEmpty ? value.trim() : null;
+
+  /// A persisted fingerprint names an app-owned file, so it is accepted only in
+  /// the shape [tfliteFingerprint] produces. Anything else (a traversal value
+  /// such as `"../outside"`, a hand-edited store) is treated as an incomplete
+  /// identity and dropped before it can reach a file path.
+  static final RegExp _fingerprintShape = RegExp(r'^[0-9a-f]{16}-\d{1,10}$');
+
+  static String? _fingerprintOrNull(Object? value) {
+    final text = _stringOrNull(value);
+    return text != null && _fingerprintShape.hasMatch(text) ? text : null;
+  }
 
   /// Keeps persisted and runtime values within the supported advanced-slider
   /// range and on its 0.05 step grid. NaN and infinity use the default.

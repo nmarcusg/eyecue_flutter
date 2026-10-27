@@ -100,6 +100,40 @@ void main() {
       },
     );
 
+    test(
+      'a traversal-shaped persisted fingerprint never reaches a delete',
+      () async {
+        final outside = Directory('${tempDir.path}/outside')..createSync();
+        final victimModel = File('${outside.path}/victim.tflite')
+          ..writeAsBytesSync(const [1, 2, 3]);
+        final victimSidecar = File('${outside.path}/victim.labels.json')
+          ..writeAsBytesSync(const [4]);
+        store.contents = jsonEncode({
+          'schemaVersion': 7,
+          'detectorModelKind': 'builtIn',
+          'customModelName': 'Tampered',
+          'customModelFingerprint': '../outside/victim',
+          'customModelClassCount': 80,
+        });
+        await settings.load();
+
+        // The value is not a fingerprint shape, so the identity is dropped
+        // before any file path is derived from it.
+        expect(settings.customModelFingerprint, isNull);
+        expect(settings.customModelName, isNull);
+
+        final service = buildService();
+        await service.load();
+        final result = await service.importFromPath(
+          writeSource('model.tflite', _modelBytes),
+          displayName: 'Replacement',
+        );
+        expect(result.ok, isTrue);
+        expect(victimModel.existsSync(), isTrue);
+        expect(victimSidecar.existsSync(), isTrue);
+      },
+    );
+
     test('a persisted selection survives a reload', () async {
       final first = buildService();
       await first.load();

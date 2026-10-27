@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import '../models/app_settings.dart';
+import '../services/detector_model_service.dart';
 import '../services/inference_cadence.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
@@ -9,6 +10,8 @@ import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/accessible_button.dart';
+import '../widgets/warning_banner.dart';
 
 /// Settings — runtime configuration for users and facilitators.
 ///
@@ -29,11 +32,17 @@ class SettingsScreen extends StatelessWidget {
   /// When `null`, the card renders `—` placeholders with no live updates.
   final TelemetryService? telemetry;
 
+  /// Optional detector selection owner. When supplied, the Detector Model card
+  /// renders from [DetectorModelService.current] — never from settings, which
+  /// keeps naming `custom` after an unreadable-copy recovery.
+  final DetectorModelService? detectorModel;
+
   const SettingsScreen({
     super.key,
     required this.settings,
     required this.onOpenLogsReports,
     this.telemetry,
+    this.detectorModel,
   });
 
   @override
@@ -277,6 +286,8 @@ class SettingsScreen extends StatelessWidget {
                                 _InferenceCadenceControls(settings: settings),
                               ],
                             ),
+                            if (detectorModel != null)
+                              _DetectorModelCard(detectorModel: detectorModel!),
                             _SystemPerformanceCard(
                               telemetry: telemetry,
                               onOpenLogsReports: onOpenLogsReports,
@@ -606,6 +617,222 @@ class _InferenceCadenceControlsState extends State<_InferenceCadenceControls> {
               style: captionStyle,
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// The researcher's detector selection.
+///
+/// Renders only from [DetectorModelService.current]: after an unreadable-copy
+/// recovery the settings file still names `custom` while the built-in detector
+/// is active, so reading settings here would mislabel the active model.
+class _DetectorModelCard extends StatefulWidget {
+  final DetectorModelService detectorModel;
+
+  const _DetectorModelCard({required this.detectorModel});
+
+  @override
+  State<_DetectorModelCard> createState() => _DetectorModelCardState();
+}
+
+class _DetectorModelCardState extends State<_DetectorModelCard> {
+  String? _message;
+  bool _busy = false;
+
+  DetectorModelService get _service => widget.detectorModel;
+
+  Future<void> _choose() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => const _ModelNameDialog(),
+    );
+    if (name == null) return;
+    await _run(() => _service.importFromPicker(displayName: name));
+  }
+
+  Future<void> _useBuiltIn() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    await _service.selectBuiltIn();
+    if (!mounted) return;
+    setState(() => _busy = false);
+  }
+
+  Future<void> _useImported() => _run(_service.selectStoredCustom);
+
+  Future<void> _run(Future<ModelImportResult> Function() action) async {
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    final result = await action();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      // Cancellation is silent; a failure carries its actionable message.
+      _message = result.message;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final caption = theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted);
+    return ListenableBuilder(
+      listenable: _service,
+      builder: (context, _) {
+        final model = _service.current;
+        final recovery = _service.selectionRecoveryMessage;
+        final message = _message;
+        final builtIn = !model.isCustom;
+        return _SettingsCard(
+          title: 'Detector Model',
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kSpace16),
+              child: Text(
+                '${model.displayName} · ${model.classCount} classes',
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace4,
+                kSpace16,
+                0,
+              ),
+              child: Text(
+                builtIn ? 'Built-in detector' : 'Imported model',
+                style: caption,
+              ),
+            ),
+            if (recovery != null) WarningBanner(message: recovery),
+            if (message != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace16,
+                  kSpace8,
+                  kSpace16,
+                  0,
+                ),
+                child: Semantics(
+                  container: true,
+                  liveRegion: true,
+                  label: message,
+                  child: ExcludeSemantics(
+                    child: Text(
+                      message,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: kWarningRed,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace8,
+                kSpace16,
+                0,
+              ),
+              child: Text(
+                'Changing the detector stops detection. Press Start on the '
+                'Detection screen to run the selected model.',
+                style: caption,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace12,
+                kSpace16,
+                0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AccessibleButton(
+                    label: 'Choose model file…',
+                    icon: Icons.upload_file,
+                    onPressed: _busy ? null : _choose,
+                  ),
+                  const SizedBox(height: kSpace8),
+                  AccessibleButton(
+                    label: 'Use built-in detector',
+                    icon: Icons.memory,
+                    onPressed: _busy || builtIn ? null : _useBuiltIn,
+                  ),
+                  const SizedBox(height: kSpace8),
+                  AccessibleButton(
+                    label: 'Use imported model',
+                    icon: Icons.folder_open,
+                    onPressed: !_busy && builtIn && _service.hasStoredCustom
+                        ? _useImported
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Asks for the researcher's model name before the picker opens.
+class _ModelNameDialog extends StatefulWidget {
+  const _ModelNameDialog();
+
+  @override
+  State<_ModelNameDialog> createState() => _ModelNameDialogState();
+}
+
+class _ModelNameDialogState extends State<_ModelNameDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Name this model'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Use a short name for the model, such as Obstacle Detector v2. '
+            'Use up to 40 letters, numbers, spaces and . _ - only, and never a '
+            'respondent name or email address.',
+          ),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            maxLength: 40,
+            decoration: const InputDecoration(hintText: 'Model name'),
+            onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('Import'),
+        ),
       ],
     );
   }
