@@ -1263,4 +1263,121 @@ void main() {
       },
     );
   });
+
+  group('mute and lifecycle settlement', () {
+    late List<AlertLifecycleRecord> records;
+    late List<AlertCounters> counters;
+    late TtsService instrumented;
+    late bool disposed;
+
+    setUp(() async {
+      records = [];
+      counters = [];
+      disposed = false;
+      instrumented = TtsService(
+        engine: engine,
+        clock: () => now,
+        onAlertLifecycle: records.add,
+        onAlertCounters: counters.add,
+        startConfirmationTimeout: const Duration(milliseconds: 60),
+        preemptionConfirmTimeout: const Duration(milliseconds: 40),
+        reconciliationTimeout: const Duration(milliseconds: 40),
+        callbackQuietPeriod: const Duration(milliseconds: 25),
+        maxSettlingDuration: const Duration(milliseconds: 200),
+        recoveryTimeout: const Duration(milliseconds: 100),
+        preemptionCooldown: Duration.zero,
+      );
+      await instrumented.init();
+      addTearDown(() {
+        if (!disposed) instrumented.dispose();
+      });
+    });
+
+    test('a request parked before the mute is discarded, not spoken', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('current speech', urgent: true);
+      await pumpEventQueue();
+      final parked = instrumented.speak('queued speech', urgent: true);
+      await pumpEventQueue();
+      expect(engine.spoken, ['current speech']);
+
+      instrumented.setAudioEnabled(false);
+      expect(counters.last.muted, 1);
+
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      await pumpEventQueue();
+
+      // A muted rejection is a counter, never a lifecycle record: only the
+      // utterance that was already audible produced one.
+      expect(records, hasLength(1));
+      expect(records.single.terminalState, AlertTerminalState.completed);
+      expect(engine.spoken, ['current speech']);
+      expect(await parked, isFalse);
+      expect(await active, isTrue);
+    });
+
+    test('mute then unmute does not resurrect the parked request', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('current speech', urgent: true);
+      await pumpEventQueue();
+      final parked = instrumented.speak('queued speech', urgent: true);
+      await pumpEventQueue();
+
+      instrumented.setAudioEnabled(false);
+      instrumented.setAudioEnabled(true);
+
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      await pumpEventQueue();
+
+      expect(engine.spoken, ['current speech']);
+      expect(await parked, isFalse);
+      expect(await active, isTrue);
+    });
+
+    test('dispose before a start settles the caller false', () async {
+      engine.mode = FakeMode.manual;
+      final pending = instrumented.speak('silent', urgent: true);
+      await pumpEventQueue();
+      expect(instrumented.isSpeaking, isTrue);
+
+      instrumented.dispose();
+      disposed = true;
+
+      expect(await pending.timeout(const Duration(milliseconds: 200)), isFalse);
+    });
+
+    test('dispose after a confirmed start settles the caller true', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+      expect(instrumented.isSpeaking, isTrue);
+
+      instrumented.dispose();
+      disposed = true;
+
+      expect(await pending.timeout(const Duration(milliseconds: 200)), isTrue);
+    });
+
+    test('late callbacks after dispose are inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+      final state = instrumented.state;
+
+      instrumented.dispose();
+      disposed = true;
+
+      engine.emitStart();
+      engine.emitComplete();
+      engine.emitCancel();
+      engine.emitError();
+      await pumpEventQueue();
+
+      expect(instrumented.state, state);
+      expect(instrumented.isSpeaking, isFalse);
+      expect(await pending, isTrue);
+    });
+  });
 }

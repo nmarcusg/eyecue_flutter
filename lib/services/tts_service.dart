@@ -293,6 +293,10 @@ class TtsService extends ChangeNotifier {
   void setAudioEnabled(bool value) {
     if (_audioEnabled == value) return;
     _audioEnabled = value;
+    if (!value && _pending != null) {
+      _recordRejection(AlertReason.muted);
+      _failPending();
+    }
     notifyListeners();
   }
 
@@ -475,7 +479,14 @@ class TtsService extends ChangeNotifier {
     _quietTimer?.cancel();
     _settleCapTimer?.cancel();
     final active = _active;
-    if (active != null) _cancelTimers(active);
+    if (active != null) {
+      _cancelTimers(active);
+      _active = null;
+      // Teardown settles callers without committing lifecycle or policy state.
+      if (!active.request.done.isCompleted) {
+        active.request.done.complete(active.didStart);
+      }
+    }
     final pending = _pending;
     if (pending != null && !pending.done.isCompleted) {
       pending.done.complete(false);
@@ -676,6 +687,7 @@ class TtsService extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   void _handleStart() {
+    if (_disposed) return;
     if (_quarantining) {
       _quarantinedCallbacks++;
       _publishCounters();
@@ -739,6 +751,7 @@ class TtsService extends ChangeNotifier {
   }
 
   void _handleComplete() {
+    if (_disposed) return;
     if (_quarantining) {
       _quarantinedCallbacks++;
       _publishCounters();
@@ -756,6 +769,7 @@ class TtsService extends ChangeNotifier {
   }
 
   void _handleCancel() {
+    if (_disposed) return;
     if (_quarantining) {
       _quarantinedCallbacks++;
       _publishCounters();
@@ -773,6 +787,7 @@ class TtsService extends ChangeNotifier {
   }
 
   void _handleError(dynamic error) {
+    if (_disposed) return;
     if (_quarantining) {
       _quarantinedCallbacks++;
       _publishCounters();
@@ -917,6 +932,12 @@ class TtsService extends ChangeNotifier {
       return;
     }
     _pending = null;
+    if (!_audioEnabled) {
+      _recordRejection(AlertReason.muted);
+      if (!next.done.isCompleted) next.done.complete(false);
+      _drain();
+      return;
+    }
     final decision = next.decision;
     if (decision != null && !policy.shouldSpeakPending(decision, _clock())) {
       // Newer accepted state already covers this parked decision; speaking it
@@ -1074,8 +1095,7 @@ class TtsService extends ChangeNotifier {
     );
   }
 
-  /// A decision that never became a submission: counted, never a lifecycle
-  /// record.
+  /// A request discarded before submission: counted, never a lifecycle record.
   void _recordRejection(AlertReason reason) {
     _rejectedByReason[reason.name] = (_rejectedByReason[reason.name] ?? 0) + 1;
     if (reason == AlertReason.muted) _muted++;
