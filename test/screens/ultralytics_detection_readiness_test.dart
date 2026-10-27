@@ -65,6 +65,13 @@ void main() {
     messenger.setMockMethodCallHandler(
       const MethodChannel('flutter/platform_views'),
       (call) async {
+        if (call.method == 'resize') {
+          final args = call.arguments as Map;
+          return <String, Object>{
+            'width': args['width'] as double,
+            'height': args['height'] as double,
+          };
+        }
         if (call.method != 'create') return null;
         final args = call.arguments as Map;
         final params = args['params'];
@@ -137,14 +144,14 @@ void main() {
           coordinator: EngineCoordinator(),
           onRuntimeStateChanged: (state, _) => states.add(state),
           onFailure: (failure, _) => failures.add(failure.category.name),
-          readinessTimeout: const Duration(seconds: 5),
+          readinessTimeout: const Duration(seconds: 2),
         ),
       ),
     );
     await tester.pump(const Duration(milliseconds: 50));
     await tester.tap(find.text('Start Detection'));
     await tester.pump();
-    for (var i = 0; i < 40; i++) {
+    for (var i = 0; i < 40 && viewIds.isEmpty; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
 
@@ -177,15 +184,18 @@ void main() {
       }
     }
 
-    await messenger.handlePlatformMessage(
-      'com.ultralytics.yolo/detectionResults_${viewIds.single}',
-      const StandardMethodCodec().encodeSuccessEnvelope(payload),
-      (ByteData? data) {},
-    );
-    await tester.pump();
-    expect(states, contains(DetectionRuntimeState.ready));
-    await tester.pump(const Duration(seconds: 6));
-    expect(failures, isEmpty);
+    await tester.tap(find.byType(GestureSurface));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(states.last, DetectionRuntimeState.paused);
+    await tester.tap(find.byType(GestureSurface));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(states.last, DetectionRuntimeState.loadingModel);
+    expect(states, isNot(contains(DetectionRuntimeState.ready)));
+    for (var i = 0; i < 60; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(failures, [DetectionFailureCategory.modelLoading.name]);
+    failures.clear();
 
     await tester.pumpWidget(const SizedBox.shrink());
     states.clear();
@@ -244,6 +254,12 @@ void main() {
     await tester.pump();
     expect(states.last, DetectionRuntimeState.ready);
     await tester.pump(const Duration(seconds: 2));
+    await tester.tap(find.byType(GestureSurface));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(states.last, DetectionRuntimeState.paused);
+    await tester.tap(find.byType(GestureSurface));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(states.last, DetectionRuntimeState.ready);
 
     await toggleWithTwoFingerDoubleTap();
     expect(states.last, DetectionRuntimeState.stopped);

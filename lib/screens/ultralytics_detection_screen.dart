@@ -326,6 +326,7 @@ class _UltralyticsDetectionScreenState
   /// matches this field.
   int _activeNativeEpoch = 0;
   Timer? _readinessTimer;
+  bool _pausedWhileLoading = false;
 
   /// Guards against duplicate/overlapping start attempts.
   ///
@@ -537,6 +538,7 @@ class _UltralyticsDetectionScreenState
   @override
   void dispose() {
     _readinessTimer?.cancel();
+    _pausedWhileLoading = false;
     _settings.removeListener(_handleSettingsChanged);
     _freshnessTimer?.cancel();
     _depthEventSub?.cancel();
@@ -736,6 +738,7 @@ class _UltralyticsDetectionScreenState
       );
       setState(() {
         _detectionActive = true;
+        _pausedWhileLoading = false;
         // The native YOLOView shell is now (or will be) mounted; retain it after
         // a later manual Stop for PD1 stopped-shell parity.
         _nativeViewMounted = true;
@@ -773,6 +776,7 @@ class _UltralyticsDetectionScreenState
 
   Future<void> _stopDetection() async {
     _readinessTimer?.cancel();
+    _pausedWhileLoading = false;
     debugPrint(
       '[Ultralytics] Stop requested — coordinator=${widget.coordinator.state} '
       'local(active=$_detectionActive paused=$_paused epoch=$_nativeViewEpoch)',
@@ -819,6 +823,7 @@ class _UltralyticsDetectionScreenState
 
   Future<void> _pauseDetection() async {
     if (!_detectionActive || _paused) return;
+    _pausedWhileLoading = _runtimeState == DetectionRuntimeState.loadingModel;
     _readinessTimer?.cancel();
     await _haptics.lightTick();
     await _controller.pause();
@@ -836,7 +841,13 @@ class _UltralyticsDetectionScreenState
     await _controller.resume();
     if (mounted) setState(() => _paused = false);
     _startFreshnessTimer();
-    _setRuntimeState(DetectionRuntimeState.ready);
+    if (_pausedWhileLoading) {
+      _pausedWhileLoading = false;
+      _setRuntimeState(DetectionRuntimeState.loadingModel);
+      _armReadinessTimeout(_activeNativeEpoch);
+    } else {
+      _setRuntimeState(DetectionRuntimeState.ready);
+    }
     await _tts.speak('Detection resumed', urgent: true);
   }
 
@@ -867,6 +878,7 @@ class _UltralyticsDetectionScreenState
     final resultReceivedAt = DateTime.now();
     final results = YOLODetectionResults.fromMap(data).detections;
     if (_runtimeState == DetectionRuntimeState.loadingModel) {
+      _pausedWhileLoading = false;
       _readinessTimer?.cancel();
       _setRuntimeState(DetectionRuntimeState.ready);
     }
@@ -1140,6 +1152,7 @@ class _UltralyticsDetectionScreenState
   void _reportFailure(DetectionFailure failure) {
     if (!mounted) return;
     _readinessTimer?.cancel();
+    _pausedWhileLoading = false;
     setState(() {
       _runtimeState = DetectionRuntimeState.failed;
       _starting = false;
