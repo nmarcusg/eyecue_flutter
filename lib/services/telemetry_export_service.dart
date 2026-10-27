@@ -192,6 +192,7 @@ class TelemetryExportService {
       sessionId: telemetry.sessionId,
       sessionStart: telemetry.sessionStart,
       sessionDurationMs: telemetry.sessionDuration.inMilliseconds,
+      rowsIncomplete: telemetry.rowsIncomplete,
       settings: settings?.toJson() ?? const {},
       detectorModels: table.models,
       samples: samples,

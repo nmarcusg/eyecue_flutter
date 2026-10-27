@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' show Rect;
 
 import 'package:eyecue_flutter/models/alert_lifecycle.dart';
@@ -81,7 +83,7 @@ void recordSample(TelemetryService telemetry, {DetectorModelRef? model}) {
 ResearchSessionService buildService({
   required TelemetryService telemetry,
   required TestClock clock,
-  required InMemoryResearchSessionStore store,
+  required ResearchSessionStore store,
   TelemetryUploadService? uploadService,
   int maxStoredSessions = 20,
 }) => ResearchSessionService(
@@ -850,7 +852,9 @@ void main() {
       clock.advance(const Duration(seconds: 1));
       final session = (await sessions.finish())!.session;
       expect(session.totalDetections, 2500);
-      expect(session.records, hasLength(2000));
+      // The trial owns its capture, so the live ring's cap no longer truncates
+      // the trial's evidence either: every recorded row is kept.
+      expect(session.records, hasLength(2500));
     });
   });
 
@@ -945,6 +949,491 @@ void main() {
       expect(session.records, hasLength(2));
     });
   });
+
+  group('17. A paused trial keeps its captured rows across a restart', () {
+    test(
+      'a fresh telemetry service and a reloaded draft keep the rows',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 3, 9));
+        final store = InMemoryResearchSessionStore();
+        final firstTelemetry = buildTelemetry(clock);
+        addTearDown(firstTelemetry.dispose);
+        final first = buildService(
+          telemetry: firstTelemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(first.dispose);
+        await first.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+        clock.advance(const Duration(seconds: 1));
+        recordDetection(firstTelemetry, model: builtInRef);
+        recordSample(firstTelemetry, model: builtInRef);
+        clock.advance(const Duration(seconds: 1));
+        await first.pause();
+
+        // A new app run: the live buffers are empty, only the store survives.
+        final restartedTelemetry = buildTelemetry(clock);
+        addTearDown(restartedTelemetry.dispose);
+        final restarted = buildService(
+          telemetry: restartedTelemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(restarted.dispose);
+        await restarted.load();
+        expect(restarted.state, ResearchSessionState.paused);
+
+        final result = (await restarted.finish())!;
+        expect(result.saved, isTrue);
+        expect(result.session.totalDetections, 1);
+        expect(
+          [result.session.records.length, result.session.samples.length],
+          [1, 1],
+        );
+        expect(result.session.records.single.detectorModelId, builtInRef.id);
+        expect(result.session.samples.single.detectorModelId, builtInRef.id);
+      },
+    );
+
+    test(
+      'the real file store round-trips the rows through a temp directory',
+      () async {
+        final directory = Directory.systemTemp.createTempSync(
+          'eyecue-session-draft',
+        );
+        addTearDown(() {
+          if (directory.existsSync()) directory.deleteSync(recursive: true);
+        });
+        final store = FileResearchSessionStore(directory);
+        final clock = TestClock(DateTime.utc(2026, 5, 3, 10));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final sessions = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(sessions.dispose);
+
+        await sessions.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+        clock.advance(const Duration(seconds: 1));
+        recordDetection(telemetry, model: builtInRef);
+        recordDetection(telemetry, model: builtInRef);
+        recordSample(telemetry, model: builtInRef);
+        clock.advance(const Duration(seconds: 1));
+        await sessions.pause();
+        expect(File('${directory.path}/draft.json').existsSync(), isTrue);
+
+        final restartedTelemetry = buildTelemetry(clock);
+        addTearDown(restartedTelemetry.dispose);
+        final restarted = buildService(
+          telemetry: restartedTelemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(restarted.dispose);
+        await restarted.load();
+        expect(restarted.state, ResearchSessionState.paused);
+
+        final result = (await restarted.finish())!;
+        expect(result.saved, isTrue);
+        expect(
+          [result.session.records.length, result.session.samples.length],
+          [2, 1],
+        );
+        expect(result.session.records.first.detectorModelId, builtInRef.id);
+        // The draft is gone and the finished trial is on disk.
+        expect(File('${directory.path}/draft.json').existsSync(), isFalse);
+        expect(
+          File('${directory.path}/${result.session.id}.json').existsSync(),
+          isTrue,
+        );
+      },
+    );
+  });
+
+  group('18. Activity during a pause cannot erase captured rows', () {
+    test(
+      '2100 paused detections evict the live rings, not the trial',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 3, 11));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final sessions = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: InMemoryResearchSessionStore(),
+        );
+        addTearDown(sessions.dispose);
+
+        await sessions.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+        clock.advance(const Duration(seconds: 1));
+        recordDetection(telemetry, model: builtInRef);
+        recordSample(telemetry, model: builtInRef);
+        clock.advance(const Duration(seconds: 1));
+        await sessions.pause();
+
+        clock.advance(const Duration(seconds: 1));
+        for (var index = 0; index < 2100; index++) {
+          recordDetection(telemetry, model: builtInRef);
+          recordSample(telemetry, model: builtInRef);
+        }
+        // The operational rings really were evicted...
+        expect(telemetry.totalDetections, 2000);
+        expect(telemetry.samples, hasLength(400));
+
+        // ...while the trial still owns the rows it captured.
+        final result = (await sessions.finish())!;
+        expect(result.saved, isTrue);
+        expect(result.session.totalDetections, 1);
+        expect(
+          [result.session.records.length, result.session.samples.length],
+          [1, 1],
+        );
+      },
+    );
+  });
+
+  group('19. Trial capacity pauses collection instead of losing rows', () {
+    test('reaching the documented capacity keeps every captured row', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 3, 12));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final sessions = ResearchSessionService(
+        telemetry: telemetry,
+        store: InMemoryResearchSessionStore(),
+        clock: () => clock.now,
+        maxTrialRecords: 3,
+        maxTrialSamples: 2,
+      );
+      addTearDown(sessions.dispose);
+
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      for (var index = 0; index < 5; index++) {
+        recordDetection(telemetry, model: builtInRef);
+      }
+      expect(sessions.state, ResearchSessionState.paused);
+      expect(sessions.pauseReason, contains('capture capacity'));
+      // Rows after the stop belong to no interval, so nothing overruns.
+      recordSample(telemetry, model: builtInRef);
+
+      final result = (await sessions.finish())!;
+      expect(result.saved, isTrue);
+      expect(result.session.records, hasLength(3));
+      expect(result.session.samples, isEmpty);
+      expect(result.session.totalDetections, 3);
+    });
+  });
+
+  group('20. Repeated pause/resume captures each row exactly once', () {
+    test('no paused row and no paused increment enters the trial', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 3, 13));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final sessions = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: InMemoryResearchSessionStore(),
+      );
+      addTearDown(sessions.dispose);
+
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: builtInRef);
+      clock.advance(const Duration(seconds: 1));
+      await sessions.pause();
+
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: builtInRef);
+      recordSample(telemetry, model: builtInRef);
+      clock.advance(const Duration(seconds: 1));
+      await sessions.resume();
+
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: builtInRef);
+      clock.advance(const Duration(seconds: 1));
+      await sessions.noteDetectorChange(customRef);
+      expect(sessions.state, ResearchSessionState.paused);
+
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: customRef);
+      recordSample(telemetry, model: customRef);
+      clock.advance(const Duration(seconds: 1));
+      await sessions.resume();
+
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: customRef);
+      clock.advance(const Duration(seconds: 1));
+      await sessions.pause();
+      clock.advance(const Duration(seconds: 1));
+      await sessions.resume();
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: customRef);
+      clock.advance(const Duration(seconds: 1));
+
+      final session = (await sessions.finish())!.session;
+      expect(session.records.map((record) => record.detectorModelId), [
+        'builtin',
+        'builtin',
+        'custom:abcdef123456',
+        'custom:abcdef123456',
+      ]);
+      expect(session.samples, isEmpty);
+      expect(session.totalDetections, 4);
+      expect(
+        session.records.map((record) => record.timestamp).toSet(),
+        hasLength(4),
+      );
+    });
+  });
+
+  group('21. Draft writes are ordered and Finish leaves no draft', () {
+    test(
+      'a delayed earlier checkpoint cannot win over a later Pause',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 3, 14));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = _GatedDraftStore();
+        final sessions = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(sessions.dispose);
+
+        // Start's draft write is held behind the gate; Pause queues behind it.
+        final started = sessions.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+        clock.advance(const Duration(seconds: 1));
+        recordDetection(telemetry, model: builtInRef);
+        clock.advance(const Duration(seconds: 1));
+        final paused = sessions.pause();
+        store.release();
+        await started;
+        await paused;
+
+        final draftJson = jsonDecode(store.draft!) as Map<String, dynamic>;
+        final intervals = (draftJson['intervals'] as List)
+            .cast<Map<String, dynamic>>();
+        // The later Pause snapshot is the one that landed.
+        expect(intervals, hasLength(1));
+        expect(intervals.single['end'], isNotNull);
+        expect(draftJson['records'] as List, hasLength(1));
+
+        final result = (await sessions.finish())!;
+        expect(result.saved, isTrue);
+        await pumpEventQueue();
+        // Nothing queued before Finish can resurrect the draft.
+        expect(store.draft, isNull);
+
+        // A restart sees the finished trial only.
+        final restarted = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(restarted.dispose);
+        await restarted.load();
+        expect(restarted.state, ResearchSessionState.idle);
+        expect(restarted.sessions, hasLength(1));
+        expect(restarted.sessions.single.records, hasLength(1));
+      },
+    );
+
+    test(
+      'an unreadable draft restores nothing instead of a half trial',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 3, 15));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = InMemoryResearchSessionStore()
+          ..draft = '{"schemaVersion":1,"id":"trial-cut-off"';
+        final sessions = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(sessions.dispose);
+
+        await sessions.load();
+        expect(sessions.state, ResearchSessionState.idle);
+        expect(sessions.participantCode, isNull);
+      },
+    );
+  });
+
+  group('22. An oversized upload refuses and changes nothing', () {
+    test('the complete trial, its export and its stored file remain', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 3, 16));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final store = InMemoryResearchSessionStore();
+      final requests = <TelemetryUploadRequest>[];
+      final sessions = ResearchSessionService(
+        telemetry: telemetry,
+        store: store,
+        clock: () => clock.now,
+        uploadService: TelemetryUploadService(
+          configuration: const TelemetryUploadConfiguration(
+            ingestUrl:
+                'https://ingest.example.test/functions/v1/ingest-telemetry',
+            publishableKey: 'publishable-key',
+          ),
+          exportService: TelemetryExportService(clock: () => clock.now),
+          clock: () => clock.now,
+          sender: (request) async {
+            requests.add(request);
+            return const TelemetryUploadResponse(200);
+          },
+          // Reaching the refusal branch without a multi-megabyte fixture.
+          maxBodyBytes: 200,
+        ),
+      );
+      addTearDown(sessions.dispose);
+
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      for (var index = 0; index < 3; index++) {
+        recordDetection(telemetry, model: builtInRef);
+      }
+      clock.advance(const Duration(seconds: 1));
+      final result = (await sessions.finish())!;
+      final session = result.session;
+      final storedBefore = store.finished[session.id];
+      final exportedBefore = TelemetryExportService(
+        clock: () => clock.now,
+      ).toJson(telemetry: session);
+
+      final upload = await sessions.upload(
+        session: session,
+        metadata: const ResearchSessionMetadata(
+          participantCode: 'P-001',
+          studyScenario: 'trial-1',
+          uploadToken: studyToken,
+        ),
+      );
+      expect(upload.isSuccess, isFalse);
+      expect(upload.errorMessage, contains('too large'));
+      expect(requests, isEmpty);
+
+      // Nothing was truncated, thinned or deleted.
+      expect(session.records, hasLength(3));
+      expect(sessions.sessions, contains(session));
+      expect(sessions.isSaved(session), isTrue);
+      expect(store.finished[session.id], storedBefore);
+      expect(
+        TelemetryExportService(
+          clock: () => clock.now,
+        ).toJson(telemetry: session),
+        exportedBefore,
+      );
+    });
+  });
+
+  group('23. A legacy draft restores visibly incomplete', () {
+    test(
+      'counters survive, rows are not invented and the flag travels',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 3, 17));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = InMemoryResearchSessionStore()
+          ..draft = jsonEncode({
+            'schemaVersion': 1,
+            'id': 'trial-legacy-1',
+            'participantCode': 'P-001',
+            'trialLabel': 'trial-1',
+            'savedAt': DateTime.utc(2026, 5, 3, 17, 0, 30).toIso8601String(),
+            'detectors': [
+              {
+                'id': 'builtin',
+                'name': 'Built-in YOLOv8n',
+                'fingerprint': DetectorModel.builtInFingerprint,
+                'classCount': 80,
+              },
+            ],
+            'intervals': [
+              {
+                'start': DateTime.utc(2026, 5, 3, 17).toIso8601String(),
+                'end': null,
+              },
+            ],
+            'closedDetections': 7,
+            'closedAlerts': 1,
+            'closedFrames': 2,
+            'baselineDetections': 0,
+            'baselineAlerts': 0,
+            'baselineFrames': 0,
+            'closedAlertCounters': <String, dynamic>{},
+            'baselineAlertCounters': <String, dynamic>{},
+          });
+        final sessions = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(sessions.dispose);
+
+        await sessions.load();
+        expect(sessions.state, ResearchSessionState.paused);
+        final session = (await sessions.finish())!.session;
+        expect(session.rowsIncomplete, isTrue);
+        expect(session.totalDetections, 7);
+        expect(session.records, isEmpty);
+        expect(session.samples, isEmpty);
+        expect(session.toJson()['rowsIncomplete'], isTrue);
+        expect(
+          TelemetryExportService(
+            clock: () => clock.now,
+          ).toJson(telemetry: session),
+          contains('"rowsIncomplete": true'),
+        );
+      },
+    );
+  });
+}
+
+/// A draft store whose writes wait for a gate, so a later checkpoint is queued
+/// behind an earlier, still-blocked one.
+class _GatedDraftStore extends InMemoryResearchSessionStore {
+  final Completer<void> _gate = Completer<void>();
+
+  void release() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  @override
+  Future<void> writeDraft(String? contents) async {
+    await _gate.future;
+    await super.writeDraft(contents);
+  }
 }
 
 /// A stand-in for the detector selection: a [ChangeNotifier] plus the identity

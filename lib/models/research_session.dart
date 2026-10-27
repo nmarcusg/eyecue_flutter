@@ -93,6 +93,12 @@ class ResearchSession implements TelemetrySource {
   @override
   final AlertCounters alertCounters;
 
+  /// True when this trial was restored from a draft that stored counters but no
+  /// rows: its measurements are absent rather than zero. Carried into the stored
+  /// file and the export so nothing claims complete logs.
+  @override
+  final bool rowsIncomplete;
+
   @override
   final String appVersion;
 
@@ -117,6 +123,7 @@ class ResearchSession implements TelemetrySource {
     required List<AlertLifecycleRecord> alertRecords,
     required this.alertCounters,
     required this.appVersion,
+    this.rowsIncomplete = false,
   }) : detectors = List.unmodifiable(detectors),
        intervals = List.unmodifiable(intervals),
        records = List.unmodifiable(records),
@@ -186,6 +193,7 @@ class ResearchSession implements TelemetrySource {
     'highPriorityAlerts': highPriorityAlerts,
     'framesProcessed': framesProcessed,
     'appVersion': appVersion,
+    if (rowsIncomplete) 'rowsIncomplete': true,
     'alertCounters': alertCounters.toJson(),
     'records': [for (final record in records) record.toJson()],
     'samples': [for (final sample in samples) sample.toJson()],
@@ -259,6 +267,7 @@ class ResearchSession implements TelemetrySource {
       ],
       alertCounters: AlertCounters.fromJson(asMap(json['alertCounters'])),
       appVersion: json['appVersion'] as String? ?? '',
+      rowsIncomplete: json['rowsIncomplete'] == true,
     );
   }
 }
