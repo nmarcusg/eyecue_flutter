@@ -6,6 +6,7 @@ import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_correction.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/screens/logs_reports_screen.dart';
 import 'package:eyecue_flutter/services/correction_service.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
@@ -1210,6 +1211,138 @@ void main() {
       await selectTab(tester, 'Logs');
       await tester.pump();
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('detector model attribution', () {
+    const builtInRef = DetectorModelRef(
+      id: 'builtin',
+      name: 'Built-in YOLOv8n',
+      fingerprint: DetectorModel.builtInFingerprint,
+      classCount: 80,
+    );
+    const customRef = DetectorModelRef(
+      id: 'custom:0a1b2c3d4e5f',
+      name: 'Obstacle Detector v2',
+      fingerprint: '0a1b2c3d4e5f6071-4200',
+      classCount: 12,
+    );
+
+    /// One sample and one detection from each of two detectors.
+    TelemetryService buildTwoModelTelemetry() {
+      final service = TelemetryService(
+        clock: () => DateTime.utc(2026, 1, 1, 12, 0, 0),
+        sessionId: 'session-models',
+      );
+      service.startSession();
+      for (final ref in [builtInRef, customRef]) {
+        service.recordSample(
+          latencyMs: 100,
+          inferenceFps: 10,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: ref,
+        );
+        service.recordDetection(
+          DetectionInfo(
+            detection: const Detection(
+              classId: 0,
+              label: 'cone',
+              confidence: 0.8,
+              box: Rect.fromLTWH(0.1, 0.2, 0.3, 0.4),
+            ),
+            position: RelativePosition.center,
+            priority: ObjectPriority.medium,
+            proximity: ProximityBand.near,
+          ),
+          100,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: ref,
+        );
+      }
+      return service;
+    }
+
+    testWidgets('a log row names the model that produced the numbers', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
+      await selectTab(tester, 'Logs');
+
+      expect(
+        find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Obstacle Detector v2 · Ultralytics · center · 100 ms',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unfiltered summaries are labelled mixed-model data', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
+
+      // The averages above combine both detectors, and say so.
+      expect(find.textContaining('Mixed-model data'), findsOneWidget);
+
+      await selectTab(tester, 'Charts');
+      expect(
+        find.text('Inference Latency — Mixed-model data (300 ms benchmark)'),
+        findsOneWidget,
+      );
+      expect(find.text('All models (mixed)'), findsOneWidget);
+    });
+
+    testWidgets('filtering to one model names it in the chart cards', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
+      await selectTab(tester, 'Charts');
+
+      await tester.tap(find.byType(DropdownButton<String?>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Obstacle Detector v2').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Inference Latency — Obstacle Detector v2 (300 ms benchmark)',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Frames Per Second — Obstacle Detector v2 (15 FPS target)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Inference Latency — Mixed-model data (300 ms benchmark)'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the log list filters to one model but keeps the filter', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
+      await selectTab(tester, 'Logs');
+      expect(find.text('cone — 80%'), findsNWidgets(2));
+
+      await tester.tap(find.byType(DropdownButton<String?>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Built-in YOLOv8n').last);
+      await tester.pumpAndSettle();
+
+      // Only the built-in rows remain, and the model name still shows.
+      expect(find.text('cone — 80%'), findsOneWidget);
+      expect(
+        find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Obstacle Detector v2 · '), findsNothing);
     });
   });
 }

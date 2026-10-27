@@ -9,6 +9,7 @@ import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
 import '../models/detection_runtime_state.dart';
 import '../models/inference_lifecycle_event.dart';
+import '../models/detector_model.dart';
 import '../models/tracked_detection.dart';
 
 /// One recorded detection event (used by the Logs tab and aggregates).
@@ -27,6 +28,18 @@ class TelemetryRecord {
   final int? trackId;
   final MotionState? motion;
 
+  /// Detector identity captured when the row was written (`builtin` or
+  /// `custom:<12 hex>`), so a later rename or switch cannot relabel history.
+  /// Null on rows recorded before model attribution existed.
+  final String? detectorModelId;
+
+  /// The readable model name at record time. Never re-derived from settings.
+  final String? detectorModelName;
+
+  /// Content fingerprint of the graph, so two files with the same name stay
+  /// distinguishable.
+  final String? detectorModelFingerprint;
+
   const TelemetryRecord({
     required this.timestamp,
     this.classId = -1,
@@ -41,6 +54,9 @@ class TelemetryRecord {
     this.confidenceThreshold = 0.25,
     this.trackId,
     this.motion,
+    this.detectorModelId,
+    this.detectorModelName,
+    this.detectorModelFingerprint,
   });
 
   Map<String, dynamic> toJson() => {
@@ -64,6 +80,12 @@ class TelemetryRecord {
     'confidenceThreshold': confidenceThreshold,
     'trackId': trackId,
     'motion': motion?.name,
+    // Attribution is written only when known: an unattributed old row stays
+    // free of three empty keys.
+    if (detectorModelId != null) 'detectorModelId': detectorModelId,
+    if (detectorModelName != null) 'detectorModelName': detectorModelName,
+    if (detectorModelFingerprint != null)
+      'detectorModelFingerprint': detectorModelFingerprint,
   };
 }
 
@@ -135,6 +157,12 @@ class RuntimeSample {
   final bool lowPowerClamped;
   final bool sourceLimited;
 
+  /// Detector identity at sample time — see [TelemetryRecord.detectorModelId].
+  /// Depth timings are never attributed to it.
+  final String? detectorModelId;
+  final String? detectorModelName;
+  final String? detectorModelFingerprint;
+
   const RuntimeSample({
     required this.timestamp,
     required this.latencyMs,
@@ -163,6 +191,9 @@ class RuntimeSample {
     this.depthDroppedTicks,
     this.lowPowerClamped = false,
     this.sourceLimited = false,
+    this.detectorModelId,
+    this.detectorModelName,
+    this.detectorModelFingerprint,
   });
 
   Map<String, dynamic> toJson() => {
@@ -195,6 +226,10 @@ class RuntimeSample {
     if (depthDroppedTicks != null) 'depthDroppedTicks': depthDroppedTicks,
     'lowPowerClamped': lowPowerClamped,
     'sourceLimited': sourceLimited,
+    if (detectorModelId != null) 'detectorModelId': detectorModelId,
+    if (detectorModelName != null) 'detectorModelName': detectorModelName,
+    if (detectorModelFingerprint != null)
+      'detectorModelFingerprint': detectorModelFingerprint,
   };
 }
 
@@ -405,6 +440,7 @@ class TelemetryService extends ChangeNotifier {
     required InferenceEngine engine,
     double confidenceThreshold = 0.25,
     TrackedDetection? track,
+    DetectorModelRef? detectorModel,
   }) {
     _records.add(
       TelemetryRecord(
@@ -421,6 +457,9 @@ class TelemetryService extends ChangeNotifier {
         confidenceThreshold: confidenceThreshold,
         trackId: track?.trackId,
         motion: track?.motion,
+        detectorModelId: detectorModel?.id,
+        detectorModelName: detectorModel?.name,
+        detectorModelFingerprint: detectorModel?.fingerprint,
       ),
     );
     if (_records.length > _maxRecords) {
@@ -459,6 +498,7 @@ class TelemetryService extends ChangeNotifier {
     int? depthDroppedTicks,
     bool lowPowerClamped = false,
     bool sourceLimited = false,
+    DetectorModelRef? detectorModel,
   }) {
     _framesProcessed++;
     _samples.add(
@@ -490,6 +530,9 @@ class TelemetryService extends ChangeNotifier {
         depthDroppedTicks: depthDroppedTicks,
         lowPowerClamped: lowPowerClamped,
         sourceLimited: sourceLimited,
+        detectorModelId: detectorModel?.id,
+        detectorModelName: detectorModel?.name,
+        detectorModelFingerprint: detectorModel?.fingerprint,
       ),
     );
     if (_samples.length > _maxSamples) {

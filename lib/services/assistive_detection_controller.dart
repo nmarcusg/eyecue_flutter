@@ -5,6 +5,7 @@ import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
 import '../models/detection.dart';
+import '../models/detector_model.dart';
 import '../models/tracked_detection.dart';
 import 'correction_service.dart';
 import 'object_tracker.dart';
@@ -27,6 +28,7 @@ class AssistiveDetectionController extends ChangeNotifier {
     this.corrections,
     this.confidenceThreshold = 0.25,
     this.priorityResolver,
+    this.detectorModel,
   }) : tracker = tracker ?? ObjectTracker(),
        super();
 
@@ -41,6 +43,11 @@ class AssistiveDetectionController extends ChangeNotifier {
   /// [SpatialAnalysisService.analyze]). Null keeps the built-in policy; the
   /// detection screen replaces it when the active model is a custom one.
   ObjectPriority Function(Detection)? priorityResolver;
+
+  /// The detector active at record time, stamped on every recorded row so a
+  /// later rename or switch cannot relabel history. Null until the detection
+  /// screen supplies it.
+  DetectorModelRef? detectorModel;
 
   List<DetectionInfo> _detections = const [];
   List<TrackedDetection> _tracks = const [];
@@ -86,6 +93,7 @@ class AssistiveDetectionController extends ChangeNotifier {
         engine: engine,
         confidenceThreshold: confidenceThreshold,
         track: track,
+        detectorModel: detectorModel,
       );
     }
     if (announce) {
@@ -140,6 +148,7 @@ class AssistiveDetectionController extends ChangeNotifier {
       depthDroppedTicks: cadence?.depthDroppedTicks,
       lowPowerClamped: cadence?.lowPowerClamped ?? false,
       sourceLimited: cadence?.sourceLimited ?? false,
+      detectorModel: detectorModel,
     );
   }
 

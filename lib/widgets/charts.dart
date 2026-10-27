@@ -235,7 +235,15 @@ class DetectionFrequencyChart extends StatelessWidget {
 
 String _engineSummary(List<RuntimeSample> samples) {
   final engines = samples.map((sample) => sample.engine.label).toSet();
-  return engines.isEmpty ? 'no engine' : engines.join(', ');
+  final engineText = engines.isEmpty ? 'no engine' : engines.join(', ');
+  final models = samples
+      .map((sample) => sample.detectorModelName)
+      .whereType<String>()
+      .toSet();
+  if (models.isEmpty) return engineText;
+  // A chart drawn from more than one detector never claims one model's data.
+  return '$engineText; detector model ${models.join(', ')}'
+      '${models.length > 1 ? ' (mixed-model data)' : ''}';
 }
 
 String _sampleSummary(

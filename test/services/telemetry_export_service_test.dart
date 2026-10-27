@@ -8,14 +8,33 @@ import 'package:eyecue_flutter/models/detection_correction.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/models/detection.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/models/inference_lifecycle_event.dart';
 import 'package:eyecue_flutter/models/telemetry_export.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
+import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final timestamp = DateTime.utc(2026, 1, 1, 12, 0, 0);
+  const engine = InferenceEngine.ultralytics;
+
+  /// The bundled detector's identity, as the detection screen supplies it.
+  const builtInRef = DetectorModelRef(
+    id: 'builtin',
+    name: 'Built-in YOLOv8n',
+    fingerprint: DetectorModel.builtInFingerprint,
+    classCount: 80,
+  );
+
+  /// A researcher import: readable name plus content fingerprint.
+  const customRef = DetectorModelRef(
+    id: 'custom:0a1b2c3d4e5f',
+    name: 'Obstacle Detector v2',
+    fingerprint: '0a1b2c3d4e5f6071-4200',
+    classCount: 12,
+  );
 
   TelemetryService telemetry() {
     final service = TelemetryService(
@@ -811,6 +830,270 @@ void main() {
     expect(stored.latencyMs, 42.519999999999996);
     expect(service.samples.single.inferenceFps, 12.499999999999998);
     expect(stored.box, box, reason: 'the stored Rect is untouched');
+  });
+
+  test('exports keep the readable name and fingerprint association', () {
+    final service = TelemetryService(
+      clock: () => timestamp,
+      sessionId: 'session-models',
+    );
+    addTearDown(service.dispose);
+    service.startSession();
+    final info = DetectionInfo(
+      detection: const Detection(
+        classId: 3,
+        label: 'cone',
+        confidence: 0.8,
+        box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2),
+      ),
+      position: RelativePosition.center,
+      priority: ObjectPriority.medium,
+      proximity: ProximityBand.near,
+    );
+    for (final ref in [builtInRef, customRef]) {
+      service.recordDetection(info, 40, engine: engine, detectorModel: ref);
+      service.recordSample(
+        latencyMs: 40,
+        inferenceFps: 10,
+        objectCount: 1,
+        engine: engine,
+        detectorModel: ref,
+      );
+    }
+
+    final exporter = TelemetryExportService(clock: () => timestamp);
+    final decoded =
+        jsonDecode(exporter.toJson(telemetry: service)) as Map<String, dynamic>;
+    final models = decoded['detectorModels'] as Map;
+    expect(models.keys.toSet(), {builtInRef.id, customRef.id});
+    expect(models[builtInRef.id], {
+      'name': 'Built-in YOLOv8n',
+      'fingerprint': DetectorModel.builtInFingerprint,
+    });
+    expect(models[customRef.id], {
+      'name': 'Obstacle Detector v2',
+      'fingerprint': customRef.fingerprint,
+    });
+    // Every row resolves through the table, and no row repeats the name.
+    for (final key in ['samples', 'detections']) {
+      for (final row in decoded[key] as List) {
+        expect(models, contains((row as Map)['detectorModelId']));
+        expect(row.containsKey('detectorModelName'), isFalse);
+        expect(row.containsKey('detectorModelFingerprint'), isFalse);
+      }
+    }
+
+    final lines = exporter.toCsv(telemetry: service).split('\n');
+    final header = lines.first.split(',');
+    int column(String name) => header.indexOf('"$name"');
+    for (final name in ['model_id', 'model_name', 'model_fingerprint']) {
+      expect(column(name), isNot(-1), reason: 'CSV carries $name');
+    }
+    final detectionRows = lines
+        .where((line) => line.startsWith('"detection"'))
+        .map((line) => line.split(','))
+        .toList();
+    expect(detectionRows, hasLength(2));
+    for (final row in detectionRows) {
+      final id = row[column('model_id')];
+      final model = models[id.substring(1, id.length - 1)] as Map;
+      expect(row[column('model_name')], '"${model['name']}"');
+      expect(row[column('model_fingerprint')], '"${model['fingerprint']}"');
+    }
+    expect(detectionRows.first[column('model_name')], '"Built-in YOLOv8n"');
+    expect(detectionRows.last[column('model_name')], '"Obstacle Detector v2"');
+  });
+
+  test(
+    'the populated envelope carries no path, URI, filename or model bytes',
+    () {
+      final service = telemetry();
+      service.recordDetection(
+        DetectionInfo(
+          detection: const Detection(
+            classId: 0,
+            label: 'class-0',
+            confidence: 0.7,
+            box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2),
+          ),
+          position: RelativePosition.center,
+          priority: ObjectPriority.medium,
+          proximity: ProximityBand.near,
+        ),
+        40,
+        engine: engine,
+        detectorModel: customRef,
+      );
+      // A custom model is installed, so the settings block has something it could
+      // leak: the local path the app needs on disk.
+      const settings = AppSettings(
+        inferenceEngine: InferenceEngine.ultralytics,
+        detectorModelKind: DetectorModelKind.custom,
+        customModelName: 'Obstacle Detector v2',
+        customModelFingerprint: '0a1b2c3d4e5f6071-4200',
+        customModelClassCount: 12,
+      );
+
+      final jsonText = TelemetryExportService(
+        clock: () => timestamp,
+      ).toJson(telemetry: service, settings: settings);
+      final lower = jsonText.toLowerCase();
+      for (final token in const [
+        '/data/',
+        '/storage/',
+        '/sdcard',
+        'content://',
+        'file://',
+        '.tflite',
+        'eyecue_models',
+        'documents/',
+        'download',
+        'tfl3',
+        'primary:',
+      ]) {
+        expect(
+          lower.contains(token),
+          isFalse,
+          reason: 'the envelope must not carry "$token"',
+        );
+      }
+      // No binary: the payload is text, so nothing below the printable range.
+      expect(
+        jsonText.codeUnits.where((unit) => unit < 0x20 && unit != 0x0a),
+        isEmpty,
+        reason: 'model bytes never reach the payload',
+      );
+      // The readable identity and its fingerprint still made it across.
+      final decoded = jsonDecode(jsonText) as Map<String, dynamic>;
+      expect(decoded['detectorModels'], contains(customRef.id));
+      expect(
+        (decoded['settings'] as Map).keys,
+        isNot(contains('customModelPath')),
+      );
+    },
+  );
+
+  test('a realistically populated envelope stays under the upload ceiling', () {
+    final service = TelemetryService(
+      clock: () => timestamp,
+      sessionId: 'session-populated',
+      appVersion: '1.2.3+4',
+    );
+    addTearDown(service.dispose);
+    service.startSession();
+    // An 80-class built-in graph and a 12-class import, both recorded.
+    final builtInLabels = [for (var i = 0; i < 80; i++) 'coco-class-$i'];
+    final customLabels = [for (var i = 0; i < 12; i++) 'custom-class-$i'];
+    for (var i = 0; i < 2000; i++) {
+      final labels = i.isEven ? builtInLabels : customLabels;
+      service.recordDetection(
+        DetectionInfo(
+          detection: Detection(
+            classId: i % labels.length,
+            label: labels[i % labels.length],
+            // Device-shaped: Float32-derived doubles, not tidy literals.
+            confidence: 0.8700000047683716,
+            box: const Rect.fromLTWH(
+              0.11363636363636363,
+              0.22656200000000002,
+              0.34545454545454546,
+              0.43750000000000006,
+            ),
+          ),
+          position: RelativePosition.left,
+          priority: ObjectPriority.medium,
+          proximity: ProximityBand.far,
+        ),
+        42.5,
+        engine: engine,
+        confidenceThreshold: 0.4,
+        detectorModel: i.isEven ? builtInRef : customRef,
+      );
+    }
+    for (var i = 0; i < 500; i++) {
+      service.recordSample(
+        latencyMs: 42.5,
+        inferenceFps: 15,
+        objectCount: 3,
+        engine: engine,
+        confidenceThreshold: 0.4,
+        requestedDetectionHz: 8,
+        effectiveDetectionHz: 5,
+        requestedDepthHz: 4,
+        effectiveDepthHz: 2,
+        depthObservedHz: 1.5,
+        depthLatencyMs: 90,
+        depthStatus: 'gpu',
+        detectorPreMs: 3.5,
+        detectorInferenceMs: 28.25,
+        detectorPostMs: 4.75,
+        depthPreMs: 6,
+        depthInferenceMs: 61,
+        depthPostMs: 9,
+        depthAccelerator: 'gpu',
+        depthGridWidth: 96,
+        depthGridHeight: 72,
+        heatmapBuildMs: 11,
+        depthDroppedTicks: 37,
+        lowPowerClamped: true,
+        sourceLimited: true,
+        detectorModel: i.isEven ? builtInRef : customRef,
+      );
+    }
+    for (var i = 0; i < 500; i++) {
+      service.recordAlertLifecycle(
+        AlertLifecycleRecord(
+          origin: AlertOrigin.detection,
+          engine: engine,
+          requestedAt: timestamp,
+          submittedAt: timestamp.add(const Duration(milliseconds: 100)),
+          alertStartedAt: timestamp.add(const Duration(milliseconds: 150)),
+          terminalAt: timestamp.add(const Duration(seconds: 1)),
+          terminalState: AlertTerminalState.completed,
+          terminalCause: null,
+          hadStarted: true,
+          reconciledAt: timestamp.add(const Duration(seconds: 1)),
+          frameNumber: 7,
+          resultReceivedAt: timestamp.add(const Duration(milliseconds: 80)),
+          detectionAcceptedAt: timestamp.add(const Duration(milliseconds: 90)),
+        ),
+      );
+    }
+    service.recordAlertCounters(
+      const AlertCounters(dropped: 1, muted: 2, rejectedByReason: {'x': 3}),
+    );
+
+    const settings = AppSettings(
+      inferenceEngine: InferenceEngine.ultralytics,
+      detectorModelKind: DetectorModelKind.custom,
+      customModelName: 'Obstacle Detector v2',
+      customModelFingerprint: '0a1b2c3d4e5f6071-4200',
+      customModelClassCount: 12,
+    );
+    final export = TelemetryExportService(
+      clock: () => timestamp,
+    ).snapshot(telemetry: service, settings: settings);
+    // Measured the way the uploader builds its body: the same snapshot, encoded
+    // once, compact.
+    final body = {
+      'ingestionSchemaVersion': 1,
+      'submittedAt': timestamp.toUtc().toIso8601String(),
+      'consent': {'manualSessionUpload': true},
+      'telemetry': export.toJson(),
+    };
+    final bytes = utf8.encode(jsonEncode(body)).length;
+    // ignore: avoid_print
+    print('populated telemetry envelope: $bytes UTF-8 bytes (compact)');
+    expect(
+      bytes,
+      lessThan(TelemetryUploadService.maxUploadBodyBytes),
+      reason: 'measured $bytes bytes against the ingest ceiling',
+    );
+    // Nothing was truncated to fit: the caps, not the size guard, bound the data.
+    expect(export.samples, hasLength(400));
+    expect(export.detections, hasLength(2000));
+    expect(export.alertLifecycle, hasLength(500));
+    expect(export.detectorModels.keys.toSet(), {builtInRef.id, customRef.id});
   });
 
   test('writes JSON and CSV to an explicitly supplied directory', () async {
