@@ -5,6 +5,17 @@
 
 ---
 
+## Unreleased — Truthful Ultralytics readiness
+
+### Fixed
+- Ultralytics remains Preparing until the mounted native view delivers its first
+  valid inference payload (including empty detections); a live session with no
+  payload fails after 30 seconds. Added production platform-view/event-channel
+  regression coverage for resolution-only, empty/non-empty payloads, startup
+  timeout, and live model-resolution failure.
+
+---
+
 ## Unreleased — Configurable inference cadence (2026-10-23)
 
 ### Added

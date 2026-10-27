@@ -96,8 +96,7 @@ int? relativeDirectionForGesture(EyeCueGesture gesture) {
 /// nulls `predictor`, clears the predictor cache, and nulls the callbacks), and
 /// `startCamera()` early-returns while `predictor == null`. The plugin's own
 /// comment confirms `stop()` is not reversible by `start()`. The only path to
-/// Ready is the native `onModelLoad` callback, which fires on `YOLOView`
-/// mount/model resolution and therefore never re-fires after a stop.
+/// Ready is the first valid inference payload from the mounted native view.
 ///
 /// A fresh platform view must therefore be mounted on a start-after-stop. This
 /// pure helper returns `true` exactly when the native session must be recreated
@@ -228,6 +227,7 @@ class UltralyticsDetectionScreen extends StatefulWidget {
   onRuntimeStateChanged;
   final void Function(DetectionFailure failure, int? sourceGeneration)?
   onFailure;
+  final Duration readinessTimeout;
 
   const UltralyticsDetectionScreen({
     super.key,
@@ -241,6 +241,7 @@ class UltralyticsDetectionScreen extends StatefulWidget {
     this.onNavigateRelative,
     this.onRuntimeStateChanged,
     this.onFailure,
+    this.readinessTimeout = const Duration(seconds: 30),
   });
 
   @override
@@ -319,13 +320,12 @@ class _UltralyticsDetectionScreenState
   /// new native session (see [shouldRecreateNativeSessionOnStart]).
   int _nativeViewEpoch = 0;
 
-  /// The epoch whose `onModelLoad` is allowed to publish Ready.
+  /// The epoch whose native-view callbacks still belong to the live session.
   ///
-  /// A stale `onModelLoad` from a previous epoch (e.g. a late callback from the
-  /// view being torn down) must never be treated as the current session's
-  /// Ready. The callback captures the epoch it was built with and is ignored
-  /// unless it matches this field.
+  /// The callback captures the epoch it was built with and is ignored unless it
+  /// matches this field.
   int _activeNativeEpoch = 0;
+  Timer? _readinessTimer;
 
   /// Guards against duplicate/overlapping start attempts.
   ///
@@ -536,6 +536,7 @@ class _UltralyticsDetectionScreenState
 
   @override
   void dispose() {
+    _readinessTimer?.cancel();
     _settings.removeListener(_handleSettingsChanged);
     _freshnessTimer?.cancel();
     _depthEventSub?.cancel();
@@ -725,9 +726,9 @@ class _UltralyticsDetectionScreenState
 
       // A start after a stop must recreate the native session: native `stop()`
       // permanently destroys the predictor and `startCamera()` is a no-op while
-      // it is null, so the only path back to Ready is a fresh platform view
-      // whose `_resolveModel()` fires `onModelLoad` again. A first start or a
-      // resume from pause must NOT bump the epoch.
+      // it is null, so the path back to Ready is a fresh platform view whose
+      // first inference payload proves the new session is operational. A first
+      // start or a resume from pause must NOT bump the epoch.
       final recreate = shouldRecreateNativeSessionOnStart(
         nativeViewMounted: _nativeViewMounted,
         detectionActive: _detectionActive,
@@ -745,8 +746,8 @@ class _UltralyticsDetectionScreenState
         _firstResultLogged = false;
         if (recreate) {
           _nativeViewEpoch++;
-          _activeNativeEpoch = _nativeViewEpoch;
         }
+        _activeNativeEpoch = _nativeViewEpoch;
       });
       if (recreate) {
         debugPrint(
@@ -754,10 +755,9 @@ class _UltralyticsDetectionScreenState
           '$_nativeViewEpoch (fresh YOLOView mount)',
         );
       }
-      // Keep the coordinator at Preparing until native detection is genuinely
-      // operational; Ready is published only from the epoch-guarded
-      // `onModelLoad` callback.
+      // Model resolution is not proof that the native detector is operational.
       _setRuntimeState(DetectionRuntimeState.loadingModel);
+      _armReadinessTimeout(_activeNativeEpoch);
       if (_mdeEnabled) {
         await _resolveRotation();
         _depth.retry();
@@ -772,6 +772,7 @@ class _UltralyticsDetectionScreenState
   }
 
   Future<void> _stopDetection() async {
+    _readinessTimer?.cancel();
     debugPrint(
       '[Ultralytics] Stop requested — coordinator=${widget.coordinator.state} '
       'local(active=$_detectionActive paused=$_paused epoch=$_nativeViewEpoch)',
@@ -818,6 +819,7 @@ class _UltralyticsDetectionScreenState
 
   Future<void> _pauseDetection() async {
     if (!_detectionActive || _paused) return;
+    _readinessTimer?.cancel();
     await _haptics.lightTick();
     await _controller.pause();
     // Stop the depth cadence and drop queued frames while paused.
@@ -851,12 +853,23 @@ class _UltralyticsDetectionScreenState
   /// `YOLOView` calls either `onStreamingData` OR `onResult` +
   /// `onPerformanceMetrics`; the streaming payload carries the detections,
   /// metrics and (MDE only) the analysis JPEG, so this replaces both callbacks.
-  void _handleStreamingData(Map<String, dynamic> data) {
+  void _handleStreamingData(
+    Map<String, dynamic> data, {
+    required int callbackEpoch,
+  }) {
     if (!_detectionActive || _paused) return;
+    if (callbackEpoch != _nativeViewEpoch ||
+        callbackEpoch != _activeNativeEpoch) {
+      return;
+    }
     // App-side receipt anchor: this callback is the first observable point.
     // Pre-result anchors stay unavailable here; metrics are never correlated.
     final resultReceivedAt = DateTime.now();
     final results = YOLODetectionResults.fromMap(data).detections;
+    if (_runtimeState == DetectionRuntimeState.loadingModel) {
+      _readinessTimer?.cancel();
+      _setRuntimeState(DetectionRuntimeState.ready);
+    }
     if (!_firstResultLogged) {
       _firstResultLogged = true;
       debugPrint(
@@ -1126,6 +1139,7 @@ class _UltralyticsDetectionScreenState
 
   void _reportFailure(DetectionFailure failure) {
     if (!mounted) return;
+    _readinessTimer?.cancel();
     setState(() {
       _runtimeState = DetectionRuntimeState.failed;
       _starting = false;
@@ -1137,6 +1151,32 @@ class _UltralyticsDetectionScreenState
     } else {
       _telemetry.recordFailure(failure);
     }
+  }
+
+  void _armReadinessTimeout(int epoch) {
+    _readinessTimer?.cancel();
+    _readinessTimer = Timer(widget.readinessTimeout, () {
+      if (!mounted ||
+          !_detectionActive ||
+          _paused ||
+          epoch != _nativeViewEpoch ||
+          epoch != _activeNativeEpoch ||
+          _runtimeState != DetectionRuntimeState.loadingModel) {
+        return;
+      }
+      _reportFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.modelLoading,
+          safeMessage:
+              'The detection engine did not produce its first result in time.',
+          technicalDetail:
+              'No inference payload within ${widget.readinessTimeout}.',
+          engine: InferenceEngine.ultralytics,
+          timestamp: DateTime.now(),
+          fallbackAvailable: true,
+        ),
+      );
+    });
   }
 
   void _retryRuntime() {
@@ -1335,6 +1375,7 @@ class _UltralyticsDetectionScreenState
     // hidden the native overlay draws boxes as before; when it is visible the
     // native overlay is turned off and boxes are painted in Flutter above the
     // heatmap so labels stay legible.
+    final callbackEpoch = _nativeViewEpoch;
     final viewport = Container(
       decoration: BoxDecoration(
         color: kHomeInk,
@@ -1348,7 +1389,7 @@ class _UltralyticsDetectionScreenState
             // The epoch is part of the key so a start-after-stop mounts a fresh
             // platform view. Native `stop()` permanently destroys the predictor
             // and `startCamera()` is a no-op while it is null, so remounting is
-            // the only way `_resolveModel()` runs and `onModelLoad` fires again.
+            // the only way to receive results from a fresh native session.
             key: ValueKey('ultralytics-native-$_nativeViewEpoch'),
             modelPath: EyeCueModelConfig.modelAssetPath,
             task: YOLOTask.detect,
@@ -1357,30 +1398,36 @@ class _UltralyticsDetectionScreenState
             iouThreshold: EyeCueModelConfig.nmsIouThreshold,
             useGpu: true,
             streamingConfig: _streamingConfig,
-            onStreamingData: _handleStreamingData,
+            onStreamingData: (data) =>
+                _handleStreamingData(data, callbackEpoch: callbackEpoch),
             onModelLoad: (_, _) {
-              // Ignore a stale `onModelLoad` from a previous epoch (e.g. a late
-              // callback from the view being torn down) so it is never treated
-              // as the current session's Ready.
-              if (_nativeViewEpoch != _activeNativeEpoch) {
+              if (!mounted ||
+                  !_detectionActive ||
+                  callbackEpoch != _nativeViewEpoch ||
+                  callbackEpoch != _activeNativeEpoch) {
                 debugPrint(
                   '[Ultralytics] Ignoring stale onModelLoad — callback epoch '
-                  '$_nativeViewEpoch != active $_activeNativeEpoch',
+                  '$callbackEpoch != active $_activeNativeEpoch',
                 );
                 return;
               }
               debugPrint(
-                '[Ultralytics] Native model loaded — epoch $_nativeViewEpoch; '
-                'reporting Ready',
+                '[Ultralytics] Model path resolved — epoch $callbackEpoch; '
+                'waiting for first inference payload',
               );
               if (mounted) {
                 setState(() {
                   _modelError = null;
                 });
               }
-              _setRuntimeState(DetectionRuntimeState.ready);
             },
             onModelError: (error, _, _) {
+              if (!mounted ||
+                  !_detectionActive ||
+                  callbackEpoch != _nativeViewEpoch ||
+                  callbackEpoch != _activeNativeEpoch) {
+                return;
+              }
               _reportFailure(
                 DetectionFailure(
                   category: DetectionFailureCategory.modelLoading,
