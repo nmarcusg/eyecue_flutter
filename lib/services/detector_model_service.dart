@@ -66,7 +66,9 @@ class ModelImportResult {
 ///
 /// Only one custom copy is ever kept: the imported graph plus its label
 /// sidecar, both named by content fingerprint so the native filename/size
-/// model caches cannot reuse a stale graph.
+/// model caches cannot reuse a stale graph. The copy outlives a switch to the
+/// built-in detector, so the last import stays re-selectable; a successful
+/// replacement import is what removes the previous copy.
 class DetectorModelService extends ChangeNotifier {
   DetectorModelService(
     this._settings, {
@@ -100,6 +102,10 @@ class DetectorModelService extends ChangeNotifier {
   /// caller must surface it; recovery is never silent.
   String? get selectionRecoveryMessage => _selectionRecoveryMessage;
 
+  String get _unavailableMessage =>
+      'The imported custom model is no longer available, so '
+      '${_builtIn.displayName} is selected. Import the model again to use it.';
+
   /// Reads the persisted selection and repairs an unusable one.
   ///
   /// An older settings file, or a custom selection whose app-owned copy or
@@ -120,24 +126,53 @@ class DetectorModelService extends ChangeNotifier {
       _current = restored;
     } else {
       _current = _builtIn;
-      _selectionRecoveryMessage =
-          'The imported custom model is no longer available, so '
-          '${_builtIn.displayName} is selected. Import the model again to use '
-          'it.';
-      await _settings.setDetectorModel(kind: DetectorModelKind.builtIn);
+      _selectionRecoveryMessage = _unavailableMessage;
+      // The copy is gone or no longer matches its name: drop the identity too,
+      // otherwise the next start would retry the same broken selection.
+      await _settings.setDetectorModel(
+        kind: DetectorModelKind.builtIn,
+        clearCustomModel: true,
+      );
     }
     notifyListeners();
   }
 
-  /// Switches back to the bundled detector and removes the app-owned custom
-  /// copy. The bundled asset is never touched.
+  /// Switches back to the bundled detector. The app-owned custom copy and its
+  /// identity are kept, so [selectStoredCustom] can restore the last valid
+  /// import without repeating it. The bundled asset is never touched.
   Future<void> selectBuiltIn() async {
-    final previous = _current;
     await _settings.setDetectorModel(kind: DetectorModelKind.builtIn);
     _current = _builtIn;
     _selectionRecoveryMessage = null;
     notifyListeners();
-    if (previous.isCustom) await _deleteAppOwned(previous);
+  }
+
+  /// Re-selects the stored custom model without importing it again.
+  ///
+  /// Verifies the app-owned copy and its fingerprint before selecting, so a
+  /// missing or corrupted file cannot be presented as the active model.
+  Future<ModelImportResult> selectStoredCustom() async {
+    final restored = await _restoreCustom();
+    if (restored == null) {
+      _current = _builtIn;
+      _selectionRecoveryMessage = _unavailableMessage;
+      notifyListeners();
+      await _settings.setDetectorModel(
+        kind: DetectorModelKind.builtIn,
+        clearCustomModel: true,
+      );
+      return ModelImportResult.failure(_unavailableMessage);
+    }
+    await _settings.setDetectorModel(
+      kind: DetectorModelKind.custom,
+      name: restored.displayName,
+      fingerprint: restored.fingerprint,
+      classCount: restored.classCount,
+    );
+    _current = restored;
+    _selectionRecoveryMessage = null;
+    notifyListeners();
+    return ModelImportResult.success(restored);
   }
 
   /// Opens the system picker, then imports the chosen file.
@@ -199,14 +234,14 @@ class DetectorModelService extends ChangeNotifier {
 
       final info = await _inspect(path);
       final task = info['task'];
-      final channelCount = _detectionChannelCount(structure);
+      final channelCandidates = _channelCandidates(structure);
       if (task is String && task.isNotEmpty && task != 'detect') {
         return ModelImportResult.failure(
           'That model is for "$task", not object detection. Export a '
           'detection model, then import it again.',
         );
       }
-      if ((task is! String || task.isEmpty) && channelCount == null) {
+      if ((task is! String || task.isEmpty) && channelCandidates.isEmpty) {
         return const ModelImportResult.failure(
           'That model does not look like an object-detection model. Export a '
           'YOLO detection model with its labels embedded.',
@@ -220,13 +255,8 @@ class DetectorModelService extends ChangeNotifier {
           'Ultralytics YOLO with labels embedded in the model metadata.',
         );
       }
-      // YOLO detection heads carry `4 + classCount` channels (box + scores).
-      if (channelCount != null && channelCount != labels.length + 4) {
-        return ModelImportResult.failure(
-          'That model reports ${labels.length} labels but its output does not '
-          'match them. Re-export the model with its own labels embedded.',
-        );
-      }
+      final mismatch = labelShapeMismatch(structure, labels.length);
+      if (mismatch != null) return ModelImportResult.failure(mismatch);
 
       final directory = await _modelsDirectory();
       await directory.create(recursive: true);
@@ -234,11 +264,11 @@ class DetectorModelService extends ChangeNotifier {
 
       staged = File('${directory.path}/.staging-$fingerprint.tflite');
       await staged.writeAsBytes(bytes, flush: true);
-      final target = File('${directory.path}/$fingerprint.tflite');
+      final target = _modelFile(directory, fingerprint);
       await staged.rename(target.path);
       staged = null;
 
-      await File('${directory.path}/$fingerprint.labels.json').writeAsString(
+      await _sidecarFile(directory, fingerprint).writeAsString(
         jsonEncode({
           'displayName': name,
           'fingerprint': fingerprint,
@@ -262,18 +292,22 @@ class DetectorModelService extends ChangeNotifier {
         kind: DetectorModelKind.custom,
         name: name,
         fingerprint: fingerprint,
-        path: target.path,
         classCount: labels.length,
       );
       _current = model;
       _selectionRecoveryMessage = null;
       notifyListeners();
 
-      if (previous.isCustom && previous.path != model.path) {
-        await _deleteAppOwned(previous);
+      // Only a committed replacement import drops the previous copy.
+      if (previous.isCustom && previous.fingerprint != fingerprint) {
+        await _deleteAppOwned(previous.fingerprint);
       }
       return ModelImportResult.success(model);
     } on FileSystemException {
+      return const ModelImportResult.failure(_genericFailure);
+    } on MissingPluginException {
+      // No native inspector channel (unsupported host/ABI): fail visibly
+      // instead of surfacing an unhandled async error.
       return const ModelImportResult.failure(_genericFailure);
     } on PlatformException {
       return const ModelImportResult.failure(_genericFailure);
@@ -315,27 +349,27 @@ class DetectorModelService extends ChangeNotifier {
   }
 
   Future<DetectorModel?> _restoreCustom() async {
-    final path = _settings.customModelPath;
     final fingerprint = _settings.customModelFingerprint;
     final name = _settings.customModelName;
     final classCount = _settings.customModelClassCount;
-    if (path == null ||
-        fingerprint == null ||
-        name == null ||
-        classCount == null) {
+    if (fingerprint == null || name == null || classCount == null) {
       return null;
     }
     try {
       final directory = await _modelsDirectory();
-      // Only an app-owned copy is trusted; a path outside the models directory
-      // would mean the settings file was edited.
-      if (!_isInside(directory.path, path)) return null;
-      final file = File(path);
+      final file = _modelFile(directory, fingerprint);
       if (!await file.exists()) return null;
       final sidecar = await _readSidecar(directory, fingerprint);
       if (sidecar == null || sidecar['fingerprint'] != fingerprint) return null;
       final size = await file.length();
       if (sidecar['bytes'] != size) return null;
+      // Length alone cannot catch a same-size corruption, so re-derive the
+      // identity from the bytes. A mismatch makes the app-owned copy useless:
+      // remove it so the next import starts clean and the name is not reused.
+      if (await _fileFingerprint(file) != fingerprint) {
+        await _deleteAppOwned(fingerprint);
+        return null;
+      }
       final labels = _parseLabels(sidecar['labels']);
       if (labels == null || labels.length != classCount) return null;
       return DetectorModel(
@@ -344,11 +378,33 @@ class DetectorModelService extends ChangeNotifier {
         fingerprint: fingerprint,
         labels: List<String>.unmodifiable(labels),
         fileSizeBytes: size,
-        path: path,
+        path: file.path,
       );
     } on FileSystemException {
       return null;
     }
+  }
+
+  /// Both app-owned files are named by fingerprint, so the path never needs to
+  /// be persisted (and so never reaches exported settings).
+  static File _modelFile(Directory directory, String fingerprint) =>
+      File('${directory.path}/$fingerprint.tflite');
+
+  static File _sidecarFile(Directory directory, String fingerprint) =>
+      File('${directory.path}/$fingerprint.labels.json');
+
+  /// Re-hashes the committed copy in chunks: a 40 MB model must not be loaded
+  /// into memory a second time just to verify it.
+  static Future<String?> _fileFingerprint(File file) async {
+    final accumulator = TfliteFingerprintAccumulator();
+    try {
+      await for (final chunk in file.openRead()) {
+        accumulator.add(chunk);
+      }
+    } on FileSystemException {
+      return null;
+    }
+    return accumulator.fingerprint;
   }
 
   Future<Map<String, dynamic>?> _readSidecar(
@@ -356,7 +412,7 @@ class DetectorModelService extends ChangeNotifier {
     String fingerprint,
   ) async {
     try {
-      final file = File('${directory.path}/$fingerprint.labels.json');
+      final file = _sidecarFile(directory, fingerprint);
       if (!await file.exists()) return null;
       final decoded = jsonDecode(await file.readAsString());
       return decoded is Map<String, dynamic> ? decoded : null;
@@ -382,32 +438,48 @@ class DetectorModelService extends ChangeNotifier {
     return labels;
   }
 
-  /// Class-channel count of a YOLO detection head (`4 + classCount`), or `null`
-  /// when no output dimension is a plausible channel count.
+  /// Every output dimension that can be a YOLO channel count (`4 + classCount`),
+  /// i.e. `5 <= d <= kMaxImportLabels + 4`.
   ///
-  /// Shapes are `[1, 4 + n, anchors]` or `[1, anchors, 4 + n]`, so every
-  /// dimension is considered; an uninterpretable shape is not a rejection
-  /// reason on its own.
-  static int? _detectionChannelCount(TfliteModelStructure structure) {
-    int? found;
+  /// Shapes are `[1, 4 + n, anchors]` or `[1, anchors, 4 + n]` — and a
+  /// small-anchor export can have both in range (`[1, 84, 300]`), so the whole
+  /// set is kept rather than guessing which one is the channel axis.
+  static List<int> _channelCandidates(TfliteModelStructure structure) {
+    final found = <int>{};
     for (final tensor in structure.outputTensors) {
       for (final dimension in tensor.shape) {
-        if (dimension < 5 || dimension > kMaxImportLabels + 4) continue;
-        if (found != null && found != dimension) return null;
-        found = dimension;
+        if (dimension >= 5 && dimension <= kMaxImportLabels + 4) {
+          found.add(dimension);
+        }
       }
     }
-    return found;
+    return found.toList()..sort();
   }
 
-  Future<void> _deleteAppOwned(DetectorModel model) async {
+  /// Non-null when the detection head cannot carry [labelCount] classes.
+  ///
+  /// One matching candidate is enough (the other in-range dimension is the
+  /// anchor/detection count). Candidates that all disagree mean the labels are
+  /// not this graph's labels — accepting them would silently mislabel every
+  /// detection. Only a shape with no candidate at all is left without an
+  /// opinion.
+  @visibleForTesting
+  static String? labelShapeMismatch(
+    TfliteModelStructure structure,
+    int labelCount,
+  ) {
+    final candidates = _channelCandidates(structure);
+    if (candidates.isEmpty) return null;
+    if (candidates.contains(labelCount + 4)) return null;
+    return 'That model reports $labelCount labels but its output does not '
+        'match them. Re-export the model with its own labels embedded.';
+  }
+
+  Future<void> _deleteAppOwned(String fingerprint) async {
     try {
       final directory = await _modelsDirectory();
-      if (!_isInside(directory.path, model.path)) return;
-      await _deleteQuietly(File(model.path));
-      await _deleteQuietly(
-        File('${directory.path}/${model.fingerprint}.labels.json'),
-      );
+      await _deleteQuietly(_modelFile(directory, fingerprint));
+      await _deleteQuietly(_sidecarFile(directory, fingerprint));
     } on FileSystemException {
       // A leftover copy is harmless: the next import rewrites by fingerprint.
     }
@@ -419,13 +491,6 @@ class DetectorModelService extends ChangeNotifier {
     } on FileSystemException {
       // Cleanup is best-effort; a stale staging file is never a selection.
     }
-  }
-
-  static bool _isInside(String directory, String path) {
-    final prefix = directory.endsWith(Platform.pathSeparator)
-        ? directory
-        : '$directory${Platform.pathSeparator}';
-    return path.startsWith(prefix);
   }
 
   static Future<Map<String, dynamic>> _defaultInspect(String path) =>

@@ -121,11 +121,13 @@ void main() {
       });
       expect(settings.detectorModelKind, DetectorModelKind.builtIn);
       expect(settings.customModelName, isNull);
-      expect(settings.customModelPath, isNull);
+      expect(settings.customModelFingerprint, isNull);
       expect(AppSettings.currentSchemaVersion, 7);
     });
 
     test('a custom selection round-trips and clears as a unit', () {
+      // A `customModelPath` written by an older build is simply ignored: the
+      // path is derived from the fingerprint and never persisted.
       final settings = AppSettings.fromJson({
         'detectorModelKind': 'custom',
         'customModelName': 'Obstacle Detector v2',
@@ -140,12 +142,26 @@ void main() {
         detectorModelKind: DetectorModelKind.builtIn,
         customModelName: null,
         customModelFingerprint: null,
-        customModelPath: null,
         customModelClassCount: null,
       );
       expect(builtIn.detectorModelKind, DetectorModelKind.builtIn);
       expect(builtIn.customModelName, isNull);
-      expect(builtIn.customModelPath, isNull);
+      expect(builtIn.customModelFingerprint, isNull);
+    });
+
+    test('the persisted map carries no filesystem path', () {
+      final json = const AppSettings(
+        detectorModelKind: DetectorModelKind.custom,
+        customModelName: 'Obstacle Detector v2',
+        customModelFingerprint: '0123456789abcdef-1234',
+        customModelClassCount: 3,
+      ).toJson();
+
+      expect(json.containsKey('customModelPath'), isFalse);
+      expect(
+        json.values.whereType<String>().where((v) => v.startsWith('/')),
+        isEmpty,
+      );
     });
 
     test('a custom kind without its identity falls back to built-in', () {
