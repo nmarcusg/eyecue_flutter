@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
@@ -124,6 +125,8 @@ void main() {
 
     final settings = SettingsService(store: InMemorySettingsStore());
     final tts = TtsService(engine: _FakeTtsEngine());
+    final stopTeardown = Completer<void>();
+    var holdStopTeardown = false;
     await tts.init();
     addTearDown(tts.dispose);
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);
@@ -199,6 +202,7 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     states.clear();
+    final coordinator = EngineCoordinator();
     await tester.pumpWidget(
       MaterialApp(
         home: UltralyticsDetectionScreen(
@@ -207,11 +211,16 @@ void main() {
           telemetry: TelemetryService(),
           haptics: HapticsService(
             light: () async {},
-            medium: () async {},
+            medium: () async {
+              if (holdStopTeardown) await stopTeardown.future;
+            },
             heavy: () async {},
           ),
-          coordinator: EngineCoordinator(),
-          onRuntimeStateChanged: (state, _) => states.add(state),
+          coordinator: coordinator,
+          onRuntimeStateChanged: (state, _) {
+            states.add(state);
+            coordinator.reportState(state);
+          },
           readinessTimeout: const Duration(seconds: 5),
         ),
       ),
@@ -246,8 +255,39 @@ void main() {
         },
       ],
     };
+    holdStopTeardown = true;
+    await toggleWithTwoFingerDoubleTap();
+    expect(states.last, DetectionRuntimeState.loadingModel);
     await messenger.handlePlatformMessage(
       'com.ultralytics.yolo/detectionResults_${viewIds.last}',
+      const StandardMethodCodec().encodeSuccessEnvelope(nonEmptyPayload),
+      (ByteData? data) {},
+    );
+    await tester.pump();
+    expect(states, isNot(contains(DetectionRuntimeState.ready)));
+    expect(find.textContaining('person'), findsNothing);
+    stopTeardown.complete();
+    holdStopTeardown = false;
+    await tester.pump();
+    await tester.pump();
+    expect(states.last, DetectionRuntimeState.stopped);
+
+    await toggleWithTwoFingerDoubleTap();
+    for (var i = 0; i < 40 && viewIds.length < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(viewIds, hasLength(3));
+    expect(states.last, DetectionRuntimeState.loadingModel);
+    await messenger.handlePlatformMessage(
+      'com.ultralytics.yolo/detectionResults_${viewIds.last}',
+      const StandardMethodCodec().encodeSuccessEnvelope(nonEmptyPayload),
+      (ByteData? data) {},
+    );
+    await tester.pump();
+    expect(states.last, DetectionRuntimeState.ready);
+
+    await messenger.handlePlatformMessage(
+      'com.ultralytics.yolo/detectionResults_${viewIds[1]}',
       const StandardMethodCodec().encodeSuccessEnvelope(nonEmptyPayload),
       (ByteData? data) {},
     );
@@ -271,20 +311,20 @@ void main() {
     await tester.pump();
     expect(states.last, DetectionRuntimeState.stopped);
     await toggleWithTwoFingerDoubleTap();
-    for (var i = 0; i < 40 && viewIds.length < 3; i++) {
+    for (var i = 0; i < 40 && viewIds.length < 4; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
-    expect(viewIds, hasLength(3));
+    expect(viewIds, hasLength(4));
     expect(states.last, DetectionRuntimeState.loadingModel);
     await toggleWithTwoFingerDoubleTap();
     expect(states.last, DetectionRuntimeState.stopped);
     await tester.pump(const Duration(seconds: 6));
     expect(failures, isEmpty);
     await toggleWithTwoFingerDoubleTap();
-    for (var i = 0; i < 40 && viewIds.length < 4; i++) {
+    for (var i = 0; i < 40 && viewIds.length < 5; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
-    expect(viewIds, hasLength(4));
+    expect(viewIds, hasLength(5));
     expect(states.last, DetectionRuntimeState.loadingModel);
     await messenger.handlePlatformMessage(
       'com.ultralytics.yolo/detectionResults_${viewIds.last}',
