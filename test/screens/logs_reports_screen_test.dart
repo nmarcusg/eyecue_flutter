@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:eyecue_flutter/models/alert_lifecycle.dart';
@@ -1663,6 +1664,95 @@ void main() {
       expect(find.text('Upload trial'), findsOneWidget);
       expect(find.text('Export trial'), findsOneWidget);
       expect(find.text('Discard trial'), findsOneWidget);
+    });
+
+    testWidgets('a paused trial cannot upload the live app-lifetime session', (
+      tester,
+    ) async {
+      final live = _FakeUploadService(const TelemetryUploadResult.success());
+      final requests = <TelemetryUploadRequest>[];
+      final now = DateTime.utc(2026, 1, 1, 12, 0, 0);
+      final telemetry = buildTelemetry(populated: true);
+      final sessions = ResearchSessionService(
+        telemetry: telemetry,
+        store: InMemoryResearchSessionStore(),
+        clock: () => now,
+        // The real service, with only the socket replaced: a request that is
+        // made anywhere is visible here.
+        uploadService: TelemetryUploadService(
+          configuration: const TelemetryUploadConfiguration(
+            ingestUrl:
+                'https://ingest.example.test/functions/v1/ingest-telemetry',
+            publishableKey: 'publishable-key',
+          ),
+          exportService: TelemetryExportService(clock: () => now),
+          clock: () => now,
+          sender: (request) async {
+            requests.add(request);
+            return const TelemetryUploadResponse(200);
+          },
+        ),
+      );
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: const DetectorModelRef(
+          id: 'builtin',
+          name: 'Built-in YOLOv8n',
+          fingerprint: DetectorModel.builtInFingerprint,
+          classCount: 80,
+        ),
+      );
+      // The reviewer's reproduction: start, pause, then try the live upload.
+      await sessions.pause();
+      await pumpLogsScreen(
+        tester,
+        telemetry: telemetry,
+        researchSessions: sessions,
+        uploadService: live,
+      );
+
+      final liveButton = find.text('Upload session to research database');
+      await scrollOverviewTo(tester, liveButton);
+      await tester.ensureVisible(liveButton);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Upload the finished trial'), findsOneWidget);
+
+      await tester.tap(liveButton, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(live.uploads, 0);
+      expect(requests, isEmpty);
+
+      // The finished trial is still uploadable, under its own trial id.
+      final trial = (await sessions.finish())!.session;
+      await tester.pumpAndSettle();
+      final uploadTrial = find.text('Upload trial');
+      // The stored trials list sits above the export card we scrolled to.
+      await tester.scrollUntilVisible(
+        uploadTrial,
+        -300,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.ensureVisible(uploadTrial);
+      await tester.pumpAndSettle();
+      await tester.tap(uploadTrial);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(2), screenUploadToken);
+      await tester.tap(find.text('Confirm upload'));
+      await tester.pumpAndSettle();
+
+      expect(requests, hasLength(1));
+      final payload = jsonDecode(requests.single.body) as Map<String, dynamic>;
+      final export = payload['telemetry'] as Map<String, dynamic>;
+      final envelopeSession = export['session'] as Map<String, dynamic>;
+      expect(envelopeSession['id'], trial.id);
+      expect(envelopeSession['id'], isNot(telemetry.sessionId));
     });
 
     testWidgets('the Detection Frequency chart follows the model filter', (

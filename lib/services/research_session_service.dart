@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -5,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detector_model.dart';
 import '../models/research_session.dart';
@@ -172,8 +174,12 @@ class _Draft {
     this.baselineDetections = 0,
     this.baselineAlerts = 0,
     this.baselineFrames = 0,
+    Map<String, dynamic> closedAlertCounters = const {},
+    Map<String, dynamic> baselineAlertCounters = const {},
   }) : detectors = List.of(detectors),
-       intervals = List.of(intervals);
+       intervals = List.of(intervals),
+       closedAlertCounters = Map.of(closedAlertCounters),
+       baselineAlertCounters = Map.of(baselineAlertCounters);
 
   final String id;
   final String participantCode;
@@ -186,6 +192,12 @@ class _Draft {
   int baselineDetections;
   int baselineAlerts;
   int baselineFrames;
+
+  /// Sum of the per-interval [AlertCounters] deltas.
+  Map<String, dynamic> closedAlertCounters;
+
+  /// Cumulative counters as they stood when the running interval opened.
+  Map<String, dynamic> baselineAlertCounters;
 
   Map<String, dynamic> toJson(DateTime savedAt) => {
     'schemaVersion': 1,
@@ -209,6 +221,8 @@ class _Draft {
     'baselineDetections': baselineDetections,
     'baselineAlerts': baselineAlerts,
     'baselineFrames': baselineFrames,
+    'closedAlertCounters': closedAlertCounters,
+    'baselineAlertCounters': baselineAlertCounters,
   };
 
   /// Restores a draft as interrupted: an interval left open by a crash is
@@ -238,6 +252,8 @@ class _Draft {
     }
     if (intervals.isEmpty) return null;
     int count(String key) => (json[key] as num?)?.toInt() ?? 0;
+    Map<String, dynamic> counters(Object? value) =>
+        value is Map ? value.cast<String, dynamic>() : const {};
     return _Draft(
       id: id,
       participantCode: json['participantCode'] as String? ?? '',
@@ -258,6 +274,8 @@ class _Draft {
       baselineDetections: count('baselineDetections'),
       baselineAlerts: count('baselineAlerts'),
       baselineFrames: count('baselineFrames'),
+      closedAlertCounters: counters(json['closedAlertCounters']),
+      baselineAlertCounters: counters(json['baselineAlertCounters']),
     );
   }
 }
@@ -299,6 +317,8 @@ class ResearchSessionService extends ChangeNotifier {
   bool _finishing = false;
   String? _uploadingId;
   String? _lastSaveError;
+  Listenable? _watchedDetectorChanges;
+  DetectorModelRef Function()? _detectorIdentity;
 
   ResearchSessionState get state => _state;
 
@@ -339,12 +359,23 @@ class ResearchSessionService extends ChangeNotifier {
   }
 
   /// Recorded time of the in-flight trial, excluding pauses.
+  ///
+  /// The running interval is counted up to the injected clock, so the number
+  /// grows while recording instead of reading zero until the first pause.
   Duration get activeDuration {
     final draft = _draft;
     if (draft == null) return Duration.zero;
     var total = Duration.zero;
     for (final interval in draft.intervals) {
-      total += interval.duration;
+      final end = interval.end;
+      if (end != null) {
+        total += end.difference(interval.start);
+        continue;
+      }
+      final now = _clock();
+      if (now.isAfter(interval.start)) {
+        total += now.difference(interval.start);
+      }
     }
     return total;
   }
@@ -473,6 +504,33 @@ class ResearchSessionService extends ChangeNotifier {
     await _persistDraft();
   }
 
+  /// Pauses on a detector change from wherever the selection is committed.
+  ///
+  /// Owning the reaction here — not in the Detection page, which the shell
+  /// builds lazily — is what makes a model switch pause logging even when that
+  /// page was never opened. Idempotent: the same notifier is subscribed once,
+  /// and [noteDetectorChange] ignores a repeat of the current identity.
+  void watchDetectorModel(
+    Listenable changes,
+    DetectorModelRef Function() identity,
+  ) {
+    if (identical(changes, _watchedDetectorChanges)) return;
+    _watchedDetectorChanges?.removeListener(_handleDetectorModelChanged);
+    _watchedDetectorChanges = changes;
+    _detectorIdentity = identity;
+    changes.addListener(_handleDetectorModelChanged);
+  }
+
+  void _handleDetectorModelChanged() {
+    unawaited(noteDetectorChange(_detectorIdentity?.call()));
+  }
+
+  @override
+  void dispose() {
+    _watchedDetectorChanges?.removeListener(_handleDetectorModelChanged);
+    super.dispose();
+  }
+
   /// Freezes the trial and persists it before returning.
   ///
   /// Returns null when there is no in-flight trial or a finish is already in
@@ -528,7 +586,9 @@ class ResearchSessionService extends ChangeNotifier {
         alertRecords: _telemetry.alertRecords
             .where((record) => inTrial(record.terminalAt))
             .toList(),
-        alertCounters: _telemetry.alertCounters,
+        // Interval deltas, like every other counter: the live snapshot is
+        // cumulative over the whole app run.
+        alertCounters: AlertCounters.fromJson(draft.closedAlertCounters),
         appVersion: _appVersion,
       );
       final saved = await _persist(session);
@@ -613,7 +673,7 @@ class ResearchSessionService extends ChangeNotifier {
       now.isAfter(last.start) ? now : last.start,
     );
     draft.closedDetections += _delta(
-      _telemetry.totalDetections,
+      _telemetry.detectionCount,
       draft.baselineDetections,
     );
     draft.closedAlerts += _delta(
@@ -624,19 +684,87 @@ class ResearchSessionService extends ChangeNotifier {
       _telemetry.framesProcessed,
       draft.baselineFrames,
     );
+    draft.closedAlertCounters = _addCounters(
+      draft.closedAlertCounters,
+      _counterDelta(
+        _telemetry.alertCounters.toJson(),
+        draft.baselineAlertCounters,
+      ),
+    );
   }
 
-  /// Cumulative counters only ever grow, but the record buffer is capped, so a
-  /// negative difference (eviction) is treated as zero rather than as loss of
-  /// earlier increments.
+  /// Cumulative counters only ever grow, so a baseline ahead of the current
+  /// value (a restart) is clamped to zero rather than subtracting from the trial.
+  /// Detections come from [TelemetryService.detectionCount], not from the capped
+  /// record buffer, so eviction cannot flatten that delta.
   static int _delta(int current, int baseline) =>
       current > baseline ? current - baseline : 0;
 
   void _resetBaselines(_Draft draft) {
-    draft.baselineDetections = _telemetry.totalDetections;
+    draft.baselineDetections = _telemetry.detectionCount;
     draft.baselineAlerts = _telemetry.highPriorityAlerts;
     draft.baselineFrames = _telemetry.framesProcessed;
+    draft.baselineAlertCounters = _telemetry.alertCounters.toJson();
   }
+
+  /// Per-field difference of two cumulative counter snapshots.
+  static Map<String, dynamic> _counterDelta(
+    Map<String, dynamic> current,
+    Map<String, dynamic> baseline,
+  ) {
+    int count(Map<String, dynamic> counters, String key) =>
+        (counters[key] as num?)?.toInt() ?? 0;
+    final delta = <String, dynamic>{
+      for (final key in current.keys)
+        if (key != 'rejectedByReason')
+          key: _delta(count(current, key), count(baseline, key)),
+      'rejectedByReason': _reasonDelta(current, baseline),
+    };
+    return delta;
+  }
+
+  /// Field-wise sum of two interval deltas.
+  static Map<String, dynamic> _addCounters(
+    Map<String, dynamic> a,
+    Map<String, dynamic> b,
+  ) {
+    int count(Map<String, dynamic> counters, String key) =>
+        (counters[key] as num?)?.toInt() ?? 0;
+    final sum = <String, dynamic>{
+      for (final key in {...a.keys, ...b.keys})
+        if (key != 'rejectedByReason') key: count(a, key) + count(b, key),
+    };
+    final reasons = _reasons(a);
+    for (final entry in _reasons(b).entries) {
+      reasons.update(
+        entry.key,
+        (value) => value + entry.value,
+        ifAbsent: () => entry.value,
+      );
+    }
+    sum['rejectedByReason'] = reasons;
+    return sum;
+  }
+
+  static Map<String, int> _reasonDelta(
+    Map<String, dynamic> current,
+    Map<String, dynamic> baseline,
+  ) {
+    final now = _reasons(current);
+    final before = _reasons(baseline);
+    final delta = <String, int>{};
+    for (final reason in {...before.keys, ...now.keys}) {
+      final difference = _delta(now[reason] ?? 0, before[reason] ?? 0);
+      if (difference > 0) delta[reason] = difference;
+    }
+    return delta;
+  }
+
+  static Map<String, int> _reasons(Map<String, dynamic> counters) => {
+    for (final entry
+        in ((counters['rejectedByReason'] as Map?) ?? const {}).entries)
+      '${entry.key}': (entry.value as num?)?.toInt() ?? 0,
+  };
 
   Future<bool> _persist(ResearchSession session) async {
     try {

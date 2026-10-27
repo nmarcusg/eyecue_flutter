@@ -729,11 +729,9 @@ class _UltralyticsDetectionScreenState
   /// Nothing is auto-started here. The next Start remounts the native view, so
   /// the replacement session loads the selected file (see [_startDetection]).
   Future<void> _handleDetectorModelChanged() async {
-    // Study logging pauses at the boundary and needs an explicit Resume; the
-    // replacement's identity is recorded so a resumed trial stays attributable.
-    await widget.researchSession?.noteDetectorChange(
-      widget.detectorModel?.current.ref,
-    );
+    // The study trial pauses at this boundary and records the replacement's
+    // identity from `ResearchSessionService.watchDetectorModel`, not here: the
+    // service must react even when this lazily built page was never opened.
     if (_detectionActive) await _stopDetection();
     // Reject every callback captured under the previous view, including a late
     // payload from the superseded session.

@@ -72,6 +72,20 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   bool _exporting = false;
   bool _uploading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // The trial reacts to the app-wide selection itself, so a model change
+    // pauses logging even when the Detection page was never built.
+    final detectorModel = widget.detectorModel;
+    if (detectorModel != null) {
+      _sessions.watchDetectorModel(
+        detectorModel,
+        () => detectorModel.current.ref,
+      );
+    }
+  }
+
   /// The detector a new trial would be recorded with.
   DetectorModelRef get _detectorRef =>
       widget.detectorModel?.current.ref ??
@@ -161,11 +175,12 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
 
   Future<void> _upload() async {
     if (_uploading || !_uploadService.isConfigured) return;
-    if (_sessions.isRecording) {
-      // A live buffer keeps changing; only a finished trial is uploaded.
+    if (_sessions.state != ResearchSessionState.idle) {
+      // Once a trial exists in this run the live buffer holds that respondent's
+      // rows under the app-lifetime id, so only the finished trial is uploaded.
       _showMessage(
-        'Study logging is running. Finish the trial, then upload it from the '
-        'stored trials list so the uploaded data cannot change.',
+        'A research trial was started in this run. Upload the finished trial '
+        'from the stored trials list instead of this app session.',
         isError: true,
       );
       return;
@@ -732,6 +747,7 @@ class _OverviewTab extends StatelessWidget {
               onExportCsv: onExportCsv,
               uploading: uploading,
               uploadConfigured: uploadConfigured,
+              liveUploadBlocked: sessions.state != ResearchSessionState.idle,
               onUpload: onUpload,
             ),
             const SizedBox(height: kSpace24),
@@ -1007,6 +1023,10 @@ class _ExportSection extends StatelessWidget {
   final VoidCallback onExportCsv;
   final bool uploading;
   final bool uploadConfigured;
+
+  /// True once a trial was started in this run: the live session then holds
+  /// trial rows under the app-lifetime id and must not be uploaded.
+  final bool liveUploadBlocked;
   final VoidCallback onUpload;
 
   const _ExportSection({
@@ -1015,6 +1035,7 @@ class _ExportSection extends StatelessWidget {
     required this.onExportCsv,
     required this.uploading,
     required this.uploadConfigured,
+    required this.liveUploadBlocked,
     required this.onUpload,
   });
 
@@ -1077,18 +1098,25 @@ class _ExportSection extends StatelessWidget {
             ),
             const SizedBox(height: kSpace4),
             Text(
-              uploadConfigured
-                  ? 'Manually upload this image-free session after confirming '
-                        'participant consent and the study context.'
-                  : 'Online research upload is not configured in this build. '
-                        'Offline exports remain available.',
+              !uploadConfigured
+                  ? 'Online research upload is not configured in this build. '
+                        'Offline exports remain available.'
+                  : liveUploadBlocked
+                  ? 'A research trial was started in this run, so this live '
+                        'session cannot be uploaded. Upload the finished trial '
+                        'from the stored trials list instead.'
+                  : 'Manually upload this image-free app session (not a trial) '
+                        'after confirming participant consent and the study '
+                        'context.',
               style: theme.textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
             ),
             const SizedBox(height: kSpace12),
             AccessibleButton(
               label: 'Upload session to research database',
               icon: Icons.cloud_upload_outlined,
-              onPressed: !uploadConfigured || uploading ? null : onUpload,
+              onPressed: !uploadConfigured || uploading || liveUploadBlocked
+                  ? null
+                  : onUpload,
             ),
             if (uploading) ...[
               const SizedBox(height: kSpace8),

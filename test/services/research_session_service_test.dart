@@ -1,14 +1,17 @@
 import 'dart:convert';
 import 'dart:ui' show Rect;
 
+import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/detector_model.dart';
+import 'package:eyecue_flutter/models/research_session.dart';
 import 'package:eyecue_flutter/services/research_session_service.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A study upload token of the accepted shape (44 token-safe characters).
@@ -632,4 +635,235 @@ void main() {
       },
     );
   });
+
+  group(
+    '11. Trial counters are interval deltas, never app-lifetime totals',
+    () {
+      test(
+        'pre-Start and paused counters stay out of the trial and its export',
+        () async {
+          final clock = TestClock(DateTime.utc(2026, 5, 1, 19));
+          final telemetry = buildTelemetry(clock);
+          addTearDown(telemetry.dispose);
+          final sessions = buildService(
+            telemetry: telemetry,
+            clock: clock,
+            store: InMemoryResearchSessionStore(),
+          );
+
+          // Setup/practice before Start runs under the app-lifetime session.
+          telemetry.recordAlertCounters(
+            const AlertCounters(
+              dropped: 42,
+              muted: 3,
+              rejectedByReason: {'lowConfidence': 5},
+            ),
+          );
+          recordDetection(telemetry);
+
+          await sessions.start(
+            participantCode: 'P-001',
+            trialLabel: 'trial-1',
+            detector: builtInRef,
+          );
+          // First active interval.
+          telemetry.recordAlertCounters(
+            const AlertCounters(
+              dropped: 44,
+              muted: 3,
+              rejectedByReason: {'lowConfidence': 7, 'stale': 2},
+            ),
+          );
+          recordDetection(telemetry);
+          clock.advance(const Duration(seconds: 10));
+          await sessions.pause();
+
+          // During the pause: recorded live, but never in the trial.
+          telemetry.recordAlertCounters(
+            const AlertCounters(
+              dropped: 60,
+              muted: 9,
+              rejectedByReason: {'lowConfidence': 7, 'stale': 2, 'late': 1},
+            ),
+          );
+          recordDetection(telemetry);
+          clock.advance(const Duration(seconds: 5));
+          await sessions.resume();
+
+          // Second active interval.
+          telemetry.recordAlertCounters(
+            const AlertCounters(
+              dropped: 61,
+              muted: 9,
+              rejectedByReason: {'lowConfidence': 7, 'stale': 2, 'late': 1},
+            ),
+          );
+          recordDetection(telemetry);
+          clock.advance(const Duration(seconds: 2));
+
+          final session = (await sessions.finish())!.session;
+          expect(session.totalDetections, 2);
+          expect(session.alertCounters.dropped, 3);
+          expect(session.alertCounters.muted, 0);
+          expect(session.alertCounters.rejectedByReason, {
+            'lowConfidence': 2,
+            'stale': 2,
+          });
+
+          // The stored/exported trial carries the delta, not the live snapshot.
+          final restored = ResearchSession.fromJson(
+            jsonDecode(jsonEncode(session.toJson())) as Map<String, dynamic>,
+          );
+          expect(
+            restored.alertCounters.toJson(),
+            session.alertCounters.toJson(),
+          );
+          final exported =
+              jsonDecode(
+                    TelemetryExportService(
+                      clock: () => clock.now,
+                    ).toJson(telemetry: session),
+                  )
+                  as Map<String, dynamic>;
+          final counters = exported['alertCounters'] as Map<String, dynamic>;
+          expect(counters['dropped'], 3);
+          expect(counters['muted'], 0);
+        },
+      );
+    },
+  );
+
+  group('12. A model change pauses without the Detection page', () {
+    test('the service owns the reaction and pauses once per boundary', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 1, 20));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final sessions = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: InMemoryResearchSessionStore(),
+      );
+      final selection = _FakeSelection(builtInRef);
+      addTearDown(selection.dispose);
+      // No Detection screen is ever built in this test: the subscription is the
+      // only thing that can pause the trial.
+      sessions.watchDetectorModel(selection, () => selection.ref);
+      sessions.watchDetectorModel(selection, () => selection.ref);
+
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      recordDetection(telemetry, model: builtInRef);
+      clock.advance(const Duration(seconds: 1));
+
+      selection.select(customRef);
+      await pumpEventQueue();
+
+      expect(sessions.state, ResearchSessionState.paused);
+      expect(sessions.isRecording, isFalse);
+      expect(sessions.detectorName, contains('Custom cones'));
+
+      // The swap's setup rows are outside every interval.
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: customRef);
+      // A repeat notification of the same identity is not a second boundary.
+      selection.repeat();
+      await pumpEventQueue();
+      expect(sessions.state, ResearchSessionState.paused);
+      clock.advance(const Duration(seconds: 1));
+
+      await sessions.resume();
+      recordDetection(telemetry, model: customRef);
+      clock.advance(const Duration(seconds: 1));
+
+      final session = (await sessions.finish())!.session;
+      expect(session.detectors.map((detector) => detector.id), [
+        'builtin',
+        'custom:abcdef123456',
+      ]);
+      expect(session.records, hasLength(2));
+    });
+  });
+
+  group('13. Active duration grows while recording', () {
+    test('the open interval counts, and a pause freezes it', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 1, 21));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final sessions = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: InMemoryResearchSessionStore(),
+      );
+
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      expect(sessions.activeDuration, Duration.zero);
+      clock.advance(const Duration(seconds: 10));
+      expect(sessions.activeDuration, const Duration(seconds: 10));
+      clock.advance(const Duration(seconds: 5));
+      expect(sessions.activeDuration, const Duration(seconds: 15));
+
+      await sessions.pause();
+      final frozen = sessions.activeDuration;
+      expect(frozen, const Duration(seconds: 15));
+      clock.advance(const Duration(minutes: 1));
+      expect(sessions.activeDuration, frozen);
+
+      final session = (await sessions.finish())!.session;
+      expect(session.activeDurationMs, 15000);
+      expect(session.wallClockDuration, const Duration(seconds: 75));
+    });
+  });
+
+  group('14. Detection deltas survive the record buffer cap', () {
+    test('2500 detections count as 2500 in the trial', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 1, 22));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final sessions = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: InMemoryResearchSessionStore(),
+      );
+
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      for (var index = 0; index < 2500; index++) {
+        recordDetection(telemetry);
+      }
+      // The shipped buffer is capped; the counter is not.
+      expect(telemetry.totalDetections, 2000);
+      expect(telemetry.detectionCount, 2500);
+
+      clock.advance(const Duration(seconds: 1));
+      final session = (await sessions.finish())!.session;
+      expect(session.totalDetections, 2500);
+      expect(session.records, hasLength(2000));
+    });
+  });
+}
+
+/// A stand-in for the detector selection: a [ChangeNotifier] plus the identity
+/// getter the service reads when it fires.
+class _FakeSelection extends ChangeNotifier {
+  _FakeSelection(this.ref);
+
+  DetectorModelRef ref;
+
+  void select(DetectorModelRef next) {
+    ref = next;
+    notifyListeners();
+  }
+
+  /// Re-notifies without changing the selection.
+  void repeat() => notifyListeners();
 }
