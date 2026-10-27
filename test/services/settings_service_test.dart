@@ -1,4 +1,5 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -70,7 +71,40 @@ void main() {
       await service.load();
       expect(service.detectionTargetHz, isNull);
       expect(service.depthTargetHz, AppSettings.defaultDepthTargetHz);
-      expect(AppSettings.currentSchemaVersion, 6);
+      // Bumped 6 -> 7 when the detector model selection was added.
+      expect(AppSettings.currentSchemaVersion, 7);
+    });
+
+    test('detector selection defaults to the built-in model', () async {
+      final service = SettingsService(store: InMemorySettingsStore());
+      await service.load();
+      expect(service.detectorModelKind, DetectorModelKind.builtIn);
+      expect(service.customModelPath, isNull);
+    });
+
+    test('setDetectorModel persists a custom choice and clears it', () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      await service.setDetectorModel(
+        kind: DetectorModelKind.custom,
+        name: 'Obstacle Detector v2',
+        fingerprint: '0123456789abcdef-1234',
+        path: '/data/app/eyecue_models/0123456789abcdef-1234.tflite',
+        classCount: 3,
+      );
+
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.detectorModelKind, DetectorModelKind.custom);
+      expect(reloaded.customModelName, 'Obstacle Detector v2');
+      expect(reloaded.customModelFingerprint, '0123456789abcdef-1234');
+      expect(reloaded.customModelClassCount, 3);
+
+      await reloaded.setDetectorModel(kind: DetectorModelKind.builtIn);
+      expect(reloaded.customModelName, isNull);
+      expect(reloaded.customModelFingerprint, isNull);
+      expect(reloaded.customModelPath, isNull);
+      expect(reloaded.customModelClassCount, isNull);
     });
 
     test(

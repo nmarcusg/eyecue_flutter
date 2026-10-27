@@ -13,7 +13,8 @@ void main() {
       );
       expect(service.showBoundingBoxes, isTrue);
       expect(service.showDepthHeatmap, isTrue);
-      expect(AppSettings.currentSchemaVersion, 6);
+      // Bumped 6 -> 7 when the detector model selection was added.
+      expect(AppSettings.currentSchemaVersion, 7);
     });
 
     test('setters persist every new field', () async {
