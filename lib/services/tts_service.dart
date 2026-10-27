@@ -667,6 +667,7 @@ class TtsService extends ChangeNotifier {
     engine
         .speak(request.text)
         .then<void>((value) {
+          if (_disposed) return;
           if (submission.terminal != null) {
             _lateCallbacks++;
             _publishCounters();
@@ -676,6 +677,7 @@ class TtsService extends ChangeNotifier {
           _reconcile(submission);
         })
         .catchError((Object error) {
+          if (_disposed) return;
           if (submission.terminal == null) {
             _fail(submission, _CancelCause.engineError);
           }
