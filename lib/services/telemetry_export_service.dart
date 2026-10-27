@@ -43,22 +43,22 @@ class TelemetryExportService {
 
   /// Keys that belong to the export's `detectorModels` table, not to a row.
   ///
-  /// A row keeps the short id, so 2 400 rows do not repeat the same name and
-  /// fingerprint that the table already carries once.
+  /// A row keeps only its table key, so 2 400 rows do not repeat the same name
+  /// and fingerprint that the table already carries once.
   static const Set<String> _rowModelKeys = {
     'detectorModelName',
     'detectorModelFingerprint',
   };
 
-  /// A row carries only the short id, so the readable name and the graph
-  /// fingerprint are joined back from the export's table when a CSV needs them.
+  /// A row carries only its table key, so the readable name and the graph
+  /// fingerprint are joined back from the table when a CSV needs them.
   static Object? _modelField(
     Map<String, Map<String, dynamic>> models,
-    Object? id,
-    String key,
+    Object? key,
+    String field,
   ) {
-    if (id is! String) return null;
-    return models[id]?[key];
+    if (key is! String) return null;
+    return models[key]?[field];
   }
 
   /// Serialisation-only precision contract.
@@ -97,9 +97,18 @@ class TelemetryExportService {
     'height': _round(box.height, _boxDecimals),
   };
 
-  static Map<String, dynamic> _detectionJson(TelemetryRecord record) {
+  static Map<String, dynamic> _detectionJson(
+    TelemetryRecord record,
+    DetectorModelTable table,
+  ) {
     final json = record.toJson()
       ..removeWhere((key, _) => _rowModelKeys.contains(key));
+    final modelKey = table.keyFor(
+      record.detectorModelId,
+      record.detectorModelName,
+      record.detectorModelFingerprint,
+    );
+    if (modelKey != null) json['detectorModelId'] = modelKey;
     json['confidence'] = _round(record.confidence, _scoreDecimals);
     json['latencyMs'] = _round(record.latencyMs, _msDecimals);
     json['confidenceThreshold'] = _round(
@@ -131,11 +140,18 @@ class TelemetryExportService {
   /// not `0`.
   static Iterable<Map<String, dynamic>> _sampleJson(
     Iterable<RuntimeSample> samples,
+    DetectorModelTable table,
   ) sync* {
     var index = 0;
     for (final sample in samples) {
       final json = sample.toJson()
         ..removeWhere((key, _) => _rowModelKeys.contains(key));
+      final modelKey = table.keyFor(
+        sample.detectorModelId,
+        sample.detectorModelName,
+        sample.detectorModelFingerprint,
+      );
+      if (modelKey != null) json['detectorModelId'] = modelKey;
       for (final entry in _samplePrecision.entries) {
         final value = json[entry.key];
         if (value is num) {
@@ -149,44 +165,25 @@ class TelemetryExportService {
     }
   }
 
-  /// `{id: {name, fingerprint}}` for the models the rows were recorded with.
-  ///
-  /// Read from the stored rows, never from the current settings, so a later
-  /// rename or switch cannot relabel history. Rows themselves carry only the id
-  /// (see [_rowModelKeys]), so this table is where the readable name lives.
-  static Map<String, Map<String, dynamic>> _detectorModels(
-    Iterable<TelemetryRecord> records,
-    Iterable<RuntimeSample> samples,
-  ) {
-    final models = <String, Map<String, dynamic>>{};
-    void add(String? id, String? name, String? fingerprint) {
-      if (id == null) return;
-      models.putIfAbsent(id, () => {'name': name, 'fingerprint': fingerprint});
-    }
-
-    for (final record in records) {
-      add(
-        record.detectorModelId,
-        record.detectorModelName,
-        record.detectorModelFingerprint,
-      );
-    }
-    for (final sample in samples) {
-      add(
-        sample.detectorModelId,
-        sample.detectorModelName,
-        sample.detectorModelFingerprint,
-      );
-    }
-    return models;
-  }
-
   TelemetryExport snapshot({
     required TelemetryService telemetry,
     AppSettings? settings,
   }) {
-    final samples = _sampleJson(telemetry.samples).toList();
-    final detections = telemetry.records.map(_detectionJson).toList();
+    // Built in row order, so the table's keys follow first appearance.
+    final table = DetectorModelTable();
+    final samples = _sampleJson(telemetry.samples, table).toList();
+    final detections = telemetry.records
+        .map((record) => _detectionJson(record, table))
+        .toList();
+    // The join invariant: every attributed row's key resolves through the
+    // table, and each entry holds the name/fingerprint it was recorded with.
+    assert(
+      [...samples, ...detections].every((row) {
+        final key = row['detectorModelId'];
+        return key == null || table.models.containsKey(key);
+      }),
+      'every attributed export row resolves through detectorModels',
+    );
     return TelemetryExport(
       exportedAt: _clock(),
       appVersion: telemetry.appVersion,
@@ -194,7 +191,7 @@ class TelemetryExportService {
       sessionStart: telemetry.sessionStart,
       sessionDurationMs: telemetry.sessionDuration.inMilliseconds,
       settings: settings?.toJson() ?? const {},
-      detectorModels: _detectorModels(telemetry.records, telemetry.samples),
+      detectorModels: table.models,
       samples: samples,
       detections: detections,
       failures: telemetry.failures.map(_failureJson),
@@ -562,5 +559,35 @@ class TelemetryExportService {
   static String _csvValue(Object? value) {
     final text = value?.toString() ?? '';
     return '"${text.replaceAll('"', '""')}"';
+  }
+}
+
+/// The export's `detectorModels` table: one entry per distinct
+/// `(id, name, fingerprint)` identity, keyed in first-appearance order.
+///
+/// The id alone cannot key this table. It is content-derived
+/// (`DetectorModel.id`), while the display name is free text per import, so
+/// re-importing one graph under a corrected name keeps the id and changes the
+/// name. Keys are the id, then `<id>~2`, `<id>~3` for a later identity with the
+/// same id, so every row's key resolves to its own name and fingerprint while
+/// the table stays compact (each identity once, never once per row).
+class DetectorModelTable {
+  final Map<String, Map<String, dynamic>> models = {};
+
+  final Map<String, String> _keys = {};
+
+  /// The table key for a row's identity, registering it on first sight.
+  String? keyFor(String? id, String? name, String? fingerprint) {
+    if (id == null) return null;
+    final identity = '$id\u0000$name\u0000$fingerprint';
+    final known = _keys[identity];
+    if (known != null) return known;
+    var key = id;
+    for (var suffix = 2; models.containsKey(key); suffix++) {
+      key = '$id~$suffix';
+    }
+    _keys[identity] = key;
+    models[key] = {'name': name, 'fingerprint': fingerprint};
+    return key;
   }
 }

@@ -1228,6 +1228,25 @@ void main() {
       classCount: 12,
     );
 
+    /// One sample per detector, in order.
+    TelemetryService buildTelemetryFor(List<DetectorModelRef> refs) {
+      final service = TelemetryService(
+        clock: () => DateTime.utc(2026, 1, 1, 12, 0, 0),
+        sessionId: 'session-models',
+      );
+      service.startSession();
+      for (final ref in refs) {
+        service.recordSample(
+          latencyMs: 100,
+          inferenceFps: 10,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: ref,
+        );
+      }
+      return service;
+    }
+
     /// One sample and one detection from each of two detectors.
     TelemetryService buildTwoModelTelemetry() {
       final service = TelemetryService(
@@ -1287,7 +1306,9 @@ void main() {
       await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
 
       // The averages above combine both detectors, and say so.
-      expect(find.textContaining('Mixed-model data'), findsOneWidget);
+      expect(find.textContaining('Mixed-model data —'), findsOneWidget);
+      // The Engine Comparison card blends the same two models, and says so.
+      expect(find.textContaining('frames — Mixed-model data'), findsOneWidget);
 
       await selectTab(tester, 'Charts');
       expect(
@@ -1322,6 +1343,79 @@ void main() {
         find.text('Inference Latency — Mixed-model data (300 ms benchmark)'),
         findsNothing,
       );
+    });
+
+    testWidgets('a single model is named on the engine comparison card', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetryFor(const [customRef]);
+      await pumpLogsScreen(tester, telemetry: telemetry);
+
+      expect(
+        find.textContaining('frames — Obstacle Detector v2'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Mixed-model data'), findsNothing);
+    });
+
+    testWidgets('two graphs with one name stay distinguishable in the filter', (
+      tester,
+    ) async {
+      const first = DetectorModelRef(
+        id: 'custom:aaaaaaaaaaaa',
+        name: 'Obstacle Detector v2',
+        fingerprint: 'aaaaaaaaaaaa0000-4200',
+        classCount: 12,
+      );
+      const second = DetectorModelRef(
+        id: 'custom:bbbbbbbbbbbb',
+        name: 'Obstacle Detector v2',
+        fingerprint: 'bbbbbbbbbbbb0000-4200',
+        classCount: 12,
+      );
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetryFor(const [first, second]),
+      );
+      await selectTab(tester, 'Charts');
+
+      await tester.tap(find.byType(DropdownButton<String?>).first);
+      await tester.pumpAndSettle();
+      // Same display name, different graph: the short fingerprint tells them
+      // apart instead of showing two identical entries.
+      expect(find.text('Obstacle Detector v2 · aaaaaaaa'), findsWidgets);
+      expect(find.text('Obstacle Detector v2 · bbbbbbbb'), findsWidgets);
+
+      await tester.tap(find.text('Obstacle Detector v2 · bbbbbbbb').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Inference Latency — Obstacle Detector v2 · bbbbbbbb '
+          '(300 ms benchmark)',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a rename is a new filter entry, not a stale label', (
+      tester,
+    ) async {
+      const renamed = DetectorModelRef(
+        id: 'custom:0a1b2c3d4e5f',
+        name: 'Obstacle Detector v2 fixed',
+        fingerprint: '0a1b2c3d4e5f6071-4200',
+        classCount: 12,
+      );
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetryFor(const [customRef, renamed]),
+      );
+      await selectTab(tester, 'Charts');
+
+      await tester.tap(find.byType(DropdownButton<String?>).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Obstacle Detector v2'), findsWidgets);
+      expect(find.text('Obstacle Detector v2 fixed'), findsWidgets);
     });
 
     testWidgets('the log list filters to one model but keeps the filter', (

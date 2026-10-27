@@ -11,6 +11,7 @@ import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/models/inference_lifecycle_event.dart';
 import 'package:eyecue_flutter/models/telemetry_export.dart';
+import 'package:eyecue_flutter/services/detector_model_service.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
@@ -904,6 +905,155 @@ void main() {
     expect(detectionRows.last[column('model_name')], '"Obstacle Detector v2"');
   });
 
+  group('detector model identity', () {
+    const info = DetectionInfo(
+      detection: Detection(
+        classId: 3,
+        label: 'cone',
+        confidence: 0.8,
+        box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2),
+      ),
+      position: RelativePosition.center,
+      priority: ObjectPriority.medium,
+      proximity: ProximityBand.near,
+    );
+
+    /// One detection and one sample recorded under [ref].
+    void record(TelemetryService service, DetectorModelRef ref) {
+      service.recordDetection(info, 40, engine: engine, detectorModel: ref);
+      service.recordSample(
+        latencyMs: 40,
+        inferenceFps: 10,
+        objectCount: 1,
+        engine: engine,
+        detectorModel: ref,
+      );
+    }
+
+    /// `[model_name, model_fingerprint]` of every detection row, in order.
+    List<List<String>> detectionColumns(String csv) {
+      final lines = csv.split('\n');
+      final header = lines.first.split(',');
+      int column(String name) => header.indexOf('"$name"');
+      return [
+        for (final line in lines)
+          if (line.startsWith('"detection"'))
+            [
+              line.split(',')[column('model_id')],
+              line.split(',')[column('model_name')],
+              line.split(',')[column('model_fingerprint')],
+            ],
+      ];
+    }
+
+    test('one graph under two names keeps both names in JSON and CSV', () {
+      final service = TelemetryService(
+        clock: () => timestamp,
+        sessionId: 'session-rename',
+      );
+      addTearDown(service.dispose);
+      service.startSession();
+      // Re-importing the same file under a corrected name: same content id and
+      // fingerprint, different free-text name.
+      const renamed = DetectorModelRef(
+        id: 'custom:0a1b2c3d4e5f',
+        name: 'Obstacle Detector v2 fixed',
+        fingerprint: '0a1b2c3d4e5f6071-4200',
+        classCount: 12,
+      );
+      record(service, customRef);
+      record(service, renamed);
+
+      final exporter = TelemetryExportService(clock: () => timestamp);
+      final decoded =
+          jsonDecode(exporter.toJson(telemetry: service))
+              as Map<String, dynamic>;
+      final models = (decoded['detectorModels'] as Map).cast<String, dynamic>();
+      // One entry per identity, not per id, keyed in first-appearance order.
+      expect(models.keys, [customRef.id, '${customRef.id}~2']);
+      expect(models[customRef.id], {
+        'name': 'Obstacle Detector v2',
+        'fingerprint': customRef.fingerprint,
+      });
+      expect(models['${customRef.id}~2'], {
+        'name': renamed.name,
+        'fingerprint': renamed.fingerprint,
+      });
+
+      // The invariant: every exported row's key resolves to the name and
+      // fingerprint that row was recorded with.
+      final exported = [
+        ...decoded['samples'] as List,
+        ...decoded['detections'] as List,
+      ];
+      final recorded = [
+        for (final sample in service.samples)
+          (sample.detectorModelName, sample.detectorModelFingerprint),
+        for (final record in service.records)
+          (record.detectorModelName, record.detectorModelFingerprint),
+      ];
+      expect(exported, hasLength(recorded.length));
+      for (var i = 0; i < exported.length; i++) {
+        final key = (exported[i] as Map)['detectorModelId'] as String;
+        expect(models[key]['name'], recorded[i].$1, reason: 'row $i name');
+        expect(
+          models[key]['fingerprint'],
+          recorded[i].$2,
+          reason: 'row $i fingerprint',
+        );
+      }
+
+      // The CSV joins the same key, so each row carries its own name.
+      final rows = detectionColumns(exporter.toCsv(telemetry: service));
+      expect(rows, [
+        [
+          '"custom:0a1b2c3d4e5f"',
+          '"Obstacle Detector v2"',
+          '"0a1b2c3d4e5f6071-4200"',
+        ],
+        [
+          '"custom:0a1b2c3d4e5f~2"',
+          '"Obstacle Detector v2 fixed"',
+          '"0a1b2c3d4e5f6071-4200"',
+        ],
+      ]);
+    });
+
+    test('two graphs sharing a display name stay distinct', () {
+      const other = DetectorModelRef(
+        id: 'custom:ffffffffffff',
+        name: 'Obstacle Detector v2',
+        fingerprint: 'ffffffffffff0000-4200',
+        classCount: 12,
+      );
+      final service = TelemetryService(
+        clock: () => timestamp,
+        sessionId: 'session-same-name',
+      );
+      addTearDown(service.dispose);
+      service.startSession();
+      record(service, customRef);
+      record(service, other);
+
+      final exporter = TelemetryExportService(clock: () => timestamp);
+      final decoded =
+          jsonDecode(exporter.toJson(telemetry: service))
+              as Map<String, dynamic>;
+      final models = (decoded['detectorModels'] as Map).cast<String, dynamic>();
+      expect(models.keys, [customRef.id, other.id]);
+      expect(
+        {for (final model in models.values) model['name']},
+        {'Obstacle Detector v2'},
+      );
+      expect(models[customRef.id]['fingerprint'], customRef.fingerprint);
+      expect(models[other.id]['fingerprint'], other.fingerprint);
+
+      final rows = detectionColumns(exporter.toCsv(telemetry: service));
+      expect(rows[0][2], '"0a1b2c3d4e5f6071-4200"');
+      expect(rows[1][2], '"ffffffffffff0000-4200"');
+    });
+  });
+
   test(
     'the populated envelope carries no path, URI, filename or model bytes',
     () {
@@ -973,7 +1123,24 @@ void main() {
     },
   );
 
-  test('a realistically populated envelope stays under the upload ceiling', () {
+  /// The attributed worst-case upload envelope.
+  ///
+  /// Every bounded collection at its cap (2 000 detections, 400 retained
+  /// samples, 500 alert lifecycle records, 2 000 corrections, 200 failures,
+  /// 100 fallbacks, 200 recoveries), every detection and sample attributed, the
+  /// longest display name the import screen accepts (40 characters) and a
+  /// custom model at [kMaxImportLabels] classes.
+  ///
+  /// Measured with this fixture: **1 869 537 UTF-8 bytes**, i.e. 130 463 bytes
+  /// (6.5 %) of headroom under [TelemetryUploadService.maxUploadBodyBytes]
+  /// (2 000 000) and 30 463 bytes under the project's 1 900 000-byte target.
+  /// The per-row model cost is already at its floor: a row carries only its
+  /// `detectorModels` key (`,"detectorModelId":"builtin"` = 27 bytes, the
+  /// custom id form 41), never the name or fingerprint, which live once in the
+  /// table. Those 2 400 references total ~81.6 KB — 4.1 % of the guard — so no
+  /// key shortening reaches 10 %; only dropping attribution or truncating a
+  /// capped collection would, and both are out of bounds.
+  test('the attributed worst-case envelope stays under the upload ceiling', () {
     final service = TelemetryService(
       clock: () => timestamp,
       sessionId: 'session-populated',
@@ -981,9 +1148,20 @@ void main() {
     );
     addTearDown(service.dispose);
     service.startSession();
-    // An 80-class built-in graph and a 12-class import, both recorded.
+    // An 80-class built-in graph and an import at the maximum accepted class
+    // count, both recorded.
     final builtInLabels = [for (var i = 0; i < 80; i++) 'coco-class-$i'];
-    final customLabels = [for (var i = 0; i < 12; i++) 'custom-class-$i'];
+    final customLabels = [
+      for (var i = 0; i < kMaxImportLabels; i++) 'custom-class-$i',
+    ];
+    // 40 characters: the longest display name the import screen accepts.
+    const longName = 'Obstacle Detector v2 corrected import r2';
+    const longRef = DetectorModelRef(
+      id: 'custom:0a1b2c3d4e5f',
+      name: longName,
+      fingerprint: '0a1b2c3d4e5f6071-4200',
+      classCount: kMaxImportLabels,
+    );
     for (var i = 0; i < 2000; i++) {
       final labels = i.isEven ? builtInLabels : customLabels;
       service.recordDetection(
@@ -1007,7 +1185,7 @@ void main() {
         42.5,
         engine: engine,
         confidenceThreshold: 0.4,
-        detectorModel: i.isEven ? builtInRef : customRef,
+        detectorModel: i.isEven ? builtInRef : longRef,
       );
     }
     for (var i = 0; i < 500; i++) {
@@ -1037,7 +1215,7 @@ void main() {
         depthDroppedTicks: 37,
         lowPowerClamped: true,
         sourceLimited: true,
-        detectorModel: i.isEven ? builtInRef : customRef,
+        detectorModel: i.isEven ? builtInRef : longRef,
       );
     }
     for (var i = 0; i < 500; i++) {
@@ -1059,6 +1237,51 @@ void main() {
         ),
       );
     }
+    for (var i = 0; i < 200; i++) {
+      service.recordFailure(
+        DetectionFailure(
+          category: DetectionFailureCategory.inference,
+          safeMessage: 'Detection is unavailable.',
+          technicalDetail: '/private/path should not upload',
+          timestamp: timestamp,
+        ),
+      );
+    }
+    for (var i = 0; i < 100; i++) {
+      service.recordFallback(
+        preferredEngine: engine,
+        activeEngine: engine,
+        reason: 'unavailable',
+      );
+    }
+    for (var i = 0; i < 200; i++) {
+      service.recordRecovery(
+        const InferenceLifecycleEvent(
+          type: InferenceLifecycleEventType.recovering,
+          generation: 1,
+        ),
+      );
+    }
+    // The largest collection after detections: 2 000 correction records.
+    for (var i = 0; i < 2000; i++) {
+      service.recordCorrection(
+        DetectionCorrection(
+          recordId: 'record-$i',
+          timestamp: timestamp,
+          sessionId: 'session-populated',
+          engine: engine,
+          detection: const Detection(
+            classId: 0,
+            label: 'person',
+            confidence: 0.8700000047683716,
+            box: Rect.fromLTWH(0.1, 0.2, 0.3, 0.4),
+          ),
+          feedback: CorrectionFeedback.correct,
+          correctedLabel: 'person',
+          confidenceThreshold: 0.25,
+        ),
+      );
+    }
     service.recordAlertCounters(
       const AlertCounters(dropped: 1, muted: 2, rejectedByReason: {'x': 3}),
     );
@@ -1066,9 +1289,9 @@ void main() {
     const settings = AppSettings(
       inferenceEngine: InferenceEngine.ultralytics,
       detectorModelKind: DetectorModelKind.custom,
-      customModelName: 'Obstacle Detector v2',
+      customModelName: longName,
       customModelFingerprint: '0a1b2c3d4e5f6071-4200',
-      customModelClassCount: 12,
+      customModelClassCount: kMaxImportLabels,
     );
     final export = TelemetryExportService(
       clock: () => timestamp,
@@ -1083,7 +1306,9 @@ void main() {
     };
     final bytes = utf8.encode(jsonEncode(body)).length;
     // ignore: avoid_print
-    print('populated telemetry envelope: $bytes UTF-8 bytes (compact)');
+    print('attributed worst-case envelope: $bytes UTF-8 bytes (compact)');
+    // The project's own target: this envelope stays under 1 900 000 too.
+    expect(bytes, lessThan(1900000), reason: 'measured $bytes bytes');
     expect(
       bytes,
       lessThan(TelemetryUploadService.maxUploadBodyBytes),
@@ -1093,7 +1318,16 @@ void main() {
     expect(export.samples, hasLength(400));
     expect(export.detections, hasLength(2000));
     expect(export.alertLifecycle, hasLength(500));
-    expect(export.detectorModels.keys.toSet(), {builtInRef.id, customRef.id});
+    expect(export.corrections, hasLength(2000));
+    expect(export.failures, hasLength(200));
+    expect(export.fallbacks, hasLength(100));
+    expect(export.recoveries, hasLength(200));
+    // One entry per identity, carrying the name the rows were recorded with.
+    expect(export.detectorModels.keys.toSet(), {builtInRef.id, longRef.id});
+    expect(export.detectorModels[longRef.id], {
+      'name': longName,
+      'fingerprint': longRef.fingerprint,
+    });
   });
 
   test('writes JSON and CSV to an explicitly supplied directory', () async {
