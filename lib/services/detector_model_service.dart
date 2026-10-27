@@ -116,6 +116,7 @@ class DetectorModelService extends ChangeNotifier {
   String? _selectionRecoveryMessage;
 
   /// Active selection. Built-in (with empty labels) until [load] completes.
+  /// The UI must render the selection from this, never from settings.
   DetectorModel get current => _current;
 
   DetectorModel get builtIn => _builtIn;
@@ -321,7 +322,9 @@ class DetectorModelService extends ChangeNotifier {
         flush: true,
       );
 
-      final previous = _current;
+      // The persisted identity, not _current, owns the stored copy: _current is
+      // already built-in after selectBuiltIn(), and the copy would leak.
+      final previousFingerprint = _settings.customModelFingerprint;
       final model = DetectorModel(
         kind: DetectorModelKind.custom,
         displayName: name,
@@ -341,8 +344,8 @@ class DetectorModelService extends ChangeNotifier {
       notifyListeners();
 
       // Only a committed replacement import drops the previous copy.
-      if (previous.isCustom && previous.fingerprint != fingerprint) {
-        await _deleteAppOwned(previous.fingerprint);
+      if (previousFingerprint != null && previousFingerprint != fingerprint) {
+        await _deleteAppOwned(previousFingerprint);
       }
       return ModelImportResult.success(model);
     } on FileSystemException {
