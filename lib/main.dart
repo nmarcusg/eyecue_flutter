@@ -45,6 +45,13 @@ Future<void> main() async {
   // before the first frame, so nothing can silently resume recording.
   final researchSessions = ResearchSessionService(telemetry: telemetry);
   await researchSessions.load();
+  // One subscription for the app run, registered with the services it joins: a
+  // model change pauses the trial and records the boundary even when the lazily
+  // built Logs & Reports route was never opened.
+  researchSessions.watchDetectorModel(
+    detectorModels,
+    () => detectorModels.current.ref,
+  );
   await tts.init();
   telemetry.startSession();
 

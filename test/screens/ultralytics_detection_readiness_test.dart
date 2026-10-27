@@ -857,4 +857,346 @@ void main() {
     }
     telemetry.dispose();
   });
+
+  testWidgets('a switch while paused stops and rejects the old view', (
+    tester,
+  ) async {
+    final viewIds = <String>[];
+    final messenger = _installPlatformMocks(viewIds);
+    final documents = Directory.systemTemp.createTempSync(
+      'eyecue-model-paused',
+    );
+    addTearDown(() {
+      _clearPlatformMocks();
+      documents.deleteSync(recursive: true);
+    });
+
+    final settings = SettingsService(store: InMemorySettingsStore());
+    late DetectorModelService detectorModel;
+    await tester.runAsync(() async {
+      await settings.load();
+      detectorModel = await _restoredCustomModel(settings, documents, const [
+        'mug',
+        'chair',
+      ]);
+    });
+    final tts = TtsService(engine: _FakeTtsEngine());
+    await tts.init();
+    addTearDown(tts.dispose);
+    final states = <DetectionRuntimeState>[];
+    final coordinator = EngineCoordinator();
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UltralyticsDetectionScreen(
+          settings: settings,
+          tts: tts,
+          telemetry: TelemetryService(),
+          haptics: HapticsService(
+            light: () async {},
+            medium: () async {},
+            heavy: () async {},
+          ),
+          coordinator: coordinator,
+          detectorModel: detectorModel,
+          onRuntimeStateChanged: (state, _) {
+            states.add(state);
+            coordinator.reportState(state);
+          },
+          readinessTimeout: const Duration(seconds: 2),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Start Detection'));
+    await tester.pump();
+    for (var i = 0; i < 40 && viewIds.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    final oldViewId = viewIds.single;
+    await messenger.handlePlatformMessage(
+      'com.ultralytics.yolo/detectionResults_$oldViewId',
+      const StandardMethodCodec().encodeSuccessEnvelope(_classZeroPayload()),
+      (ByteData? data) {},
+    );
+    await tester.pump();
+    expect(states.last, DetectionRuntimeState.ready);
+
+    // Pause, then change the model while paused.
+    await tester.tap(find.text('PAUSE'));
+    await tester.pump();
+    for (
+      var i = 0;
+      i < 20 && states.last != DetectionRuntimeState.paused;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(states.last, DetectionRuntimeState.paused);
+    final beforeSwitch = states.length;
+
+    await detectorModel.selectBuiltIn();
+    for (
+      var i = 0;
+      i < 20 && states.last != DetectionRuntimeState.stopped;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(states.last, DetectionRuntimeState.stopped);
+    // The notice is set in the handler's setState, once the stop's speech
+    // hand-off returns, so wait for the frame that paints it.
+    for (
+      var i = 0;
+      i < 60 && find.text(kModelChangedMessage).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text(kModelChangedMessage), findsOneWidget);
+    expect(find.textContaining('mug'), findsNothing);
+
+    // The superseded paused view cannot publish Ready or restore its detections.
+    await messenger.handlePlatformMessage(
+      'com.ultralytics.yolo/detectionResults_$oldViewId',
+      const StandardMethodCodec().encodeSuccessEnvelope(_classZeroPayload()),
+      (ByteData? data) {},
+    );
+    await tester.pump();
+    expect(states.last, DetectionRuntimeState.stopped);
+    expect(
+      states.sublist(beforeSwitch),
+      isNot(contains(DetectionRuntimeState.ready)),
+    );
+    expect(find.textContaining('mug'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+  });
+
+  testWidgets(
+    'a switch while stopped keeps it stopped and rejects the old view',
+    (tester) async {
+      final viewIds = <String>[];
+      final messenger = _installPlatformMocks(viewIds);
+      final documents = Directory.systemTemp.createTempSync(
+        'eyecue-model-stopped',
+      );
+      addTearDown(() {
+        _clearPlatformMocks();
+        documents.deleteSync(recursive: true);
+      });
+
+      final settings = SettingsService(store: InMemorySettingsStore());
+      late DetectorModelService detectorModel;
+      await tester.runAsync(() async {
+        await settings.load();
+        detectorModel = await _restoredCustomModel(settings, documents, const [
+          'mug',
+          'chair',
+        ]);
+      });
+      final tts = TtsService(engine: _FakeTtsEngine());
+      await tts.init();
+      addTearDown(tts.dispose);
+      final states = <DetectionRuntimeState>[];
+      final coordinator = EngineCoordinator();
+      tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: UltralyticsDetectionScreen(
+            settings: settings,
+            tts: tts,
+            telemetry: TelemetryService(),
+            haptics: HapticsService(
+              light: () async {},
+              medium: () async {},
+              heavy: () async {},
+            ),
+            coordinator: coordinator,
+            detectorModel: detectorModel,
+            onRuntimeStateChanged: (state, _) {
+              states.add(state);
+              coordinator.reportState(state);
+            },
+            readinessTimeout: const Duration(seconds: 2),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.text('Start Detection'));
+      await tester.pump();
+      for (var i = 0; i < 40 && viewIds.isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final oldViewId = viewIds.single;
+      await messenger.handlePlatformMessage(
+        'com.ultralytics.yolo/detectionResults_$oldViewId',
+        const StandardMethodCodec().encodeSuccessEnvelope(_classZeroPayload()),
+        (ByteData? data) {},
+      );
+      await tester.pump();
+      expect(states.last, DetectionRuntimeState.ready);
+
+      // Hold the lifecycle control to stop, then change the model while stopped.
+      final held = await tester.startGesture(
+        tester.getCenter(find.text('PAUSE')),
+      );
+      await tester.pump(kLifecycleHoldDuration);
+      await tester.pump();
+      await held.up();
+      await tester.pump();
+      for (
+        var i = 0;
+        i < 20 && states.last != DetectionRuntimeState.stopped;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(states.last, DetectionRuntimeState.stopped);
+      final beforeSwitch = states.length;
+
+      await detectorModel.selectBuiltIn();
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(states.last, DetectionRuntimeState.stopped);
+      for (
+        var i = 0;
+        i < 60 && find.text(kModelChangedMessage).evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text(kModelChangedMessage), findsOneWidget);
+
+      // Nothing restarts from the superseded view's payload.
+      await messenger.handlePlatformMessage(
+        'com.ultralytics.yolo/detectionResults_$oldViewId',
+        const StandardMethodCodec().encodeSuccessEnvelope(_classZeroPayload()),
+        (ByteData? data) {},
+      );
+      await tester.pump();
+      expect(states.last, DetectionRuntimeState.stopped);
+      expect(
+        states.sublist(beforeSwitch),
+        isNot(contains(DetectionRuntimeState.ready)),
+      );
+      expect(find.textContaining('mug'), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+    },
+  );
+
+  testWidgets('a switch while loading stops before the first payload', (
+    tester,
+  ) async {
+    final viewIds = <String>[];
+    final messenger = _installPlatformMocks(viewIds);
+    final documents = Directory.systemTemp.createTempSync(
+      'eyecue-model-loading',
+    );
+    addTearDown(() {
+      _clearPlatformMocks();
+      documents.deleteSync(recursive: true);
+    });
+
+    final settings = SettingsService(store: InMemorySettingsStore());
+    late DetectorModelService detectorModel;
+    await tester.runAsync(() async {
+      await settings.load();
+      detectorModel = await _restoredCustomModel(settings, documents, const [
+        'mug',
+        'chair',
+      ]);
+    });
+    final tts = TtsService(engine: _FakeTtsEngine());
+    await tts.init();
+    addTearDown(tts.dispose);
+    final states = <DetectionRuntimeState>[];
+    final coordinator = EngineCoordinator();
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UltralyticsDetectionScreen(
+          settings: settings,
+          tts: tts,
+          telemetry: TelemetryService(),
+          haptics: HapticsService(
+            light: () async {},
+            medium: () async {},
+            heavy: () async {},
+          ),
+          coordinator: coordinator,
+          detectorModel: detectorModel,
+          onRuntimeStateChanged: (state, _) {
+            states.add(state);
+            coordinator.reportState(state);
+          },
+          readinessTimeout: const Duration(seconds: 2),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Start Detection'));
+    await tester.pump();
+    for (var i = 0; i < 40 && viewIds.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    // No payload has arrived: the session is still loading the model.
+    expect(states.last, DetectionRuntimeState.loadingModel);
+    final oldViewId = viewIds.single;
+
+    await detectorModel.selectBuiltIn();
+    for (
+      var i = 0;
+      i < 20 && states.last != DetectionRuntimeState.stopped;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(states.last, DetectionRuntimeState.stopped);
+    for (
+      var i = 0;
+      i < 60 && find.text(kModelChangedMessage).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text(kModelChangedMessage), findsOneWidget);
+    expect(states, isNot(contains(DetectionRuntimeState.ready)));
+
+    // The superseded view's first payload cannot bring the session back up.
+    await messenger.handlePlatformMessage(
+      'com.ultralytics.yolo/detectionResults_$oldViewId',
+      const StandardMethodCodec().encodeSuccessEnvelope(_classZeroPayload()),
+      (ByteData? data) {},
+    );
+    await tester.pump();
+    expect(states.last, DetectionRuntimeState.stopped);
+    expect(states, isNot(contains(DetectionRuntimeState.ready)));
+    expect(find.textContaining('mug'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+  });
 }

@@ -72,20 +72,6 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   bool _exporting = false;
   bool _uploading = false;
 
-  @override
-  void initState() {
-    super.initState();
-    // The trial reacts to the app-wide selection itself, so a model change
-    // pauses logging even when the Detection page was never built.
-    final detectorModel = widget.detectorModel;
-    if (detectorModel != null) {
-      _sessions.watchDetectorModel(
-        detectorModel,
-        () => detectorModel.current.ref,
-      );
-    }
-  }
-
   /// The detector a new trial would be recorded with.
   DetectorModelRef get _detectorRef =>
       widget.detectorModel?.current.ref ??

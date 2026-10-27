@@ -7,6 +7,7 @@ import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/screens/help_screen.dart';
 import 'package:eyecue_flutter/screens/home_screen.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
+import 'package:eyecue_flutter/services/detector_model_service.dart';
 import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
@@ -702,19 +703,37 @@ void main() {
   });
 
   group('settings semantics', () {
-    // The Settings body is a scrollable ListView of four cards, so use a tall
+    // The Settings body is a scrollable ListView of five cards, so use a tall
     // phone-sized surface so all cards are built and their semantics are
     // available (ListView builds only the children in the viewport).
+    //
+    /// A loaded built-in selection, the way `main.dart` supplies it. Without it
+    /// the Detector Model card is absent, so every Settings test would model a
+    /// screen production never renders.
+    Future<DetectorModelService> buildDetectorModel() async {
+      final model = DetectorModelService(
+        SettingsService(store: InMemorySettingsStore()),
+        builtInLabelsLoader: () async =>
+            List<String>.generate(80, (index) => 'class$index'),
+      );
+      await model.load();
+      addTearDown(model.dispose);
+      return model;
+    }
+
     Future<void> pumpSettings(
       WidgetTester tester, {
       SettingsService? service,
       TelemetryService? telemetry,
+      DetectorModelService? detectorModel,
       double textScale = 1.0,
+      double surfaceHeight = 4000,
     }) async {
-      // Tall enough that the scrollable ListView builds all four cards (the
+      // Tall enough that the scrollable ListView builds all five cards (the
       // dark System Performance card is last and would otherwise be outside
-      // the viewport, so its semantics would not exist).
-      tester.view.physicalSize = const Size(390 * 3, 4000 * 3);
+      // the viewport, so its semantics would not exist). A larger height is
+      // needed at 200% text scale, where every card is taller.
+      tester.view.physicalSize = Size(390 * 3, surfaceHeight * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
@@ -726,6 +745,7 @@ void main() {
                   service ?? SettingsService(store: InMemorySettingsStore()),
               onOpenLogsReports: () {},
               telemetry: telemetry,
+              detectorModel: detectorModel ?? await buildDetectorModel(),
             ),
           ),
         ),
@@ -745,6 +765,7 @@ void main() {
           'Preferences',
           'Audio Guidance',
           'Engine & Sensitivity',
+          'Detector Model',
           'System Performance',
         ]) {
           final node = expectSemanticNode(heading);
@@ -776,6 +797,40 @@ void main() {
         expect(find.semantics.byLabel('memory_rounded').evaluate(), isEmpty);
         expect(find.semantics.byLabel('bar_chart_rounded').evaluate(), isEmpty);
       });
+    });
+
+    testWidgets('the detector card exposes state, notice and three controls', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      await withSemantics(tester, () async {
+        final heading = expectSemanticNode('Detector Model');
+        expect(
+          heading.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
+          reason: 'The detector card heading is not a semantic header',
+        );
+        // Selected model state and class count, read from the service.
+        expectSemanticNode(RegExp(r'^Built-in YOLOv8n'));
+        expect(find.textContaining('80 classes'), findsOneWidget);
+        expect(find.text('Built-in detector'), findsOneWidget);
+        // The next-action notice a model change requires is readable text.
+        expect(
+          find.textContaining('Changing the detector stops detection'),
+          findsOneWidget,
+        );
+        // Three labelled controls: the picker is usable, the two switches are
+        // disabled while the built-in model is the only available choice.
+        expectButtonSemantics(tester, 'Choose model file…');
+        expectButtonSemantics(tester, 'Use built-in detector', enabled: false);
+        expectButtonSemantics(tester, 'Use imported model', enabled: false);
+      });
+
+      // The same card at 200% text scale: it is still laid out, and nothing in
+      // it overflows.
+      await pumpSettings(tester, textScale: 2.0, surfaceHeight: 9000);
+      expect(find.text('Detector Model'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('switches expose label, role, and checked state', (
@@ -915,6 +970,7 @@ void main() {
       tester.view.physicalSize = const Size(390 * 3, 844 * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
+      final detectorModel = await buildDetectorModel();
       await tester.pumpWidget(
         MaterialApp(
           home: MediaQuery(
@@ -922,6 +978,7 @@ void main() {
             child: SettingsScreen(
               settings: SettingsService(store: InMemorySettingsStore()),
               onOpenLogsReports: () {},
+              detectorModel: detectorModel,
             ),
           ),
         ),
