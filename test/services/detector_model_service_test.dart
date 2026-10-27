@@ -20,6 +20,12 @@ Future<Map<String, dynamic>> _detectInspect(String path) async => {
   'labels': List<String>.generate(_cocoClassCount, (index) => 'class$index'),
 };
 
+/// Exactly the two app-owned files of one import, in [debugStoredFiles] order.
+List<String> _storedFor(String fingerprint) => [
+  '$fingerprint.labels.json',
+  '$fingerprint.tflite',
+];
+
 class _FakePicker implements ModelFilePicker {
   _FakePicker(this.path);
 
@@ -239,11 +245,11 @@ void main() {
         await service.load();
         expect(service.isCustomSelected, isFalse);
         expect(service.selectionRecoveryMessage, isNull);
+        expect(await service.debugStoredFiles(), _storedFor(a.fingerprint));
 
-        final reselected = await service.selectStoredCustom();
-        expect(reselected.ok, isTrue);
-        expect(reselected.model!.fingerprint, a.fingerprint);
-
+        // Deliberately no re-select first: after a restart, built-in is active
+        // while the old import is still in the store, which is exactly the
+        // order that used to leak the previous copy.
         final replacement = await service.importFromPath(
           writeSource('second.tflite', Uint8List.fromList([..._modelBytes, 7])),
           displayName: 'Second model',
@@ -251,7 +257,10 @@ void main() {
         expect(replacement.ok, isTrue);
         expect(replacement.model!.fingerprint, isNot(a.fingerprint));
         expect(File(a.path).existsSync(), isFalse);
-        expect(await service.debugStoredFiles(), hasLength(2));
+        expect(
+          await service.debugStoredFiles(),
+          _storedFor(replacement.model!.fingerprint),
+        );
       },
     );
   });
@@ -431,6 +440,66 @@ void main() {
       expect(settings.customModelFingerprint, second.model!.fingerprint);
       expect(service.current.displayName, 'Second model');
     });
+
+    test('built-in in between does not keep the replaced copy', () async {
+      final service = buildService();
+      await service.load();
+      final first = await service.importFromPath(
+        writeSource('first.tflite', _modelBytes),
+        displayName: 'First model',
+      );
+      expect(first.ok, isTrue);
+      await service.selectBuiltIn();
+
+      // No re-select of A: the persisted identity, not _current, owns the copy.
+      final second = await service.importFromPath(
+        writeSource('second.tflite', Uint8List.fromList([..._modelBytes, 7])),
+        displayName: 'Second model',
+      );
+
+      expect(second.ok, isTrue);
+      expect(second.model!.fingerprint, isNot(first.model!.fingerprint));
+      expect(File(first.model!.path).existsSync(), isFalse);
+      expect(
+        File(
+          first.model!.path.replaceAll('.tflite', '.labels.json'),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        await service.debugStoredFiles(),
+        _storedFor(second.model!.fingerprint),
+      );
+    });
+
+    test(
+      're-importing the same bytes under a new name keeps one copy',
+      () async {
+        final service = buildService();
+        await service.load();
+        final first = await service.importFromPath(
+          writeSource('model.tflite', _modelBytes),
+          displayName: 'Obstacle Detector v2',
+        );
+        expect(first.ok, isTrue);
+        await service.selectBuiltIn();
+
+        final again = await service.importFromPath(
+          writeSource('model-again.tflite', _modelBytes),
+          displayName: 'Obstacle Detector v3',
+        );
+
+        expect(again.ok, isTrue);
+        // Same bytes, so the copy must neither duplicate nor be deleted.
+        expect(again.model!.fingerprint, first.model!.fingerprint);
+        expect(again.model!.displayName, 'Obstacle Detector v3');
+        expect(settings.customModelName, 'Obstacle Detector v3');
+        expect(
+          await service.debugStoredFiles(),
+          _storedFor(first.model!.fingerprint),
+        );
+      },
+    );
 
     test(
       'switching to built-in keeps the copy so it can be re-selected',
