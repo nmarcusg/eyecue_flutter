@@ -102,18 +102,33 @@ class DetectorModel {
 /// Non-cryptographic: it distinguishes graph contents, so the native filename
 /// based model/GPU caches cannot reuse a stale graph. It is not a security
 /// primitive and not a substitute for a cryptographic digest.
-String tfliteFingerprint(Uint8List bytes) {
-  var hash = 0xcbf29ce484222325;
-  for (final byte in bytes) {
-    hash ^= byte;
-    hash *= 0x100000001b3;
+String tfliteFingerprint(Uint8List bytes) =>
+    (TfliteFingerprintAccumulator()..add(bytes)).fingerprint;
+
+/// Incremental [tfliteFingerprint], so an already committed model can be
+/// re-hashed in chunks instead of being loaded twice into memory.
+class TfliteFingerprintAccumulator {
+  int _hash = 0xcbf29ce484222325;
+  int _length = 0;
+
+  void add(List<int> bytes) {
+    var hash = _hash;
+    for (final byte in bytes) {
+      hash = (hash ^ byte) * 0x100000001b3;
+    }
+    _hash = hash;
+    _length += bytes.length;
   }
-  final high = (hash >> 32) & 0xFFFFFFFF;
-  final low = hash & 0xFFFFFFFF;
-  final hex =
-      '${high.toRadixString(16).padLeft(8, '0')}'
-      '${low.toRadixString(16).padLeft(8, '0')}';
-  return '$hex-${bytes.length}';
+
+  /// Same string [tfliteFingerprint] returns for the concatenated chunks.
+  String get fingerprint {
+    final high = (_hash >> 32) & 0xFFFFFFFF;
+    final low = _hash & 0xFFFFFFFF;
+    final hex =
+        '${high.toRadixString(16).padLeft(8, '0')}'
+        '${low.toRadixString(16).padLeft(8, '0')}';
+    return '$hex-$_length';
+  }
 }
 
 /// Narrow, semantic name sets used only for **custom** model labels.

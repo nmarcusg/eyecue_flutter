@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:eyecue_flutter/models/detector_model.dart';
+import 'package:eyecue_flutter/models/tflite_flatbuffer.dart';
 import 'package:eyecue_flutter/services/detector_model_service.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -136,6 +137,35 @@ void main() {
           service.selectionRecoveryMessage,
           contains('no longer available'),
         );
+      },
+    );
+
+    test(
+      'a same-length corrupted copy recovers to built-in and is removed',
+      () async {
+        final first = buildService();
+        await first.load();
+        final result = await first.importFromPath(
+          writeSource('model.tflite', _modelBytes),
+          displayName: 'Obstacle Detector v2',
+        );
+        expect(result.ok, isTrue);
+        final path = result.model!.path;
+
+        final tampered = Uint8List.fromList(File(path).readAsBytesSync());
+        tampered[tampered.length ~/ 2] ^= 0xff;
+        File(path).writeAsBytesSync(tampered);
+        expect(tampered.length, result.model!.fileSizeBytes);
+
+        final service = buildService();
+        await service.load();
+
+        expect(service.isCustomSelected, isFalse);
+        expect(service.current.displayName, 'Built-in YOLOv8n');
+        expect(service.selectionRecoveryMessage, isNotNull);
+        expect(File(path).existsSync(), isFalse);
+        expect(settings.customModelFingerprint, isNull);
+        expect(await service.debugStoredFiles(), isEmpty);
       },
     );
   });
@@ -275,7 +305,6 @@ void main() {
 
         expect(settings.detectorModelKind, DetectorModelKind.custom);
         expect(settings.customModelFingerprint, fingerprint);
-        expect(settings.customModelPath, expected.path);
         expect(settings.customModelClassCount, _cocoClassCount);
 
         expect(service.current.ref.name, 'Obstacle Detector v2');
@@ -313,11 +342,53 @@ void main() {
         isFalse,
       );
       expect(await service.debugStoredFiles(), hasLength(2));
-      expect(settings.customModelPath, second.model!.path);
+      expect(settings.customModelFingerprint, second.model!.fingerprint);
       expect(service.current.displayName, 'Second model');
     });
 
-    test('switching back to built-in removes the app-owned copy', () async {
+    test(
+      'switching to built-in keeps the copy so it can be re-selected',
+      () async {
+        final service = buildService();
+        await service.load();
+        final imported = await service.importFromPath(
+          writeSource('model.tflite', _modelBytes),
+          displayName: 'Obstacle Detector v2',
+        );
+        expect(imported.ok, isTrue);
+        final first = imported.model!;
+
+        await service.selectBuiltIn();
+
+        expect(service.isCustomSelected, isFalse);
+        expect(File(first.path).existsSync(), isTrue);
+        expect(settings.detectorModelKind, DetectorModelKind.builtIn);
+        // The identity is retained, only the selection changed.
+        expect(settings.customModelFingerprint, first.fingerprint);
+        expect(settings.customModelName, 'Obstacle Detector v2');
+        expect(await service.debugStoredFiles(), hasLength(2));
+
+        final reselected = await service.selectStoredCustom();
+
+        expect(reselected.ok, isTrue);
+        expect(reselected.model!.fingerprint, first.fingerprint);
+        expect(reselected.model!.ref.id, first.ref.id);
+        expect(reselected.model!.displayName, 'Obstacle Detector v2');
+        expect(reselected.model!.ref.classCount, _cocoClassCount);
+        expect(service.isCustomSelected, isTrue);
+        expect(service.selectionRecoveryMessage, isNull);
+        expect(settings.detectorModelKind, DetectorModelKind.custom);
+        expect(await service.debugStoredFiles(), hasLength(2));
+
+        // built-in → custom → built-in repeatedly in one app run.
+        await service.selectBuiltIn();
+        await service.selectBuiltIn();
+        expect((await service.selectStoredCustom()).ok, isTrue);
+        expect(await service.debugStoredFiles(), hasLength(2));
+      },
+    );
+
+    test('re-selecting a removed copy recovers to built-in visibly', () async {
       final service = buildService();
       await service.load();
       final imported = await service.importFromPath(
@@ -325,14 +396,102 @@ void main() {
         displayName: 'Obstacle Detector v2',
       );
       expect(imported.ok, isTrue);
-
       await service.selectBuiltIn();
+      File(imported.model!.path).deleteSync();
 
+      final reselected = await service.selectStoredCustom();
+
+      expect(reselected.ok, isFalse);
+      expect(reselected.message, contains('Import the model again'));
       expect(service.isCustomSelected, isFalse);
-      expect(File(imported.model!.path).existsSync(), isFalse);
+      expect(service.selectionRecoveryMessage, isNotNull);
       expect(settings.detectorModelKind, DetectorModelKind.builtIn);
-      expect(settings.customModelPath, isNull);
-      expect(await service.debugStoredFiles(), isEmpty);
+      expect(settings.customModelFingerprint, isNull);
+    });
+
+    test('a valid custom selection survives an invalid import', () async {
+      var task = 'detect';
+      final service = buildService(
+        inspect: (path) async => {
+          'task': task,
+          'labels': List<String>.generate(
+            _cocoClassCount,
+            (index) => 'class$index',
+          ),
+        },
+      );
+      await service.load();
+      final imported = await service.importFromPath(
+        writeSource('model.tflite', _modelBytes),
+        displayName: 'Obstacle Detector v2',
+      );
+      expect(imported.ok, isTrue);
+      final kept = imported.model!;
+
+      // (a) truncated file, (b) wrong-task file — both from a valid selection.
+      final truncated = _modelBytes.sublist(0, 16);
+      final truncatedResult = await service.importFromPath(
+        writeSource('truncated.tflite', truncated),
+        displayName: 'Replacement',
+      );
+      task = 'classify';
+      final wrongTaskResult = await service.importFromPath(
+        writeSource('classifier.tflite', _modelBytes),
+        displayName: 'Replacement',
+      );
+
+      expect(truncatedResult.ok, isFalse);
+      expect(wrongTaskResult.ok, isFalse);
+      expect(service.current.fingerprint, kept.fingerprint);
+      expect(service.current.displayName, 'Obstacle Detector v2');
+      expect(settings.customModelFingerprint, kept.fingerprint);
+      expect(File(kept.path).existsSync(), isTrue);
+      expect(await service.debugStoredFiles(), hasLength(2));
+
+      final reselected = await service.selectStoredCustom();
+      expect(reselected.ok, isTrue);
+      expect(reselected.model!.fingerprint, kept.fingerprint);
+    });
+  });
+
+  group('label/class agreement', () {
+    TfliteModelStructure shape(List<int> output) => TfliteModelStructure(
+      tensors: [
+        TfliteTensorInfo(
+          index: 0,
+          typeCode: TfliteFlatTensorType.float32,
+          shape: output,
+          bufferIndex: 0,
+        ),
+      ],
+      inputs: const [0],
+      outputs: const [0],
+      tensorTypeCounts: const {},
+    );
+
+    test('an ambiguous channel pair still has to match the labels', () {
+      // [1, 84, 300]: 84 and 300 are both in the candidate range. 3 labels
+      // need 7 channels, so neither can be the class axis.
+      final mismatch = DetectorModelService.labelShapeMismatch(
+        shape([1, 84, 300]),
+        3,
+      );
+      expect(mismatch, contains('3 labels'));
+    });
+
+    test('one matching candidate accepts the shape', () {
+      expect(
+        DetectorModelService.labelShapeMismatch(shape([1, 84, 300]), 80),
+        isNull,
+      );
+      expect(
+        DetectorModelService.labelShapeMismatch(shape([1, 300, 84]), 80),
+        isNull,
+      );
+    });
+
+    test('an uninterpretable shape has no opinion', () {
+      expect(DetectorModelService.labelShapeMismatch(shape([1, 3]), 3), isNull);
     });
   });
 }

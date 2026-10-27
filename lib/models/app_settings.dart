@@ -142,10 +142,11 @@ class AppSettings {
   final String? customModelName;
 
   /// Content-derived fingerprint of the imported graph.
+  ///
+  /// The app-owned copy lives at `<modelsDir>/<fingerprint>.tflite`; the path is
+  /// derived from this value rather than persisted, because settings reach
+  /// exported study data and a filesystem path must never cross that boundary.
   final String? customModelFingerprint;
-
-  /// Absolute path of the app-owned copy. Local only: exports must strip it.
-  final String? customModelPath;
 
   /// Class count of the imported graph. Labels themselves are **not** persisted
   /// here (settings reach exported study data); they live in the model sidecar.
@@ -170,7 +171,6 @@ class AppSettings {
     this.detectorModelKind = DetectorModelKind.builtIn,
     this.customModelName,
     this.customModelFingerprint,
-    this.customModelPath,
     this.customModelClassCount,
     this.schemaVersion = currentSchemaVersion,
   });
@@ -196,7 +196,6 @@ class AppSettings {
     DetectorModelKind? detectorModelKind,
     Object? customModelName = _unset,
     Object? customModelFingerprint = _unset,
-    Object? customModelPath = _unset,
     Object? customModelClassCount = _unset,
   }) {
     return AppSettings(
@@ -227,9 +226,6 @@ class AppSettings {
       customModelFingerprint: identical(customModelFingerprint, _unset)
           ? this.customModelFingerprint
           : customModelFingerprint as String?,
-      customModelPath: identical(customModelPath, _unset)
-          ? this.customModelPath
-          : customModelPath as String?,
       customModelClassCount: identical(customModelClassCount, _unset)
           ? this.customModelClassCount
           : customModelClassCount as int?,
@@ -254,7 +250,6 @@ class AppSettings {
     'detectorModelKind': detectorModelKind.name,
     'customModelName': customModelName,
     'customModelFingerprint': customModelFingerprint,
-    'customModelPath': customModelPath,
     'customModelClassCount': customModelClassCount,
   };
 
@@ -283,12 +278,11 @@ class AppSettings {
     final kindName = json['detectorModelKind'];
     final customName = _stringOrNull(json['customModelName']);
     final customFingerprint = _stringOrNull(json['customModelFingerprint']);
-    final customPath = _stringOrNull(json['customModelPath']);
     final customClassCount = json['customModelClassCount'];
+    // Older files may still carry `customModelPath`; unknown keys are ignored.
     final customComplete =
         customName != null &&
         customFingerprint != null &&
-        customPath != null &&
         customClassCount is int &&
         customClassCount > 0;
     final parsedKind = kindName is String
@@ -324,7 +318,6 @@ class AppSettings {
       detectorModelKind: kind,
       customModelName: usesCustom ? customName : null,
       customModelFingerprint: usesCustom ? customFingerprint : null,
-      customModelPath: usesCustom ? customPath : null,
       customModelClassCount: usesCustom ? customClassCount as int : null,
       schemaVersion: currentSchemaVersion,
     );
@@ -381,7 +374,6 @@ class AppSettings {
       other.detectorModelKind == detectorModelKind &&
       other.customModelName == customModelName &&
       other.customModelFingerprint == customModelFingerprint &&
-      other.customModelPath == customModelPath &&
       other.customModelClassCount == customModelClassCount;
 
   @override
@@ -402,7 +394,6 @@ class AppSettings {
     detectorModelKind,
     customModelName,
     customModelFingerprint,
-    customModelPath,
     customModelClassCount,
   );
 }

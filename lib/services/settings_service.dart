@@ -83,7 +83,6 @@ class SettingsService extends ChangeNotifier {
   DetectorModelKind get detectorModelKind => _settings.detectorModelKind;
   String? get customModelName => _settings.customModelName;
   String? get customModelFingerprint => _settings.customModelFingerprint;
-  String? get customModelPath => _settings.customModelPath;
   int? get customModelClassCount => _settings.customModelClassCount;
 
   /// Loads persisted settings. Safe to call once at startup; on any failure
@@ -143,24 +142,29 @@ class SettingsService extends ChangeNotifier {
       _update(_settings.copyWith(safetyAcknowledged: value));
 
   /// Persists the detector selection as a unit. The custom fields are always
-  /// written together and cleared when the built-in detector is selected.
+  /// written together, and selecting the built-in detector **keeps** them so
+  /// the last import stays re-selectable; pass [clearCustomModel] to drop them
+  /// when the app-owned copy is gone or unusable.
   ///
   /// Labels are deliberately not persisted here: settings reach exported study
-  /// data and labels live in the model sidecar instead.
+  /// data and labels live in the model sidecar instead. Neither is the copy's
+  /// path: it is derived from the fingerprint at load time.
   Future<void> setDetectorModel({
     required DetectorModelKind kind,
     String? name,
     String? fingerprint,
-    String? path,
     int? classCount,
+    bool clearCustomModel = false,
   }) {
+    if (kind == DetectorModelKind.builtIn && !clearCustomModel) {
+      return _update(_settings.copyWith(detectorModelKind: kind));
+    }
     final custom = kind == DetectorModelKind.custom;
     return _update(
       _settings.copyWith(
         detectorModelKind: kind,
         customModelName: custom ? name : null,
         customModelFingerprint: custom ? fingerprint : null,
-        customModelPath: custom ? path : null,
         customModelClassCount: custom ? classCount : null,
       ),
     );

@@ -79,17 +79,16 @@ void main() {
       final service = SettingsService(store: InMemorySettingsStore());
       await service.load();
       expect(service.detectorModelKind, DetectorModelKind.builtIn);
-      expect(service.customModelPath, isNull);
+      expect(service.customModelFingerprint, isNull);
     });
 
-    test('setDetectorModel persists a custom choice and clears it', () async {
+    test('setDetectorModel keeps the custom identity on built-in', () async {
       final store = InMemorySettingsStore();
       final service = SettingsService(store: store);
       await service.setDetectorModel(
         kind: DetectorModelKind.custom,
         name: 'Obstacle Detector v2',
         fingerprint: '0123456789abcdef-1234',
-        path: '/data/app/eyecue_models/0123456789abcdef-1234.tflite',
         classCount: 3,
       );
 
@@ -100,10 +99,20 @@ void main() {
       expect(reloaded.customModelFingerprint, '0123456789abcdef-1234');
       expect(reloaded.customModelClassCount, 3);
 
+      // Selecting built-in only changes the selection: the last import stays
+      // re-selectable.
       await reloaded.setDetectorModel(kind: DetectorModelKind.builtIn);
+      expect(reloaded.detectorModelKind, DetectorModelKind.builtIn);
+      expect(reloaded.customModelName, 'Obstacle Detector v2');
+      expect(reloaded.customModelFingerprint, '0123456789abcdef-1234');
+      expect(reloaded.customModelClassCount, 3);
+
+      await reloaded.setDetectorModel(
+        kind: DetectorModelKind.builtIn,
+        clearCustomModel: true,
+      );
       expect(reloaded.customModelName, isNull);
       expect(reloaded.customModelFingerprint, isNull);
-      expect(reloaded.customModelPath, isNull);
       expect(reloaded.customModelClassCount, isNull);
     });
 
