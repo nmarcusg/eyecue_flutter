@@ -294,7 +294,6 @@ class AppSettings {
     final kind = parsedKind == DetectorModelKind.custom && !customComplete
         ? DetectorModelKind.builtIn
         : parsedKind;
-    final usesCustom = kind == DetectorModelKind.custom;
     return AppSettings(
       vibrationFeedback: _boolOr(json['vibrationFeedback'], true),
       autoStartDetection: _boolOr(json['autoStartDetection'], true),
@@ -316,9 +315,12 @@ class AppSettings {
       // first-use disclosure once.
       safetyAcknowledged: _boolOr(json['safetyAcknowledged'], false),
       detectorModelKind: kind,
-      customModelName: usesCustom ? customName : null,
-      customModelFingerprint: usesCustom ? customFingerprint : null,
-      customModelClassCount: usesCustom ? customClassCount as int : null,
+      // The identity is parsed independently of the selection: switching to the
+      // built-in detector keeps the last import re-selectable after a restart,
+      // so only completeness gates it — never the selected kind.
+      customModelName: customComplete ? customName : null,
+      customModelFingerprint: customComplete ? customFingerprint : null,
+      customModelClassCount: customComplete ? customClassCount : null,
       schemaVersion: currentSchemaVersion,
     );
   }

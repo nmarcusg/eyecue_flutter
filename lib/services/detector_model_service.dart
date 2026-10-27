@@ -61,6 +61,24 @@ class ModelImportResult {
   bool get wasCancelled => model == null && message == null;
 }
 
+/// Outcome of re-verifying the stored custom copy.
+///
+/// [corrupt] is the only outcome that proves the app-owned files are useless,
+/// because it is only used once the bytes were actually read (a fingerprint
+/// mismatch) or the sidecar is absent/unparseable. A read that never produced
+/// bytes is [unreadable]: nothing may be deleted and the identity is kept, so
+/// the import survives a transient I/O or permission error.
+class _Restore {
+  final DetectorModel? model;
+  final bool corrupt;
+
+  const _Restore.ok(this.model) : corrupt = false;
+
+  const _Restore.corrupt() : model = null, corrupt = true;
+
+  const _Restore.unreadable() : model = null, corrupt = false;
+}
+
 /// Owns the detector selection and the import pipeline
 /// (validate → stage → commit).
 ///
@@ -76,16 +94,22 @@ class DetectorModelService extends ChangeNotifier {
     Future<List<String>> Function()? builtInLabelsLoader,
     Future<Map<String, dynamic>> Function(String path)? inspect,
     Future<Directory> Function()? modelsDirectory,
+    Future<String?> Function(File file)? fingerprintReader,
   }) : _picker = picker ?? const PlatformModelFilePicker(),
        _loadBuiltInLabels = builtInLabelsLoader ?? _defaultBuiltInLabels,
        _inspect = inspect ?? _defaultInspect,
-       _modelsDirectory = modelsDirectory ?? _defaultModelsDirectory;
+       _modelsDirectory = modelsDirectory ?? _defaultModelsDirectory,
+       _readFingerprint = fingerprintReader ?? _fileFingerprint;
 
   final SettingsService _settings;
   final ModelFilePicker _picker;
   final Future<List<String>> Function() _loadBuiltInLabels;
   final Future<Map<String, dynamic>> Function(String path) _inspect;
   final Future<Directory> Function() _modelsDirectory;
+
+  /// Verification read of the committed copy. Seamed so a test can simulate an
+  /// I/O failure instead of relying on filesystem permissions.
+  final Future<String?> Function(File file) _readFingerprint;
 
   DetectorModel _builtIn = DetectorModel.builtIn(const []);
   DetectorModel _current = DetectorModel.builtIn(const []);
@@ -106,6 +130,13 @@ class DetectorModelService extends ChangeNotifier {
       'The imported custom model is no longer available, so '
       '${_builtIn.displayName} is selected. Import the model again to use it.';
 
+  /// A read failed but nothing was proven wrong, so the copy and its identity
+  /// are kept and the selection can be retried.
+  String get _unreadableMessage =>
+      'The imported custom model could not be read, so '
+      '${_builtIn.displayName} is selected. Try selecting the imported model '
+      'again.';
+
   /// Reads the persisted selection and repairs an unusable one.
   ///
   /// An older settings file, or a custom selection whose app-owned copy or
@@ -122,17 +153,22 @@ class DetectorModelService extends ChangeNotifier {
     }
 
     final restored = await _restoreCustom();
-    if (restored != null) {
-      _current = restored;
+    final model = restored.model;
+    if (model != null) {
+      _current = model;
     } else {
       _current = _builtIn;
-      _selectionRecoveryMessage = _unavailableMessage;
-      // The copy is gone or no longer matches its name: drop the identity too,
-      // otherwise the next start would retry the same broken selection.
-      await _settings.setDetectorModel(
-        kind: DetectorModelKind.builtIn,
-        clearCustomModel: true,
-      );
+      _selectionRecoveryMessage = restored.corrupt
+          ? _unavailableMessage
+          : _unreadableMessage;
+      // Only a copy this run actually read and found unusable is dropped. An
+      // unreadable copy keeps its identity so the next start retries it.
+      if (restored.corrupt) {
+        await _settings.setDetectorModel(
+          kind: DetectorModelKind.builtIn,
+          clearCustomModel: true,
+        );
+      }
     }
     notifyListeners();
   }
@@ -153,26 +189,32 @@ class DetectorModelService extends ChangeNotifier {
   /// missing or corrupted file cannot be presented as the active model.
   Future<ModelImportResult> selectStoredCustom() async {
     final restored = await _restoreCustom();
-    if (restored == null) {
+    final model = restored.model;
+    if (model == null) {
+      final message = restored.corrupt
+          ? _unavailableMessage
+          : _unreadableMessage;
       _current = _builtIn;
-      _selectionRecoveryMessage = _unavailableMessage;
+      _selectionRecoveryMessage = message;
       notifyListeners();
-      await _settings.setDetectorModel(
-        kind: DetectorModelKind.builtIn,
-        clearCustomModel: true,
-      );
-      return ModelImportResult.failure(_unavailableMessage);
+      if (restored.corrupt) {
+        await _settings.setDetectorModel(
+          kind: DetectorModelKind.builtIn,
+          clearCustomModel: true,
+        );
+      }
+      return ModelImportResult.failure(message);
     }
     await _settings.setDetectorModel(
       kind: DetectorModelKind.custom,
-      name: restored.displayName,
-      fingerprint: restored.fingerprint,
-      classCount: restored.classCount,
+      name: model.displayName,
+      fingerprint: model.fingerprint,
+      classCount: model.classCount,
     );
-    _current = restored;
+    _current = model;
     _selectionRecoveryMessage = null;
     notifyListeners();
-    return ModelImportResult.success(restored);
+    return ModelImportResult.success(model);
   }
 
   /// Opens the system picker, then imports the chosen file.
@@ -348,40 +390,49 @@ class DetectorModelService extends ChangeNotifier {
     return null;
   }
 
-  Future<DetectorModel?> _restoreCustom() async {
+  Future<_Restore> _restoreCustom() async {
     final fingerprint = _settings.customModelFingerprint;
     final name = _settings.customModelName;
     final classCount = _settings.customModelClassCount;
     if (fingerprint == null || name == null || classCount == null) {
-      return null;
+      return const _Restore.corrupt();
     }
     try {
       final directory = await _modelsDirectory();
       final file = _modelFile(directory, fingerprint);
-      if (!await file.exists()) return null;
+      if (!await file.exists()) return const _Restore.corrupt();
       final sidecar = await _readSidecar(directory, fingerprint);
-      if (sidecar == null || sidecar['fingerprint'] != fingerprint) return null;
+      if (sidecar == null || sidecar['fingerprint'] != fingerprint) {
+        return const _Restore.corrupt();
+      }
       final size = await file.length();
-      if (sidecar['bytes'] != size) return null;
+      if (sidecar['bytes'] != size) return const _Restore.corrupt();
       // Length alone cannot catch a same-size corruption, so re-derive the
       // identity from the bytes. A mismatch makes the app-owned copy useless:
       // remove it so the next import starts clean and the name is not reused.
-      if (await _fileFingerprint(file) != fingerprint) {
+      // A failed read proves nothing, so it must never reach the delete branch.
+      final actual = await _readFingerprint(file);
+      if (actual == null) return const _Restore.unreadable();
+      if (actual != fingerprint) {
         await _deleteAppOwned(fingerprint);
-        return null;
+        return const _Restore.corrupt();
       }
       final labels = _parseLabels(sidecar['labels']);
-      if (labels == null || labels.length != classCount) return null;
-      return DetectorModel(
-        kind: DetectorModelKind.custom,
-        displayName: name,
-        fingerprint: fingerprint,
-        labels: List<String>.unmodifiable(labels),
-        fileSizeBytes: size,
-        path: file.path,
+      if (labels == null || labels.length != classCount) {
+        return const _Restore.corrupt();
+      }
+      return _Restore.ok(
+        DetectorModel(
+          kind: DetectorModelKind.custom,
+          displayName: name,
+          fingerprint: fingerprint,
+          labels: List<String>.unmodifiable(labels),
+          fileSizeBytes: size,
+          path: file.path,
+        ),
       );
     } on FileSystemException {
-      return null;
+      return const _Restore.unreadable();
     }
   }
 
@@ -407,6 +458,9 @@ class DetectorModelService extends ChangeNotifier {
     return accumulator.fingerprint;
   }
 
+  /// `null` means the sidecar is absent or unparseable — both are corruption.
+  /// A read error is deliberately not caught here: the caller treats it as an
+  /// unreadable copy, which must not delete anything.
   Future<Map<String, dynamic>?> _readSidecar(
     Directory directory,
     String fingerprint,
@@ -416,8 +470,6 @@ class DetectorModelService extends ChangeNotifier {
       if (!await file.exists()) return null;
       final decoded = jsonDecode(await file.readAsString());
       return decoded is Map<String, dynamic> ? decoded : null;
-    } on FileSystemException {
-      return null;
     } on FormatException {
       return null;
     }
