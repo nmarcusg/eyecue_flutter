@@ -40,6 +40,10 @@ class TelemetryExport {
   final Map<String, dynamic> alertCounters;
   final List<Map<String, dynamic>> alertSummaries;
 
+  /// True when the exported rows are known to be incomplete (a trial restored
+  /// from a draft that stored counters only). Additive: absent means complete.
+  final bool rowsIncomplete;
+
   TelemetryExport({
     required this.exportedAt,
     required this.appVersion,
@@ -57,6 +61,7 @@ class TelemetryExport {
     required Iterable<Map<String, dynamic>> alertLifecycle,
     required Map<String, dynamic> alertCounters,
     required Iterable<Map<String, dynamic>> alertSummaries,
+    this.rowsIncomplete = false,
   }) : settings = UnmodifiableMapView(Map<String, dynamic>.from(settings)),
        detectorModels = UnmodifiableMapView({
          for (final entry in detectorModels.entries)
@@ -116,6 +121,7 @@ class TelemetryExport {
       'id': sessionId,
       'start': sessionStart?.toUtc().toIso8601String(),
       'durationMs': sessionDurationMs,
+      if (rowsIncomplete) 'rowsIncomplete': true,
     },
     'settings': settings,
     'detectorModels': detectorModels,
@@ -149,6 +155,7 @@ class TelemetryExport {
       sessionId: session['id'] as String? ?? '',
       sessionStart: DateTime.tryParse(session['start'] as String? ?? ''),
       sessionDurationMs: (session['durationMs'] as num?)?.toInt() ?? 0,
+      rowsIncomplete: session['rowsIncomplete'] == true,
       settings: (json['settings'] as Map<dynamic, dynamic>? ?? {})
           .cast<String, dynamic>(),
       detectorModels: {

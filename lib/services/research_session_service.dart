@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
+import '../models/detection_correction.dart';
 import '../models/detector_model.dart';
 import '../models/research_session.dart';
 import 'telemetry_service.dart';
@@ -40,6 +41,9 @@ abstract class ResearchSessionStore {
 /// File-backed store: `documents/eyecue_research_sessions/<id>.json` plus
 /// `draft.json`.
 class FileResearchSessionStore implements ResearchSessionStore {
+  /// [directory] overrides the documents directory (tests use a temp dir).
+  FileResearchSessionStore([this._directory]);
+
   static const String draftFileName = 'draft.json';
 
   Directory? _directory;
@@ -87,11 +91,18 @@ class FileResearchSessionStore implements ResearchSessionStore {
     }
   }
 
+  /// Write a temp file, then rename: an interrupted write leaves the previous
+  /// good file in place instead of a truncated one.
+  static Future<void> _writeAtomically(File file, String contents) async {
+    final temp = File('${file.path}.tmp');
+    await temp.writeAsString(contents, flush: true);
+    await temp.rename(file.path);
+  }
+
   @override
   Future<void> writeFinished(String id, String contents) async {
     final dir = await _directoryHandle();
-    final file = File('${dir.path}/${_safeId(id)}.json');
-    await file.writeAsString(contents, flush: true);
+    await _writeAtomically(File('${dir.path}/${_safeId(id)}.json'), contents);
   }
 
   @override
@@ -113,7 +124,7 @@ class FileResearchSessionStore implements ResearchSessionStore {
       if (await file.exists()) await file.delete();
       return;
     }
-    await file.writeAsString(contents, flush: true);
+    await _writeAtomically(file, contents);
   }
 }
 
@@ -176,6 +187,7 @@ class _Draft {
     this.baselineFrames = 0,
     Map<String, dynamic> closedAlertCounters = const {},
     Map<String, dynamic> baselineAlertCounters = const {},
+    this.rowsIncomplete = false,
   }) : detectors = List.of(detectors),
        intervals = List.of(intervals),
        closedAlertCounters = Map.of(closedAlertCounters),
@@ -195,6 +207,20 @@ class _Draft {
 
   /// Sum of the per-interval [AlertCounters] deltas.
   Map<String, dynamic> closedAlertCounters;
+
+  /// Captured rows, owned by this draft: the live telemetry rings may evict
+  /// theirs without touching these. Only rows written while recording enter.
+  final List<TelemetryRecord> records = [];
+  final List<RuntimeSample> samples = [];
+  final List<TelemetryFailureRecord> failures = [];
+  final List<EngineFallbackRecord> fallbacks = [];
+  final List<InferenceRecoveryRecord> recoveries = [];
+  final List<DetectionCorrection> corrections = [];
+  final List<AlertLifecycleRecord> alertRecords = [];
+
+  /// True when the draft predates row capture, so its counters exist without
+  /// their measurements. Marked instead of fabricating rows.
+  final bool rowsIncomplete;
 
   /// Cumulative counters as they stood when the running interval opened.
   Map<String, dynamic> baselineAlertCounters;
@@ -223,6 +249,14 @@ class _Draft {
     'baselineFrames': baselineFrames,
     'closedAlertCounters': closedAlertCounters,
     'baselineAlertCounters': baselineAlertCounters,
+    'rowsIncomplete': rowsIncomplete,
+    'records': [for (final record in records) record.toJson()],
+    'samples': [for (final sample in samples) sample.toJson()],
+    'failures': [for (final failure in failures) failure.toJson()],
+    'fallbacks': [for (final fallback in fallbacks) fallback.toJson()],
+    'recoveries': [for (final recovery in recoveries) recovery.toJson()],
+    'corrections': [for (final correction in corrections) correction.toJson()],
+    'alertRecords': [for (final record in alertRecords) record.toJson()],
   };
 
   /// Restores a draft as interrupted: an interval left open by a crash is
@@ -254,7 +288,7 @@ class _Draft {
     int count(String key) => (json[key] as num?)?.toInt() ?? 0;
     Map<String, dynamic> counters(Object? value) =>
         value is Map ? value.cast<String, dynamic>() : const {};
-    return _Draft(
+    final draft = _Draft(
       id: id,
       participantCode: json['participantCode'] as String? ?? '',
       trialLabel: json['trialLabel'] as String? ?? '',
@@ -276,7 +310,39 @@ class _Draft {
       baselineFrames: count('baselineFrames'),
       closedAlertCounters: counters(json['closedAlertCounters']),
       baselineAlertCounters: counters(json['baselineAlertCounters']),
+      // A schema-1 draft written before rows were persisted has counters but no
+      // measurements: it restores visibly incomplete, never with invented rows.
+      rowsIncomplete:
+          json['rowsIncomplete'] == true || !json.containsKey('records'),
     );
+    draft.records.addAll([
+      for (final entry in maps(json['records']))
+        TelemetryRecord.fromJson(entry),
+    ]);
+    draft.samples.addAll([
+      for (final entry in maps(json['samples'])) RuntimeSample.fromJson(entry),
+    ]);
+    draft.failures.addAll([
+      for (final entry in maps(json['failures']))
+        TelemetryFailureRecord.fromJson(entry),
+    ]);
+    draft.fallbacks.addAll([
+      for (final entry in maps(json['fallbacks']))
+        EngineFallbackRecord.fromJson(entry),
+    ]);
+    draft.recoveries.addAll([
+      for (final entry in maps(json['recoveries']))
+        InferenceRecoveryRecord.fromJson(entry),
+    ]);
+    draft.corrections.addAll([
+      for (final entry in maps(json['corrections']))
+        DetectionCorrection.fromJson(entry),
+    ]);
+    draft.alertRecords.addAll([
+      for (final entry in maps(json['alertRecords']))
+        AlertLifecycleRecord.fromJson(entry),
+    ]);
+    return draft;
   }
 }
 
@@ -285,18 +351,24 @@ class _Draft {
 /// Nothing is collected before [start]; [pause] freezes study accumulation only
 /// — detection, depth, speech and guidance keep running — and [finish] freezes
 /// an immutable [ResearchSession] that is persisted before any upload happens.
-class ResearchSessionService extends ChangeNotifier {
+class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
   ResearchSessionService({
     required TelemetryService telemetry,
     ResearchSessionStore? store,
     TelemetryUploadService? uploadService,
     DateTime Function()? clock,
     this.maxStoredSessions = 20,
+    this.maxTrialRecords = 10000,
+    this.maxTrialSamples = 2000,
   }) : _telemetry = telemetry,
        _store = store ?? FileResearchSessionStore(),
        _uploadService = uploadService ?? TelemetryUploadService(),
        _clock = clock ?? DateTime.now,
-       _appVersion = telemetry.appVersion;
+       _appVersion = telemetry.appVersion {
+    // The trial captures its own rows from here on; the live rings stay shared
+    // operational data with their unchanged caps.
+    _telemetry.sink = this;
+  }
 
   final TelemetryService _telemetry;
   final ResearchSessionStore _store;
@@ -309,6 +381,12 @@ class ResearchSessionService extends ChangeNotifier {
   /// unuploaded trial.
   final int maxStoredSessions;
 
+  /// Per-trial capture capacity, 5× the live record and sample rings. Reaching
+  /// it pauses collection visibly and keeps every captured row — there is no
+  /// roll-over and nothing is trimmed, so a trial never silently loses data.
+  final int maxTrialRecords;
+  final int maxTrialSamples;
+
   ResearchSessionState _state = ResearchSessionState.idle;
   _Draft? _draft;
   final List<ResearchSession> _sessions = [];
@@ -317,8 +395,20 @@ class ResearchSessionService extends ChangeNotifier {
   bool _finishing = false;
   String? _uploadingId;
   String? _lastSaveError;
+  String? _pauseReason;
   Listenable? _watchedDetectorChanges;
   DetectorModelRef Function()? _detectorIdentity;
+
+  /// Serialises draft writes: an older queued checkpoint must never land after a
+  /// newer Pause, nor after the delete that follows Finish.
+  Future<void> _writeChain = Future<void>.value();
+  int _draftSequence = 0;
+  int _writtenSequence = 0;
+  int _capturedSinceCheckpoint = 0;
+  DateTime? _lastCheckpointAt;
+
+  static const Duration _checkpointInterval = Duration(seconds: 5);
+  static const int _checkpointRows = 100;
 
   ResearchSessionState get state => _state;
 
@@ -338,8 +428,82 @@ class ResearchSessionService extends ChangeNotifier {
 
   String? get lastSaveError => _lastSaveError;
 
+  /// Why collection stopped on its own; null when the researcher paused.
+  String? get pauseReason => _pauseReason;
+
   /// Whether [session] reached local storage.
   bool isSaved(ResearchSession session) => !_unsavedIds.contains(session.id);
+
+  // --- TelemetrySink: the trial owns every row it captured -------------------
+
+  @override
+  void onDetection(TelemetryRecord record) =>
+      _capture(record.timestamp, (draft) => draft.records.add(record));
+
+  @override
+  void onSample(RuntimeSample sample) =>
+      _capture(sample.timestamp, (draft) => draft.samples.add(sample));
+
+  @override
+  void onFailure(TelemetryFailureRecord record) =>
+      _capture(record.failure.timestamp, (draft) => draft.failures.add(record));
+
+  @override
+  void onFallback(EngineFallbackRecord record) =>
+      _capture(record.timestamp, (draft) => draft.fallbacks.add(record));
+
+  @override
+  void onRecovery(InferenceRecoveryRecord record) =>
+      _capture(record.timestamp, (draft) => draft.recoveries.add(record));
+
+  @override
+  void onCorrection(DetectionCorrection correction) => _capture(
+    correction.timestamp,
+    (draft) => draft.corrections.add(correction),
+  );
+
+  @override
+  void onAlertLifecycle(AlertLifecycleRecord record) =>
+      _capture(record.terminalAt, (draft) => draft.alertRecords.add(record));
+
+  /// Appends one live row to the trial only when it belongs to a recorded
+  /// interval of a recording trial, so paused activity, post-finish rows and a
+  /// delayed event outside the intervals never enter.
+  void _capture(DateTime timestamp, void Function(_Draft draft) add) {
+    final draft = _draft;
+    if (_state != ResearchSessionState.recording || draft == null) return;
+    if (!draft.intervals.any((interval) => interval.contains(timestamp))) {
+      return;
+    }
+    add(draft);
+    _checkpointIfDue();
+    if (draft.records.length >= maxTrialRecords ||
+        draft.samples.length >= maxTrialSamples) {
+      // The row that reaches capacity is kept: stop visibly instead of trimming.
+      _pauseReason =
+          'This trial reached its capture capacity ($maxTrialRecords detections '
+          'and $maxTrialSamples samples), so logging paused. Everything already '
+          'captured is kept — finish and export it.';
+      unawaited(pause());
+    }
+  }
+
+  /// A bounded checkpoint: every ~5 s of recording or every 100 captured rows,
+  /// whichever comes first. Never per frame and never awaited by the writer, so
+  /// the frame that produced the row is not blocked by a file write.
+  void _checkpointIfDue() {
+    _capturedSinceCheckpoint++;
+    final now = _clock();
+    final last = _lastCheckpointAt;
+    if (_capturedSinceCheckpoint < _checkpointRows &&
+        last != null &&
+        now.difference(last) < _checkpointInterval) {
+      return;
+    }
+    _capturedSinceCheckpoint = 0;
+    _lastCheckpointAt = now;
+    unawaited(_persistDraft());
+  }
 
   String get stateLabel => switch (_state) {
     ResearchSessionState.idle => 'Not recording',
@@ -465,6 +629,9 @@ class ResearchSessionService extends ChangeNotifier {
     _draft = draft;
     _state = ResearchSessionState.recording;
     _lastSaveError = null;
+    _pauseReason = null;
+    _capturedSinceCheckpoint = 0;
+    _lastCheckpointAt = now;
     notifyListeners();
     await _persistDraft();
     return null;
@@ -487,6 +654,9 @@ class ResearchSessionService extends ChangeNotifier {
     draft.intervals.add(ResearchInterval(_clock()));
     _resetBaselines(draft);
     _state = ResearchSessionState.recording;
+    _pauseReason = null;
+    _capturedSinceCheckpoint = 0;
+    _lastCheckpointAt = _clock();
     notifyListeners();
     await _persistDraft();
   }
@@ -537,6 +707,8 @@ class ResearchSessionService extends ChangeNotifier {
   @override
   void dispose() {
     _watchedDetectorChanges?.removeListener(_handleDetectorModelChanged);
+    // Never leave a disposed service receiving live rows.
+    if (identical(_telemetry.sink, this)) _telemetry.sink = null;
     super.dispose();
   }
 
@@ -555,9 +727,6 @@ class ResearchSessionService extends ChangeNotifier {
       if (_state == ResearchSessionState.recording) {
         _closeInterval(draft, now);
       }
-      bool inTrial(DateTime timestamp) =>
-          draft.intervals.any((interval) => interval.contains(timestamp));
-
       var activeMs = 0;
       for (final interval in draft.intervals) {
         activeMs += interval.duration.inMilliseconds;
@@ -574,27 +743,17 @@ class ResearchSessionService extends ChangeNotifier {
         totalDetections: draft.closedDetections,
         highPriorityAlerts: draft.closedAlerts,
         framesProcessed: draft.closedFrames,
-        records: _telemetry.records
-            .where((record) => inTrial(record.timestamp))
-            .toList(),
-        samples: _telemetry.samples
-            .where((sample) => inTrial(sample.timestamp))
-            .toList(),
-        failures: _telemetry.failures
-            .where((record) => inTrial(record.failure.timestamp))
-            .toList(),
-        fallbacks: _telemetry.fallbacks
-            .where((record) => inTrial(record.timestamp))
-            .toList(),
-        recoveries: _telemetry.recoveries
-            .where((record) => inTrial(record.timestamp))
-            .toList(),
-        corrections: _telemetry.corrections
-            .where((record) => inTrial(record.timestamp))
-            .toList(),
-        alertRecords: _telemetry.alertRecords
-            .where((record) => inTrial(record.terminalAt))
-            .toList(),
+        // The trial's own capture, including rows written since the last
+        // checkpoint. Never the live rings: they are capped, shared with
+        // ordinary use, and empty in a fresh app process.
+        records: List.of(draft.records),
+        samples: List.of(draft.samples),
+        failures: List.of(draft.failures),
+        fallbacks: List.of(draft.fallbacks),
+        recoveries: List.of(draft.recoveries),
+        corrections: List.of(draft.corrections),
+        alertRecords: List.of(draft.alertRecords),
+        rowsIncomplete: draft.rowsIncomplete,
         // Interval deltas, like every other counter: the live snapshot is
         // cumulative over the whole app run.
         alertCounters: AlertCounters.fromJson(draft.closedAlertCounters),
@@ -604,11 +763,9 @@ class ResearchSessionService extends ChangeNotifier {
       _sessions.insert(0, session);
       _draft = null;
       _state = ResearchSessionState.finished;
-      try {
-        await _store.writeDraft(null);
-      } catch (_) {
-        // The finished file is authoritative; a stale draft restores as paused.
-      }
+      // Queued on the same chain, so no older checkpoint can land after this
+      // delete and resurrect a finished draft.
+      await _persistDraft();
       return FinishResult(session: session, saved: saved);
     } finally {
       _finishing = false;
@@ -790,15 +947,32 @@ class ResearchSessionService extends ChangeNotifier {
     }
   }
 
+  /// Every draft write goes through one chain with an increasing sequence, so a
+  /// slow older checkpoint can never overwrite a later Pause, and the delete
+  /// after Finish can never be overtaken by a checkpoint queued before it.
   Future<void> _persistDraft() async {
     final draft = _draft;
+    final sequence = ++_draftSequence;
+    final contents = draft == null ? null : jsonEncode(draft.toJson(_clock()));
+    final write = _writeChain.then((_) async {
+      if (sequence <= _writtenSequence) return;
+      await _store.writeDraft(contents);
+      _writtenSequence = sequence;
+    });
+    // The chain must survive a failed write, or every later checkpoint dies.
+    _writeChain = write.catchError((Object _) {});
     try {
-      await _store.writeDraft(
-        draft == null ? null : jsonEncode(draft.toJson(_clock())),
-      );
+      await write;
+      if (_draft != null) _lastSaveError = null;
     } catch (_) {
-      // A draft write failure must not interrupt recording; the trial is still
-      // in memory and [finish] reports its own save result.
+      // Nothing is durable yet: the rows stay in memory, the failure is
+      // reported, and [finish] still returns its own write result.
+      if (_draft != null) {
+        _lastSaveError =
+            'This trial is kept in memory but could not be checkpointed on this '
+            'device. Finish it and export the data to keep it.';
+        notifyListeners();
+      }
     }
   }
 

@@ -2085,8 +2085,10 @@ class _SessionSection extends StatelessWidget {
                 if (state == ResearchSessionState.paused) ...[
                   const SizedBox(height: kSpace8),
                   Text(
-                    'Paused: resume to keep recording this trial. Paused time '
-                    'is not counted in the active duration.',
+                    // A trial that stopped itself says why, not just "paused".
+                    sessions.pauseReason ??
+                        'Paused: resume to keep recording this trial. Paused '
+                            'time is not counted in the active duration.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: kHomeInkMuted,
                     ),
@@ -2178,6 +2180,15 @@ class _StoredTrialCard extends StatelessWidget {
               color: saved ? kHomeInkMuted : theme.colorScheme.error,
             ),
           ),
+          if (session.rowsIncomplete)
+            Text(
+              'Measurements incomplete: this trial was restored from an older '
+              'draft that stored counters only. Row counts are missing, not '
+              'zero.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
           if (uploadStatus != null && !uploading)
             Text(
               uploadStatus,
