@@ -24,6 +24,7 @@ class FakeTtsEngine implements TtsEngine {
   int stopCalls = 0;
   bool throwOnRecover = false;
   bool throwOnSpeak = false;
+  Completer<void>? stopCompleter;
   FakeMode mode = FakeMode.autoComplete;
 
   VoidCallback? _onStart;
@@ -47,6 +48,7 @@ class FakeTtsEngine implements TtsEngine {
   @override
   Future<void> stop() async {
     stopCalls++;
+    await stopCompleter?.future;
   }
 
   @override
@@ -1359,6 +1361,37 @@ void main() {
       disposed = true;
 
       expect(await pending.timeout(const Duration(milliseconds: 200)), isTrue);
+    });
+
+    test('a rejected preemption stop after dispose is inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('current speech');
+      await pumpEventQueue();
+      engine.stopCompleter = Completer<void>();
+
+      final pending = instrumented.announceDetections(
+        [nearPerson()],
+        tracks: [trackOf(nearPerson(), id: 92)],
+      );
+      await pumpEventQueue();
+      expect(engine.stopCalls, 1);
+
+      instrumented.dispose();
+      disposed = true;
+      expect(await active, isTrue);
+      expect(await pending, isFalse);
+      final state = instrumented.state;
+      final recordCount = records.length;
+      final counterCount = counters.length;
+      final lastCounters = counters.last;
+
+      engine.stopCompleter!.completeError(StateError('late stop failure'));
+      await pumpEventQueue();
+
+      expect(records, hasLength(recordCount));
+      expect(counters, hasLength(counterCount));
+      expect(counters.last, same(lastCounters));
+      expect(instrumented.state, state);
     });
 
     test('late callbacks after dispose are inert', () async {

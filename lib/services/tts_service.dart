@@ -641,6 +641,7 @@ class TtsService extends ChangeNotifier {
     try {
       await engine.stop();
     } catch (error) {
+      if (_disposed) return;
       _fail(active, _CancelCause.engineError);
     }
   }
