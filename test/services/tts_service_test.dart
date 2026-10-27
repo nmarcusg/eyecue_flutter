@@ -67,6 +67,7 @@ class FakeTtsEngine implements TtsEngine {
   void emitCancel() => _onCancel?.call();
   void emitError([dynamic error = 'engine error']) => _onError?.call(error);
   void resolveCurrent(int value) => _current?.complete(value);
+  void rejectCurrent(Object error) => _current?.completeError(error);
 
   @override
   Future<int> speak(String text) {
@@ -1377,6 +1378,52 @@ void main() {
 
       expect(instrumented.state, state);
       expect(instrumented.isSpeaking, isFalse);
+      expect(await pending, isTrue);
+    });
+
+    test('late engine success after dispose is inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+
+      instrumented.dispose();
+      disposed = true;
+      expect(await pending, isTrue);
+      final state = instrumented.state;
+      final recordCount = records.length;
+      final counterCount = counters.length;
+      final lastCounters = counters.last;
+
+      engine.resolveCurrent(1);
+      await pumpEventQueue();
+
+      expect(records, hasLength(recordCount));
+      expect(counters, hasLength(counterCount));
+      expect(counters.last, same(lastCounters));
+      expect(instrumented.state, state);
+      expect(await pending, isTrue);
+    });
+
+    test('late engine error after dispose is inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+
+      instrumented.dispose();
+      disposed = true;
+      expect(await pending, isTrue);
+      final state = instrumented.state;
+      final recordCount = records.length;
+      final counterCount = counters.length;
+      final lastCounters = counters.last;
+
+      engine.rejectCurrent(StateError('late engine failure'));
+      await pumpEventQueue();
+
+      expect(records, hasLength(recordCount));
+      expect(counters, hasLength(counterCount));
+      expect(counters.last, same(lastCounters));
+      expect(instrumented.state, state);
       expect(await pending, isTrue);
     });
   });
