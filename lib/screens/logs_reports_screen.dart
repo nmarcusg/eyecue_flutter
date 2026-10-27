@@ -694,7 +694,10 @@ class _OverviewTab extends StatelessWidget {
             const SizedBox(height: kSpace24),
             const _SectionHeading('Session Summary'),
             const SizedBox(height: kSpace8),
+            // The rows below blend every model too, so the card carries the
+            // same claim the engine cards do.
             _SummaryCard(
+              modelClaim: modelClaim,
               children: [
                 _SummaryRow(
                   label: 'Total detections',
@@ -1381,9 +1384,7 @@ class _EngineSummaryCard extends StatelessWidget {
     // where the value column has ~171 px on a 390 px phone, so it was always
     // ellipsized away.
     // shortcut: two lines hold the longest accepted (40-character) model name.
-    final claim = modelClaim.startsWith(' — ')
-        ? modelClaim.substring(3)
-        : modelClaim;
+    final claim = _claimLine(modelClaim);
     return Container(
       margin: const EdgeInsets.only(bottom: kSpace8),
       padding: const EdgeInsets.all(kSpace12),
@@ -1428,6 +1429,7 @@ class _EngineSummaryCard extends StatelessWidget {
             const SizedBox(height: kSpace4),
             Text(
               claim,
+              key: const ValueKey('engine-model-claim'),
               textAlign: TextAlign.end,
               maxLines: 2,
               style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
@@ -1646,14 +1648,33 @@ class _SectionHeading extends StatelessWidget {
 class _SummaryCard extends StatelessWidget {
   final List<Widget> children;
 
-  const _SummaryCard({required this.children});
+  /// What the rows above may claim: one model's name, or mixed-model data.
+  /// Null on cards that name their own model row by row.
+  final String? modelClaim;
+
+  const _SummaryCard({required this.children, this.modelClaim});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final claim = modelClaim == null ? '' : _claimLine(modelClaim!);
     return _LightCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: children,
+        children: [
+          ...children,
+          // The claim is its own line: appended to a value line it needed more
+          // width than the value column has on a 390 px phone.
+          if (claim.isNotEmpty) ...[
+            const SizedBox(height: kSpace4),
+            Text(
+              claim,
+              key: const ValueKey('session-summary-model-claim'),
+              maxLines: 2,
+              style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1853,6 +1874,10 @@ String _modelClaim(List<_ModelOption> options, String? key) {
   final latest = options.where((option) => option.isLatest);
   return ' — ${(latest.isEmpty ? options : latest).first.label}';
 }
+
+/// A claim without its ` — ` prefix, for cards that print it on its own line.
+String _claimLine(String claim) =>
+    claim.startsWith(' — ') ? claim.substring(3) : claim;
 
 /// Model filter shown above the charts and the log list.
 class _ModelFilter extends StatelessWidget {

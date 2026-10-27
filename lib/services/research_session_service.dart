@@ -436,8 +436,11 @@ class ResearchSessionService extends ChangeNotifier {
       return 'A trial is already running. Finish it before starting another.';
     }
     if (_sessions.length >= maxStoredSessions) {
-      return 'Stored trials are full ($maxStoredSessions). Upload or discard a '
-          'stored trial before starting another; nothing has been deleted.';
+      // Uploading keeps the stored trial, so it cannot be offered here as the
+      // way to free a slot.
+      return 'Stored trials are full ($maxStoredSessions). Discard a stored '
+          'trial before starting another; uploading keeps it stored and does '
+          'not free a slot, and nothing has been deleted.';
     }
     // Same rule the upload enforces, so a trial cannot be created that can
     // never be uploaded.

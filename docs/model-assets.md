@@ -110,7 +110,7 @@ card. What the app accepts (all enforced in
 |---|---|
 | File type | A valid TFLite FlatBuffer, rejected when the structure cannot be parsed |
 | Label source | Embedded Ultralytics metadata (`metadata.json` with `names`), read through the plugin's model inspection — labels are never guessed from a filename |
-| Task | Native `inspect()` must report `detect` |
+| Task | A task reported by native `inspect()` must be `detect`; a model whose metadata carries no task string is accepted when one output dimension matches `4 + classCount`, and refused when an in-range channel count exists but none matches the labels |
 | Class agreement | The label count must equal the graph's class output; a mismatch is refused |
 | File size | At most 40 MB (`kMaxImportBytes`) |
 | Label count | At most 1 000 non-empty labels (`kMaxImportLabels`) |
