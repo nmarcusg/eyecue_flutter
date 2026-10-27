@@ -12,6 +12,40 @@ import '../models/inference_lifecycle_event.dart';
 import '../models/detector_model.dart';
 import '../models/tracked_detection.dart';
 
+/// The read-only surface export and upload need from one trial's telemetry.
+///
+/// Satisfied by the live [TelemetryService] and by a frozen
+/// `ResearchSession`, so the same export code can serialise either: a live
+/// buffer or an immutable finished trial.
+abstract class TelemetrySource {
+  String get sessionId;
+  DateTime? get sessionStart;
+  Duration get sessionDuration;
+  List<TelemetryRecord> get records;
+  List<RuntimeSample> get samples;
+  List<TelemetryFailureRecord> get failures;
+  List<EngineFallbackRecord> get fallbacks;
+  List<InferenceRecoveryRecord> get recoveries;
+  List<DetectionCorrection> get corrections;
+  List<AlertLifecycleRecord> get alertRecords;
+  AlertCounters get alertCounters;
+  int get totalDetections;
+  int get highPriorityAlerts;
+  int get framesProcessed;
+  String get appVersion;
+}
+
+/// Stored JSON enum lookup: an unknown or missing name falls back instead of
+/// throwing, so one odd restored row cannot cost the whole trial.
+T _enumOr<T extends Enum>(List<T> values, Object? name, T fallback) =>
+    values.firstWhere((value) => value.name == name, orElse: () => fallback);
+
+DateTime? _dateOrNull(Object? value) =>
+    value is String ? DateTime.tryParse(value) : null;
+
+DateTime _dateOrEpoch(Object? value) =>
+    _dateOrNull(value) ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
 /// One recorded detection event (used by the Logs tab and aggregates).
 class TelemetryRecord {
   final DateTime timestamp;
@@ -87,6 +121,53 @@ class TelemetryRecord {
     if (detectorModelFingerprint != null)
       'detectorModelFingerprint': detectorModelFingerprint,
   };
+
+  /// Inverse of [toJson], so a frozen trial survives a restart unchanged.
+  factory TelemetryRecord.fromJson(Map<String, dynamic> json) {
+    final box = json['box'];
+    return TelemetryRecord(
+      timestamp: _dateOrEpoch(json['timestamp']),
+      classId: (json['classId'] as num?)?.toInt() ?? -1,
+      label: json['label'] as String? ?? '',
+      confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
+      latencyMs: (json['latencyMs'] as num?)?.toDouble() ?? 0,
+      priority: _enumOr(
+        ObjectPriority.values,
+        json['priority'],
+        ObjectPriority.low,
+      ),
+      position: json['position'] as String? ?? '',
+      proximity: json['proximity'] == null
+          ? null
+          : _enumOr(
+              ProximityBand.values,
+              json['proximity'],
+              ProximityBand.near,
+            ),
+      box: box is Map
+          ? Rect.fromLTWH(
+              (box['left'] as num?)?.toDouble() ?? 0,
+              (box['top'] as num?)?.toDouble() ?? 0,
+              (box['width'] as num?)?.toDouble() ?? 0,
+              (box['height'] as num?)?.toDouble() ?? 0,
+            )
+          : null,
+      engine: _enumOr(
+        InferenceEngine.values,
+        json['engine'],
+        InferenceEngine.ultralytics,
+      ),
+      confidenceThreshold:
+          (json['confidenceThreshold'] as num?)?.toDouble() ?? 0.25,
+      trackId: (json['trackId'] as num?)?.toInt(),
+      motion: json['motion'] == null
+          ? null
+          : _enumOr(MotionState.values, json['motion'], MotionState.unknown),
+      detectorModelId: json['detectorModelId'] as String?,
+      detectorModelName: json['detectorModelName'] as String?,
+      detectorModelFingerprint: json['detectorModelFingerprint'] as String?,
+    );
+  }
 }
 
 /// One latency/FPS sample point (used by the charts).
@@ -231,6 +312,46 @@ class RuntimeSample {
     if (detectorModelFingerprint != null)
       'detectorModelFingerprint': detectorModelFingerprint,
   };
+
+  /// Inverse of [toJson]. Optional keys that were absent stay `null`, never
+  /// `0`, exactly as the export contract documents.
+  factory RuntimeSample.fromJson(Map<String, dynamic> json) => RuntimeSample(
+    timestamp: _dateOrEpoch(json['timestamp']),
+    latencyMs: (json['latencyMs'] as num?)?.toDouble() ?? 0,
+    inferenceFps: (json['inferenceFps'] as num?)?.toDouble() ?? 0,
+    objectCount: (json['objectCount'] as num?)?.toInt() ?? 0,
+    engine: _enumOr(
+      InferenceEngine.values,
+      json['engine'],
+      InferenceEngine.ultralytics,
+    ),
+    confidenceThreshold:
+        (json['confidenceThreshold'] as num?)?.toDouble() ?? 0.25,
+    requestedDetectionHz: (json['requestedDetectionHz'] as num?)?.toInt(),
+    detectionCadenceAutomatic: json['detectionCadenceAutomatic'] == true,
+    effectiveDetectionHz: (json['effectiveDetectionHz'] as num?)?.toInt(),
+    requestedDepthHz: (json['requestedDepthHz'] as num?)?.toInt(),
+    effectiveDepthHz: (json['effectiveDepthHz'] as num?)?.toInt(),
+    depthObservedHz: (json['depthObservedHz'] as num?)?.toDouble(),
+    depthLatencyMs: (json['depthLatencyMs'] as num?)?.toInt(),
+    depthStatus: json['depthStatus'] as String?,
+    detectorPreMs: (json['detectorPreMs'] as num?)?.toDouble(),
+    detectorInferenceMs: (json['detectorInferenceMs'] as num?)?.toDouble(),
+    detectorPostMs: (json['detectorPostMs'] as num?)?.toDouble(),
+    depthPreMs: (json['depthPreMs'] as num?)?.toInt(),
+    depthInferenceMs: (json['depthInferenceMs'] as num?)?.toInt(),
+    depthPostMs: (json['depthPostMs'] as num?)?.toInt(),
+    depthAccelerator: json['depthAccelerator'] as String?,
+    depthGridWidth: (json['depthGridWidth'] as num?)?.toInt(),
+    depthGridHeight: (json['depthGridHeight'] as num?)?.toInt(),
+    heatmapBuildMs: (json['heatmapBuildMs'] as num?)?.toInt(),
+    depthDroppedTicks: (json['depthDroppedTicks'] as num?)?.toInt(),
+    lowPowerClamped: json['lowPowerClamped'] == true,
+    sourceLimited: json['sourceLimited'] == true,
+    detectorModelId: json['detectorModelId'] as String?,
+    detectorModelName: json['detectorModelName'] as String?,
+    detectorModelFingerprint: json['detectorModelFingerprint'] as String?,
+  );
 }
 
 /// Inference cadence configuration at sample time.
@@ -294,6 +415,9 @@ class TelemetryFailureRecord {
   const TelemetryFailureRecord(this.failure);
 
   Map<String, dynamic> toJson() => failure.toJson();
+
+  factory TelemetryFailureRecord.fromJson(Map<String, dynamic> json) =>
+      TelemetryFailureRecord(DetectionFailure.fromJson(json));
 }
 
 class EngineFallbackRecord {
@@ -315,6 +439,22 @@ class EngineFallbackRecord {
     'activeEngine': activeEngine.name,
     'reason': reason,
   };
+
+  factory EngineFallbackRecord.fromJson(Map<String, dynamic> json) =>
+      EngineFallbackRecord(
+        timestamp: _dateOrEpoch(json['timestamp']),
+        preferredEngine: _enumOr(
+          InferenceEngine.values,
+          json['preferredEngine'],
+          InferenceEngine.ultralytics,
+        ),
+        activeEngine: _enumOr(
+          InferenceEngine.values,
+          json['activeEngine'],
+          InferenceEngine.ultralytics,
+        ),
+        reason: json['reason'] as String? ?? '',
+      );
 }
 
 /// One bounded Custom-worker recovery event. It contains lifecycle metadata
@@ -344,6 +484,30 @@ class InferenceRecoveryRecord {
     'failureCategory': failureCategory?.name,
     'engine': engine.name,
   };
+
+  factory InferenceRecoveryRecord.fromJson(Map<String, dynamic> json) =>
+      InferenceRecoveryRecord(
+        timestamp: _dateOrEpoch(json['timestamp']),
+        type: _enumOr(
+          InferenceLifecycleEventType.values,
+          json['type'],
+          InferenceLifecycleEventType.transientError,
+        ),
+        generation: (json['generation'] as num?)?.toInt() ?? 0,
+        restartAttempt: (json['restartAttempt'] as num?)?.toInt() ?? 0,
+        failureCategory: json['failureCategory'] == null
+            ? null
+            : _enumOr(
+                DetectionFailureCategory.values,
+                json['failureCategory'],
+                DetectionFailureCategory.unknown,
+              ),
+        engine: _enumOr(
+          InferenceEngine.values,
+          json['engine'],
+          InferenceEngine.ultralytics,
+        ),
+      );
 }
 
 class EngineTelemetrySummary {
@@ -366,7 +530,7 @@ class EngineTelemetrySummary {
 /// Logs & Reports screen reads it. This service deliberately does **not**
 /// compute model accuracy (accuracy/precision/recall/mAP) — that requires
 /// ground-truth labels and is out of scope for a live camera feed.
-class TelemetryService extends ChangeNotifier {
+class TelemetryService extends ChangeNotifier implements TelemetrySource {
   TelemetryService({
     DateTime Function()? clock,
     String? sessionId,
@@ -376,7 +540,9 @@ class TelemetryService extends ChangeNotifier {
            sessionId ?? 'session-${DateTime.now().microsecondsSinceEpoch}';
 
   final DateTime Function() _clock;
+  @override
   final String sessionId;
+  @override
   final String appVersion;
   final List<TelemetryRecord> _records = [];
   final List<RuntimeSample> _samples = [];
@@ -406,27 +572,40 @@ class TelemetryService extends ChangeNotifier {
   int _highPriorityAlerts = 0;
   int _framesProcessed = 0;
 
+  @override
   DateTime? get sessionStart => _sessionStart;
 
+  @override
   Duration get sessionDuration => _sessionStart == null
       ? Duration.zero
       : _clock().difference(_sessionStart!);
 
+  @override
   List<TelemetryRecord> get records => List.unmodifiable(_records);
+  @override
   List<RuntimeSample> get samples => List.unmodifiable(_samples);
+  @override
   List<TelemetryFailureRecord> get failures => List.unmodifiable(_failures);
+  @override
   List<EngineFallbackRecord> get fallbacks => List.unmodifiable(_fallbacks);
+  @override
   List<InferenceRecoveryRecord> get recoveries =>
       List.unmodifiable(_recoveries);
+  @override
   List<DetectionCorrection> get corrections => List.unmodifiable(_corrections);
+  @override
   List<AlertLifecycleRecord> get alertRecords =>
       List.unmodifiable(_alertRecords);
 
   /// Latest cumulative scheduler snapshot; replaced, never accumulated.
+  @override
   AlertCounters get alertCounters => _alertCounters;
 
+  @override
   int get totalDetections => _records.length;
+  @override
   int get highPriorityAlerts => _highPriorityAlerts;
+  @override
   int get framesProcessed => _framesProcessed;
 
   void startSession() {
@@ -642,35 +821,7 @@ class TelemetryService extends ChangeNotifier {
   AlertLatencySummary alertLatencySummary(
     InferenceEngine engine,
     AlertLatencyInterval interval,
-  ) => AlertLatencySummary.fromDurations(
-    engine,
-    _alertDurations(engine, interval),
-  );
-
-  List<double> _alertDurations(
-    InferenceEngine engine,
-    AlertLatencyInterval interval,
-  ) {
-    final durations = <double>[];
-    for (final record in _alertRecords) {
-      if (record.origin != AlertOrigin.detection) continue;
-      if (record.engine != engine) continue;
-      final start = switch (interval) {
-        AlertLatencyInterval.receivedToAccepted ||
-        AlertLatencyInterval.receivedToStarted => record.resultReceivedAt,
-        AlertLatencyInterval.acceptedToStarted => record.detectionAcceptedAt,
-        AlertLatencyInterval.submittedToStarted => record.submittedAt,
-      };
-      final end = interval == AlertLatencyInterval.receivedToAccepted
-          ? record.detectionAcceptedAt
-          : record.alertStartedAt;
-      if (start == null || end == null) continue;
-      final ms = end.difference(start).inMicroseconds / 1000.0;
-      if (ms < 0) continue;
-      durations.add(ms);
-    }
-    return durations;
-  }
+  ) => alertLatencySummaryFor(_alertRecords, engine, interval);
 
   @override
   void dispose() {
@@ -725,11 +876,19 @@ class TelemetryService extends ChangeNotifier {
 
   /// Detection counts bucketed per whole minute from the first record —
   /// used by the Detection Frequency bar chart.
-  List<int> detectionFrequencyByMinute() {
-    if (_records.isEmpty) return const [];
-    final first = _records.first.timestamp;
+  ///
+  /// [include] applies the screen's model filter before bucketing, so a
+  /// filtered chart is not drawn from every model's detections.
+  List<int> detectionFrequencyByMinute({
+    bool Function(TelemetryRecord record)? include,
+  }) {
+    final records = include == null
+        ? _records
+        : _records.where(include).toList(growable: false);
+    if (records.isEmpty) return const [];
+    final first = records.first.timestamp;
     final buckets = <int>[];
-    for (final r in _records) {
+    for (final r in records) {
       final minute = r.timestamp.difference(first).inMinutes;
       while (buckets.length <= minute) {
         buckets.add(0);
@@ -738,4 +897,32 @@ class TelemetryService extends ChangeNotifier {
     }
     return buckets;
   }
+}
+
+/// One required detection-origin interval distribution over any alert-record
+/// list — the same rule for the live buffer and a frozen trial.
+AlertLatencySummary alertLatencySummaryFor(
+  Iterable<AlertLifecycleRecord> records,
+  InferenceEngine engine,
+  AlertLatencyInterval interval,
+) {
+  final durations = <double>[];
+  for (final record in records) {
+    if (record.origin != AlertOrigin.detection) continue;
+    if (record.engine != engine) continue;
+    final start = switch (interval) {
+      AlertLatencyInterval.receivedToAccepted ||
+      AlertLatencyInterval.receivedToStarted => record.resultReceivedAt,
+      AlertLatencyInterval.acceptedToStarted => record.detectionAcceptedAt,
+      AlertLatencyInterval.submittedToStarted => record.submittedAt,
+    };
+    final end = interval == AlertLatencyInterval.receivedToAccepted
+        ? record.detectionAcceptedAt
+        : record.alertStartedAt;
+    if (start == null || end == null) continue;
+    final ms = end.difference(start).inMicroseconds / 1000.0;
+    if (ms < 0) continue;
+    durations.add(ms);
+  }
+  return AlertLatencySummary.fromDurations(engine, durations);
 }

@@ -21,7 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 class _AsciiTelemetryExportService extends TelemetryExportService {
   @override
   TelemetryExport snapshot({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     AppSettings? settings,
   }) => TelemetryExport.fromJson({
     'session': {'id': telemetry.sessionId},
@@ -933,7 +933,13 @@ void main() {
       expect(result.isAlreadyUploaded, isTrue);
       expect(result.message, contains('already uploaded earlier'));
       expect(result.message, contains('was not stored again'));
-      expect(result.message, contains('local export'));
+      // The per-trial contract: this trial cannot grow, so a retry that is a
+      // duplicate means "already stored", not "save the extra data locally".
+      expect(result.message, contains('Each trial is stored once'));
+      expect(
+        result.message,
+        contains('later recording belongs to a new trial'),
+      );
       expect(localTelemetry.totalDetections, 1);
       expect(localTelemetry.samples, hasLength(1));
       expect(localTelemetry.alertRecords, hasLength(1));

@@ -5,6 +5,7 @@ import '../services/correction_service.dart';
 import '../services/detector_model_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
+import '../services/research_session_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
@@ -19,6 +20,9 @@ class EngineDetectionScreen extends StatefulWidget {
 
   /// The researcher's detector selection, forwarded to the mounted engine.
   final DetectorModelService? detectorModel;
+
+  /// Study recording, so a model switch pauses logging before the swap.
+  final ResearchSessionService? researchSession;
 
   /// The single app-shell-owned Detection lifecycle/status source.
   ///
@@ -44,6 +48,7 @@ class EngineDetectionScreen extends StatefulWidget {
     required this.haptics,
     required this.coordinator,
     this.detectorModel,
+    this.researchSession,
     this.onNavigateRelative,
   });
 
@@ -122,6 +127,7 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
           haptics: widget.haptics,
           coordinator: _coordinator,
           detectorModel: widget.detectorModel,
+          researchSession: widget.researchSession,
           startIntent: startIntent,
           onNavigateRelative: widget.onNavigateRelative,
           onRuntimeStateChanged: (state, sourceGeneration) =>

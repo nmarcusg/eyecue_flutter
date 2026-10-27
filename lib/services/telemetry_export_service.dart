@@ -165,8 +165,10 @@ class TelemetryExportService {
     }
   }
 
+  /// [telemetry] is the live buffer or a frozen trial — both satisfy
+  /// [TelemetrySource], so a finished session exports through this same path.
   TelemetryExport snapshot({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     AppSettings? settings,
   }) {
     // Built in row order, so the table's keys follow first appearance.
@@ -204,19 +206,19 @@ class TelemetryExportService {
         for (final engine in InferenceEngine.values)
           for (final interval in AlertLatencyInterval.values)
             _summaryJson(
-              telemetry.alertLatencySummary(engine, interval),
+              alertLatencySummaryFor(telemetry.alertRecords, engine, interval),
               interval,
             ),
       ],
     );
   }
 
-  String toJson({required TelemetryService telemetry, AppSettings? settings}) {
+  String toJson({required TelemetrySource telemetry, AppSettings? settings}) {
     final encoder = const JsonEncoder.withIndent('  ');
     return '${encoder.convert(snapshot(telemetry: telemetry, settings: settings).toJson())}\n';
   }
 
-  String toCsv({required TelemetryService telemetry, AppSettings? settings}) {
+  String toCsv({required TelemetrySource telemetry, AppSettings? settings}) {
     final export = snapshot(telemetry: telemetry, settings: settings);
     final header = [
       'record_type',
@@ -495,26 +497,35 @@ class TelemetryExportService {
     return '${[_csvRow(header), for (final row in rows) _csvRow(row)].join('\n')}\n';
   }
 
+  /// [stemSuffix] distinguishes two files written in the same second, e.g. two
+  /// finished trials exported back to back; without it the second write would
+  /// silently replace the first.
   Future<File> writeJson({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     AppSettings? settings,
     Directory? directory,
+    String stemSuffix = '',
   }) async {
     final targetDirectory = directory ?? await _directory();
     await targetDirectory.create(recursive: true);
-    final file = File('${targetDirectory.path}/${_fileStem()}-telemetry.json');
+    final file = File(
+      '${targetDirectory.path}/${_fileStem()}$stemSuffix-telemetry.json',
+    );
     return file
       ..writeAsStringSync(toJson(telemetry: telemetry, settings: settings));
   }
 
   Future<File> writeCsv({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     AppSettings? settings,
     Directory? directory,
+    String stemSuffix = '',
   }) async {
     final targetDirectory = directory ?? await _directory();
     await targetDirectory.create(recursive: true);
-    final file = File('${targetDirectory.path}/${_fileStem()}-telemetry.csv');
+    final file = File(
+      '${targetDirectory.path}/${_fileStem()}$stemSuffix-telemetry.csv',
+    );
     return file
       ..writeAsStringSync(toCsv(telemetry: telemetry, settings: settings));
   }

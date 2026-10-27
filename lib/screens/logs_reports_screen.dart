@@ -5,8 +5,12 @@ import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
+import '../models/detector_model.dart';
 import '../models/model_config.dart';
+import '../models/research_session.dart';
 import '../services/correction_service.dart';
+import '../services/detector_model_service.dart';
+import '../services/research_session_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_export_service.dart';
 import '../services/telemetry_service.dart';
@@ -35,6 +39,13 @@ class LogsReportsScreen extends StatefulWidget {
   final TelemetryExportService? exportService;
   final TelemetryUploadService? uploadService;
 
+  /// The app's research-session service. Optional only so widget tests can
+  /// build the screen without file-system channels.
+  final ResearchSessionService? researchSessions;
+
+  /// The loaded detector selection, named on the Start-logging confirmation.
+  final DetectorModelService? detectorModel;
+
   const LogsReportsScreen({
     super.key,
     required this.telemetry,
@@ -42,6 +53,8 @@ class LogsReportsScreen extends StatefulWidget {
     this.corrections,
     this.exportService,
     this.uploadService,
+    this.researchSessions,
+    this.detectorModel,
   });
 
   @override
@@ -53,8 +66,21 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
       widget.exportService ?? TelemetryExportService();
   late final TelemetryUploadService _uploadService =
       widget.uploadService ?? TelemetryUploadService();
+  late final ResearchSessionService _sessions =
+      widget.researchSessions ??
+      ResearchSessionService(telemetry: widget.telemetry);
   bool _exporting = false;
   bool _uploading = false;
+
+  /// The detector a new trial would be recorded with.
+  DetectorModelRef get _detectorRef =>
+      widget.detectorModel?.current.ref ??
+      const DetectorModelRef(
+        id: 'builtin',
+        name: 'Built-in YOLOv8n',
+        fingerprint: DetectorModel.builtInFingerprint,
+        classCount: 0,
+      );
 
   /// Selected detector model id for the charts and the log list; `null` is the
   /// explicit "All models (mixed)" option.
@@ -89,6 +115,7 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
             body: ListenableBuilder(
               listenable: Listenable.merge([
                 widget.telemetry,
+                _sessions,
                 if (widget.corrections != null) widget.corrections!,
               ]),
               builder: (context, _) {
@@ -101,6 +128,15 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
                       uploading: _uploading,
                       uploadConfigured: _uploadService.isConfigured,
                       onUpload: _upload,
+                      sessions: _sessions,
+                      currentDetectorName: _detectorRef.name,
+                      onStart: _startSession,
+                      onPause: _pauseSession,
+                      onResume: _resumeSession,
+                      onFinish: _finishSession,
+                      onUploadStored: _uploadStored,
+                      onExportStored: _exportStored,
+                      onDiscardStored: _discardStored,
                     ),
                     _ChartsTab(
                       modelFilter: _modelFilter,
@@ -125,6 +161,15 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
 
   Future<void> _upload() async {
     if (_uploading || !_uploadService.isConfigured) return;
+    if (_sessions.isRecording) {
+      // A live buffer keeps changing; only a finished trial is uploaded.
+      _showMessage(
+        'Study logging is running. Finish the trial, then upload it from the '
+        'stored trials list so the uploaded data cannot change.',
+        isError: true,
+      );
+      return;
+    }
     final metadata = await _requestUploadMetadata();
     if (metadata == null || !mounted) return;
 
@@ -182,6 +227,123 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
     }
   }
 
+  Future<void> _startSession() async {
+    final request = await showDialog<_StartSessionRequest>(
+      context: context,
+      builder: (_) => _StartSessionDialog(detectorName: _detectorRef.name),
+    );
+    if (request == null || !mounted) return;
+    final error = await _sessions.start(
+      participantCode: request.participantCode,
+      trialLabel: request.trialLabel,
+      detector: _detectorRef,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      _showMessage(error, isError: true);
+      return;
+    }
+    _showMessage(
+      'Recording trial ${request.trialLabel.trim()} with '
+      '${_detectorRef.name}.',
+    );
+  }
+
+  Future<void> _pauseSession() => _sessions.pause();
+
+  Future<void> _resumeSession() => _sessions.resume();
+
+  Future<void> _finishSession() async {
+    final result = await _sessions.finish();
+    if (!mounted || result == null) return;
+    if (result.saved) {
+      _showMessage('Trial finished and saved on this device.');
+      return;
+    }
+    _showMessage(
+      _sessions.lastSaveError ??
+          'The trial was finished but could not be saved on this device.',
+      isError: true,
+    );
+  }
+
+  Future<void> _uploadStored(ResearchSession session) async {
+    if (_sessions.isUploading || !_uploadService.isConfigured) return;
+    final metadata = await showDialog<ResearchSessionMetadata>(
+      context: context,
+      builder: (_) => _UploadMetadataDialog(
+        initialParticipantCode: session.participantCode,
+        initialScenario: session.trialLabel,
+        lockIdentity: true,
+      ),
+    );
+    if (metadata == null || !mounted) return;
+    final result = await _sessions.upload(
+      session: session,
+      metadata: metadata,
+      settings: widget.settings?.settings,
+    );
+    if (!mounted) return;
+    _showMessage(
+      result.isAlreadyUploaded
+          ? result.message!
+          : result.isSuccess
+          ? 'Trial uploaded to the research database.'
+          : result.errorMessage!,
+      isError: !result.isSuccess,
+    );
+  }
+
+  Future<void> _exportStored(ResearchSession session) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final file = await _exportService.writeJson(
+        telemetry: session,
+        settings: widget.settings?.settings,
+        // Two trials exported in the same second must not overwrite each other.
+        stemSuffix: '-${session.id}',
+      );
+      if (!mounted) return;
+      final filename = file.uri.pathSegments.isEmpty
+          ? 'trial export'
+          : file.uri.pathSegments.last;
+      _showMessage('Export saved: $filename');
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Export could not be saved. Try again.', isError: true);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _discardStored(ResearchSession session) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard this trial?'),
+        content: Text(
+          'This deletes only the stored trial ${session.trialLabel} '
+          '(${session.participantCode}) from this device. It cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Discard trial'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _sessions.discard(session);
+    if (!mounted) return;
+    _showMessage('Trial discarded.');
+  }
+
   void _showMessage(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -205,15 +367,28 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
 /// closing route rebuilding a disposed controller for the length of its exit
 /// animation.
 class _UploadMetadataDialog extends StatefulWidget {
-  const _UploadMetadataDialog();
+  /// Prefilled from a stored trial; the identity is frozen with the trial, so a
+  /// typo here cannot move the data to another participant.
+  final String? initialParticipantCode;
+  final String? initialScenario;
+  final bool lockIdentity;
+
+  const _UploadMetadataDialog({
+    this.initialParticipantCode,
+    this.initialScenario,
+    this.lockIdentity = false,
+  });
 
   @override
   State<_UploadMetadataDialog> createState() => _UploadMetadataDialogState();
 }
 
 class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
-  final TextEditingController _participantController = TextEditingController();
-  final TextEditingController _scenarioController = TextEditingController();
+  late final TextEditingController _participantController =
+      TextEditingController(text: widget.initialParticipantCode ?? '');
+  late final TextEditingController _scenarioController = TextEditingController(
+    text: widget.initialScenario ?? '',
+  );
 
   /// The study upload token is held here only for the lifetime of the dialog.
   /// It is never written to preferences, an export, telemetry or a message;
@@ -256,17 +431,19 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'This manually sends the current image-free session to the '
-            'research database. It does not include camera frames or device IDs. '
-            'Use only a study participant code, never a name or email address. '
-            'The study upload token comes from the study coordinator; it is used '
-            'for this upload only and is not saved. Only the first upload per app '
-            'run is stored; export locally to keep later data.',
+            'This manually sends one finished, image-free trial to the research '
+            'database. It does not include camera frames or device IDs. Use only '
+            'a study participant code, never a name or email address. The study '
+            'upload token comes from the study coordinator; it is used for this '
+            'upload only and is not saved. Each participant and trial is stored '
+            'once: re-sending the same trial is deduplicated by the research '
+            'server, and later recording belongs to a new trial.',
           ),
           const SizedBox(height: kSpace12),
           TextField(
             controller: _participantController,
             maxLength: 64,
+            readOnly: widget.lockIdentity,
             decoration: const InputDecoration(
               labelText: 'Participant code',
               hintText: 'P-001',
@@ -275,6 +452,7 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
           TextField(
             controller: _scenarioController,
             maxLength: 80,
+            readOnly: widget.lockIdentity,
             decoration: const InputDecoration(
               labelText: 'Study scenario',
               hintText: 'indoor-obstacle-course',
@@ -309,6 +487,109 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
   );
 }
 
+/// Participant code and trial label collected before a trial starts.
+class _StartSessionRequest {
+  const _StartSessionRequest(this.participantCode, this.trialLabel);
+
+  final String participantCode;
+  final String trialLabel;
+}
+
+/// Explicit Start confirmation: coded participant, trial label and the detector
+/// that will produce the trial's rows.
+class _StartSessionDialog extends StatefulWidget {
+  final String detectorName;
+
+  const _StartSessionDialog({required this.detectorName});
+
+  @override
+  State<_StartSessionDialog> createState() => _StartSessionDialogState();
+}
+
+class _StartSessionDialogState extends State<_StartSessionDialog> {
+  final TextEditingController _participantController = TextEditingController();
+  final TextEditingController _trialController = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _participantController.dispose();
+    _trialController.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final request = _StartSessionRequest(
+      _participantController.text.trim(),
+      _trialController.text.trim(),
+    );
+    // Same rules the upload applies, so an unusable trial cannot be started.
+    final metadata = ResearchSessionMetadata(
+      participantCode: request.participantCode,
+      studyScenario: request.trialLabel,
+      uploadToken: '',
+    );
+    if (!metadata.isValid) {
+      setState(() {
+        _error =
+            'Use letters, digits, - or _ for the participant code, and a trial '
+            'label of at most 80 characters.';
+      });
+      return;
+    }
+    Navigator.pop(context, request);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Start logging?'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recording starts now and keeps only what is captured until you '
+            'finish the trial. Nothing recorded before Start is included, and '
+            'pausing logging does not pause detection. Use only a study '
+            'participant code, never a name or email address. Detector: '
+            '${widget.detectorName}.',
+          ),
+          const SizedBox(height: kSpace12),
+          TextField(
+            controller: _participantController,
+            maxLength: 64,
+            decoration: const InputDecoration(
+              labelText: 'Participant code',
+              hintText: 'P-001',
+            ),
+          ),
+          TextField(
+            controller: _trialController,
+            maxLength: 80,
+            decoration: const InputDecoration(
+              labelText: 'Trial label',
+              hintText: 'indoor-course-1',
+            ),
+          ),
+          if (_error != null)
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _confirm, child: const Text('Start trial')),
+    ],
+  );
+}
+
 class _OverviewTab extends StatelessWidget {
   final bool exporting;
   final VoidCallback onExportJson;
@@ -316,6 +597,15 @@ class _OverviewTab extends StatelessWidget {
   final bool uploading;
   final bool uploadConfigured;
   final VoidCallback onUpload;
+  final ResearchSessionService sessions;
+  final String currentDetectorName;
+  final VoidCallback onStart;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
+  final VoidCallback onFinish;
+  final ValueChanged<ResearchSession> onUploadStored;
+  final ValueChanged<ResearchSession> onExportStored;
+  final ValueChanged<ResearchSession> onDiscardStored;
 
   const _OverviewTab({
     required this.exporting,
@@ -324,6 +614,15 @@ class _OverviewTab extends StatelessWidget {
     required this.uploading,
     required this.uploadConfigured,
     required this.onUpload,
+    required this.sessions,
+    required this.currentDetectorName,
+    required this.onStart,
+    required this.onPause,
+    required this.onResume,
+    required this.onFinish,
+    required this.onUploadStored,
+    required this.onExportStored,
+    required this.onDiscardStored,
   });
 
   @override
@@ -339,6 +638,20 @@ class _OverviewTab extends StatelessWidget {
         final seconds = duration.inSeconds % 60;
         return _BoundedScrollView(
           children: [
+            const _SectionHeading('Research Session'),
+            const SizedBox(height: kSpace8),
+            _SessionSection(
+              sessions: sessions,
+              currentDetectorName: currentDetectorName,
+              onStart: onStart,
+              onPause: onPause,
+              onResume: onResume,
+              onFinish: onFinish,
+              onUploadStored: onUploadStored,
+              onExportStored: onExportStored,
+              onDiscardStored: onDiscardStored,
+            ),
+            const SizedBox(height: kSpace24),
             const _SectionHeading('Real-Time Performance'),
             const SizedBox(height: kSpace8),
             Row(
@@ -901,10 +1214,21 @@ class _ChartsTab extends StatelessWidget {
               child: FpsChart(samples: samples),
             ),
             const SizedBox(height: kSpace24),
+            // The filter reaches detections too: a chart under a model filter
+            // must not draw every model's rows, and it names what it draws like
+            // the two charts above.
             _ChartCard(
-              title: 'Detection Frequency',
+              title: 'Detection Frequency$claim',
               child: DetectionFrequencyChart(
-                buckets: telemetry.detectionFrequencyByMinute(),
+                buckets: telemetry.detectionFrequencyByMinute(
+                  include: selected == null
+                      ? null
+                      : (record) => selected.matches(
+                          record.detectorModelId,
+                          record.detectorModelName,
+                          record.detectorModelFingerprint,
+                        ),
+                ),
               ),
             ),
             const SizedBox(height: kSpace24),
@@ -1577,6 +1901,280 @@ class _MixedModelNote extends StatelessWidget {
     return Text(
       '$_mixedModelLabel — these numbers combine more than one detector model.',
       style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
+    );
+  }
+}
+
+String _durationText(Duration duration) {
+  final hours = duration.inHours;
+  final minutes = duration.inMinutes % 60;
+  final seconds = duration.inSeconds % 60;
+  return hours > 0 ? '$hours h $minutes m $seconds s' : '$minutes m $seconds s';
+}
+
+/// The explicit Start → Pause/Resume → Finish → Upload controls plus the stored
+/// trial list. Study recording is independent of camera/detection playback.
+class _SessionSection extends StatelessWidget {
+  final ResearchSessionService sessions;
+  final String currentDetectorName;
+  final VoidCallback onStart;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
+  final VoidCallback onFinish;
+  final ValueChanged<ResearchSession> onUploadStored;
+  final ValueChanged<ResearchSession> onExportStored;
+  final ValueChanged<ResearchSession> onDiscardStored;
+
+  const _SessionSection({
+    required this.sessions,
+    required this.currentDetectorName,
+    required this.onStart,
+    required this.onPause,
+    required this.onResume,
+    required this.onFinish,
+    required this.onUploadStored,
+    required this.onExportStored,
+    required this.onDiscardStored,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = sessions.state;
+    final active =
+        state == ResearchSessionState.recording ||
+        state == ResearchSessionState.paused;
+    final latest = sessions.sessions.isEmpty ? null : sessions.sessions.first;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          container: true,
+          label: 'Research session: ${sessions.stateLabel}',
+          child: _LightCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sessions.stateLabel,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: kSpace4),
+                Text(
+                  'Study logging is separate from camera playback: pausing it '
+                  'does not pause detection, depth or speech.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: kHomeInkMuted,
+                  ),
+                ),
+                const SizedBox(height: kSpace8),
+                if (active) ...[
+                  Text(
+                    'Participant ${sessions.participantCode} · trial '
+                    '${sessions.trialLabel}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    'Detector ${sessions.detectorName}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    'Active ${_durationText(sessions.activeDuration)} · wall '
+                    'clock ${_durationText(sessions.wallClockDuration)}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ] else if (state == ResearchSessionState.finished &&
+                    latest != null) ...[
+                  Text(
+                    'Last finished trial: ${latest.participantCode} · '
+                    '${latest.trialLabel}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    'Detector ${latest.detectorName} · active '
+                    '${_durationText(latest.sessionDuration)} · wall clock '
+                    '${_durationText(latest.wallClockDuration)}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ] else
+                  Text(
+                    'Nothing is recorded until you press Start logging. '
+                    'Current detector: $currentDetectorName.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                const SizedBox(height: kSpace12),
+                Wrap(
+                  spacing: kSpace8,
+                  runSpacing: kSpace8,
+                  children: [
+                    if (!active)
+                      AccessibleButton(
+                        label: 'Start logging',
+                        icon: Icons.fiber_manual_record,
+                        onPressed: onStart,
+                      ),
+                    if (state == ResearchSessionState.recording)
+                      AccessibleButton(
+                        label: 'Pause logging',
+                        icon: Icons.pause,
+                        onPressed: onPause,
+                      ),
+                    if (state == ResearchSessionState.paused)
+                      AccessibleButton(
+                        label: 'Resume logging',
+                        icon: Icons.play_arrow,
+                        onPressed: onResume,
+                      ),
+                    if (active)
+                      AccessibleButton(
+                        label: 'Finish session',
+                        icon: Icons.stop_circle_outlined,
+                        onPressed: sessions.isFinishing ? null : onFinish,
+                      ),
+                    if (state == ResearchSessionState.finished &&
+                        latest != null &&
+                        !sessions.isUploading)
+                      AccessibleButton(
+                        label: 'Upload session',
+                        icon: Icons.cloud_upload_outlined,
+                        onPressed: () => onUploadStored(latest),
+                      ),
+                  ],
+                ),
+                if (state == ResearchSessionState.paused) ...[
+                  const SizedBox(height: kSpace8),
+                  Text(
+                    'Paused: resume to keep recording this trial. Paused time '
+                    'is not counted in the active duration.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: kHomeInkMuted,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: kSpace16),
+        Text(
+          'Stored trials (${sessions.sessions.length} of '
+          '${sessions.maxStoredSessions})',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: kSpace8),
+        if (sessions.sessions.isEmpty)
+          _LightCard(
+            child: Text(
+              'No finished trials are stored on this device yet.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+            ),
+          )
+        else
+          for (final session in sessions.sessions) ...[
+            _StoredTrialCard(
+              session: session,
+              sessions: sessions,
+              onUpload: () => onUploadStored(session),
+              onExport: () => onExportStored(session),
+              onDiscard: () => onDiscardStored(session),
+            ),
+            const SizedBox(height: kSpace8),
+          ],
+      ],
+    );
+  }
+}
+
+/// One stored, immutable trial with its own Upload/Export/Discard controls.
+class _StoredTrialCard extends StatelessWidget {
+  final ResearchSession session;
+  final ResearchSessionService sessions;
+  final VoidCallback onUpload;
+  final VoidCallback onExport;
+  final VoidCallback onDiscard;
+
+  const _StoredTrialCard({
+    required this.session,
+    required this.sessions,
+    required this.onUpload,
+    required this.onExport,
+    required this.onDiscard,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final saved = sessions.isSaved(session);
+    final uploadStatus = sessions.uploadStatusFor(session);
+    final uploading = sessions.uploadingSessionId == session.id;
+    return _LightCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${session.participantCode} · ${session.trialLabel}',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            'Detector ${session.detectorName}',
+            style: theme.textTheme.bodyMedium,
+          ),
+          Text(
+            'Active ${_durationText(session.sessionDuration)} · wall clock '
+            '${_durationText(session.wallClockDuration)} · '
+            '${session.totalDetections} detections',
+            style: theme.textTheme.bodyMedium,
+          ),
+          Text(
+            saved
+                ? 'Saved on this device.'
+                : 'Not saved on this device — export it now to keep the data.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: saved ? kHomeInkMuted : theme.colorScheme.error,
+            ),
+          ),
+          if (uploadStatus != null && !uploading)
+            Text(
+              uploadStatus,
+              style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
+            ),
+          const SizedBox(height: kSpace8),
+          Wrap(
+            spacing: kSpace8,
+            runSpacing: kSpace8,
+            children: [
+              AccessibleButton(
+                label: 'Upload trial',
+                icon: Icons.cloud_upload_outlined,
+                onPressed: sessions.isUploading ? null : onUpload,
+              ),
+              AccessibleButton(
+                label: 'Export trial',
+                icon: Icons.data_object,
+                onPressed: onExport,
+              ),
+              AccessibleButton(
+                label: 'Discard trial',
+                icon: Icons.delete_outline,
+                onPressed: onDiscard,
+              ),
+            ],
+          ),
+          if (uploading) ...[
+            const SizedBox(height: kSpace8),
+            Text(
+              'Uploading…',
+              style: theme.textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

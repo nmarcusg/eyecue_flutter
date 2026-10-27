@@ -10,6 +10,7 @@ import '../services/correction_service.dart';
 import '../services/detector_model_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
+import '../services/research_session_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
@@ -133,6 +134,12 @@ class AppShell extends StatefulWidget {
   /// The loaded detector selection shared by Settings and Detection.
   final DetectorModelService? detectorModel;
 
+  /// Explicit respondent-logging trials, shared by Logs & Reports and Detection.
+  ///
+  /// Optional only so widget tests can build the shell without file-system
+  /// channels; production always supplies the loaded instance.
+  final ResearchSessionService? researchSessions;
+
   /// Test hook — supply your own page widgets instead of the real screens.
   final List<Widget> Function(BuildContext context, AppShellState shell)?
   pagesOverride;
@@ -150,6 +157,7 @@ class AppShell extends StatefulWidget {
     this.corrections,
     required this.haptics,
     this.detectorModel,
+    this.researchSessions,
     this.pagesOverride,
     this.coordinatorOverride,
   });
@@ -335,6 +343,8 @@ class AppShellState extends State<AppShell> {
           telemetry: widget.telemetry,
           settings: widget.settings,
           corrections: widget.corrections,
+          researchSessions: widget.researchSessions,
+          detectorModel: widget.detectorModel,
         ),
       ),
     );
@@ -356,6 +366,7 @@ class AppShellState extends State<AppShell> {
           haptics: widget.haptics,
           coordinator: _coordinator,
           detectorModel: widget.detectorModel,
+          researchSession: widget.researchSessions,
           onNavigateRelative: navigateRelative,
         );
       case 2:

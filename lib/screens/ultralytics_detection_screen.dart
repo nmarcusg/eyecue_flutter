@@ -24,6 +24,7 @@ import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
 import '../services/inference_cadence.dart';
 import '../services/monocular_depth_estimator.dart';
+import '../services/research_session_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
@@ -215,6 +216,10 @@ class UltralyticsDetectionScreen extends StatefulWidget {
   /// engine's pre-selection behaviour is unchanged for widget tests.
   final DetectorModelService? detectorModel;
 
+  /// Study recording, if any. A model switch pauses it before the swap, so
+  /// setup time after the change never enters the trial.
+  final ResearchSessionService? researchSession;
+
   /// The single app-shell-owned Detection lifecycle/status source.
   ///
   /// The engine reports lifecycle/failure facts to it and renders its visible
@@ -251,6 +256,7 @@ class UltralyticsDetectionScreen extends StatefulWidget {
     required this.haptics,
     required this.coordinator,
     this.detectorModel,
+    this.researchSession,
     this.startIntent,
     this.onNavigateRelative,
     this.onRuntimeStateChanged,
@@ -723,6 +729,11 @@ class _UltralyticsDetectionScreenState
   /// Nothing is auto-started here. The next Start remounts the native view, so
   /// the replacement session loads the selected file (see [_startDetection]).
   Future<void> _handleDetectorModelChanged() async {
+    // Study logging pauses at the boundary and needs an explicit Resume; the
+    // replacement's identity is recorded so a resumed trial stays attributable.
+    await widget.researchSession?.noteDetectorChange(
+      widget.detectorModel?.current.ref,
+    );
     if (_detectionActive) await _stopDetection();
     // Reject every callback captured under the previous view, including a late
     // payload from the superseded session.

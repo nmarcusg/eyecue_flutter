@@ -9,6 +9,7 @@ import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/screens/logs_reports_screen.dart';
 import 'package:eyecue_flutter/services/correction_service.dart';
+import 'package:eyecue_flutter/services/research_session_service.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
@@ -40,9 +41,10 @@ class _FakeExportService extends TelemetryExportService {
 
   @override
   Future<File> writeJson({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     AppSettings? settings,
     Directory? directory,
+    String stemSuffix = '',
   }) async {
     jsonWrites++;
     if (completer != null) await completer!.future;
@@ -52,9 +54,10 @@ class _FakeExportService extends TelemetryExportService {
 
   @override
   Future<File> writeCsv({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     AppSettings? settings,
     Directory? directory,
+    String stemSuffix = '',
   }) async {
     csvWrites++;
     if (completer != null) await completer!.future;
@@ -80,7 +83,7 @@ class _FakeUploadService extends TelemetryUploadService {
 
   @override
   Future<TelemetryUploadResult> upload({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     required ResearchSessionMetadata metadata,
     AppSettings? settings,
   }) async {
@@ -205,6 +208,7 @@ Future<void> pumpLogsScreen(
   CorrectionService? corrections,
   TelemetryExportService? exportService,
   TelemetryUploadService? uploadService,
+  ResearchSessionService? researchSessions,
   double textScale = 1.0,
   Size size = const Size(390 * 3, 2400 * 3),
 }) async {
@@ -220,6 +224,7 @@ Future<void> pumpLogsScreen(
           corrections: corrections,
           exportService: exportService,
           uploadService: uploadService,
+          researchSessions: researchSessions,
         ),
       ),
     ),
@@ -690,6 +695,10 @@ void main() {
         telemetry: buildTelemetry(),
         exportService: exporter,
       );
+      // The session bar sits above this section, so reveal it before tapping.
+      await scrollOverviewTo(tester, find.text('Save JSON export'));
+      await tester.ensureVisible(find.text('Save JSON export'));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Save JSON export'));
       await tester.pump();
@@ -731,6 +740,9 @@ void main() {
         telemetry: buildTelemetry(),
         exportService: exporter,
       );
+      await scrollOverviewTo(tester, find.text('Save JSON export'));
+      await tester.ensureVisible(find.text('Save JSON export'));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Save JSON export'));
       await tester.pumpAndSettle();
@@ -749,6 +761,9 @@ void main() {
         telemetry: buildTelemetry(),
         exportService: exporter,
       );
+      await scrollOverviewTo(tester, find.text('Save CSV export'));
+      await tester.ensureVisible(find.text('Save CSV export'));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Save CSV export'));
       await tester.pumpAndSettle();
@@ -818,8 +833,9 @@ void main() {
         find.descendant(
           of: find.byType(AlertDialog),
           matching: find.textContaining(
-            'Only the first upload per app run is stored; export locally to '
-            'keep later data.',
+            'Each participant and trial is stored once: re-sending the same '
+            'trial is deduplicated by the research server, and later '
+            'recording belongs to a new trial.',
           ),
         ),
         findsOneWidget,
@@ -1076,6 +1092,11 @@ void main() {
           tester,
           telemetry: buildTelemetry(),
           corrections: buildCorrections(populated: true),
+        );
+        // The correction section is below the session bar; build it first.
+        await scrollOverviewTo(
+          tester,
+          find.textContaining('person: Incorrect as bicycle'),
         );
 
         // The group label carries the record count; the child text is merged
@@ -1556,6 +1577,166 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Obstacle Detector v2 · '), findsNothing);
+    });
+  });
+
+  group('research session bar', () {
+    testWidgets('recording starts only after the explicit Start dialog', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetry();
+      final sessions = ResearchSessionService(
+        telemetry: telemetry,
+        store: InMemoryResearchSessionStore(),
+        clock: () => DateTime.utc(2026, 1, 1, 12, 0, 0),
+      );
+      await pumpLogsScreen(
+        tester,
+        telemetry: telemetry,
+        researchSessions: sessions,
+      );
+
+      expect(find.text('Not recording'), findsOneWidget);
+      expect(find.text('Pause logging'), findsNothing);
+      expect(find.text('Resume logging'), findsNothing);
+
+      await tester.tap(find.text('Start logging'));
+      await tester.pumpAndSettle();
+
+      // The confirmation names the detector that will produce the trial.
+      expect(
+        find.textContaining('Detector: Built-in YOLOv8n.'),
+        findsOneWidget,
+      );
+      expect(sessions.state, isNot(ResearchSessionState.recording));
+
+      await tester.enterText(find.byType(TextField).at(0), 'P-001');
+      await tester.enterText(find.byType(TextField).at(1), 'trial-1');
+      await tester.tap(find.text('Start trial'));
+      await tester.pumpAndSettle();
+
+      expect(sessions.state, ResearchSessionState.recording);
+      expect(find.text('Recording'), findsOneWidget);
+      expect(find.text('Pause logging'), findsOneWidget);
+      expect(
+        find.textContaining('Participant P-001 · trial trial-1'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Pause logging'));
+      await tester.pumpAndSettle();
+      expect(find.text('Paused'), findsOneWidget);
+      expect(find.text('Resume logging'), findsOneWidget);
+      expect(find.text('Finish session'), findsOneWidget);
+    });
+
+    testWidgets('a finished trial is listed with its own controls', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetry();
+      final sessions = ResearchSessionService(
+        telemetry: telemetry,
+        store: InMemoryResearchSessionStore(),
+        clock: () => DateTime.utc(2026, 1, 1, 12, 0, 0),
+      );
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: const DetectorModelRef(
+          id: 'builtin',
+          name: 'Built-in YOLOv8n',
+          fingerprint: DetectorModel.builtInFingerprint,
+          classCount: 80,
+        ),
+      );
+      expect((await sessions.finish())!.saved, isTrue);
+
+      await pumpLogsScreen(
+        tester,
+        telemetry: telemetry,
+        researchSessions: sessions,
+      );
+
+      expect(find.text('Stored trials (1 of 20)'), findsOneWidget);
+      expect(find.text('P-001 · trial-1'), findsOneWidget);
+      expect(find.text('Saved on this device.'), findsOneWidget);
+      expect(find.text('Upload trial'), findsOneWidget);
+      expect(find.text('Export trial'), findsOneWidget);
+      expect(find.text('Discard trial'), findsOneWidget);
+    });
+
+    testWidgets('the Detection Frequency chart follows the model filter', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      const builtIn = DetectorModelRef(
+        id: 'builtin',
+        name: 'Built-in YOLOv8n',
+        fingerprint: DetectorModel.builtInFingerprint,
+        classCount: 80,
+      );
+      const custom = DetectorModelRef(
+        id: 'custom:0a1b2c3d4e5f',
+        name: 'Obstacle Detector v2',
+        fingerprint: '0a1b2c3d4e5f6071-4200',
+        classCount: 12,
+      );
+      final telemetry = TelemetryService(
+        clock: () => DateTime.utc(2026, 1, 1, 12, 0, 0),
+        sessionId: 'session-n3',
+      );
+      telemetry.startSession();
+      addTearDown(telemetry.dispose);
+      for (final ref in [builtIn, custom, builtIn]) {
+        telemetry.recordDetection(
+          DetectionInfo(
+            detection: const Detection(
+              classId: 0,
+              label: 'cone',
+              confidence: 0.8,
+              box: Rect.fromLTWH(0.1, 0.2, 0.3, 0.4),
+            ),
+            position: RelativePosition.center,
+            priority: ObjectPriority.medium,
+            proximity: ProximityBand.near,
+          ),
+          100,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: ref,
+        );
+      }
+      await pumpLogsScreen(tester, telemetry: telemetry);
+      await selectTab(tester, 'Charts');
+
+      // Unfiltered: every model's detections, labelled as mixed.
+      expect(
+        find.text('Detection Frequency — Mixed-model data'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(
+          RegExp('Detection frequency chart. 3 detections'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byType(DropdownButton<String?>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Built-in YOLOv8n').last);
+      await tester.pumpAndSettle();
+
+      // Filtered: only the built-in model's detections, and the chart says so.
+      expect(
+        find.text('Detection Frequency — Built-in YOLOv8n'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(
+          RegExp('Detection frequency chart. 2 detections'),
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
     });
   });
 }

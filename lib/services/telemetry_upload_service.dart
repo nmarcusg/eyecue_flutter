@@ -190,7 +190,8 @@ class TelemetryUploadResult {
 
   static const String duplicateMessage =
       'This session was already uploaded earlier and was not stored again. '
-      'Save a local export if you have recorded more data since.';
+      'Each trial is stored once, so a retry cannot add data; later recording '
+      'belongs to a new trial.';
 
   /// The `invalid_upload_token` sentence: a real answer from the server.
   static const String invalidUploadTokenMessage =
@@ -319,8 +320,11 @@ class TelemetryUploadService {
     debugMode: debugMode,
   );
 
+  /// [telemetry] is the live buffer or one frozen finished trial: the trial id
+  /// becomes the envelope's `session.id`, so the server's existing
+  /// `(participant_code, client_session_id)` key makes a retry a duplicate.
   Future<TelemetryUploadResult> upload({
-    required TelemetryService telemetry,
+    required TelemetrySource telemetry,
     required ResearchSessionMetadata metadata,
     AppSettings? settings,
   }) async {
