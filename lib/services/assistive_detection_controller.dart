@@ -26,6 +26,7 @@ class AssistiveDetectionController extends ChangeNotifier {
     ObjectTracker? tracker,
     this.corrections,
     this.confidenceThreshold = 0.25,
+    this.priorityResolver,
   }) : tracker = tracker ?? ObjectTracker(),
        super();
 
@@ -35,6 +36,11 @@ class AssistiveDetectionController extends ChangeNotifier {
   final ObjectTracker tracker;
   final CorrectionService? corrections;
   final double confidenceThreshold;
+
+  /// Overrides the default COCO class-id priority (see
+  /// [SpatialAnalysisService.analyze]). Null keeps the built-in policy; the
+  /// detection screen replaces it when the active model is a custom one.
+  ObjectPriority Function(Detection)? priorityResolver;
 
   List<DetectionInfo> _detections = const [];
   List<TrackedDetection> _tracks = const [];
@@ -60,7 +66,11 @@ class AssistiveDetectionController extends ChangeNotifier {
     // Acceptance anchor: entry, before spatial analysis or tracking work.
     final acceptedAt = DateTime.now();
     final timing = frameLatency?.withDetectionAcceptedAt(acceptedAt);
-    _detections = SpatialAnalysisService.analyzeAll(detections, meters: meters);
+    _detections = SpatialAnalysisService.analyzeAll(
+      detections,
+      meters: meters,
+      priorityResolver: priorityResolver,
+    );
     _tracks = tracker.update(detections, timestamp);
     for (final info in _detections) {
       TrackedDetection? track;

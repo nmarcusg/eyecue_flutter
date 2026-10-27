@@ -6,6 +6,7 @@ import 'package:marionette_flutter/marionette_flutter.dart';
 import 'models/model_config.dart';
 import 'navigation/app_shell.dart';
 import 'services/correction_service.dart';
+import 'services/detector_model_service.dart';
 import 'services/haptics_service.dart';
 import 'services/settings_service.dart';
 import 'services/telemetry_service.dart';
@@ -34,6 +35,11 @@ Future<void> main() async {
   final haptics = HapticsService(isEnabled: () => settings.vibrationFeedback);
 
   await settings.load();
+  final detectorModels = DetectorModelService(
+    settings,
+    builtInLabelsLoader: () async => labels,
+  );
+  await detectorModels.load();
   await tts.init();
   telemetry.startSession();
 
@@ -44,6 +50,7 @@ Future<void> main() async {
       telemetry: telemetry,
       corrections: corrections,
       haptics: haptics,
+      detectorModel: detectorModels,
     ),
   );
 }
@@ -69,6 +76,10 @@ class EyeCueApp extends StatelessWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The loaded detector selection. Optional only so widget tests can build the
+  /// app without file-system or picker channels; production always supplies it.
+  final DetectorModelService? detectorModel;
+
   const EyeCueApp({
     super.key,
     required this.settings,
@@ -76,6 +87,7 @@ class EyeCueApp extends StatelessWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    this.detectorModel,
   });
 
   @override
@@ -92,6 +104,7 @@ class EyeCueApp extends StatelessWidget {
         telemetry: telemetry,
         corrections: corrections,
         haptics: haptics,
+        detectorModel: detectorModel,
       ),
     );
   }

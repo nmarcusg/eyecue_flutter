@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -101,6 +102,53 @@ void main() {
       expect(info.proximity, ProximityBand.near);
       expect(info.positionLabel, 'right');
       expect(info.proximityLabel, 'near');
+    });
+
+    test('priorityResolver replaces the COCO class-id policy per model', () {
+      ObjectPriority custom(Detection d) =>
+          priorityForClass(DetectorModelKind.custom, d.classId, d.label);
+      final mug = det(
+        classId: 0,
+        label: 'mug',
+        box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2),
+      );
+      final person = det(
+        classId: 0,
+        label: 'person',
+        box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2),
+      );
+
+      // Without a resolver the COCO id still decides (unchanged callers).
+      expect(SpatialAnalysisService.analyze(mug).priority, ObjectPriority.high);
+      // A custom model's class 0 is judged by its label only.
+      expect(
+        SpatialAnalysisService.analyze(mug, priorityResolver: custom).priority,
+        ObjectPriority.low,
+      );
+      expect(
+        SpatialAnalysisService.analyze(
+          person,
+          priorityResolver: custom,
+        ).priority,
+        ObjectPriority.high,
+      );
+    });
+
+    test('same resolver works through analyzeAll', () {
+      final infos = SpatialAnalysisService.analyzeAll(
+        [
+          det(classId: 0, label: 'mug', box: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2)),
+          det(
+            classId: 3,
+            label: 'chair',
+            box: Rect.fromLTWH(0.5, 0.5, 0.2, 0.2),
+          ),
+        ],
+        priorityResolver: (d) =>
+            priorityForClass(DetectorModelKind.custom, d.classId, d.label),
+      );
+      expect(infos[0].priority, ObjectPriority.low);
+      expect(infos[1].priority, ObjectPriority.medium);
     });
 
     test('analyzeAll maps every detection', () {

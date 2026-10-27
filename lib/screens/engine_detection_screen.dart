@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/detection_runtime_state.dart';
 import '../services/correction_service.dart';
+import '../services/detector_model_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
@@ -15,6 +16,9 @@ class EngineDetectionScreen extends StatefulWidget {
   final TelemetryService telemetry;
   final CorrectionService? corrections;
   final HapticsService haptics;
+
+  /// The researcher's detector selection, forwarded to the mounted engine.
+  final DetectorModelService? detectorModel;
 
   /// The single app-shell-owned Detection lifecycle/status source.
   ///
@@ -39,6 +43,7 @@ class EngineDetectionScreen extends StatefulWidget {
     this.corrections,
     required this.haptics,
     required this.coordinator,
+    this.detectorModel,
     this.onNavigateRelative,
   });
 
@@ -116,6 +121,7 @@ class _EngineDetectionScreenState extends State<EngineDetectionScreen> {
           corrections: widget.corrections,
           haptics: widget.haptics,
           coordinator: _coordinator,
+          detectorModel: widget.detectorModel,
           startIntent: startIntent,
           onNavigateRelative: widget.onNavigateRelative,
           onRuntimeStateChanged: (state, sourceGeneration) =>

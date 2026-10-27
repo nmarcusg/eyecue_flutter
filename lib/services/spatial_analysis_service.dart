@@ -103,10 +103,18 @@ class SpatialAnalysisService {
 
   /// [meters] is an optional metric distance from the depth model. When absent
   /// the bounding-box heuristic is used unchanged.
-  static DetectionInfo analyze(Detection d, {double? meters}) => DetectionInfo(
+  ///
+  /// [priorityResolver] overrides the default COCO class-id priority for models
+  /// whose class ids mean something else (a custom detector). Omitted means the
+  /// unchanged built-in policy.
+  static DetectionInfo analyze(
+    Detection d, {
+    double? meters,
+    ObjectPriority Function(Detection)? priorityResolver,
+  }) => DetectionInfo(
     detection: d,
     position: positionFor(d.box),
-    priority: priorityFor(d.classId),
+    priority: priorityResolver?.call(d) ?? priorityFor(d.classId),
     proximity: meters == null || !meters.isFinite
         ? proximityFor(d.box)
         : DepthDistanceService.bandForMeters(meters),
@@ -124,11 +132,13 @@ class SpatialAnalysisService {
   static List<DetectionInfo> analyzeAll(
     List<Detection> detections, {
     List<double?>? meters,
+    ObjectPriority Function(Detection)? priorityResolver,
   }) => [
     for (var i = 0; i < detections.length; i++)
       analyze(
         detections[i],
         meters: meters != null && i < meters.length ? meters[i] : null,
+        priorityResolver: priorityResolver,
       ),
   ];
 }

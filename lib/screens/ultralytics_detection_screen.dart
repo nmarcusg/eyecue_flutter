@@ -11,12 +11,14 @@ import '../models/box_transform.dart';
 import '../models/detection.dart';
 import '../models/detection_info.dart';
 import '../models/detection_runtime_state.dart';
+import '../models/detector_model.dart';
 import '../models/detector_stage_timings.dart';
 import '../models/model_config.dart';
 import '../models/tracked_detection.dart';
 import '../services/assistive_detection_controller.dart';
 import '../services/correction_service.dart';
 import '../services/depth_distance_service.dart';
+import '../services/detector_model_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/gesture_controller.dart';
 import '../services/haptics_service.dart';
@@ -44,6 +46,11 @@ import '../widgets/warning_banner.dart';
 /// Non-blocking notice shown when the depth model cannot provide estimates.
 const String kDepthDegradedMessage =
     'Depth estimate unavailable. Distance uses the bounding box instead.';
+
+/// Shown after the selected detector changed, until the next Start.
+const String kModelChangedMessage =
+    'Detector model changed. Detection is stopped — press Start to use the '
+    'new model.';
 
 /// Presentation flags for the viewport overlay layers.
 ///
@@ -202,6 +209,12 @@ class UltralyticsDetectionScreen extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The researcher's detector selection.
+  ///
+  /// When absent, the built-in asset path and label list are used, so the
+  /// engine's pre-selection behaviour is unchanged for widget tests.
+  final DetectorModelService? detectorModel;
+
   /// The single app-shell-owned Detection lifecycle/status source.
   ///
   /// The engine reports lifecycle/failure facts to it and renders its visible
@@ -237,6 +250,7 @@ class UltralyticsDetectionScreen extends StatefulWidget {
     this.corrections,
     required this.haptics,
     required this.coordinator,
+    this.detectorModel,
     this.startIntent,
     this.onNavigateRelative,
     this.onRuntimeStateChanged,
@@ -263,13 +277,33 @@ class _UltralyticsDetectionScreenState
         telemetry: _telemetry,
         corrections: widget.corrections,
         confidenceThreshold: _settings.detectionConfidence,
+        // A custom model decides priority by its own label text, never by a
+        // COCO class id.
+        priorityResolver: (d) =>
+            priorityForClass(_modelKind, d.classId, d.label),
       );
 
   late final GestureController _gestureController = GestureController(
     onGesture: _onGesture,
   );
 
-  List<String> _labels = const [];
+  /// Asset label list. Used only when no [DetectorModelService] was supplied.
+  List<String> _assetLabels = const [];
+
+  /// The active model's own label list — never the built-in one for a custom
+  /// model.
+  List<String> get _labels =>
+      widget.detectorModel?.current.labels ?? _assetLabels;
+
+  DetectorModelKind get _modelKind =>
+      widget.detectorModel?.current.kind ?? DetectorModelKind.builtIn;
+
+  String get _modelPath =>
+      widget.detectorModel?.current.path ?? EyeCueModelConfig.modelAssetPath;
+
+  /// True after the selected model changed and before the next Start, so the UI
+  /// can state that detection has to be started again.
+  bool _modelChangeNotice = false;
 
   /// The underlying assistive/correction detection state.
   ///
@@ -500,7 +534,8 @@ class _UltralyticsDetectionScreenState
     _depth.frame.addListener(_handleDepthFrame);
     _depth.state.addListener(_handleDepthStateChanged);
     _depthEventSub = _controller.depthEvents.listen(_handleDepthEvent);
-    _loadLabels();
+    widget.detectorModel?.addListener(_handleDetectorModelChanged);
+    if (widget.detectorModel == null) _loadLabels();
     // The engine no longer reads the Auto-start preference directly. It acts
     // only on the shared start intent issued by the app-shell coordinator.
     if (widget.startIntent != null) {
@@ -540,6 +575,7 @@ class _UltralyticsDetectionScreenState
     _readinessTimer?.cancel();
     _pausedWhileLoading = false;
     _settings.removeListener(_handleSettingsChanged);
+    widget.detectorModel?.removeListener(_handleDetectorModelChanged);
     _freshnessTimer?.cancel();
     _depthEventSub?.cancel();
     _depth.frame.removeListener(_handleDepthFrame);
@@ -653,7 +689,7 @@ class _UltralyticsDetectionScreenState
           .map((label) => label.trim())
           .where((label) => label.isNotEmpty)
           .toList(growable: false);
-      if (mounted) setState(() => _labels = labels);
+      if (mounted) setState(() => _assetLabels = labels);
     } catch (error) {
       debugPrint('[Ultralytics] Unable to load labels: $error');
     }
@@ -677,6 +713,30 @@ class _UltralyticsDetectionScreenState
     _startFreshnessTimer();
     _applyOverlayVisibility();
     if (mounted) setState(() {});
+  }
+
+  /// The switch boundary: a selected-model change is a deliberate stop.
+  ///
+  /// Nothing is auto-started here. The next Start remounts the native view, so
+  /// the replacement session loads the selected file (see [_startDetection]).
+  Future<void> _handleDetectorModelChanged() async {
+    if (_detectionActive) await _stopDetection();
+    // Reject every callback captured under the previous view, including a late
+    // payload from the superseded session.
+    _activeNativeEpoch++;
+    // The previous model's interpretation must not carry over: detections,
+    // tracks, announced context and correction records all belong to it.
+    widget.corrections?.clear();
+    _assistive.reset();
+    _firstResultLogged = false;
+    if (!mounted) return;
+    setState(() {
+      _latestDetections = const [];
+      _overlayInfos = const [];
+      _detectionInfo = const [];
+      _lastTracks = const [];
+      _modelChangeNotice = true;
+    });
   }
 
   Future<bool> _ensureCameraPermission() async {
@@ -745,6 +805,7 @@ class _UltralyticsDetectionScreenState
         _paused = false;
         _starting = false;
         _modelError = null;
+        _modelChangeNotice = false;
         // Re-arm the once-per-session first-result diagnostic.
         _firstResultLogged = false;
         if (recreate) {
@@ -1067,6 +1128,9 @@ class _UltralyticsDetectionScreenState
   Future<void> _reportCorrection(DetectionInfo info) async {
     final corrections = widget.corrections;
     if (corrections == null || !mounted) return;
+    // The shared label list belongs to the built-in model; offering it against
+    // a custom model's detections would record invented COCO names.
+    if (_modelKind != DetectorModelKind.builtIn) return;
     final selection = await showDetectionCorrectionSheet(
       context: context,
       info: info,
@@ -1116,6 +1180,7 @@ class _UltralyticsDetectionScreenState
   // ignore: unused_element
   DetectionInfo? get _lastCorrectableDetection {
     if (widget.corrections == null) return null;
+    if (_modelKind != DetectorModelKind.builtIn) return null;
     if (_tts.lastAnnouncedEngine != InferenceEngine.ultralytics) return null;
     return _tts.lastAnnouncedDetection;
   }
@@ -1275,6 +1340,30 @@ class _UltralyticsDetectionScreenState
                     ),
                   ),
                 ],
+                // A model change is a stop: state the required next action
+                // instead of silently returning to a stopped viewport.
+                if (_modelChangeNotice)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      kSpace16,
+                      0,
+                      kSpace16,
+                      kSpace8,
+                    ),
+                    child: Semantics(
+                      container: true,
+                      liveRegion: true,
+                      label: kModelChangedMessage,
+                      child: ExcludeSemantics(
+                        child: Text(
+                          kModelChangedMessage,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(color: kHomeInk),
+                        ),
+                      ),
+                    ),
+                  ),
                 // The viewport is the only flexible region; the control row
                 // below derives its height from its content and the minimum
                 // touch targets rather than a fixed percentage allocation.
@@ -1405,7 +1494,7 @@ class _UltralyticsDetectionScreenState
             // and `startCamera()` is a no-op while it is null, so remounting is
             // the only way to receive results from a fresh native session.
             key: ValueKey('ultralytics-native-$_nativeViewEpoch'),
-            modelPath: EyeCueModelConfig.modelAssetPath,
+            modelPath: _modelPath,
             task: YOLOTask.detect,
             controller: _controller,
             confidenceThreshold: _settings.detectionConfidence,

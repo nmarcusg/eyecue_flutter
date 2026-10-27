@@ -7,6 +7,7 @@ import '../screens/home_screen.dart';
 import '../screens/logs_reports_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/correction_service.dart';
+import '../services/detector_model_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
 import '../services/settings_service.dart';
@@ -129,6 +130,9 @@ class AppShell extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The loaded detector selection shared by Settings and Detection.
+  final DetectorModelService? detectorModel;
+
   /// Test hook — supply your own page widgets instead of the real screens.
   final List<Widget> Function(BuildContext context, AppShellState shell)?
   pagesOverride;
@@ -145,6 +149,7 @@ class AppShell extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    this.detectorModel,
     this.pagesOverride,
     this.coordinatorOverride,
   });
@@ -350,6 +355,7 @@ class AppShellState extends State<AppShell> {
           corrections: widget.corrections,
           haptics: widget.haptics,
           coordinator: _coordinator,
+          detectorModel: widget.detectorModel,
           onNavigateRelative: navigateRelative,
         );
       case 2:
@@ -357,6 +363,7 @@ class AppShellState extends State<AppShell> {
           settings: widget.settings,
           onOpenLogsReports: openLogsReports,
           telemetry: widget.telemetry,
+          detectorModel: widget.detectorModel,
         );
       case 3:
         return const HelpScreen();

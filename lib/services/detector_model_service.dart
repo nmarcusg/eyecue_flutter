@@ -123,6 +123,10 @@ class DetectorModelService extends ChangeNotifier {
 
   bool get isCustomSelected => _current.isCustom;
 
+  /// Whether an import is retained (its persisted identity survived), so
+  /// [selectStoredCustom] can restore it without choosing a file again.
+  bool get hasStoredCustom => _settings.customModelFingerprint != null;
+
   /// Non-null when the persisted custom selection could not be restored. The
   /// caller must surface it; recovery is never silent.
   String? get selectionRecoveryMessage => _selectionRecoveryMessage;
@@ -536,7 +540,10 @@ class DetectorModelService extends ChangeNotifier {
       await _deleteQuietly(_modelFile(directory, fingerprint));
       await _deleteQuietly(_sidecarFile(directory, fingerprint));
     } on FileSystemException {
-      // A leftover copy is harmless: the next import rewrites by fingerprint.
+      // Not harmless: the next import deletes only the persisted identity, so a
+      // copy whose delete failed here is orphaned and must be cleaned up
+      // manually. It cannot be selected again, so it is never mistaken for the
+      // active model.
     }
   }
 
