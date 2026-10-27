@@ -357,7 +357,7 @@ class _OverviewTab extends StatelessWidget {
             ),
             // These two averages cover every recorded sample, so they must say
             // so when more than one detector contributed to them.
-            if (models.length > 1) ...[
+            if (_identities(models).length > 1) ...[
               const SizedBox(height: kSpace8),
               const _MixedModelNote(),
             ],
@@ -877,12 +877,12 @@ class _ChartsTab extends StatelessWidget {
       builder: (context) {
         final telemetry = _of(context);
         final models = _modelOptions(telemetry);
-        final samples = _samplesFor(
-          telemetry,
-          _selectedModel(models, modelFilter),
-        );
-        // The card title names what the numbers actually cover.
-        final claim = _modelClaim(models, modelFilter);
+        final selected = _selectedModel(models, modelFilter);
+        final samples = _samplesFor(telemetry, selected);
+        // The card title names what the charts actually draw. A selection whose
+        // rows are gone falls back to all models, exactly as the samples do, so
+        // a title can never claim a model the chart does not contain.
+        final claim = _modelClaim(models, selected?.key);
         return _BoundedScrollView(
           children: [
             _ModelFilter(
@@ -1039,6 +1039,13 @@ class _EngineSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hasData = summary.sampleCount > 0;
+    // The claim is its own line. Trailing the value line it needed ~307 px
+    // where the value column has ~171 px on a 390 px phone, so it was always
+    // ellipsized away.
+    // shortcut: two lines hold the longest accepted (40-character) model name.
+    final claim = modelClaim.startsWith(' — ')
+        ? modelClaim.substring(3)
+        : modelClaim;
     return Container(
       margin: const EdgeInsets.only(bottom: kSpace8),
       padding: const EdgeInsets.all(kSpace12),
@@ -1047,33 +1054,47 @@ class _EngineSummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(kRadius14),
         boxShadow: kHomeShadowSoft,
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            summary.engine.label,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                summary.engine.label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: kSpace8),
+              Expanded(
+                child: Text(
+                  hasData
+                      ? '${summary.averageInferenceFps.toStringAsFixed(1)} FPS · '
+                            '${summary.averageLatencyMs.toStringAsFixed(1)} ms · '
+                            '${summary.sampleCount} frames'
+                      : 'No samples',
+                  textAlign: TextAlign.end,
+                  maxLines: 2,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: kHomeInkMuted,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: kSpace8),
-          Expanded(
-            child: Text(
-              hasData
-                  ? '${summary.averageInferenceFps.toStringAsFixed(1)} FPS · '
-                        '${summary.averageLatencyMs.toStringAsFixed(1)} ms · '
-                        '${summary.sampleCount} frames$modelClaim'
-                  : 'No samples$modelClaim',
+          if (claim.isNotEmpty) ...[
+            const SizedBox(height: kSpace4),
+            Text(
+              claim,
               textAlign: TextAlign.end,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
               style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1346,7 +1367,10 @@ const String _mixedModelLabel = 'Mixed-model data';
 
 /// One detector model identity present in the recorded rows.
 class _ModelOption {
-  /// The export's `detectorModels` key for this identity.
+  /// This view's key for the identity. It is built by walking records then
+  /// samples, while the export's `detectorModels` table walks samples then
+  /// records, so a duplicate identity's `~n` suffix can differ: the keys are
+  /// per-view and are not comparable across views.
   final String key;
   final String id;
   final String name;
@@ -1356,13 +1380,18 @@ class _ModelOption {
   /// fingerprint suffix when two models share a display name.
   final String label;
 
+  /// Whether this is the name the identity was most recently recorded under,
+  /// so a summary can name a renamed graph by its current name.
+  final bool isLatest;
+
   const _ModelOption(
     this.key,
     this.id,
     this.name,
     this.fingerprint,
-    this.label,
-  );
+    this.label, {
+    this.isLatest = false,
+  });
 
   /// Whether a row was recorded with this identity. Two graphs sharing a name
   /// differ here, and a renamed graph does not match its old rows.
@@ -1378,16 +1407,20 @@ String _shortFingerprint(String? fingerprint) {
 }
 
 /// Distinct `(id, name, fingerprint)` identities present in the data, keyed
-/// exactly as the export keys its `detectorModels` table.
+/// with the same rule as the export's `detectorModels` table. Row order
+/// differs between the two views, so the keys themselves are not comparable.
 List<_ModelOption> _modelOptions(TelemetryService telemetry) {
   final table = DetectorModelTable();
   final seen = <String, _ModelOption>{};
+  final latestKeyById = <String, String>{};
   void add(String? id, String? name, String? fingerprint) {
     final modelId = id;
     final modelKey = table.keyFor(modelId, name, fingerprint);
-    if (modelId == null || modelKey == null || seen.containsKey(modelKey)) {
-      return;
-    }
+    if (modelId == null || modelKey == null) return;
+    // Every row moves the identity's current name forward, including a row of
+    // an identity already listed (a rename reuses the id).
+    latestKeyById[modelId] = modelKey;
+    if (seen.containsKey(modelKey)) return;
     // A row with no recorded name falls back to its id, as the filter always
     // has; the identity key still keeps it distinct from a named graph.
     seen[modelKey] = _ModelOption(
@@ -1430,6 +1463,7 @@ List<_ModelOption> _modelOptions(TelemetryService telemetry) {
         ambiguous
             ? '${option.name} · ${_shortFingerprint(option.fingerprint)}'
             : option.name,
+        isLatest: latestKeyById[option.id] == option.key,
       ),
     );
   }
@@ -1461,16 +1495,25 @@ List<RuntimeSample> _samplesFor(
             sample,
       ];
 
+/// The distinct detector identities among [options]. One graph renamed
+/// mid-session stays one identity, so it is not "mixed".
+Set<String> _identities(List<_ModelOption> options) => {
+  for (final option in options) option.id,
+};
+
 /// What a chart or average built from [key] may claim.
 String _modelClaim(List<_ModelOption> options, String? key) {
   if (key != null) {
     for (final option in options) {
       if (option.key == key) return ' — ${option.label}';
     }
-    return '';
   }
-  if (options.length > 1) return ' — $_mixedModelLabel';
-  return options.isEmpty ? '' : ' — ${options.single.label}';
+  if (_identities(options).length > 1) return ' — $_mixedModelLabel';
+  if (options.isEmpty) return '';
+  // One identity: name it with the name it was last recorded under, the same
+  // rule the chart summary uses, so title and summary cannot disagree.
+  final latest = options.where((option) => option.isLatest);
+  return ' — ${(latest.isEmpty ? options : latest).first.label}';
 }
 
 /// Model filter shown above the charts and the log list.
