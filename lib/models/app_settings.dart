@@ -1,3 +1,5 @@
+import 'detector_model.dart';
+
 /// The one detection engine. Kept as an enum because telemetry records and
 /// persisted settings carry the value as a stable discriminator.
 enum InferenceEngine {
@@ -75,12 +77,13 @@ enum DetectionSensitivityPreset {
 class AppSettings {
   // Incremented 1 -> 2 when `detectionConfidence` was added, 2 -> 3 when
   // `hideBottomNavigation` was added, 3 -> 4 when the distance/overlay fields
-  // were added, 4 -> 5 when the inference cadence targets were added, and 5 -> 6
-  // when the first-use safety acknowledgement was added: the established
-  // convention is that a new persisted field bumps the schema version. The parser
-  // is field-tolerant and has no migration branch, so this is a marker only;
-  // older JSON that lacks the field still parses with the safe default.
-  static const int currentSchemaVersion = 6;
+  // were added, 4 -> 5 when the inference cadence targets were added, 5 -> 6
+  // when the first-use safety acknowledgement was added, and 6 -> 7 when the
+  // detector model selection was added: the established convention is that a
+  // new persisted field bumps the schema version. The parser is field-tolerant
+  // and has no migration branch, so this is a marker only; older JSON that
+  // lacks the fields still parses with the safe default (built-in detector).
+  static const int currentSchemaVersion = 7;
   static const double defaultDetectionConfidence = 0.25;
   static const double minDetectionConfidence = 0.10;
   static const double maxDetectionConfidence = 0.75;
@@ -130,6 +133,24 @@ class AppSettings {
   /// disclosure. `false` means the acknowledgement has not been shown yet.
   final bool safetyAcknowledged;
 
+  /// Selected detector graph. Older persisted JSON has no value and means the
+  /// bundled [DetectorModelKind.builtIn] detector.
+  final DetectorModelKind detectorModelKind;
+
+  /// Researcher-provided display name of the imported custom model. Never a raw
+  /// filename. Only meaningful when [detectorModelKind] is custom.
+  final String? customModelName;
+
+  /// Content-derived fingerprint of the imported graph.
+  final String? customModelFingerprint;
+
+  /// Absolute path of the app-owned copy. Local only: exports must strip it.
+  final String? customModelPath;
+
+  /// Class count of the imported graph. Labels themselves are **not** persisted
+  /// here (settings reach exported study data); they live in the model sidecar.
+  final int? customModelClassCount;
+
   final int schemaVersion;
 
   const AppSettings({
@@ -146,6 +167,11 @@ class AppSettings {
     this.detectionTargetHz,
     this.depthTargetHz = defaultDepthTargetHz,
     this.safetyAcknowledged = false,
+    this.detectorModelKind = DetectorModelKind.builtIn,
+    this.customModelName,
+    this.customModelFingerprint,
+    this.customModelPath,
+    this.customModelClassCount,
     this.schemaVersion = currentSchemaVersion,
   });
 
@@ -167,6 +193,11 @@ class AppSettings {
     Object? detectionTargetHz = _unset,
     int? depthTargetHz,
     bool? safetyAcknowledged,
+    DetectorModelKind? detectorModelKind,
+    Object? customModelName = _unset,
+    Object? customModelFingerprint = _unset,
+    Object? customModelPath = _unset,
+    Object? customModelClassCount = _unset,
   }) {
     return AppSettings(
       vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
@@ -189,6 +220,19 @@ class AppSettings {
           ? this.depthTargetHz
           : normalizeDepthTargetHz(depthTargetHz),
       safetyAcknowledged: safetyAcknowledged ?? this.safetyAcknowledged,
+      detectorModelKind: detectorModelKind ?? this.detectorModelKind,
+      customModelName: identical(customModelName, _unset)
+          ? this.customModelName
+          : customModelName as String?,
+      customModelFingerprint: identical(customModelFingerprint, _unset)
+          ? this.customModelFingerprint
+          : customModelFingerprint as String?,
+      customModelPath: identical(customModelPath, _unset)
+          ? this.customModelPath
+          : customModelPath as String?,
+      customModelClassCount: identical(customModelClassCount, _unset)
+          ? this.customModelClassCount
+          : customModelClassCount as int?,
     );
   }
 
@@ -207,6 +251,11 @@ class AppSettings {
     'detectionTargetHz': detectionTargetHz,
     'depthTargetHz': depthTargetHz,
     'safetyAcknowledged': safetyAcknowledged,
+    'detectorModelKind': detectorModelKind.name,
+    'customModelName': customModelName,
+    'customModelFingerprint': customModelFingerprint,
+    'customModelPath': customModelPath,
+    'customModelClassCount': customModelClassCount,
   };
 
   /// Parses old and partially written settings without allowing one malformed
@@ -228,6 +277,30 @@ class AppSettings {
             orElse: () => DistanceEstimationMode.monocularDepth,
           )
         : DistanceEstimationMode.monocularDepth;
+    // Older persisted JSON has no detector fields at all; anything naming a
+    // custom model without its full identity is treated as the built-in choice
+    // so settings can never claim a model that cannot be resolved.
+    final kindName = json['detectorModelKind'];
+    final customName = _stringOrNull(json['customModelName']);
+    final customFingerprint = _stringOrNull(json['customModelFingerprint']);
+    final customPath = _stringOrNull(json['customModelPath']);
+    final customClassCount = json['customModelClassCount'];
+    final customComplete =
+        customName != null &&
+        customFingerprint != null &&
+        customPath != null &&
+        customClassCount is int &&
+        customClassCount > 0;
+    final parsedKind = kindName is String
+        ? DetectorModelKind.values.firstWhere(
+            (candidate) => candidate.name == kindName,
+            orElse: () => DetectorModelKind.builtIn,
+          )
+        : DetectorModelKind.builtIn;
+    final kind = parsedKind == DetectorModelKind.custom && !customComplete
+        ? DetectorModelKind.builtIn
+        : parsedKind;
+    final usesCustom = kind == DetectorModelKind.custom;
     return AppSettings(
       vibrationFeedback: _boolOr(json['vibrationFeedback'], true),
       autoStartDetection: _boolOr(json['autoStartDetection'], true),
@@ -248,6 +321,11 @@ class AppSettings {
       // Older persisted JSON lacks the field, so an upgrading user sees the
       // first-use disclosure once.
       safetyAcknowledged: _boolOr(json['safetyAcknowledged'], false),
+      detectorModelKind: kind,
+      customModelName: usesCustom ? customName : null,
+      customModelFingerprint: usesCustom ? customFingerprint : null,
+      customModelPath: usesCustom ? customPath : null,
+      customModelClassCount: usesCustom ? customClassCount as int : null,
       schemaVersion: currentSchemaVersion,
     );
   }
@@ -257,6 +335,9 @@ class AppSettings {
 
   static bool _boolOr(Object? value, bool fallback) =>
       value is bool ? value : fallback;
+
+  static String? _stringOrNull(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value.trim() : null;
 
   /// Keeps persisted and runtime values within the supported advanced-slider
   /// range and on its 0.05 step grid. NaN and infinity use the default.
@@ -296,7 +377,12 @@ class AppSettings {
       other.distanceEstimationMode == distanceEstimationMode &&
       other.detectionTargetHz == detectionTargetHz &&
       other.depthTargetHz == depthTargetHz &&
-      other.safetyAcknowledged == safetyAcknowledged;
+      other.safetyAcknowledged == safetyAcknowledged &&
+      other.detectorModelKind == detectorModelKind &&
+      other.customModelName == customModelName &&
+      other.customModelFingerprint == customModelFingerprint &&
+      other.customModelPath == customModelPath &&
+      other.customModelClassCount == customModelClassCount;
 
   @override
   int get hashCode => Object.hash(
@@ -313,5 +399,10 @@ class AppSettings {
     detectionTargetHz,
     depthTargetHz,
     safetyAcknowledged,
+    detectorModelKind,
+    customModelName,
+    customModelFingerprint,
+    customModelPath,
+    customModelClassCount,
   );
 }
