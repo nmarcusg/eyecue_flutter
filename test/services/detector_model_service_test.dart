@@ -43,6 +43,7 @@ void main() {
   DetectorModelService buildService({
     ModelFilePicker? picker,
     Future<Map<String, dynamic>> Function(String path)? inspect,
+    Future<String?> Function(File file)? fingerprintReader,
   }) => DetectorModelService(
     settings,
     picker: picker ?? _FakePicker(null),
@@ -50,6 +51,7 @@ void main() {
         List<String>.generate(_cocoClassCount, (index) => 'class$index'),
     inspect: inspect ?? _detectInspect,
     modelsDirectory: () async => modelsDirectory(),
+    fingerprintReader: fingerprintReader,
   );
 
   String writeSource(String name, List<int> bytes) {
@@ -166,6 +168,90 @@ void main() {
         expect(File(path).existsSync(), isFalse);
         expect(settings.customModelFingerprint, isNull);
         expect(await service.debugStoredFiles(), isEmpty);
+      },
+    );
+
+    test(
+      'an unreadable copy is kept and can be re-selected once readable',
+      () async {
+        final first = buildService();
+        await first.load();
+        final imported = await first.importFromPath(
+          writeSource('model.tflite', _modelBytes),
+          displayName: 'Obstacle Detector v2',
+        );
+        expect(imported.ok, isTrue);
+        final model = imported.model!;
+
+        // Cold start with a transient read error: never a reason to delete.
+        var readable = false;
+        final service = buildService(
+          fingerprintReader: (file) async => readable
+              ? tfliteFingerprint(await file.readAsBytes())
+              : throw FileSystemException('transient read failure', file.path),
+        );
+        await service.load();
+
+        expect(service.isCustomSelected, isFalse);
+        expect(service.current.displayName, 'Built-in YOLOv8n');
+        expect(service.selectionRecoveryMessage, contains('could not be read'));
+        expect(File(model.path).existsSync(), isTrue);
+        expect(settings.customModelFingerprint, model.fingerprint);
+        expect(settings.detectorModelKind, DetectorModelKind.custom);
+        expect(await service.debugStoredFiles(), hasLength(2));
+
+        // Readable again: the same import is re-selectable, unchanged.
+        readable = true;
+        final reselected = await service.selectStoredCustom();
+
+        expect(reselected.ok, isTrue);
+        expect(reselected.model!.fingerprint, model.fingerprint);
+        expect(reselected.model!.ref.id, model.ref.id);
+        expect(service.isCustomSelected, isTrue);
+        expect(service.selectionRecoveryMessage, isNull);
+        expect(settings.detectorModelKind, DetectorModelKind.custom);
+        expect(await service.debugStoredFiles(), hasLength(2));
+      },
+    );
+
+    test(
+      'a retained import survives a restart and is replaced cleanly',
+      () async {
+        final first = buildService();
+        await first.load();
+        final imported = await first.importFromPath(
+          writeSource('model.tflite', _modelBytes),
+          displayName: 'Obstacle Detector v2',
+        );
+        expect(imported.ok, isTrue);
+        final a = imported.model!;
+        await first.selectBuiltIn();
+
+        // Restart: the same store, fresh settings and a fresh service.
+        settings = SettingsService(store: store);
+        await settings.load();
+        expect(settings.detectorModelKind, DetectorModelKind.builtIn);
+        expect(settings.customModelName, 'Obstacle Detector v2');
+        expect(settings.customModelFingerprint, a.fingerprint);
+        expect(settings.customModelClassCount, _cocoClassCount);
+
+        final service = buildService();
+        await service.load();
+        expect(service.isCustomSelected, isFalse);
+        expect(service.selectionRecoveryMessage, isNull);
+
+        final reselected = await service.selectStoredCustom();
+        expect(reselected.ok, isTrue);
+        expect(reselected.model!.fingerprint, a.fingerprint);
+
+        final replacement = await service.importFromPath(
+          writeSource('second.tflite', Uint8List.fromList([..._modelBytes, 7])),
+          displayName: 'Second model',
+        );
+        expect(replacement.ok, isTrue);
+        expect(replacement.model!.fingerprint, isNot(a.fingerprint));
+        expect(File(a.path).existsSync(), isFalse);
+        expect(await service.debugStoredFiles(), hasLength(2));
       },
     );
   });

@@ -117,6 +117,51 @@ void main() {
     });
 
     test(
+      'the custom identity survives a restart on the built-in selection',
+      () async {
+        final store = InMemorySettingsStore();
+        final service = SettingsService(store: store);
+        await service.setDetectorModel(
+          kind: DetectorModelKind.custom,
+          name: 'Obstacle Detector v2',
+          fingerprint: '0123456789abcdef-1234',
+          classCount: 3,
+        );
+        await service.setDetectorModel(kind: DetectorModelKind.builtIn);
+
+        final reloaded = SettingsService(store: store);
+        await reloaded.load();
+        expect(reloaded.detectorModelKind, DetectorModelKind.builtIn);
+        expect(reloaded.customModelName, 'Obstacle Detector v2');
+        expect(reloaded.customModelFingerprint, '0123456789abcdef-1234');
+        expect(reloaded.customModelClassCount, 3);
+        expect(store.contents, isNot(contains('customModelPath')));
+      },
+    );
+
+    test('an incomplete custom identity falls back to built-in', () {
+      final json = AppSettings(
+        detectorModelKind: DetectorModelKind.custom,
+        customModelName: 'Only a name',
+      ).toJson();
+      final parsed = AppSettings.fromJson(json);
+      expect(parsed.detectorModelKind, DetectorModelKind.builtIn);
+      expect(parsed.customModelName, isNull);
+      expect(parsed.customModelFingerprint, isNull);
+    });
+
+    test('persisted settings carry no model path', () {
+      final json = AppSettings(
+        detectorModelKind: DetectorModelKind.builtIn,
+        customModelName: 'Obstacle Detector v2',
+        customModelFingerprint: '0123456789abcdef-1234',
+        customModelClassCount: 3,
+      ).toJson();
+      expect(json.containsKey('customModelPath'), isFalse);
+      expect(json.values.whereType<String>(), isNot(contains(startsWith('/'))));
+    });
+
+    test(
       'safety acknowledgement defaults to unacknowledged and persists',
       () async {
         final store = InMemorySettingsStore();
