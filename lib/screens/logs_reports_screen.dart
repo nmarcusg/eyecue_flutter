@@ -331,6 +331,8 @@ class _OverviewTab extends StatelessWidget {
     return Builder(
       builder: (context) {
         final telemetry = _of(context);
+        final models = _modelOptions(telemetry);
+        final modelClaim = _modelClaim(models, null);
         final duration = telemetry.sessionDuration;
         final hours = duration.inHours;
         final minutes = duration.inMinutes % 60;
@@ -355,7 +357,7 @@ class _OverviewTab extends StatelessWidget {
             ),
             // These two averages cover every recorded sample, so they must say
             // so when more than one detector contributed to them.
-            if (_modelOptions(telemetry).length > 1) ...[
+            if (models.length > 1) ...[
               const SizedBox(height: kSpace8),
               const _MixedModelNote(),
             ],
@@ -368,8 +370,13 @@ class _OverviewTab extends StatelessWidget {
             const SizedBox(height: kSpace24),
             const _SectionHeading('Engine Comparison'),
             const SizedBox(height: kSpace8),
+            // Each engine card blends whatever models contributed, so it
+            // carries the same claim the metric cards above do.
             for (final engine in InferenceEngine.values)
-              _EngineSummaryCard(summary: telemetry.summaryFor(engine)),
+              _EngineSummaryCard(
+                summary: telemetry.summaryFor(engine),
+                modelClaim: modelClaim,
+              ),
             const SizedBox(height: kSpace24),
             const _SectionHeading('Session Summary'),
             const SizedBox(height: kSpace8),
@@ -870,7 +877,10 @@ class _ChartsTab extends StatelessWidget {
       builder: (context) {
         final telemetry = _of(context);
         final models = _modelOptions(telemetry);
-        final samples = _samplesFor(telemetry, modelFilter);
+        final samples = _samplesFor(
+          telemetry,
+          _selectedModel(models, modelFilter),
+        );
         // The card title names what the numbers actually cover.
         final claim = _modelClaim(models, modelFilter);
         return _BoundedScrollView(
@@ -921,9 +931,15 @@ class _LogsTab extends StatelessWidget {
         final telemetry = _of(context);
         final theme = Theme.of(context);
         final models = _modelOptions(telemetry);
+        final selected = _selectedModel(models, modelFilter);
         final records = [
           for (final record in telemetry.records)
-            if (modelFilter == null || record.detectorModelId == modelFilter)
+            if (selected == null ||
+                selected.matches(
+                  record.detectorModelId,
+                  record.detectorModelName,
+                  record.detectorModelFingerprint,
+                ))
               record,
         ];
         if (records.isEmpty) {
@@ -1014,7 +1030,10 @@ class _LogsTab extends StatelessWidget {
 class _EngineSummaryCard extends StatelessWidget {
   final EngineTelemetrySummary summary;
 
-  const _EngineSummaryCard({required this.summary});
+  /// What the numbers below may claim: one model's name, or mixed-model data.
+  final String modelClaim;
+
+  const _EngineSummaryCard({required this.summary, required this.modelClaim});
 
   @override
   Widget build(BuildContext context) {
@@ -1046,8 +1065,8 @@ class _EngineSummaryCard extends StatelessWidget {
               hasData
                   ? '${summary.averageInferenceFps.toStringAsFixed(1)} FPS · '
                         '${summary.averageLatencyMs.toStringAsFixed(1)} ms · '
-                        '${summary.sampleCount} frames'
-                  : 'No samples',
+                        '${summary.sampleCount} frames$modelClaim'
+                  : 'No samples$modelClaim',
               textAlign: TextAlign.end,
               maxLines: 1,
               softWrap: false,
@@ -1325,54 +1344,133 @@ const String _allModelsLabel = 'All models (mixed)';
 /// The label a summary carries when its numbers span more than one detector.
 const String _mixedModelLabel = 'Mixed-model data';
 
-/// One detector model present in the recorded rows.
+/// One detector model identity present in the recorded rows.
 class _ModelOption {
+  /// The export's `detectorModels` key for this identity.
+  final String key;
   final String id;
   final String name;
+  final String? fingerprint;
 
-  const _ModelOption(this.id, this.name);
+  /// What the dropdown and chart titles show: the name, plus a short
+  /// fingerprint suffix when two models share a display name.
+  final String label;
+
+  const _ModelOption(
+    this.key,
+    this.id,
+    this.name,
+    this.fingerprint,
+    this.label,
+  );
+
+  /// Whether a row was recorded with this identity. Two graphs sharing a name
+  /// differ here, and a renamed graph does not match its old rows.
+  bool matches(String? rowId, String? rowName, String? rowFingerprint) =>
+      id == rowId && name == rowName && fingerprint == rowFingerprint;
 }
 
-/// Distinct `(id, name)` pairs present in the data, ordered by readable name.
+/// The discriminating tail of a fingerprint, for same-named graphs.
+String _shortFingerprint(String? fingerprint) {
+  final hex = fingerprint?.split('-').first;
+  if (hex == null || hex.isEmpty) return '';
+  return hex.length <= 8 ? hex : hex.substring(0, 8);
+}
+
+/// Distinct `(id, name, fingerprint)` identities present in the data, keyed
+/// exactly as the export keys its `detectorModels` table.
 List<_ModelOption> _modelOptions(TelemetryService telemetry) {
-  final byId = <String, String>{};
-  void add(String? id, String? name) {
-    if (id == null) return;
-    byId.putIfAbsent(id, () => name ?? id);
+  final table = DetectorModelTable();
+  final seen = <String, _ModelOption>{};
+  void add(String? id, String? name, String? fingerprint) {
+    final modelId = id;
+    final modelKey = table.keyFor(modelId, name, fingerprint);
+    if (modelId == null || modelKey == null || seen.containsKey(modelKey)) {
+      return;
+    }
+    // A row with no recorded name falls back to its id, as the filter always
+    // has; the identity key still keeps it distinct from a named graph.
+    seen[modelKey] = _ModelOption(
+      modelKey,
+      modelId,
+      name ?? modelId,
+      fingerprint,
+      '',
+    );
   }
 
   for (final record in telemetry.records) {
-    add(record.detectorModelId, record.detectorModelName);
+    add(
+      record.detectorModelId,
+      record.detectorModelName,
+      record.detectorModelFingerprint,
+    );
   }
   for (final sample in telemetry.samples) {
-    add(sample.detectorModelId, sample.detectorModelName);
+    add(
+      sample.detectorModelId,
+      sample.detectorModelName,
+      sample.detectorModelFingerprint,
+    );
   }
-  final options = [
-    for (final entry in byId.entries) _ModelOption(entry.key, entry.value),
-  ];
-  options.sort((a, b) => a.name.compareTo(b.name));
+
+  final nameCounts = <String, int>{};
+  for (final option in seen.values) {
+    nameCounts.update(option.name, (count) => count + 1, ifAbsent: () => 1);
+  }
+  final options = <_ModelOption>[];
+  for (final option in seen.values) {
+    final ambiguous = (nameCounts[option.name] ?? 0) > 1;
+    options.add(
+      _ModelOption(
+        option.key,
+        option.id,
+        option.name,
+        option.fingerprint,
+        ambiguous
+            ? '${option.name} · ${_shortFingerprint(option.fingerprint)}'
+            : option.name,
+      ),
+    );
+  }
+  options.sort((a, b) => a.label.compareTo(b.label));
   return options;
 }
 
+/// The model the filter selects, if its rows are still present.
+_ModelOption? _selectedModel(List<_ModelOption> options, String? key) {
+  for (final option in options) {
+    if (option.key == key) return option;
+  }
+  return null;
+}
+
 /// The samples a chart may draw: all of them, or one model's.
-List<RuntimeSample> _samplesFor(TelemetryService telemetry, String? id) =>
-    id == null
+List<RuntimeSample> _samplesFor(
+  TelemetryService telemetry,
+  _ModelOption? model,
+) => model == null
     ? telemetry.samples
     : [
         for (final sample in telemetry.samples)
-          if (sample.detectorModelId == id) sample,
+          if (model.matches(
+            sample.detectorModelId,
+            sample.detectorModelName,
+            sample.detectorModelFingerprint,
+          ))
+            sample,
       ];
 
-/// What a chart or average built from [filter] may claim.
-String _modelClaim(List<_ModelOption> options, String? filter) {
-  if (filter != null) {
+/// What a chart or average built from [key] may claim.
+String _modelClaim(List<_ModelOption> options, String? key) {
+  if (key != null) {
     for (final option in options) {
-      if (option.id == filter) return ' — ${option.name}';
+      if (option.key == key) return ' — ${option.label}';
     }
     return '';
   }
   if (options.length > 1) return ' — $_mixedModelLabel';
-  return options.isEmpty ? '' : ' — ${options.single.name}';
+  return options.isEmpty ? '' : ' — ${options.single.label}';
 }
 
 /// Model filter shown above the charts and the log list.
@@ -1391,7 +1489,7 @@ class _ModelFilter extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // A selection whose rows are gone must not crash the dropdown.
-    final selected = models.any((model) => model.id == value) ? value : null;
+    final selected = models.any((model) => model.key == value) ? value : null;
     return _LightCard(
       child: Row(
         children: [
@@ -1412,8 +1510,8 @@ class _ModelFilter extends StatelessWidget {
                   ),
                   for (final model in models)
                     DropdownMenuItem<String?>(
-                      value: model.id,
-                      child: Text(model.name, overflow: TextOverflow.ellipsis),
+                      value: model.key,
+                      child: Text(model.label, overflow: TextOverflow.ellipsis),
                     ),
                 ],
                 onChanged: onChanged,

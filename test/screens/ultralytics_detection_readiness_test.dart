@@ -11,6 +11,7 @@ import 'package:eyecue_flutter/services/haptics_service.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
+import 'package:eyecue_flutter/widgets/detection_action_controls.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -734,5 +735,126 @@ void main() {
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(seconds: 1));
     }
+  });
+
+  testWidgets('the screen re-stamps the controller at the switch boundary', (
+    tester,
+  ) async {
+    final viewIds = <String>[];
+    final messenger = _installPlatformMocks(viewIds);
+    final documents = Directory.systemTemp.createTempSync(
+      'eyecue-model-restamp',
+    );
+    addTearDown(() {
+      _clearPlatformMocks();
+      documents.deleteSync(recursive: true);
+    });
+
+    final settings = SettingsService(store: InMemorySettingsStore());
+    late DetectorModelService detectorModel;
+    await tester.runAsync(() async {
+      await settings.load();
+      detectorModel = await _restoredCustomModel(settings, documents, const [
+        'mug',
+        'chair',
+      ]);
+    });
+    final customRef = detectorModel.current.ref;
+    final tts = TtsService(engine: _FakeTtsEngine());
+    await tts.init();
+    addTearDown(tts.dispose);
+    final telemetry = TelemetryService();
+    final states = <DetectionRuntimeState>[];
+    final coordinator = EngineCoordinator();
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UltralyticsDetectionScreen(
+          settings: settings,
+          tts: tts,
+          telemetry: telemetry,
+          haptics: HapticsService(
+            light: () async {},
+            medium: () async {},
+            heavy: () async {},
+          ),
+          coordinator: coordinator,
+          detectorModel: detectorModel,
+          onRuntimeStateChanged: (state, _) {
+            states.add(state);
+            coordinator.reportState(state);
+          },
+          readinessTimeout: const Duration(seconds: 2),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Start Detection'));
+    await tester.pump();
+    for (var i = 0; i < 40 && viewIds.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await messenger.handlePlatformMessage(
+      'com.ultralytics.yolo/detectionResults_${viewIds.single}',
+      const StandardMethodCodec().encodeSuccessEnvelope(_classZeroPayload()),
+      (ByteData? data) {},
+    );
+    await tester.pump();
+    final beforeSwitch = telemetry.records.last;
+    expect(beforeSwitch.detectorModelId, customRef.id);
+    expect(beforeSwitch.detectorModelName, customRef.name);
+    expect(beforeSwitch.detectorModelFingerprint, customRef.fingerprint);
+
+    // The committed selection change is the boundary the screen re-stamps at.
+    await detectorModel.selectBuiltIn();
+    for (
+      var i = 0;
+      i < 20 && states.last != DetectionRuntimeState.stopped;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(states.last, DetectionRuntimeState.stopped);
+
+    // The stopped shell keeps its lifecycle control, now labelled START. It is
+    // hold-to-start, so hold it for the full dispatch window: the replacement
+    // session's first result is what gets recorded under the new model.
+    final heldStart = await tester.startGesture(
+      tester.getCenter(find.text('START')),
+    );
+    await tester.pump(kLifecycleHoldDuration);
+    await tester.pump();
+    await heldStart.up();
+    await tester.pump();
+    for (var i = 0; i < 40 && viewIds.length < 2; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(viewIds, hasLength(2));
+    await messenger.handlePlatformMessage(
+      'com.ultralytics.yolo/detectionResults_${viewIds.last}',
+      const StandardMethodCodec().encodeSuccessEnvelope(_classZeroPayload()),
+      (ByteData? data) {},
+    );
+    await tester.pump();
+
+    final rows = telemetry.records;
+    expect(rows.length, greaterThanOrEqualTo(2));
+    expect(rows.last.detectorModelId, 'builtin');
+    expect(rows.last.detectorModelName, 'Built-in YOLOv8n');
+    // Rows written before the switch keep the identity they were written with.
+    expect(rows.first.detectorModelId, customRef.id);
+    expect(rows.first.detectorModelName, customRef.name);
+    expect(rows.first.detectorModelFingerprint, customRef.fingerprint);
+
+    // Dispose the platform view while the channel mocks are still installed,
+    // then let the scheduled speech timers drain.
+    await tester.pumpWidget(const SizedBox.shrink());
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    telemetry.dispose();
   });
 }
