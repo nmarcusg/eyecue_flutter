@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
@@ -9,12 +10,23 @@ import 'package:eyecue_flutter/models/detection_correction.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/models/inference_lifecycle_event.dart';
+import 'package:eyecue_flutter/models/telemetry_export.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _AsciiTelemetryExportService extends TelemetryExportService {
+  @override
+  TelemetryExport snapshot({
+    required TelemetryService telemetry,
+    AppSettings? settings,
+  }) => TelemetryExport.fromJson({
+    'session': {'id': telemetry.sessionId},
+  });
+}
 
 void main() {
   final now = DateTime.utc(2026, 10, 20, 12);
@@ -1347,5 +1359,54 @@ void main() {
       expect(release.sends, 0);
       expect(release.session.totalDetections, 1);
     });
+  });
+
+  test('production sender times out on a stalled response body', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final finishResponse = Completer<void>();
+    var submittedBody = '';
+    final requests = server.listen((request) async {
+      submittedBody = await utf8.decoder.bind(request).join();
+      request.response.contentLength = 8;
+      request.response.write('part');
+      await request.response.flush();
+      await finishResponse.future;
+      request.response.write('body');
+      await request.response.close();
+    });
+    addTearDown(() async {
+      if (!finishResponse.isCompleted) finishResponse.complete();
+      await requests.cancel();
+      await server.close(force: true);
+    });
+
+    final session = telemetry();
+    final result =
+        await TelemetryUploadService(
+              configuration: TelemetryUploadConfiguration(
+                ingestUrl:
+                    'http://${server.address.address}:${server.port}/upload',
+                publishableKey: 'publishable-key',
+              ),
+              debugMode: true,
+              responseBodyTimeout: const Duration(milliseconds: 150),
+              exportService: _AsciiTelemetryExportService(),
+              clock: () => now,
+            )
+            .upload(telemetry: session, metadata: metadata)
+            .timeout(const Duration(seconds: 2));
+
+    expect(
+      result.errorMessage,
+      'The upload timed out. Save a local export and try again later.',
+    );
+    final body = jsonDecode(submittedBody) as Map<String, dynamic>;
+    expect(body['study'], metadata.toJson());
+    expect(
+      ((body['telemetry'] as Map<String, dynamic>)['session']
+          as Map<String, dynamic>)['id'],
+      'session-upload-test',
+    );
+    expect(session.totalDetections, 0);
   });
 }

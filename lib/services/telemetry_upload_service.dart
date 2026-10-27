@@ -262,13 +262,16 @@ class TelemetryUploadService {
     TelemetryExportService? exportService,
     TelemetryUploadSender? sender,
     DateTime Function()? clock,
+    Duration responseBodyTimeout = const Duration(seconds: 10),
     this.debugMode = kDebugMode,
     this.maxBodyBytes = maxUploadBodyBytes,
   }) : _configuration =
            configuration ??
            const TelemetryUploadConfiguration.fromEnvironment(),
        _exportService = exportService ?? TelemetryExportService(),
-       _sender = sender ?? _send,
+       _sender =
+           sender ??
+           ((request) => _send(request, bodyTimeout: responseBodyTimeout)),
        _clock = clock ?? DateTime.now;
 
   /// The ingest function's own body limit. A larger body is refused locally so
@@ -573,8 +576,9 @@ class TelemetryUploadService {
   }
 
   static Future<TelemetryUploadResponse> _send(
-    TelemetryUploadRequest request,
-  ) async {
+    TelemetryUploadRequest request, {
+    required Duration bodyTimeout,
+  }) async {
     final client = HttpClient();
     try {
       final requestHandle = await client
@@ -591,7 +595,7 @@ class TelemetryUploadService {
       );
       return TelemetryUploadResponse(
         response.statusCode,
-        await readClampedBody(response),
+        await readClampedBody(response).timeout(bodyTimeout),
       );
     } finally {
       client.close(force: true);
