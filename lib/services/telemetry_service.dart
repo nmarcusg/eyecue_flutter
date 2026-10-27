@@ -571,6 +571,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
   DateTime? _sessionStart;
   int _highPriorityAlerts = 0;
   int _framesProcessed = 0;
+  int _detectionCount = 0;
 
   @override
   DateTime? get sessionStart => _sessionStart;
@@ -601,6 +602,12 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
   @override
   AlertCounters get alertCounters => _alertCounters;
 
+  /// Detections recorded in this session, never decremented.
+  ///
+  /// [totalDetections] counts the capped record buffer, so it stops growing once
+  /// eviction starts; trial deltas need the count of what actually happened.
+  int get detectionCount => _detectionCount;
+
   @override
   int get totalDetections => _records.length;
   @override
@@ -621,6 +628,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
     TrackedDetection? track,
     DetectorModelRef? detectorModel,
   }) {
+    _detectionCount++;
     _records.add(
       TelemetryRecord(
         timestamp: _clock(),
