@@ -777,6 +777,7 @@ class _UltralyticsDetectionScreenState
   Future<void> _stopDetection() async {
     _readinessTimer?.cancel();
     _pausedWhileLoading = false;
+    _activeNativeEpoch++;
     debugPrint(
       '[Ultralytics] Stop requested — coordinator=${widget.coordinator.state} '
       'local(active=$_detectionActive paused=$_paused epoch=$_nativeViewEpoch)',
