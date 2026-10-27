@@ -496,9 +496,15 @@ class ResearchSessionService extends ChangeNotifier {
   Future<void> noteDetectorChange(DetectorModelRef? detector) async {
     final draft = _draft;
     if (draft == null) return;
+    // A notification that does not change the identity is not a boundary, so it
+    // neither pauses nor appends. The selection notifies on a no-op re-select.
+    if (detector != null &&
+        draft.detectors.isNotEmpty &&
+        draft.detectors.last == detector) {
+      return;
+    }
     if (_state == ResearchSessionState.recording) await pause();
     if (detector == null) return;
-    if (draft.detectors.isNotEmpty && draft.detectors.last == detector) return;
     draft.detectors.add(detector);
     notifyListeners();
     await _persistDraft();

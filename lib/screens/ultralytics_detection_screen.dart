@@ -726,8 +726,9 @@ class _UltralyticsDetectionScreenState
 
   /// The switch boundary: a selected-model change is a deliberate stop.
   ///
-  /// Nothing is auto-started here. The next Start remounts the native view, so
-  /// the replacement session loads the selected file (see [_startDetection]).
+  /// Nothing is auto-started here. `YOLOView` also sees the changed path on its
+  /// next rebuild and attempts an immediate native `switchModel` on the retained,
+  /// stopped controller; that result is discarded, and Start remounts the view.
   Future<void> _handleDetectorModelChanged() async {
     // The study trial pauses at this boundary and records the replacement's
     // identity from `ResearchSessionService.watchDetectorModel`, not here: the

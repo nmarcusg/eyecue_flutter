@@ -5,6 +5,58 @@
 
 ---
 
+## Unreleased — Researcher-selectable detector models and research logging sessions
+
+Branch `feat/researcher-detector-models`, commit range `5ba1b38..2779f9c`:
+`a9e3a7d`, `58111ac`, `c0d7a79`, `f9f5df4`, `bd2b6fc`, `d4035ff`, `2a12f3e`,
+`05ec5d2`, `9d7958d`, `2779f9c`. The carried U5 fixes and these documentation
+corrections land on top of `2779f9c`.
+
+### Added
+- A researcher can import a custom TFLite detection graph from Settings →
+  **Detector Model**. The import is validated (parseable TFLite, embedded
+  Ultralytics label metadata, `task: detect`, label/class agreement, at most
+  40 MB, at most 1 000 labels), copied into app-owned storage under a
+  content-derived fingerprint, and restored across restarts. The bundled detector
+  stays available and is never modified.
+- The selection drives detection end to end — model path, label list, rendering,
+  speech and priority mapping come from the selected descriptor, so a custom
+  class `0` does not inherit COCO person priority.
+- A model change is a deliberate stop: detection stops, callbacks from the
+  superseded native view are rejected, detections/overlay/tracks/correction
+  context are cleared, and nothing restarts automatically. Covered for the
+  active, paused, stopped and still-loading states.
+- Explicit respondent logging trials: Start / Pause / Resume / Finish / Discard,
+  wall-clock and active durations kept distinct, interval-baseline counters (the
+  live engine is never reset to reset a metric), an immutable finished snapshot,
+  bounded local storage that refuses a new trial rather than evicting a stored
+  one, an interrupted draft restored as paused, and one upload identity per trial.
+- Every sample and detection row records the detector that produced it: JSON adds
+  a `detectorModels` dictionary (`<id>`, then `<id>~2` for a second identity with
+  the same content id) and CSV adds `model_id`, `model_name`,
+  `model_fingerprint`. No path, file name or URI is exported.
+
+### Changed
+- Logs & Reports names the model beside detection and performance rows, filters
+  charts and summaries by model with an explicit "All models (mixed)" option, and
+  the upload copy now describes the trial contract instead of the old
+  first-upload-per-run rule: upload acts on one finished trial, stored once per
+  participant/trial with retries deduplicated.
+- The live app-session upload is unavailable once a trial exists in that run;
+  local JSON/CSV export of the live session stays available.
+
+### Verified
+- Statically verified only, on the local worktree: `flutter test --no-pub
+  --concurrency=1` over `test/services/ test/screens/ test/models/ test/widgets/
+  test/navigation/ test/accessibility/ test/architecture/ test/theme_test.dart
+  test/widget_test.dart`, `dart format --output=none --set-exit-if-changed` on the
+  changed files, `flutter analyze --no-pub` and `git diff --check`. No device run,
+  no Android build, no Play Console check and no live Supabase upload. Real
+  custom-model execution, picker/provider permissions, accelerator behaviour and
+  physical accessibility remain device gates.
+
+---
+
 ## Unreleased — Truthful Ultralytics readiness
 
 ### Fixed

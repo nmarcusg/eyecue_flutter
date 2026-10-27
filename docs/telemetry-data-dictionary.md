@@ -13,6 +13,12 @@
 >
 > **Every schema-4 sample key is optional on read.** A schema-3 payload simply
 > lacks them, and an unmeasured value is absent — never `0`.
+>
+> **Detector attribution is additive inside schema 4.** `sample` and `detection`
+> rows gained an optional `detectorModelId`, and the export gained a top-level
+> `detectorModels` dictionary plus three CSV columns (`model_id`, `model_name`,
+> `model_fingerprint`). No version number changed and no existing key or column
+> changed meaning. See *Detector attribution*.
 
 EyeCue exports an image-free snapshot only after an explicit user action from
 Logs & Reports. JSON keeps the same values in nested record arrays. CSV uses one
@@ -31,6 +37,9 @@ are empty.
 | `session_start` | Session start time | UTC ISO-8601 timestamp; metadata rows only |
 | `session_duration_ms` | Session duration at export | Milliseconds; metadata rows only |
 | `engine` | Engine that produced a record | `ultralytics` (single engine) |
+| `model_id` | Detector-model dictionary key for the row's identity | `builtin`, `custom:<12 hex>`, or a `~n`-suffixed key; empty on rows that are not attributed |
+| `model_name` | Readable model name recorded with the row | Text captured when the row was written; empty when the row is not attributed |
+| `model_fingerprint` | Content fingerprint recorded with the row | `<16 hex>-<byteLength>`; empty when the row is not attributed |
 
 ## Runtime samples
 
@@ -187,6 +196,44 @@ decimal place, which is analysis noise, not a data fault.
 | `proximity` | Approximate visual proximity band | EyeCue proximity enum; not a measured distance |
 | `track_id` | Optional bounded tracker identifier | Integer or empty |
 | `motion` | Optional confirmed movement state | `unknown`, `stable`, `approaching`, or `movingAway` |
+
+## Detector attribution
+
+Every `sample` and `detection` row records which detector model produced it. A
+JSON row carries only a **dictionary key**, never the name and fingerprint per
+row:
+
+- `detectorModelId` — a key into the export's top-level `detectorModels` table.
+  `builtin` is the bundled model; `custom:<12 hex>` is a researcher-imported
+  graph, and those 12 characters are the start of its content fingerprint — the
+  fingerprint itself is FNV-1a 64-bit over the file as 16 lowercase hex
+  characters followed by `-<byteLength>`.
+- `detectorModels` is `{ key: { name, fingerprint } }`, one entry per distinct
+  `(id, name, fingerprint)` identity in first-appearance order. The display name
+  is free text per import, so re-importing one graph under a corrected name
+  keeps the id and changes the name; the later identity is keyed `<id>~2`, then
+  `<id>~3`, and so on. That keeps every row resolving to the name and
+  fingerprint it was recorded with while the table stays one entry per identity,
+  never one per row.
+- The `~n` keys are per export, not global. Records and samples are walked in
+  different orders by different views (the app's model filter reads records then
+  samples; the export table reads samples then records), so a suffix identifies
+  an identity **within one export** and must not be joined across exports.
+- CSV resolves the key inline, so the same row carries `model_id`, `model_name`
+  and `model_fingerprint`.
+- A row written without an attribution (an older export, or a writer that passed
+  no selection) omits `detectorModelId` and leaves the three CSV columns empty.
+  Empty means "not recorded", never "the built-in model".
+- Identity is assigned when the record is written, so a model change mid-session
+  never relabels earlier rows.
+- Nothing here carries a file path, file name, URI or binary: rows hold the short
+  key, and the table holds only the readable name and the content fingerprint.
+  The fingerprint distinguishes graphs; it is not a security primitive.
+- **Size.** The attributed worst-case envelope measured by
+  `test/services/telemetry_export_service_test.dart` (compact JSON, every
+  collection at its cap, every row attributed) is **1,869,537 bytes**, 6.5 %
+  below the 2,000,000-byte upload guard. Keeping the name and fingerprint in one
+  shared table is what holds the per-row cost to a short key.
 
 ## Failures, fallback, and recovery
 

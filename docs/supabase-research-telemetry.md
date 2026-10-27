@@ -179,20 +179,35 @@ as a real upload. Accept that rather than the retry burning a token.
 A use is still spent when the *write* fails: that is a server fault, not a
 replay.
 
-**What a replay means for the user.** `client_session_id` is minted **once per
-app run**, and the upload button re-arms after every attempt. "Upload → keep
-detecting 20 minutes → upload again" therefore repeats the same
-`client_session_id` with a larger snapshot, and the second snapshot is
-**discarded**: the pair already has a row, and a re-upload never overwrites it.
+**What a replay means for the user.** Upload acts on one **finished research
+trial**. The trial id minted at Start becomes the envelope's
+`telemetry.session.id`
+([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart)),
+so `client_session_id` is per **trial**, not per app run: the existing
+`(participant_code, client_session_id)` key stores **one immutable record per
+participant/trial**. "Upload → keep recording → upload the same trial again"
+repeats the same pair, and the second body is **discarded**: the pair already has
+a row, and a re-upload never overwrites it. A **new** trial mints a new id, so a
+second trial for the same participant is stored as its own record.
 A `2xx` alone does not mean *this* payload was stored, so the app answers a
 replay with its own state, `TelemetryUploadResult.alreadyUploaded()` — success-
 like, but rendered as "This session was already uploaded earlier and was not
 stored again. Save a local export if you have recorded more data since." — and
-keeps the plain success text for a first write only. A later snapshot of the
-same session reaches the collection only under a **new session id**, and a
-session that looks absent on the dashboard can equally have been **discarded as
-a duplicate** rather than never uploaded; check `received_at` and the
-`(participant_code, client_session_id)` pair before concluding it never arrived.
+keeps the plain success text for a first write only. A session that looks absent
+on the dashboard can therefore have been **discarded as a duplicate** rather than
+never uploaded; check `received_at` and the `(participant_code,
+client_session_id)` pair before concluding it never arrived.
+
+**The live app session cannot be uploaded once a trial exists.** The live buffer
+keeps its app-lifetime session id, and from the moment a trial is started in that
+run it also holds that respondent's rows under that id. `LogsReportsScreen`
+therefore refuses the live upload and explains it: *"A research trial was started
+in this run, so this live session cannot be uploaded. Upload the finished trial
+from the stored trials list instead."* Local JSON/CSV export of the live session
+stays available, and every stored finished trial keeps its own upload control.
+The study token remains **header-only** (`X-Eyecue-Upload-Token`): it never
+enters the body, the export, a stored trial file or a failure message, and it is
+entered per upload and never persisted.
 
 `validate.js` — not `index.ts` — owns the envelope rules, so
 `node --test supabase/functions/ingest-telemetry/validate.test.mjs` exercises

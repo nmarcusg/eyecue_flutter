@@ -850,6 +850,98 @@ void main() {
       expect(session.records, hasLength(2000));
     });
   });
+
+  group('15. The boundary is recorded without the Logs & Reports route', () {
+    test('a restored paused draft takes the change before any screen', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 1, 23));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final store = InMemoryResearchSessionStore();
+
+      // A first run leaves an in-flight draft behind.
+      final firstRun = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: store,
+      );
+      await firstRun.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      recordDetection(telemetry, model: builtInRef);
+      clock.advance(const Duration(seconds: 1));
+
+      // Second run: restored as paused before the first frame, and subscribed
+      // where `main.dart` creates the services. No Logs & Reports route is built.
+      final selection = _FakeSelection(builtInRef);
+      addTearDown(selection.dispose);
+      final sessions = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: store,
+      );
+      await sessions.load();
+      expect(sessions.state, ResearchSessionState.paused);
+      sessions.watchDetectorModel(selection, () => selection.ref);
+
+      selection.select(customRef);
+      await pumpEventQueue();
+
+      expect(sessions.state, ResearchSessionState.paused);
+      expect(sessions.detectorName, contains('Custom cones'));
+
+      // The resumed trial carries both identities.
+      await sessions.resume();
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: customRef);
+      clock.advance(const Duration(seconds: 1));
+      final session = (await sessions.finish())!.session;
+      expect(session.detectors.map((detector) => detector.id), [
+        'builtin',
+        'custom:abcdef123456',
+      ]);
+    });
+  });
+
+  group('16. A notification that keeps the identity is not a boundary', () {
+    test('re-selecting the active model leaves the trial recording', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 2));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final sessions = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: InMemoryResearchSessionStore(),
+      );
+      final selection = _FakeSelection(builtInRef);
+      addTearDown(selection.dispose);
+      sessions.watchDetectorModel(selection, () => selection.ref);
+
+      await sessions.start(
+        participantCode: 'P-001',
+        trialLabel: 'trial-1',
+        detector: builtInRef,
+      );
+      recordDetection(telemetry, model: builtInRef);
+      clock.advance(const Duration(seconds: 1));
+
+      // `selectBuiltIn()` on an already built-in selection notifies anyway.
+      selection.repeat();
+      await pumpEventQueue();
+
+      expect(sessions.state, ResearchSessionState.recording);
+      expect(sessions.isRecording, isTrue);
+      expect(sessions.detectorName, 'Built-in YOLOv8n');
+
+      clock.advance(const Duration(seconds: 1));
+      recordDetection(telemetry, model: builtInRef);
+      clock.advance(const Duration(seconds: 1));
+      final session = (await sessions.finish())!.session;
+      expect(session.detectors, hasLength(1));
+      expect(session.records, hasLength(2));
+    });
+  });
 }
 
 /// A stand-in for the detector selection: a [ChangeNotifier] plus the identity

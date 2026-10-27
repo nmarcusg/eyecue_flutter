@@ -116,6 +116,27 @@ Detection and depth share one camera session and two bundled models:
 
 No FPS, cadence or latency figure is claimed without a device run.
 
+### Detector selection and research logging sessions
+
+Two `ChangeNotifier` services join the existing service set; neither introduces a
+framework, a DI container or a second runtime.
+[`DetectorModelService`](../lib/services/detector_model_service.dart) owns the
+researcher's selection (built-in or one imported graph) as a `DetectorModel`
+descriptor — display name, content fingerprint, labels, class count — persists the
+identity in `AppSettings`, and is the single source the Detection screen reads for
+model path, labels and priority mapping, so a switch is one deliberate stop and
+never a silent relabel.
+[`ResearchSessionService`](../lib/services/research_session_service.dart) owns
+explicit respondent trials (`idle → recording ⇄ paused → finished`), independent of
+the detection lifecycle: pause freezes accumulation only, finish freezes an
+immutable `ResearchSession`, and it subscribes to the detector selection where the
+services are created in [`main.dart`](../lib/main.dart) so a model change pauses
+logging and records the boundary regardless of which screen is built. Both the
+live `TelemetryService` and a finished trial satisfy the implicit
+`TelemetrySource` interface, which is what lets the same
+`TelemetryExportService`/`TelemetryUploadService` operate on a frozen trial without
+widening the export contract.
+
 ### Historical: dual-engine boundary (removed 2026-10-21)
 
 EyeCue deliberately retains two independent inference pipelines:

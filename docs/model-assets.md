@@ -100,6 +100,46 @@ converts the numeric `names` keys into class-index order:
 duplicate labels and requires exactly 80 entries, so class index 41 resolves to
 `cup` in the native metadata and in EyeCue's normalized detection adapter.
 
+## Supported custom-model contract
+
+A researcher can import their own detector from the Settings → Detector Model
+card. What the app accepts (all enforced in
+[`detector_model_service.dart`](../lib/services/detector_model_service.dart)):
+
+| Requirement | Bound / rule |
+|---|---|
+| File type | A valid TFLite FlatBuffer, rejected when the structure cannot be parsed |
+| Label source | Embedded Ultralytics metadata (`metadata.json` with `names`), read through the plugin's model inspection — labels are never guessed from a filename |
+| Task | Native `inspect()` must report `detect` |
+| Class agreement | The label count must equal the graph's class output; a mismatch is refused |
+| File size | At most 40 MB (`kMaxImportBytes`) |
+| Label count | At most 1 000 non-empty labels (`kMaxImportLabels`) |
+| Display name | Researcher-entered, at most 40 characters |
+
+Storage: the committed copy is `<fingerprint>.tflite` plus a
+`<fingerprint>.labels.json` sidecar under the app's
+`eyecue_models` documents directory, named by content fingerprint so a stale
+graph cannot be served from a native filename/size cache. At most one custom
+copy is retained; a replacement import deletes the previous one, and switching to
+the built-in model deletes nothing so the last import stays re-selectable. The
+bundled assets are never modified and the researcher's original file is never
+touched (the picker's temporary copy is removed).
+
+Not supported, and not promised: segmentation, classification, pose/keypoint or
+any non-`detect` graph; ONNX, TensorFlow `SavedModel`/`.pb`, TFJS or TFLite
+bundles that lack embedded label metadata. No accuracy, mAP, precision or recall
+figure is produced for a custom graph, and none is implied by a successful
+import. A custom model is not translated: its labels are shown and spoken as
+written. Priority for a custom model is judged only by label text (a small fixed
+high set such as person/vehicle/road-hazard names, a medium set for common
+objects and structure, low for everything else), never by `classId`, so a custom
+class `0` cannot inherit COCO person priority.
+
+On startup, a selected custom model whose copy is missing or unreadable falls back
+to the bundled detector with a visible message — the app never keeps claiming a
+model it cannot load. Device execution of an imported graph remains unverified
+(see [`known-issues.md`](known-issues.md)).
+
 ## Validation guarantees
 
 - The generated artifact preserves the complete base FlatBuffer byte-for-byte.

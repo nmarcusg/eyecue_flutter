@@ -1,6 +1,6 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-10-25 (L4 depth accelerator policy, depth stage timings and the device-measurement protocol; the WS4 cleanup, the PD1–PD3 redesign and the Custom-engine sections below are historical)
+> **Last Updated:** 2026-10-27 (researcher-selectable detector models and explicit research logging sessions; the L4 depth-accelerator entry and the PD1–PD3/Custom-engine sections below are historical)
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
 
 ## Monocular depth estimation (MDE)
@@ -62,6 +62,59 @@
   of joining the doomed one (proved by `a disable during the load does not
   strand the re-enable`). Pause, stop and backgrounding still keep the model, so
   a resume pays no reload.
+
+## Researcher-selectable detector models and research logging sessions
+
+Implemented on `feat/researcher-detector-models` (base `5ba1b38`). Statically
+verified only: `flutter analyze` reports no issues and the suites named in
+[`implementation-progress.md`](implementation-progress.md) pass locally.
+
+- **What a custom model must be.** A TFLite object-detection graph with embedded
+  Ultralytics label metadata, `task: detect`, labels whose count agrees with the
+  model's class output, at most 40 MB and at most 1 000 labels. Anything else is
+  refused with an actionable message and the previous selection is kept. The
+  full contract is in [`model-assets.md`](model-assets.md#supported-custom-model-contract).
+- **A model switch is a deliberate stop.** Detection stops, the previous model's
+  detections, tracks, overlay and correction context are cleared, the app never
+  auto-restarts, and a stale payload from the superseded native view cannot
+  restore Ready or the old labels. The already-verified switch cases are active,
+  paused, stopped and still-loading
+  ([`ultralytics_detection_readiness_test.dart`](../test/screens/ultralytics_detection_readiness_test.dart)).
+- **Storage is bounded by construction**: at most one app-owned custom copy plus
+  its label sidecar, both named by content fingerprint, plus the bundled asset. A
+  replacement import deletes the previous copy; switching to the built-in model
+  deletes nothing.
+- **Research logging is independent of detection.** Recording starts only on an
+  explicit Start, Pause/Resume freeze and continue the same trial, Finish freezes
+  an immutable snapshot, and an interrupted draft restores **paused**. Paused
+  activity never enters trial totals, rates or cumulative counters (interval
+  baselines are used instead of resetting the live engine).
+- **A model change during a recording trial pauses logging and records the
+  boundary.** The reaction is registered where the services are created
+  ([`main.dart`](../lib/main.dart)), so it also fires for a restored paused draft
+  before the Logs & Reports route has ever been opened. A notification that does
+  **not** change the identity (re-selecting the active model) is not a boundary:
+  it neither pauses nor appends. Resuming later continues the same trial with the
+  replacement's identity, and setup rows are outside every interval.
+- **Export model keys are per-trial identities, and a suffix is per export.** The
+  export's `detectorModels` dictionary keys a second identity with the same
+  content id as `<id>~2`, then `<id>~3`; the app's model filter walks records then
+  samples while the export table walks samples then records, so the suffix is
+  valid **within one export** and must not be joined across exports.
+- **Remaining device gates (all still open).**
+  - Real custom-model execution: no imported graph has been run on a physical
+    device; every import, label and switching result in this round is from the
+    test suite.
+  - The Android SAF picker and its content-provider permissions have not been
+    exercised on a device; the picker is an injectable seam in tests.
+  - Accelerator behaviour for a custom graph (GPU delegate acceptance, fallback
+    to CPU) is unmeasured; only the bundled graph has any device history.
+  - Physical accessibility: the Detector Model card is covered by semantics and
+    200 % text-scale assertions in
+    [`semantics_test.dart`](../test/accessibility/semantics_test.dart), but no
+    screen-reader pass on hardware exists.
+  - Upload against the live research database was not exercised for this round
+    (no credentials, no live Supabase access by design).
 
 ## Current Blockers
 
