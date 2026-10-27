@@ -69,7 +69,7 @@
 
 The Detection redesign (PD1–PD3) is implemented and statically validated (`flutter analyze` 0 issues; `flutter test` **323 passing at the 2026-09-28 revision**), with three runtime repairs applied after physical-device validation (Custom `IntrinsicHeight` layout cascade, Custom post-frame start intent, Ultralytics native-session recreation on start-after-stop). The behavioral-deviation audit found **no unintended deviations** from baseline `f310e73`. That historical result does **not** verify the current Workstream 1 branch, which has not run Flutter tests or the analyzer. The following items are **non-blocking for the redesign** and are recorded for follow-up.
 
-- **Ultralytics Ready timing semantics:** Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`. The current definition is model/native initialization readiness, not strict pipeline-operational proof.
+- **Ultralytics startup bound:** Ready now requires the mounted native view's first valid inference payload (including an empty detection list); model-path resolution alone remains Preparing. A live session with no payload fails to Unavailable/Retry after 30 seconds. The app-only regression suite exercises resolution-only, empty/non-empty payloads, startup timeout, and live resolution failure; native initialization and physical-device behavior remain unverified.
 - **Post-resume freshness diagnostic limitation:** the epoch diagnostic cannot isolate the first result after Resume.
 - **FlutterJNI teardown fatal:** not reproduced in the latest capture and **not fixed** — dedicated full-app teardown verification is pending.
 - **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
