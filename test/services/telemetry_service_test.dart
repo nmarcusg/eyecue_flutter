@@ -4,6 +4,7 @@ import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/models/telemetry_export.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
@@ -603,5 +604,39 @@ void main() {
     final summary = telemetry.summaryFor(InferenceEngine.ultralytics);
     expect(summary.averageLatencyMs, 90);
     expect(summary.averageInferenceFps, 10.5);
+  });
+
+  test('both writers stamp the detector model they were given', () {
+    const ref = DetectorModelRef(
+      id: 'custom:0a1b2c3d4e5f',
+      name: 'Obstacle Detector v2',
+      fingerprint: '0a1b2c3d4e5f6071-4200',
+      classCount: 12,
+    );
+    telemetry.recordDetection(
+      detInfo('cone', 3),
+      40,
+      engine: InferenceEngine.ultralytics,
+      detectorModel: ref,
+    );
+    telemetry.recordSample(
+      latencyMs: 40,
+      inferenceFps: 10,
+      objectCount: 1,
+      engine: InferenceEngine.ultralytics,
+      detectorModel: ref,
+    );
+
+    final record = telemetry.records.single;
+    final sample = telemetry.samples.single;
+    expect(record.detectorModelId, ref.id);
+    expect(record.detectorModelName, 'Obstacle Detector v2');
+    expect(record.detectorModelFingerprint, '0a1b2c3d4e5f6071-4200');
+    expect(sample.detectorModelId, ref.id);
+    expect(sample.detectorModelName, 'Obstacle Detector v2');
+    expect(sample.detectorModelFingerprint, '0a1b2c3d4e5f6071-4200');
+    // Serialised under the same names the export and the data dictionary use.
+    expect(record.toJson()['detectorModelId'], ref.id);
+    expect(sample.toJson()['detectorModelFingerprint'], ref.fingerprint);
   });
 }

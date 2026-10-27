@@ -16,6 +16,11 @@ abstract final class EyeCueModelConfig {
   /// manual telemetry upload.
   static const depthModelAssetPath = 'assets/yolo26n-depth_w8a32.tflite';
 
+  /// Readable identity of the depth model. It is a fixed bundled asset with no
+  /// selectable counterpart, so it is labelled next to depth measurements and
+  /// never attributed to the selected detector.
+  static const depthModelId = 'yolo26n-depth';
+
   /// Minimum gap between depth inferences; detection keeps its own cadence.
   ///
   /// The gap is enforced natively by the view's depth tick, not by a Dart timer.

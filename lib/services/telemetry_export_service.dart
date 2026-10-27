@@ -41,6 +41,26 @@ class TelemetryExportService {
     'depthDroppedTicks',
   };
 
+  /// Keys that belong to the export's `detectorModels` table, not to a row.
+  ///
+  /// A row keeps the short id, so 2 400 rows do not repeat the same name and
+  /// fingerprint that the table already carries once.
+  static const Set<String> _rowModelKeys = {
+    'detectorModelName',
+    'detectorModelFingerprint',
+  };
+
+  /// A row carries only the short id, so the readable name and the graph
+  /// fingerprint are joined back from the export's table when a CSV needs them.
+  static Object? _modelField(
+    Map<String, Map<String, dynamic>> models,
+    Object? id,
+    String key,
+  ) {
+    if (id is! String) return null;
+    return models[id]?[key];
+  }
+
   /// Serialisation-only precision contract.
   ///
   /// On device a box coordinate is a Float32 plugin value divided in double
@@ -78,7 +98,8 @@ class TelemetryExportService {
   };
 
   static Map<String, dynamic> _detectionJson(TelemetryRecord record) {
-    final json = record.toJson();
+    final json = record.toJson()
+      ..removeWhere((key, _) => _rowModelKeys.contains(key));
     json['confidence'] = _round(record.confidence, _scoreDecimals);
     json['latencyMs'] = _round(record.latencyMs, _msDecimals);
     json['confidenceThreshold'] = _round(
@@ -113,7 +134,8 @@ class TelemetryExportService {
   ) sync* {
     var index = 0;
     for (final sample in samples) {
-      final json = sample.toJson();
+      final json = sample.toJson()
+        ..removeWhere((key, _) => _rowModelKeys.contains(key));
       for (final entry in _samplePrecision.entries) {
         final value = json[entry.key];
         if (value is num) {
@@ -127,10 +149,44 @@ class TelemetryExportService {
     }
   }
 
+  /// `{id: {name, fingerprint}}` for the models the rows were recorded with.
+  ///
+  /// Read from the stored rows, never from the current settings, so a later
+  /// rename or switch cannot relabel history. Rows themselves carry only the id
+  /// (see [_rowModelKeys]), so this table is where the readable name lives.
+  static Map<String, Map<String, dynamic>> _detectorModels(
+    Iterable<TelemetryRecord> records,
+    Iterable<RuntimeSample> samples,
+  ) {
+    final models = <String, Map<String, dynamic>>{};
+    void add(String? id, String? name, String? fingerprint) {
+      if (id == null) return;
+      models.putIfAbsent(id, () => {'name': name, 'fingerprint': fingerprint});
+    }
+
+    for (final record in records) {
+      add(
+        record.detectorModelId,
+        record.detectorModelName,
+        record.detectorModelFingerprint,
+      );
+    }
+    for (final sample in samples) {
+      add(
+        sample.detectorModelId,
+        sample.detectorModelName,
+        sample.detectorModelFingerprint,
+      );
+    }
+    return models;
+  }
+
   TelemetryExport snapshot({
     required TelemetryService telemetry,
     AppSettings? settings,
   }) {
+    final samples = _sampleJson(telemetry.samples).toList();
+    final detections = telemetry.records.map(_detectionJson).toList();
     return TelemetryExport(
       exportedAt: _clock(),
       appVersion: telemetry.appVersion,
@@ -138,8 +194,9 @@ class TelemetryExportService {
       sessionStart: telemetry.sessionStart,
       sessionDurationMs: telemetry.sessionDuration.inMilliseconds,
       settings: settings?.toJson() ?? const {},
-      samples: _sampleJson(telemetry.samples),
-      detections: telemetry.records.map(_detectionJson),
+      detectorModels: _detectorModels(telemetry.records, telemetry.samples),
+      samples: samples,
+      detections: detections,
       failures: telemetry.failures.map(_failureJson),
       fallbacks: telemetry.fallbacks.map((record) => record.toJson()),
       recoveries: telemetry.recoveries.map((record) => record.toJson()),
@@ -173,6 +230,9 @@ class TelemetryExportService {
       'session_start',
       'session_duration_ms',
       'engine',
+      'model_id',
+      'model_name',
+      'model_fingerprint',
       'preferred_engine',
       'active_engine',
       'type',
@@ -265,6 +325,17 @@ class TelemetryExportService {
           'schema_version': TelemetryExport.schemaVersion,
           'timestamp': sample['timestamp'],
           'engine': sample['engine'],
+          'model_id': sample['detectorModelId'],
+          'model_name': _modelField(
+            export.detectorModels,
+            sample['detectorModelId'],
+            'name',
+          ),
+          'model_fingerprint': _modelField(
+            export.detectorModels,
+            sample['detectorModelId'],
+            'fingerprint',
+          ),
           'latency_ms': sample['latencyMs'],
           'inference_fps': sample['inferenceFps'],
           'object_count': sample['objectCount'],
@@ -300,6 +371,17 @@ class TelemetryExportService {
           'schema_version': TelemetryExport.schemaVersion,
           'timestamp': detection['timestamp'],
           'engine': detection['engine'],
+          'model_id': detection['detectorModelId'],
+          'model_name': _modelField(
+            export.detectorModels,
+            detection['detectorModelId'],
+            'name',
+          ),
+          'model_fingerprint': _modelField(
+            export.detectorModels,
+            detection['detectorModelId'],
+            'fingerprint',
+          ),
           'class_id': detection['classId'],
           'label': detection['label'],
           'confidence': detection['confidence'],

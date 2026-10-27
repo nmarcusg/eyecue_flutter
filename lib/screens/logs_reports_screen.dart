@@ -5,6 +5,7 @@ import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
+import '../models/model_config.dart';
 import '../services/correction_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_export_service.dart';
@@ -55,6 +56,10 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   bool _exporting = false;
   bool _uploading = false;
 
+  /// Selected detector model id for the charts and the log list; `null` is the
+  /// explicit "All models (mixed)" option.
+  String? _modelFilter;
+
   @override
   Widget build(BuildContext context) {
     // Route-local light theme: reuse the established Home-local light builder
@@ -97,8 +102,14 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
                       uploadConfigured: _uploadService.isConfigured,
                       onUpload: _upload,
                     ),
-                    const _ChartsTab(),
-                    const _LogsTab(),
+                    _ChartsTab(
+                      modelFilter: _modelFilter,
+                      onModelFilterChanged: _selectModelFilter,
+                    ),
+                    _LogsTab(
+                      modelFilter: _modelFilter,
+                      onModelFilterChanged: _selectModelFilter,
+                    ),
                   ],
                 );
               },
@@ -108,6 +119,9 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
       ),
     );
   }
+
+  void _selectModelFilter(String? modelId) =>
+      setState(() => _modelFilter = modelId);
 
   Future<void> _upload() async {
     if (_uploading || !_uploadService.isConfigured) return;
@@ -339,6 +353,12 @@ class _OverviewTab extends StatelessWidget {
                 ),
               ],
             ),
+            // These two averages cover every recorded sample, so they must say
+            // so when more than one detector contributed to them.
+            if (_modelOptions(telemetry).length > 1) ...[
+              const SizedBox(height: kSpace8),
+              const _MixedModelNote(),
+            ],
             const SizedBox(height: kSpace24),
             const _SectionHeading('Inference Cadence'),
             const SizedBox(height: kSpace8),
@@ -473,6 +493,12 @@ class _InferenceCadenceSection extends StatelessWidget {
           value: observedHz == null
               ? 'unknown'
               : '${observedHz.toStringAsFixed(1)} Hz',
+        ),
+        // Depth is its own model: naming it here keeps depth timings from
+        // reading as the selected detector's performance.
+        const _SummaryRow(
+          label: 'Depth model',
+          value: EyeCueModelConfig.depthModelId,
         ),
         _SummaryRow(
           label: 'Depth latency',
@@ -830,23 +856,39 @@ class _CorrectionSummaryRow extends StatelessWidget {
 }
 
 class _ChartsTab extends StatelessWidget {
-  const _ChartsTab();
+  final String? modelFilter;
+  final ValueChanged<String?> onModelFilterChanged;
+
+  const _ChartsTab({
+    required this.modelFilter,
+    required this.onModelFilterChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Builder(
       builder: (context) {
         final telemetry = _of(context);
+        final models = _modelOptions(telemetry);
+        final samples = _samplesFor(telemetry, modelFilter);
+        // The card title names what the numbers actually cover.
+        final claim = _modelClaim(models, modelFilter);
         return _BoundedScrollView(
           children: [
-            _ChartCard(
-              title: 'Inference Latency (300 ms benchmark)',
-              child: LatencyChart(samples: telemetry.samples),
+            _ModelFilter(
+              models: models,
+              value: modelFilter,
+              onChanged: onModelFilterChanged,
             ),
             const SizedBox(height: kSpace24),
             _ChartCard(
-              title: 'Frames Per Second (15 FPS target)',
-              child: FpsChart(samples: telemetry.samples),
+              title: 'Inference Latency$claim (300 ms benchmark)',
+              child: LatencyChart(samples: samples),
+            ),
+            const SizedBox(height: kSpace24),
+            _ChartCard(
+              title: 'Frames Per Second$claim (15 FPS target)',
+              child: FpsChart(samples: samples),
             ),
             const SizedBox(height: kSpace24),
             _ChartCard(
@@ -864,7 +906,13 @@ class _ChartsTab extends StatelessWidget {
 }
 
 class _LogsTab extends StatelessWidget {
-  const _LogsTab();
+  final String? modelFilter;
+  final ValueChanged<String?> onModelFilterChanged;
+
+  const _LogsTab({
+    required this.modelFilter,
+    required this.onModelFilterChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -872,19 +920,33 @@ class _LogsTab extends StatelessWidget {
       builder: (context) {
         final telemetry = _of(context);
         final theme = Theme.of(context);
-        final records = telemetry.records;
+        final models = _modelOptions(telemetry);
+        final records = [
+          for (final record in telemetry.records)
+            if (modelFilter == null || record.detectorModelId == modelFilter)
+              record,
+        ];
         if (records.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(kSpace24),
-              child: Text(
-                'No detections recorded yet.',
+          // The filter stays reachable: a filtered-empty list must not trap the
+          // researcher on a model with no rows.
+          return _BoundedScrollView(
+            children: [
+              _ModelFilter(
+                models: models,
+                value: modelFilter,
+                onChanged: onModelFilterChanged,
+              ),
+              const SizedBox(height: kSpace24),
+              Text(
+                modelFilter == null
+                    ? 'No detections recorded yet.'
+                    : 'No detections recorded for this model.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: kHomeInkMuted,
                 ),
               ),
-            ),
+            ],
           );
         }
         return LayoutBuilder(
@@ -896,11 +958,21 @@ class _LogsTab extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: boundedWidth),
                 child: ListView.builder(
+                  // One extra row carries the model filter above the list.
+                  itemCount: records.length + 1,
                   padding: const EdgeInsets.symmetric(vertical: kSpace8),
-                  itemCount: records.length,
                   itemBuilder: (context, index) {
-                    final r =
-                        records[records.length - 1 - index]; // newest first
+                    if (index == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: kSpace8),
+                        child: _ModelFilter(
+                          models: models,
+                          value: modelFilter,
+                          onChanged: onModelFilterChanged,
+                        ),
+                      );
+                    }
+                    final r = records[records.length - index]; // newest first
                     final time =
                         '${r.timestamp.hour.toString().padLeft(2, '0')}:'
                         '${r.timestamp.minute.toString().padLeft(2, '0')}:'
@@ -912,8 +984,14 @@ class _LogsTab extends StatelessWidget {
                         '${r.label} — ${(r.confidence * 100).toStringAsFixed(0)}%',
                       ),
                       subtitle: Text(
-                        '${r.engine.label} · ${r.position} · '
-                        '${r.latencyMs.toStringAsFixed(0)} ms',
+                        [
+                          // The readable model name comes first: it is what the
+                          // numbers below belong to.
+                          if (r.detectorModelName != null) r.detectorModelName!,
+                          r.engine.label,
+                          r.position,
+                          '${r.latencyMs.toStringAsFixed(0)} ms',
+                        ].join(' · '),
                       ),
                       trailing: Text(
                         time,
@@ -1239,3 +1317,125 @@ TelemetryService _of(BuildContext context) =>
     (context.findAncestorWidgetOfExactType<LogsReportsScreen>()!).telemetry;
 
 String _fmt(double v) => v.toStringAsFixed(1);
+
+/// The explicit "no filter" choice, so an unfiltered summary never reads as one
+/// model's performance.
+const String _allModelsLabel = 'All models (mixed)';
+
+/// The label a summary carries when its numbers span more than one detector.
+const String _mixedModelLabel = 'Mixed-model data';
+
+/// One detector model present in the recorded rows.
+class _ModelOption {
+  final String id;
+  final String name;
+
+  const _ModelOption(this.id, this.name);
+}
+
+/// Distinct `(id, name)` pairs present in the data, ordered by readable name.
+List<_ModelOption> _modelOptions(TelemetryService telemetry) {
+  final byId = <String, String>{};
+  void add(String? id, String? name) {
+    if (id == null) return;
+    byId.putIfAbsent(id, () => name ?? id);
+  }
+
+  for (final record in telemetry.records) {
+    add(record.detectorModelId, record.detectorModelName);
+  }
+  for (final sample in telemetry.samples) {
+    add(sample.detectorModelId, sample.detectorModelName);
+  }
+  final options = [
+    for (final entry in byId.entries) _ModelOption(entry.key, entry.value),
+  ];
+  options.sort((a, b) => a.name.compareTo(b.name));
+  return options;
+}
+
+/// The samples a chart may draw: all of them, or one model's.
+List<RuntimeSample> _samplesFor(TelemetryService telemetry, String? id) =>
+    id == null
+    ? telemetry.samples
+    : [
+        for (final sample in telemetry.samples)
+          if (sample.detectorModelId == id) sample,
+      ];
+
+/// What a chart or average built from [filter] may claim.
+String _modelClaim(List<_ModelOption> options, String? filter) {
+  if (filter != null) {
+    for (final option in options) {
+      if (option.id == filter) return ' — ${option.name}';
+    }
+    return '';
+  }
+  if (options.length > 1) return ' — $_mixedModelLabel';
+  return options.isEmpty ? '' : ' — ${options.single.name}';
+}
+
+/// Model filter shown above the charts and the log list.
+class _ModelFilter extends StatelessWidget {
+  final List<_ModelOption> models;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  const _ModelFilter({
+    required this.models,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // A selection whose rows are gone must not crash the dropdown.
+    final selected = models.any((model) => model.id == value) ? value : null;
+    return _LightCard(
+      child: Row(
+        children: [
+          Text('Detector model', style: theme.textTheme.bodyLarge),
+          const SizedBox(width: kSpace12),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                isExpanded: true,
+                value: selected,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text(
+                      _allModelsLabel,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  for (final model in models)
+                    DropdownMenuItem<String?>(
+                      value: model.id,
+                      child: Text(model.name, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Visible label for numbers that combine more than one detector model.
+class _MixedModelNote extends StatelessWidget {
+  const _MixedModelNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      '$_mixedModelLabel — these numbers combine more than one detector model.',
+      style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
+    );
+  }
+}

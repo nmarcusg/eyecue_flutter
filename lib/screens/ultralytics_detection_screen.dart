@@ -281,6 +281,9 @@ class _UltralyticsDetectionScreenState
         // COCO class id.
         priorityResolver: (d) =>
             priorityForClass(_modelKind, d.classId, d.label),
+        // Rows carry the model active when they were recorded, so switching or
+        // renaming later cannot relabel history.
+        detectorModel: widget.detectorModel?.current.ref,
       );
 
   late final GestureController _gestureController = GestureController(
@@ -728,6 +731,9 @@ class _UltralyticsDetectionScreenState
     // tracks, announced context and correction records all belong to it.
     widget.corrections?.clear();
     _assistive.reset();
+    // New rows carry the replacement; already recorded rows keep the identity
+    // they were written with.
+    _assistive.detectorModel = widget.detectorModel?.current.ref;
     _firstResultLogged = false;
     if (!mounted) return;
     setState(() {
