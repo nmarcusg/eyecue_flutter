@@ -1251,6 +1251,21 @@ void main() {
       classCount: 12,
     );
 
+    /// The model claim an Overview summary card carries, addressed by its key so
+    /// another card carrying the same text cannot satisfy an assertion.
+    String? overviewClaim(WidgetTester tester, String key) {
+      final finder = find.byKey(ValueKey(key));
+      expect(finder, findsOneWidget);
+      return tester.widget<Text>(finder).data;
+    }
+
+    /// The paragraph that actually paints [finder], so a test can assert on what
+    /// is rendered instead of on the string a widget happens to carry.
+    RenderParagraph paintedParagraph(WidgetTester tester, Finder finder) {
+      expect(finder, findsOneWidget);
+      return tester.renderObject<RenderParagraph>(finder);
+    }
+
     /// One sample per detector, in order.
     TelemetryService buildTelemetryFor(List<DetectorModelRef> refs) {
       final service = TelemetryService(
@@ -1330,9 +1345,14 @@ void main() {
 
       // The averages above combine both detectors, and say so.
       expect(find.textContaining('Mixed-model data —'), findsOneWidget);
-      // The Engine Comparison card blends the same two models, and says so on
-      // its own line — not appended to the ellipsized value.
-      expect(find.text('Mixed-model data'), findsOneWidget);
+      // The Engine Comparison card and the Session Summary blend the same two
+      // models, and each says so on its own line — not appended to an
+      // ellipsized value.
+      expect(overviewClaim(tester, 'engine-model-claim'), 'Mixed-model data');
+      expect(
+        overviewClaim(tester, 'session-summary-model-claim'),
+        'Mixed-model data',
+      );
       expect(find.textContaining('frames —'), findsNothing);
 
       await selectTab(tester, 'Charts');
@@ -1370,23 +1390,54 @@ void main() {
       );
     });
 
-    /// The paragraph that actually paints [text], so a test can assert on what
-    /// is rendered instead of on the string a widget happens to carry.
-    RenderParagraph paintedParagraph(WidgetTester tester, String text) {
-      final finder = find.text(text);
-      expect(finder, findsOneWidget);
-      return tester.renderObject<RenderParagraph>(finder);
-    }
-
     testWidgets('a single model is named on the engine comparison card', (
       tester,
     ) async {
       final telemetry = buildTelemetryFor(const [customRef]);
       await pumpLogsScreen(tester, telemetry: telemetry);
 
-      expect(find.text('Obstacle Detector v2'), findsOneWidget);
+      expect(
+        overviewClaim(tester, 'engine-model-claim'),
+        'Obstacle Detector v2',
+      );
       expect(find.textContaining('Mixed-model data'), findsNothing);
       expect(find.textContaining('frames —'), findsNothing);
+    });
+
+    testWidgets('the Session Summary claims the one model it averages', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetryFor(const [customRef]);
+      await pumpLogsScreen(tester, telemetry: telemetry);
+
+      // The card's numbers come from one graph, so it names that graph rather
+      // than leaving a bare average that reads as unqualified.
+      expect(
+        overviewClaim(tester, 'session-summary-model-claim'),
+        'Obstacle Detector v2',
+      );
+      expect(find.textContaining('Mixed-model data'), findsNothing);
+    });
+
+    testWidgets('the Session Summary claims mixed-model data, painted whole', (
+      tester,
+    ) async {
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTwoModelTelemetry(),
+        size: const Size(390 * 3, 844 * 3),
+      );
+      final claimFinder = find.byKey(
+        const ValueKey('session-summary-model-claim'),
+      );
+      // The Session Summary sits below the fold on a 390x844 surface, and the
+      // Overview list builds lazily.
+      await scrollOverviewTo(tester, claimFinder);
+
+      expect(tester.widget<Text>(claimFinder).data, 'Mixed-model data');
+      final claim = paintedParagraph(tester, claimFinder);
+      expect(claim.didExceedMaxLines, isFalse);
+      expect(claim.size.width, greaterThan(0));
     });
 
     testWidgets('the mixed-model claim is painted whole at 390 px', (
@@ -1397,9 +1448,10 @@ void main() {
         telemetry: buildTwoModelTelemetry(),
         size: const Size(390 * 3, 844 * 3),
       );
-      await scrollOverviewTo(tester, find.text('Mixed-model data'));
+      final claimFinder = find.byKey(const ValueKey('engine-model-claim'));
+      await scrollOverviewTo(tester, claimFinder);
 
-      final claim = paintedParagraph(tester, 'Mixed-model data');
+      final claim = paintedParagraph(tester, claimFinder);
       expect(claim.didExceedMaxLines, isFalse);
       expect(claim.size.width, greaterThan(0));
     });
@@ -1419,10 +1471,13 @@ void main() {
         telemetry: buildTelemetryFor(const [longName]),
         size: const Size(390 * 3, 844 * 3),
       );
-      await scrollOverviewTo(tester, find.text(longName.name));
+      final claimFinder = find.byKey(const ValueKey('engine-model-claim'));
+      await scrollOverviewTo(tester, claimFinder);
 
-      final claim = paintedParagraph(tester, longName.name);
+      final claim = paintedParagraph(tester, claimFinder);
       expect(claim.didExceedMaxLines, isFalse);
+      // The Session Summary names the same single model, so it cannot add a
+      // mixed-model label either.
       expect(find.textContaining('Mixed-model data'), findsNothing);
     });
 

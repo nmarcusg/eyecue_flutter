@@ -512,7 +512,10 @@ void main() {
       );
       expect(refusal, isNotNull);
       expect(refusal, contains('Stored trials are full'));
-      expect(refusal, contains('Upload or discard'));
+      // Only discarding frees a slot: uploading keeps the trial stored.
+      expect(refusal, contains('Discard a stored trial'));
+      expect(refusal, contains('does not free a slot'));
+      expect(refusal, isNot(contains('Upload or discard')));
       expect(sessions.state, ResearchSessionState.finished);
       expect(sessions.sessions, hasLength(20));
 

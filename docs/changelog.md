@@ -15,10 +15,10 @@ corrections land on top of `2779f9c`.
 ### Added
 - A researcher can import a custom TFLite detection graph from Settings →
   **Detector Model**. The import is validated (parseable TFLite, embedded
-  Ultralytics label metadata, `task: detect`, label/class agreement, at most
-  40 MB, at most 1 000 labels), copied into app-owned storage under a
-  content-derived fingerprint, and restored across restarts. The bundled detector
-  stays available and is never modified.
+  Ultralytics label metadata, a `detect` task when the metadata reports one,
+  label/class agreement, at most 40 MB, at most 1 000 labels), copied into
+  app-owned storage under a content-derived fingerprint, and restored across
+  restarts. The bundled detector stays available and is never modified.
 - The selection drives detection end to end — model path, label list, rendering,
   speech and priority mapping come from the selected descriptor, so a custom
   class `0` does not inherit COCO person priority.
@@ -37,21 +37,28 @@ corrections land on top of `2779f9c`.
   `model_fingerprint`. No path, file name or URI is exported.
 
 ### Changed
-- Logs & Reports names the model beside detection and performance rows, filters
-  charts and summaries by model with an explicit "All models (mixed)" option, and
-  the upload copy now describes the trial contract instead of the old
-  first-upload-per-run rule: upload acts on one finished trial, stored once per
-  participant/trial with retries deduplicated.
+- Logs & Reports names the model beside detection and performance rows. The
+  Charts tab and the log list filter by model with an explicit "All models
+  (mixed)" option; the Overview summaries are never filtered, so the Session
+  Summary and Engine Comparison cards state what they cover instead — the single
+  model's name, or "Mixed-model data" when more than one contributed. The upload
+  copy now describes the trial contract instead of the old first-upload-per-run
+  rule: upload acts on one finished trial, stored once per participant/trial with
+  retries deduplicated.
 - The live app-session upload is unavailable once a trial exists in that run;
   local JSON/CSV export of the live session stays available.
 
 ### Verified
-- Statically verified only, on the local worktree: `flutter test --no-pub
+- Verified on the local worktree, never on a device: `flutter test --no-pub
   --concurrency=1` over `test/services/ test/screens/ test/models/ test/widgets/
   test/navigation/ test/accessibility/ test/architecture/ test/theme_test.dart
   test/widget_test.dart`, `dart format --output=none --set-exit-if-changed` on the
-  changed files, `flutter analyze --no-pub` and `git diff --check`. No device run,
-  no Android build, no Play Console check and no live Supabase upload. Real
+  changed files, `flutter analyze --no-pub` and `git diff --check`.
+- One Kotlin file did change this round —
+  [`MainActivity.kt`](../android/app/src/main/kotlin/app/eyecue/mobile/MainActivity.kt),
+  the app-local file picker — and `./gradlew :app:compileDebugKotlin --offline`
+  finished `BUILD SUCCESSFUL`. That is a compile of that source only: no device
+  run, no signed APK/AAB, no Play Console check and no live Supabase upload. Real
   custom-model execution, picker/provider permissions, accelerator behaviour and
   physical accessibility remain device gates.
 
