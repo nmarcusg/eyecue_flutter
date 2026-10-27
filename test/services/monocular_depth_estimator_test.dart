@@ -628,6 +628,7 @@ void main() {
 
       await estimator.prepare();
       expect(estimator.state.value, DepthRunState.degraded);
+      expect(estimator.modelLoadFailed, isTrue);
       expect(estimator.instanceId, isNull, reason: 'no instance to tick');
       expect(loads, 1);
 
@@ -635,6 +636,7 @@ void main() {
       failNext = false;
       estimator.retry();
       expect(estimator.state.value, DepthRunState.idle);
+      expect(estimator.modelLoadFailed, isFalse);
       await estimator.prepare();
 
       expect(loads, 2);
@@ -678,6 +680,84 @@ void main() {
       expect(estimator.frame.value!.timestampMs, 5000);
 
       estimator.dispose();
+    });
+
+    test('a stale failure cannot degrade a newer successful load', () async {
+      final firstLoad = Completer<DepthModelHandle>();
+      final secondLoad = Completer<DepthModelHandle>();
+      var loads = 0;
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) {
+          loads++;
+          return loads == 1 ? firstLoad.future : secondLoad.future;
+        },
+        heatmapBuilder: (_) async => null,
+      );
+
+      final staleArming = estimator.prepare();
+      await pumpEventQueue();
+      expect(loads, 1);
+      await estimator.releaseModel();
+      final currentArming = estimator.prepare();
+      await pumpEventQueue();
+      expect(loads, 2);
+
+      final currentModel = _FakeDepthModel('current-depth');
+      secondLoad.complete(currentModel);
+      await currentArming;
+      expect(estimator.state.value, DepthRunState.ready);
+      expect(estimator.instanceId, 'current-depth');
+
+      firstLoad.completeError(StateError('obsolete load failed'));
+      await staleArming;
+
+      expect(estimator.state.value, DepthRunState.ready);
+      expect(estimator.modelLoadFailed, isFalse);
+      expect(estimator.instanceId, 'current-depth');
+      _feed(estimator, _event());
+      await pumpEventQueue();
+      expect(estimator.frame.value, isNotNull);
+      expect(estimator.state.value, DepthRunState.ready);
+
+      estimator.dispose();
+    });
+
+    test('a stale failure after release stays idle', () async {
+      final load = Completer<DepthModelHandle>();
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) =>
+            load.future,
+      );
+
+      final arming = estimator.prepare();
+      await pumpEventQueue();
+      await estimator.releaseModel();
+      load.completeError(StateError('released load failed'));
+      await arming;
+
+      expect(estimator.state.value, DepthRunState.idle);
+      expect(estimator.modelLoadFailed, isFalse);
+      estimator.dispose();
+    });
+
+    test('a failure after dispose is inert', () async {
+      final load = Completer<DepthModelHandle>();
+      final estimator = MonocularDepthEstimator(
+        modelFactory: ({required String modelId, required bool useGpu}) =>
+            load.future,
+      );
+      var notifications = 0;
+      estimator.state.addListener(() => notifications++);
+
+      final arming = estimator.prepare();
+      await pumpEventQueue();
+      final notificationsBeforeDispose = notifications;
+      estimator.dispose();
+      load.completeError(StateError('disposed load failed'));
+
+      await expectLater(arming, completes);
+      expect(notifications, notificationsBeforeDispose);
+      expect(estimator.modelLoadFailed, isFalse);
     });
 
     test(

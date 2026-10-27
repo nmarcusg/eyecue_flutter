@@ -266,13 +266,14 @@ class MonocularDepthEstimator {
 
   Future<void> _load() async {
     if (_disposed || _modelLoadFailed) return;
+    final epoch = _releaseEpoch;
     try {
-      await _ensureModel(_releaseEpoch);
+      await _ensureModel(epoch);
     } catch (error) {
       debugPrint('[Depth] inference failed: $error');
-      // The estimator can be torn down while the factory is still running; a
-      // degraded write into a disposed notifier would escape as an error.
-      if (!_disposed) _degrade();
+      // The estimator can be torn down or released while the factory runs;
+      // only the current owner may publish a degraded state.
+      if (!_disposed && epoch == _releaseEpoch) _degrade();
     }
   }
 
@@ -438,7 +439,7 @@ class MonocularDepthEstimator {
       handle = await modelFactory(modelId: modelId, useGpu: _useGpu);
     } catch (error) {
       // A missing/incompatible bundled asset will not fix itself on retry.
-      _modelLoadFailed = true;
+      if (!_disposed && epoch == _releaseEpoch) _modelLoadFailed = true;
       rethrow;
     }
     if (_disposed || epoch != _releaseEpoch) {
