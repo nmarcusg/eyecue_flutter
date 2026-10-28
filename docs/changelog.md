@@ -27,10 +27,15 @@ corrections land on top of `2779f9c`.
   context are cleared, and nothing restarts automatically. Covered for the
   active, paused, stopped and still-loading states.
 - Explicit respondent logging trials: Start / Pause / Resume / Finish / Discard,
-  wall-clock and active durations kept distinct, interval-baseline counters (the
-  live engine is never reset to reset a metric), an immutable finished snapshot,
-  bounded local storage that refuses a new trial rather than evicting a stored
-  one, an interrupted draft restored as paused, and one upload identity per trial.
+  with seven independently retained study-row collections (operational telemetry
+  continues during study Pause), interval-baseline counters, and bounded draft
+  checkpoints (100 rows or 5 seconds) containing actual rows/model context. Ordered,
+  atomic saves restore interrupted recording paused at the last durable checkpoint;
+  only later captures are at risk. Pause/Finish failures remain visible and preserve
+  data for retry/export; legacy metadata-only drafts are marked incomplete. Capacity
+  is 10,000 detections / 2,000 samples per trial and 20 stored trials (refuse with
+  explicit discard). Local export is complete; the 2,000,000-byte upload cap refuses
+  oversized payloads without changing local data.
 - Every sample and detection row records the detector that produced it: JSON adds
   a `detectorModels` dictionary (`<id>`, then `<id>~2` for a second identity with
   the same content id) and CSV adds `model_id`, `model_name`,
@@ -38,13 +43,11 @@ corrections land on top of `2779f9c`.
 
 ### Changed
 - Logs & Reports names the model beside detection and performance rows. The
-  Charts tab and the log list filter by model with an explicit "All models
-  (mixed)" option; the Overview summaries are never filtered, so the Session
-  Summary and Engine Comparison cards state what they cover instead — the single
-  model's name, or "Mixed-model data" when more than one contributed. The upload
-  copy now describes the trial contract instead of the old first-upload-per-run
-  rule: upload acts on one finished trial, stored once per participant/trial with
-  retries deduplicated.
+  Charts tab and log list filter by model; Overview Avg FPS/Avg Latency stay
+  unfiltered and label single-model, mixed-model, unknown legacy, or no-data scope.
+  Alert Latency explicitly reports per-engine speech latency across all detector
+  models. Upload acts on one finished trial, stored once per participant/trial with
+  retries deduplicated; the upload-size cap does not constrain complete local export.
 - The live app-session upload is unavailable once a trial exists in that run;
   local JSON/CSV export of the live session stays available.
 
