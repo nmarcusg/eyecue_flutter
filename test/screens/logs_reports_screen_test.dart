@@ -320,7 +320,9 @@ void main() {
       expect(find.text('Real-Time Performance'), findsOneWidget);
       expect(find.text('Engine Comparison'), findsOneWidget);
       expect(find.text('Session Summary'), findsOneWidget);
-      expect(find.text('Offline telemetry export'), findsWidgets);
+      final exportHeading = find.text('Offline telemetry export');
+      await scrollOverviewTo(tester, exportHeading);
+      expect(exportHeading, findsWidgets);
     });
 
     testWidgets('Charts tab renders the three chart regions when selected', (
@@ -680,8 +682,12 @@ void main() {
   group('export actions', () {
     testWidgets('both export actions are present and enabled', (tester) async {
       await pumpLogsScreen(tester, telemetry: buildTelemetry());
+      final jsonExport = find.text('Save JSON export');
+      await scrollOverviewTo(tester, jsonExport);
+      await tester.ensureVisible(jsonExport);
+      await tester.pumpAndSettle();
 
-      expect(find.text('Save JSON export'), findsOneWidget);
+      expect(jsonExport, findsOneWidget);
       expect(find.text('Save CSV export'), findsOneWidget);
       expect(find.text('Saving export…'), findsNothing);
     });
