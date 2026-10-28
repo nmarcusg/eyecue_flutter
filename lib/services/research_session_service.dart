@@ -47,14 +47,35 @@ class FileResearchSessionStore implements ResearchSessionStore {
   static const String draftFileName = 'draft.json';
 
   Directory? _directory;
+  bool _cleanedTempFiles = false;
 
   Future<Directory> _directoryHandle() async {
-    final cached = _directory;
-    if (cached != null) return cached;
-    final documents = await getApplicationDocumentsDirectory();
-    final dir = Directory('${documents.path}/eyecue_research_sessions');
-    await dir.create(recursive: true);
-    return _directory = dir;
+    var dir = _directory;
+    if (dir == null) {
+      final documents = await getApplicationDocumentsDirectory();
+      dir = Directory('${documents.path}/eyecue_research_sessions');
+      await dir.create(recursive: true);
+      _directory = dir;
+    }
+    if (!_cleanedTempFiles) {
+      _cleanedTempFiles = true;
+      await _deleteTempFiles(dir);
+    }
+    return dir;
+  }
+
+  /// Best effort: an orphan `<id>.json.tmp` from a process death between write
+  /// and rename is never read again, so it is only wasted space. A missing or
+  /// locked file must not stop the app from starting.
+  static Future<void> _deleteTempFiles(Directory dir) async {
+    try {
+      await for (final entity in dir.list()) {
+        if (entity is! File || !entity.path.endsWith('.tmp')) continue;
+        try {
+          await entity.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   static String _safeId(String id) =>
@@ -218,6 +239,51 @@ class _Draft {
   final List<DetectionCorrection> corrections = [];
   final List<AlertLifecycleRecord> alertRecords = [];
 
+  /// Each captured row's JSON, encoded once at capture time (microseconds), so a
+  /// checkpoint joins fragments instead of serialising the history again.
+  final List<String> _recordsJson = [];
+  final List<String> _samplesJson = [];
+  final List<String> _failuresJson = [];
+  final List<String> _fallbacksJson = [];
+  final List<String> _recoveriesJson = [];
+  final List<String> _correctionsJson = [];
+  final List<String> _alertRecordsJson = [];
+
+  void addRecord(TelemetryRecord record) {
+    records.add(record);
+    _recordsJson.add(jsonEncode(record.toJson()));
+  }
+
+  void addSample(RuntimeSample sample) {
+    samples.add(sample);
+    _samplesJson.add(jsonEncode(sample.toJson()));
+  }
+
+  void addFailure(TelemetryFailureRecord failure) {
+    failures.add(failure);
+    _failuresJson.add(jsonEncode(failure.toJson()));
+  }
+
+  void addFallback(EngineFallbackRecord fallback) {
+    fallbacks.add(fallback);
+    _fallbacksJson.add(jsonEncode(fallback.toJson()));
+  }
+
+  void addRecovery(InferenceRecoveryRecord recovery) {
+    recoveries.add(recovery);
+    _recoveriesJson.add(jsonEncode(recovery.toJson()));
+  }
+
+  void addCorrection(DetectionCorrection correction) {
+    corrections.add(correction);
+    _correctionsJson.add(jsonEncode(correction.toJson()));
+  }
+
+  void addAlertRecord(AlertLifecycleRecord record) {
+    alertRecords.add(record);
+    _alertRecordsJson.add(jsonEncode(record.toJson()));
+  }
+
   /// True when the draft predates row capture, so its counters exist without
   /// their measurements. Marked instead of fabricating rows.
   final bool rowsIncomplete;
@@ -225,39 +291,57 @@ class _Draft {
   /// Cumulative counters as they stood when the running interval opened.
   Map<String, dynamic> baselineAlertCounters;
 
-  Map<String, dynamic> toJson(DateTime savedAt) => {
-    'schemaVersion': 1,
-    'id': id,
-    'participantCode': participantCode,
-    'trialLabel': trialLabel,
-    'savedAt': savedAt.toUtc().toIso8601String(),
-    'detectors': [
-      for (final detector in detectors)
-        {
-          'id': detector.id,
-          'name': detector.name,
-          'fingerprint': detector.fingerprint,
-          'classCount': detector.classCount,
-        },
-    ],
-    'intervals': [for (final interval in intervals) interval.toJson()],
-    'closedDetections': closedDetections,
-    'closedAlerts': closedAlerts,
-    'closedFrames': closedFrames,
-    'baselineDetections': baselineDetections,
-    'baselineAlerts': baselineAlerts,
-    'baselineFrames': baselineFrames,
-    'closedAlertCounters': closedAlertCounters,
-    'baselineAlertCounters': baselineAlertCounters,
-    'rowsIncomplete': rowsIncomplete,
-    'records': [for (final record in records) record.toJson()],
-    'samples': [for (final sample in samples) sample.toJson()],
-    'failures': [for (final failure in failures) failure.toJson()],
-    'fallbacks': [for (final fallback in fallbacks) fallback.toJson()],
-    'recoveries': [for (final recovery in recoveries) recovery.toJson()],
-    'corrections': [for (final correction in corrections) correction.toJson()],
-    'alertRecords': [for (final record in alertRecords) record.toJson()],
-  };
+  /// The draft document: the scalars are encoded here, and every row collection
+  /// is the fragments its capture already encoded. Called from the queued
+  /// checkpoint, never from the detection path.
+  String encode(DateTime savedAt) {
+    final header = jsonEncode({
+      'schemaVersion': 1,
+      'id': id,
+      'participantCode': participantCode,
+      'trialLabel': trialLabel,
+      'savedAt': savedAt.toUtc().toIso8601String(),
+      'detectors': [
+        for (final detector in detectors)
+          {
+            'id': detector.id,
+            'name': detector.name,
+            'fingerprint': detector.fingerprint,
+            'classCount': detector.classCount,
+          },
+      ],
+      'intervals': [for (final interval in intervals) interval.toJson()],
+      'closedDetections': closedDetections,
+      'closedAlerts': closedAlerts,
+      'closedFrames': closedFrames,
+      'baselineDetections': baselineDetections,
+      'baselineAlerts': baselineAlerts,
+      'baselineFrames': baselineFrames,
+      'closedAlertCounters': closedAlertCounters,
+      'baselineAlertCounters': baselineAlertCounters,
+      'rowsIncomplete': rowsIncomplete,
+    });
+    final rows = <String, List<String>>{
+      'records': _recordsJson,
+      'samples': _samplesJson,
+      'failures': _failuresJson,
+      'fallbacks': _fallbacksJson,
+      'recoveries': _recoveriesJson,
+      'corrections': _correctionsJson,
+      'alertRecords': _alertRecordsJson,
+    };
+    // Drop the header's closing brace, append the fragments, close again.
+    final buffer = StringBuffer(header.substring(0, header.length - 1));
+    for (final entry in rows.entries) {
+      buffer
+        ..write(',')
+        ..write(jsonEncode(entry.key))
+        ..write(':[')
+        ..write(entry.value.join(','))
+        ..write(']');
+    }
+    return (buffer..write('}')).toString();
+  }
 
   /// Restores a draft as interrupted: an interval left open by a crash is
   /// closed at the last persisted moment, so app-down time is never counted as
@@ -315,33 +399,29 @@ class _Draft {
       rowsIncomplete:
           json['rowsIncomplete'] == true || !json.containsKey('records'),
     );
-    draft.records.addAll([
-      for (final entry in maps(json['records']))
-        TelemetryRecord.fromJson(entry),
-    ]);
-    draft.samples.addAll([
-      for (final entry in maps(json['samples'])) RuntimeSample.fromJson(entry),
-    ]);
-    draft.failures.addAll([
-      for (final entry in maps(json['failures']))
-        TelemetryFailureRecord.fromJson(entry),
-    ]);
-    draft.fallbacks.addAll([
-      for (final entry in maps(json['fallbacks']))
-        EngineFallbackRecord.fromJson(entry),
-    ]);
-    draft.recoveries.addAll([
-      for (final entry in maps(json['recoveries']))
-        InferenceRecoveryRecord.fromJson(entry),
-    ]);
-    draft.corrections.addAll([
-      for (final entry in maps(json['corrections']))
-        DetectionCorrection.fromJson(entry),
-    ]);
-    draft.alertRecords.addAll([
-      for (final entry in maps(json['alertRecords']))
-        AlertLifecycleRecord.fromJson(entry),
-    ]);
+    // Restored rows are re-encoded once here, off the detection path, so a
+    // restored draft checkpoints from fragments like a live one.
+    for (final entry in maps(json['records'])) {
+      draft.addRecord(TelemetryRecord.fromJson(entry));
+    }
+    for (final entry in maps(json['samples'])) {
+      draft.addSample(RuntimeSample.fromJson(entry));
+    }
+    for (final entry in maps(json['failures'])) {
+      draft.addFailure(TelemetryFailureRecord.fromJson(entry));
+    }
+    for (final entry in maps(json['fallbacks'])) {
+      draft.addFallback(EngineFallbackRecord.fromJson(entry));
+    }
+    for (final entry in maps(json['recoveries'])) {
+      draft.addRecovery(InferenceRecoveryRecord.fromJson(entry));
+    }
+    for (final entry in maps(json['corrections'])) {
+      draft.addCorrection(DetectionCorrection.fromJson(entry));
+    }
+    for (final entry in maps(json['alertRecords'])) {
+      draft.addAlertRecord(AlertLifecycleRecord.fromJson(entry));
+    }
     return draft;
   }
 }
@@ -364,11 +444,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
        _store = store ?? FileResearchSessionStore(),
        _uploadService = uploadService ?? TelemetryUploadService(),
        _clock = clock ?? DateTime.now,
-       _appVersion = telemetry.appVersion {
-    // The trial captures its own rows from here on; the live rings stay shared
-    // operational data with their unchanged caps.
-    _telemetry.sink = this;
-  }
+       _appVersion = telemetry.appVersion;
 
   final TelemetryService _telemetry;
   final ResearchSessionStore _store;
@@ -438,40 +514,46 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
 
   @override
   void onDetection(TelemetryRecord record) =>
-      _capture(record.timestamp, (draft) => draft.records.add(record));
+      _capture(record.timestamp, (draft) => draft.addRecord(record));
 
   @override
   void onSample(RuntimeSample sample) =>
-      _capture(sample.timestamp, (draft) => draft.samples.add(sample));
+      _capture(sample.timestamp, (draft) => draft.addSample(sample));
 
   @override
   void onFailure(TelemetryFailureRecord record) =>
-      _capture(record.failure.timestamp, (draft) => draft.failures.add(record));
+      _capture(record.failure.timestamp, (draft) => draft.addFailure(record));
 
   @override
   void onFallback(EngineFallbackRecord record) =>
-      _capture(record.timestamp, (draft) => draft.fallbacks.add(record));
+      _capture(record.timestamp, (draft) => draft.addFallback(record));
 
   @override
   void onRecovery(InferenceRecoveryRecord record) =>
-      _capture(record.timestamp, (draft) => draft.recoveries.add(record));
+      _capture(record.timestamp, (draft) => draft.addRecovery(record));
 
   @override
   void onCorrection(DetectionCorrection correction) => _capture(
     correction.timestamp,
-    (draft) => draft.corrections.add(correction),
+    (draft) => draft.addCorrection(correction),
   );
 
   @override
   void onAlertLifecycle(AlertLifecycleRecord record) =>
-      _capture(record.terminalAt, (draft) => draft.alertRecords.add(record));
+      _capture(record.terminalAt, (draft) => draft.addAlertRecord(record));
 
   /// Appends one live row to the trial only when it belongs to a recorded
   /// interval of a recording trial, so paused activity, post-finish rows and a
   /// delayed event outside the intervals never enter.
   void _capture(DateTime timestamp, void Function(_Draft draft) add) {
     final draft = _draft;
-    if (_state != ResearchSessionState.recording || draft == null) return;
+    // A finish in progress has already taken its snapshot, so a row arriving
+    // now could only be captured and then discarded: it is not captured.
+    if (_finishing ||
+        _state != ResearchSessionState.recording ||
+        draft == null) {
+      return;
+    }
     if (!draft.intervals.any((interval) => interval.contains(timestamp))) {
       return;
     }
@@ -599,6 +681,12 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
         _state == ResearchSessionState.paused) {
       return 'A trial is already running. Finish it before starting another.';
     }
+    if (_draft != null) {
+      // A failed finish kept the draft as the only durable copy of that trial,
+      // so a new Start must not overwrite it.
+      return 'The last trial could not be saved and is held as a draft on this '
+          'device. Retry Finish before starting another.';
+    }
     if (_sessions.length >= maxStoredSessions) {
       // Uploading keeps the stored trial, so it cannot be offered here as the
       // way to free a slot.
@@ -628,6 +716,9 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     _resetBaselines(draft);
     _draft = draft;
     _state = ResearchSessionState.recording;
+    // Capture is per service: subscribing here leaves any other service's own
+    // trial publishing to itself.
+    _telemetry.subscribe(this);
     _lastSaveError = null;
     _pauseReason = null;
     _capturedSinceCheckpoint = 0;
@@ -654,7 +745,9 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     draft.intervals.add(ResearchInterval(_clock()));
     _resetBaselines(draft);
     _state = ResearchSessionState.recording;
-    _pauseReason = null;
+    _telemetry.subscribe(this);
+    // A capacity self-stop keeps explaining itself until a new trial starts,
+    // because resuming does not create room.
     _capturedSinceCheckpoint = 0;
     _lastCheckpointAt = _clock();
     notifyListeners();
@@ -708,7 +801,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
   void dispose() {
     _watchedDetectorChanges?.removeListener(_handleDetectorModelChanged);
     // Never leave a disposed service receiving live rows.
-    if (identical(_telemetry.sink, this)) _telemetry.sink = null;
+    _telemetry.unsubscribe(this);
     super.dispose();
   }
 
@@ -723,6 +816,18 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     _finishing = true;
     notifyListeners();
     try {
+      // A retried Finish after a failed save re-persists the snapshot it
+      // already froze, so the stored bytes and the in-memory trial stay
+      // identical instead of drifting to a second finish time.
+      ResearchSession? pending;
+      for (final stored in _sessions) {
+        if (stored.id == draft.id && !isSaved(stored)) pending = stored;
+      }
+      if (pending != null) {
+        final saved = await _persist(pending);
+        if (saved) await _dropDraft();
+        return FinishResult(session: pending, saved: saved);
+      }
       final now = _clock();
       if (_state == ResearchSessionState.recording) {
         _closeInterval(draft, now);
@@ -761,16 +866,32 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
       );
       final saved = await _persist(session);
       _sessions.insert(0, session);
-      _draft = null;
       _state = ResearchSessionState.finished;
-      // Queued on the same chain, so no older checkpoint can land after this
-      // delete and resurrect a finished draft.
-      await _persistDraft();
+      if (saved) {
+        // Only a saved trial may lose its draft.
+        await _dropDraft();
+      } else {
+        // A failed write leaves the draft as the only durable copy of the whole
+        // trial, so it is kept — brought up to the closed interval and counters
+        // so a restart restores exactly this trial — and the save error stays
+        // the message the researcher sees.
+        final saveError = _lastSaveError;
+        await _persistDraft();
+        _lastSaveError = saveError;
+      }
       return FinishResult(session: session, saved: saved);
     } finally {
       _finishing = false;
+      _telemetry.unsubscribe(this);
       notifyListeners();
     }
+  }
+
+  /// Deletes the draft after its trial is durable. Queued on the draft chain,
+  /// so no older checkpoint can land after this delete and resurrect it.
+  Future<void> _dropDraft() async {
+    _draft = null;
+    await _persistDraft();
   }
 
   /// Uploads one finished trial through the frozen snapshot.
@@ -826,6 +947,14 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     _uploadStatus.remove(session.id);
     notifyListeners();
     await _store.deleteFinished(session.id);
+    if (_draft?.id == session.id) {
+      // The draft of an unsaved trial is the only copy left: discarding must
+      // drop it too, or a restart would resurrect the discarded trial.
+      _state = ResearchSessionState.idle;
+      _telemetry.unsubscribe(this);
+      await _dropDraft();
+      notifyListeners();
+    }
   }
 
   void _closeInterval(_Draft draft, DateTime now) {
@@ -953,9 +1082,11 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
   Future<void> _persistDraft() async {
     final draft = _draft;
     final sequence = ++_draftSequence;
-    final contents = draft == null ? null : jsonEncode(draft.toJson(_clock()));
     final write = _writeChain.then((_) async {
       if (sequence <= _writtenSequence) return;
+      // Assembled here, in the queued write, never on the caller's stack: the
+      // detection path only ever encodes the single row it captured.
+      final contents = draft?.encode(_clock());
       await _store.writeDraft(contents);
       _writtenSequence = sequence;
     });
