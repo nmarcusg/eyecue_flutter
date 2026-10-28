@@ -633,6 +633,7 @@ class _OverviewTab extends StatelessWidget {
         final telemetry = _of(context);
         final models = _modelOptions(telemetry);
         final modelClaim = _modelClaim(models, null);
+        final sampleModelClaim = _sampleModelClaim(telemetry);
         final duration = telemetry.sessionDuration;
         final hours = duration.inHours;
         final minutes = duration.inMinutes % 60;
@@ -661,16 +662,16 @@ class _OverviewTab extends StatelessWidget {
                 _MetricCard(
                   label: 'Avg FPS',
                   value: _fmt(telemetry.averageInferenceFps),
+                  modelClaim: sampleModelClaim,
                 ),
                 const SizedBox(width: kSpace12),
                 _MetricCard(
                   label: 'Avg Latency',
                   value: '${_fmt(telemetry.averageLatencyMs)} ms',
+                  modelClaim: sampleModelClaim,
                 ),
               ],
             ),
-            // These two averages cover every recorded sample, so they must say
-            // so when more than one detector contributed to them.
             if (_identities(models).length > 1) ...[
               const SizedBox(height: kSpace8),
               const _MixedModelNote(),
@@ -866,6 +867,11 @@ class _AlertLatencySection extends StatelessWidget {
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
+            ),
+            const SizedBox(height: kSpace4),
+            Semantics(
+              label: 'Per-engine speech latency — all detector models',
+              child: Text('Per-engine speech latency — all detector models'),
             ),
             for (final engine in InferenceEngine.values) ...[
               const SizedBox(height: kSpace12),
@@ -1472,8 +1478,13 @@ class _PriorityDot extends StatelessWidget {
 class _MetricCard extends StatelessWidget {
   final String label;
   final String value;
+  final String modelClaim;
 
-  const _MetricCard({required this.label, required this.value});
+  const _MetricCard({
+    required this.label,
+    required this.value,
+    required this.modelClaim,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1499,6 +1510,17 @@ class _MetricCard extends StatelessWidget {
             Text(
               label,
               style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
+            ),
+            const SizedBox(height: kSpace4),
+            Semantics(
+              label: modelClaim,
+              child: Text(
+                modelClaim,
+                key: ValueKey('$label-model-claim'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: kHomeInkMuted,
+                ),
+              ),
             ),
           ],
         ),
@@ -1859,6 +1881,33 @@ List<RuntimeSample> _samplesFor(
 Set<String> _identities(List<_ModelOption> options) => {
   for (final option in options) option.id,
 };
+
+/// Scope of the unfiltered FPS/latency values, based only on their samples.
+String _sampleModelClaim(TelemetryService telemetry) {
+  final samples = telemetry.samples;
+  if (samples.isEmpty) return 'No model data';
+  final table = DetectorModelTable();
+  final identities = <String>{};
+  var hasUnknown = false;
+  for (final sample in samples) {
+    final key = table.keyFor(
+      sample.detectorModelId,
+      sample.detectorModelName,
+      sample.detectorModelFingerprint,
+    );
+    if (key == null) {
+      hasUnknown = true;
+    } else {
+      identities.add(key);
+    }
+  }
+  if (identities.length + (hasUnknown ? 1 : 0) > 1) return _mixedModelLabel;
+  if (hasUnknown) return 'Unknown/legacy model';
+  final sample = samples.last;
+  return sample.detectorModelName ??
+      sample.detectorModelId ??
+      'Unknown/legacy model';
+}
 
 /// What a chart or average built from [key] may claim.
 String _modelClaim(List<_ModelOption> options, String? key) {

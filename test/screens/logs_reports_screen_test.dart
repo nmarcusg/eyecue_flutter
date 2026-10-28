@@ -1320,6 +1320,103 @@ void main() {
       return service;
     }
 
+    testWidgets(
+      'performance metric cards label single-model scope accessibly',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await pumpLogsScreen(
+          tester,
+          telemetry: buildTelemetryFor(const [customRef]),
+        );
+        for (final label in ['Avg FPS', 'Avg Latency']) {
+          final claim = find.byKey(ValueKey('$label-model-claim'));
+          await scrollOverviewTo(tester, claim);
+          expect(tester.widget<Text>(claim).data, 'Obstacle Detector v2');
+          expect(
+            tester.getSemantics(claim).label,
+            contains('Obstacle Detector v2'),
+          );
+          expect(paintedParagraph(tester, claim).didExceedMaxLines, isFalse);
+        }
+        handle.dispose();
+      },
+    );
+
+    testWidgets('performance metric cards label mixed and unknown samples', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      for (final entry in [
+        (buildTwoModelTelemetry(), 'Mixed-model data'),
+        (buildTelemetry(populated: true), 'Unknown/legacy model'),
+      ]) {
+        await pumpLogsScreen(tester, telemetry: entry.$1);
+        for (final label in ['Avg FPS', 'Avg Latency']) {
+          final claim = find.byKey(ValueKey('$label-model-claim'));
+          await scrollOverviewTo(tester, claim);
+          expect(tester.widget<Text>(claim).data, entry.$2);
+          expect(tester.getSemantics(claim).label, contains(entry.$2));
+          expect(paintedParagraph(tester, claim).didExceedMaxLines, isFalse);
+        }
+      }
+      handle.dispose();
+    });
+
+    testWidgets('no-data and long model labels paint inside metric cards', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(),
+        size: const Size(390 * 3, 844 * 3),
+      );
+      for (final label in ['Avg FPS', 'Avg Latency']) {
+        final claim = find.byKey(ValueKey('$label-model-claim'));
+        await scrollOverviewTo(tester, claim);
+        expect(tester.widget<Text>(claim).data, 'No model data');
+        expect(tester.getSemantics(claim).label, contains('No model data'));
+        expect(paintedParagraph(tester, claim).didExceedMaxLines, isFalse);
+      }
+      const longModel = DetectorModelRef(
+        id: 'custom:0a1b2c3d4e5f',
+        name: 'Obstacle Detector v2 corrected import r2',
+        fingerprint: '0a1b2c3d4e5f6071-4200',
+        classCount: 12,
+      );
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetryFor(const [longModel]),
+        size: const Size(390 * 3, 844 * 3),
+      );
+      for (final label in ['Avg FPS', 'Avg Latency']) {
+        final claim = find.byKey(ValueKey('$label-model-claim'));
+        await scrollOverviewTo(tester, claim);
+        expect(tester.widget<Text>(claim).data, longModel.name);
+        expect(tester.getSemantics(claim).label, contains(longModel.name));
+        expect(paintedParagraph(tester, claim).didExceedMaxLines, isFalse);
+      }
+      handle.dispose();
+    });
+
+    testWidgets('Alert Latency states all-detector-model scope on its card', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
+      final scope = find.text(
+        'Per-engine speech latency — all detector models',
+      );
+      await scrollOverviewTo(tester, scope);
+      expect(scope, findsOneWidget);
+      expect(
+        tester.getSemantics(scope).label,
+        contains('Per-engine speech latency — all detector models'),
+      );
+      expect(paintedParagraph(tester, scope).didExceedMaxLines, isFalse);
+      handle.dispose();
+    });
+
     testWidgets('a log row names the model that produced the numbers', (
       tester,
     ) async {
