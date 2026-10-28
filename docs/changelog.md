@@ -27,15 +27,22 @@ corrections land on top of `2779f9c`.
   context are cleared, and nothing restarts automatically. Covered for the
   active, paused, stopped and still-loading states.
 - Explicit respondent logging trials: Start / Pause / Resume / Finish / Discard,
-  with seven independently retained study-row collections (operational telemetry
-  continues during study Pause), interval-baseline counters, and bounded draft
-  checkpoints (100 rows or 5 seconds) containing actual rows/model context. Ordered,
-  atomic saves restore interrupted recording paused at the last durable checkpoint;
-  only later captures are at risk. Pause/Finish failures remain visible and preserve
-  data for retry/export; legacy metadata-only drafts are marked incomplete. Capacity
-  is 10,000 detections / 2,000 samples per trial and 20 stored trials (refuse with
-  explicit discard). Local export is complete; the 2,000,000-byte upload cap refuses
-  oversized payloads without changing local data.
+  with retained detections, runtime samples, failures, fallbacks, recoveries,
+  corrections, and alert-lifecycle records (operational telemetry continues during
+  study Pause), interval-baseline counters, and checkpoints after 100 captured rows
+  across collection callbacks or when a later captured row observes at least 5
+  seconds since the prior checkpoint. This elapsed-time check is not a standalone
+  timer and does not flush during idle periods. Writes are serialized to a flushed
+  temporary file followed by rename; a handled write failure preserves the last good
+  saved draft. Ordinary interrupted-run recovery restores paused at the last saved
+  checkpoint; rows captured since then are the bounded unsaved window while captures
+  continue. No every-event or platform-independent filesystem/power-loss durability
+  guarantee is made. Pause/Finish failures remain visible and preserve data for
+  retry/export; pre-repair metadata-only drafts remain incomplete and missing rows
+  are never recreated. Capacity is 10,000 detections / 2,000 samples per trial and
+  20 stored trials (refuse with explicit discard). Local save/export preserves all
+  available trial rows and is not thinned for the 2,000,000-byte upload cap, which
+  refuses oversized payloads without changing local data.
 - Every sample and detection row records the detector that produced it: JSON adds
   a `detectorModels` dictionary (`<id>`, then `<id>~2` for a second identity with
   the same content id) and CSV adds `model_id`, `model_name`,
