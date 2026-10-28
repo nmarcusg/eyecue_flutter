@@ -592,6 +592,16 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
     ];
   }
 
+  void _dispatch(void Function(TelemetrySink sink) deliver) {
+    for (final sink in _sinks) {
+      try {
+        deliver(sink);
+      } catch (_) {
+        // Capture must not interfere with operational telemetry or other sinks.
+      }
+    }
+  }
+
   static const int _maxRecords = 2000;
 
   /// 400, not 500: with every other collection at its cap the 500-sample
@@ -692,9 +702,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
       ),
     );
     // Each subscriber's copy is taken before the cap can evict the row.
-    for (final sink in _sinks) {
-      sink.onDetection(_records.last);
-    }
+    _dispatch((sink) => sink.onDetection(_records.last));
     if (_records.length > _maxRecords) {
       _records.removeRange(0, _records.length - _maxRecords);
     }
@@ -768,9 +776,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
         detectorModelFingerprint: detectorModel?.fingerprint,
       ),
     );
-    for (final sink in _sinks) {
-      sink.onSample(_samples.last);
-    }
+    _dispatch((sink) => sink.onSample(_samples.last));
     if (_samples.length > _maxSamples) {
       _samples.removeRange(0, _samples.length - _maxSamples);
     }
@@ -779,9 +785,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
 
   void recordFailure(DetectionFailure failure) {
     _failures.add(TelemetryFailureRecord(failure));
-    for (final sink in _sinks) {
-      sink.onFailure(_failures.last);
-    }
+    _dispatch((sink) => sink.onFailure(_failures.last));
     if (_failures.length > 200) {
       _failures.removeRange(0, _failures.length - 200);
     }
@@ -801,9 +805,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
         reason: reason,
       ),
     );
-    for (final sink in _sinks) {
-      sink.onFallback(_fallbacks.last);
-    }
+    _dispatch((sink) => sink.onFallback(_fallbacks.last));
     if (_fallbacks.length > 100) {
       _fallbacks.removeRange(0, _fallbacks.length - 100);
     }
@@ -834,9 +836,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
         engine: event.engine,
       ),
     );
-    for (final sink in _sinks) {
-      sink.onRecovery(_recoveries.last);
-    }
+    _dispatch((sink) => sink.onRecovery(_recoveries.last));
     if (_recoveries.length > 200) {
       _recoveries.removeRange(0, _recoveries.length - 200);
     }
@@ -845,9 +845,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
 
   void recordCorrection(DetectionCorrection correction) {
     _corrections.add(correction);
-    for (final sink in _sinks) {
-      sink.onCorrection(_corrections.last);
-    }
+    _dispatch((sink) => sink.onCorrection(_corrections.last));
     if (_corrections.length > 2000) {
       _corrections.removeRange(0, _corrections.length - 2000);
     }
@@ -858,9 +856,7 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
   /// small.
   void recordAlertLifecycle(AlertLifecycleRecord record) {
     _alertRecords.add(record);
-    for (final sink in _sinks) {
-      sink.onAlertLifecycle(_alertRecords.last);
-    }
+    _dispatch((sink) => sink.onAlertLifecycle(_alertRecords.last));
     if (_alertRecords.length > _maxAlertRecords) {
       _alertRecords.removeRange(0, _alertRecords.length - _maxAlertRecords);
     }

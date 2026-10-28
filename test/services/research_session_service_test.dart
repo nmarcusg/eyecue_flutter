@@ -1530,6 +1530,81 @@ void main() {
   });
 
   group('25. Capture belongs to each service, not to one shared slot', () {
+    test(
+      'an unencodable sample pauses truthfully without damaging prior rows',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 4, 10));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final firstStore = InMemoryResearchSessionStore();
+        final first = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: firstStore,
+        );
+        addTearDown(first.dispose);
+        final secondStore = InMemoryResearchSessionStore();
+        final second = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: secondStore,
+        );
+        addTearDown(second.dispose);
+        await first.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+        await second.start(
+          participantCode: 'P-002',
+          trialLabel: 'trial-2',
+          detector: builtInRef,
+        );
+        clock.advance(const Duration(seconds: 1));
+        recordSample(telemetry, model: builtInRef);
+        clock.advance(const Duration(seconds: 1));
+        var notifications = 0;
+        telemetry.addListener(() => notifications++);
+        telemetry.recordSample(
+          latencyMs: double.nan,
+          inferenceFps: 8,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: builtInRef,
+        );
+        await pumpEventQueue();
+
+        for (final service in [first, second]) {
+          expect(service.state, ResearchSessionState.paused);
+          expect(service.pauseReason, contains('could not be encoded'));
+          expect(
+            service.lastSaveError,
+            contains('invalid row was not retained'),
+          );
+        }
+        expect(firstStore.draft, isNotNull);
+        expect(secondStore.draft, isNotNull);
+        expect(
+          (jsonDecode(firstStore.draft!) as Map<String, dynamic>)['samples'],
+          hasLength(1),
+        );
+        expect(
+          (jsonDecode(secondStore.draft!) as Map<String, dynamic>)['samples'],
+          hasLength(1),
+        );
+        expect(telemetry.samples, hasLength(2));
+        expect(telemetry.framesProcessed, 2);
+        expect(notifications, 1);
+
+        final firstTrial = (await first.finish())!.session;
+        final secondTrial = (await second.finish())!.session;
+        expect(firstTrial.samples, hasLength(1));
+        expect(secondTrial.samples, hasLength(1));
+        expect(firstTrial.samples.single.latencyMs, 42);
+        expect(secondTrial.samples.single.latencyMs, 42);
+      },
+    );
+
     test('a second service over one telemetry cannot take the first rows '
         'and each trial captures its own interval', () async {
       final clock = TestClock(DateTime.utc(2026, 5, 4, 11));

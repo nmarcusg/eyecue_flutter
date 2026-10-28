@@ -250,38 +250,45 @@ class _Draft {
   final List<String> _alertRecordsJson = [];
 
   void addRecord(TelemetryRecord record) {
+    final json = jsonEncode(record.toJson());
     records.add(record);
-    _recordsJson.add(jsonEncode(record.toJson()));
+    _recordsJson.add(json);
   }
 
   void addSample(RuntimeSample sample) {
+    final json = jsonEncode(sample.toJson());
     samples.add(sample);
-    _samplesJson.add(jsonEncode(sample.toJson()));
+    _samplesJson.add(json);
   }
 
   void addFailure(TelemetryFailureRecord failure) {
+    final json = jsonEncode(failure.toJson());
     failures.add(failure);
-    _failuresJson.add(jsonEncode(failure.toJson()));
+    _failuresJson.add(json);
   }
 
   void addFallback(EngineFallbackRecord fallback) {
+    final json = jsonEncode(fallback.toJson());
     fallbacks.add(fallback);
-    _fallbacksJson.add(jsonEncode(fallback.toJson()));
+    _fallbacksJson.add(json);
   }
 
   void addRecovery(InferenceRecoveryRecord recovery) {
+    final json = jsonEncode(recovery.toJson());
     recoveries.add(recovery);
-    _recoveriesJson.add(jsonEncode(recovery.toJson()));
+    _recoveriesJson.add(json);
   }
 
   void addCorrection(DetectionCorrection correction) {
+    final json = jsonEncode(correction.toJson());
     corrections.add(correction);
-    _correctionsJson.add(jsonEncode(correction.toJson()));
+    _correctionsJson.add(json);
   }
 
   void addAlertRecord(AlertLifecycleRecord record) {
+    final json = jsonEncode(record.toJson());
     alertRecords.add(record);
-    _alertRecordsJson.add(jsonEncode(record.toJson()));
+    _alertRecordsJson.add(json);
   }
 
   /// True when the draft predates row capture, so its counters exist without
@@ -557,7 +564,16 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     if (!draft.intervals.any((interval) => interval.contains(timestamp))) {
       return;
     }
-    add(draft);
+    try {
+      add(draft);
+    } catch (_) {
+      _pauseReason =
+          'A trial row could not be encoded, so logging paused. The invalid row '
+          'was not retained; all previously captured rows are kept.';
+      _lastSaveError = _pauseReason;
+      unawaited(_pauseAfterCaptureFailure());
+      return;
+    }
     _checkpointIfDue();
     if (draft.records.length >= maxTrialRecords ||
         draft.samples.length >= maxTrialSamples) {
@@ -568,6 +584,12 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
           'captured is kept — finish and export it.';
       unawaited(pause());
     }
+  }
+
+  Future<void> _pauseAfterCaptureFailure() async {
+    await pause();
+    _lastSaveError ??= _pauseReason;
+    notifyListeners();
   }
 
   /// A bounded checkpoint: every ~5 s of recording or every 100 captured rows,
