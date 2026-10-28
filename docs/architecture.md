@@ -127,15 +127,27 @@ identity in `AppSettings`, and is the single source the Detection screen reads f
 model path, labels and priority mapping, so a switch is one deliberate stop and
 never a silent relabel.
 [`ResearchSessionService`](../lib/services/research_session_service.dart) owns
-explicit respondent trials (`idle → recording ⇄ paused → finished`), independent of
-the detection lifecycle: pause freezes accumulation only, finish freezes an
-immutable `ResearchSession`, and it subscribes to the detector selection where the
-services are created in [`main.dart`](../lib/main.dart) so a model change pauses
-logging and records the boundary regardless of which screen is built. Both the
-live `TelemetryService` and a finished trial satisfy the implicit
-`TelemetrySource` interface, which is what lets the same
-`TelemetryExportService`/`TelemetryUploadService` operate on a frozen trial without
-widening the export contract.
+explicit respondent trials (`idle → recording ⇄ paused → finished`) independently
+of operational telemetry rings: each trial retains its own seven captured row
+collections. Pause stops only study capture; operational detection/guidance and
+telemetry continue. Drafts persist actual rows and model context at lifecycle
+boundaries plus bounded checkpoints (100 rows or 5 seconds), using ordered,
+atomic replacement. An interrupted recording restores paused at its last durable
+checkpoint; only captures after that checkpoint are at risk, never app-down time,
+and no guarantee is made for every abrupt-crash event. Pause/Finish save failures
+stay visible and preserve prior, in-memory and durable data for retry/export;
+legacy metadata-only drafts are marked incomplete, not fabricated. Trial capture
+holds up to 10,000 detections and 2,000 samples and visibly pauses before rollover;
+20 stored trials cause refusal with explicit discard, while operational ring caps
+remain unchanged. Complete local save/export is independent of the 2,000,000-byte
+upload limit; oversized uploads are refused without truncating or deleting local
+data. The service subscribes to detector selection where services are created in
+[`main.dart`](../lib/main.dart), pauses logging and records model boundaries on a
+model change, and lets both the live `TelemetryService` and finished trial satisfy
+the implicit `TelemetrySource` interface for the same export/upload services.
+Overview Avg FPS/Avg Latency scope is one recorded model, mixed, unknown legacy,
+or no data; Alert Latency reports per-engine speech latency across all detector
+models.
 
 ### Historical: dual-engine boundary (removed 2026-10-21)
 
