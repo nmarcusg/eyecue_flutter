@@ -128,20 +128,27 @@ model path, labels and priority mapping, so a switch is one deliberate stop and
 never a silent relabel.
 [`ResearchSessionService`](../lib/services/research_session_service.dart) owns
 explicit respondent trials (`idle → recording ⇄ paused → finished`) independently
-of operational telemetry rings: each trial retains its own seven captured row
-collections. Pause stops only study capture; operational detection/guidance and
-telemetry continue. Drafts persist actual rows and model context at lifecycle
-boundaries plus bounded checkpoints (100 rows or 5 seconds), using ordered,
-atomic replacement. An interrupted recording restores paused at its last durable
-checkpoint; only captures after that checkpoint are at risk, never app-down time,
-and no guarantee is made for every abrupt-crash event. Pause/Finish save failures
+of operational telemetry rings: each trial retains detections, runtime samples,
+failures, fallbacks, recoveries, corrections, and alert-lifecycle records. Pause
+stops only study capture; operational detection/guidance and telemetry continue.
+Drafts persist actual rows and model context at lifecycle boundaries plus
+checkpoints after 100 captured rows across collection callbacks, or when a later
+captured row observes at least 5 seconds since the prior checkpoint. The time
+check is not a standalone timer and does not flush during idle periods. Writes are
+serialized to a flushed temporary file followed by rename; a handled write
+failure preserves the last good saved draft. In an ordinary interrupted run, a
+recording restores paused at its last saved checkpoint; rows captured since then
+are the bounded unsaved window while captures continue. No guarantee is made for
+every abrupt event or filesystem/power-loss durability. Pause/Finish save failures
 stay visible and preserve prior, in-memory and durable data for retry/export;
 legacy metadata-only drafts are marked incomplete, not fabricated. Trial capture
 holds up to 10,000 detections and 2,000 samples and visibly pauses before rollover;
 20 stored trials cause refusal with explicit discard, while operational ring caps
-remain unchanged. Complete local save/export is independent of the 2,000,000-byte
-upload limit; oversized uploads are refused without truncating or deleting local
-data. The service subscribes to detector selection where services are created in
+remain unchanged. Local save/export preserves all rows available in the trial and
+is not thinned for the 2,000,000-byte upload limit; oversized uploads are refused
+without truncating or deleting local data. Pre-repair metadata-only drafts remain
+incomplete and missing rows are never recreated. The service subscribes to
+detector selection where services are created in
 [`main.dart`](../lib/main.dart), pauses logging and records model boundaries on a
 model change, and lets both the live `TelemetryService` and finished trial satisfy
 the implicit `TelemetrySource` interface for the same export/upload services.
