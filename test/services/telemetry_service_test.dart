@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/detection.dart';
+import 'package:eyecue_flutter/models/detection_correction.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detector_model.dart';
@@ -9,6 +10,40 @@ import 'package:eyecue_flutter/models/telemetry_export.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _TestSink implements TelemetrySink {
+  int detections = 0;
+  int samples = 0;
+
+  @override
+  void onDetection(TelemetryRecord record) => detections++;
+
+  @override
+  void onSample(RuntimeSample sample) => samples++;
+
+  @override
+  void onFailure(TelemetryFailureRecord record) {}
+
+  @override
+  void onFallback(EngineFallbackRecord record) {}
+
+  @override
+  void onRecovery(InferenceRecoveryRecord record) {}
+
+  @override
+  void onCorrection(DetectionCorrection correction) {}
+
+  @override
+  void onAlertLifecycle(AlertLifecycleRecord record) {}
+}
+
+class _ThrowingSink extends _TestSink {
+  @override
+  void onDetection(TelemetryRecord record) => throw StateError('sink failed');
+
+  @override
+  void onSample(RuntimeSample sample) => throw StateError('sink failed');
+}
 
 void main() {
   late DateTime now;
@@ -56,6 +91,40 @@ void main() {
     expect(telemetry.totalDetections, 3);
     expect(telemetry.highPriorityAlerts, 2);
   });
+
+  test(
+    'throwing sinks do not starve later capture or telemetry completion',
+    () {
+      final first = _ThrowingSink();
+      final second = _TestSink();
+      var notifications = 0;
+      telemetry
+        ..subscribe(first)
+        ..subscribe(second)
+        ..addListener(() => notifications++);
+
+      telemetry.recordDetection(
+        detInfo('person', 0),
+        30,
+        engine: InferenceEngine.ultralytics,
+      );
+      telemetry.recordSample(
+        latencyMs: 100,
+        inferenceFps: 10,
+        objectCount: 1,
+        engine: InferenceEngine.ultralytics,
+      );
+
+      expect(second.detections, 1);
+      expect(second.samples, 1);
+      expect(telemetry.detectionCount, 1);
+      expect(telemetry.highPriorityAlerts, 1);
+      expect(telemetry.framesProcessed, 1);
+      expect(telemetry.records, hasLength(1));
+      expect(telemetry.samples, hasLength(1));
+      expect(notifications, 2);
+    },
+  );
 
   test('computes average latency and FPS from samples', () {
     telemetry.recordSample(
