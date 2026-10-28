@@ -1605,6 +1605,135 @@ void main() {
       },
     );
 
+    test(
+      'successful Finish wins over a delayed capture-failure pause',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 4, 10));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = _DelayedDraftStore();
+        final service = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(service.dispose);
+        await service.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+
+        store.holdNextWrite();
+        telemetry.recordSample(
+          latencyMs: double.nan,
+          inferenceFps: 8,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: builtInRef,
+        );
+        await store.heldWriteStarted;
+
+        final finishing = service.finish();
+        await pumpEventQueue();
+        expect(service.state, ResearchSessionState.finished);
+        expect(service.lastSaveError, isNull);
+
+        store.releaseHeldWrite();
+        final result = await finishing;
+        await pumpEventQueue();
+        expect(result?.saved, isTrue);
+        expect(service.state, ResearchSessionState.finished);
+        expect(service.lastSaveError, isNull);
+      },
+    );
+
+    test(
+      'stale capture-failure continuations cannot affect a new trial',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 4, 10));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = _DelayedDraftStore();
+        final service = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(service.dispose);
+        await service.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+        store.holdNextWrite();
+        telemetry.recordSample(
+          latencyMs: double.nan,
+          inferenceFps: 8,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: builtInRef,
+        );
+        await store.heldWriteStarted;
+
+        final finishing = service.finish();
+        await pumpEventQueue();
+        final starting = service.start(
+          participantCode: 'P-002',
+          trialLabel: 'trial-2',
+          detector: builtInRef,
+        );
+        var notifications = 0;
+        service.addListener(() => notifications++);
+        store.releaseHeldWrite();
+        await finishing;
+        await starting;
+        await pumpEventQueue();
+
+        expect(service.state, ResearchSessionState.recording);
+        expect(service.participantCode, 'P-002');
+        expect(service.lastSaveError, isNull);
+        expect(service.pauseReason, isNull);
+        expect(notifications, 1); // Finish's completion notification only.
+      },
+    );
+
+    test(
+      'stale capture-failure continuation does not notify after dispose',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 4, 10));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = _DelayedDraftStore();
+        final service = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        await service.start(
+          participantCode: 'P-001',
+          trialLabel: 'trial-1',
+          detector: builtInRef,
+        );
+        store.holdNextWrite();
+        telemetry.recordSample(
+          latencyMs: double.nan,
+          inferenceFps: 8,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: builtInRef,
+        );
+        await store.heldWriteStarted;
+
+        var notifications = 0;
+        service.addListener(() => notifications++);
+        service.dispose();
+        store.releaseHeldWrite();
+        await pumpEventQueue();
+        expect(notifications, 0);
+      },
+    );
+
     test('a second service over one telemetry cannot take the first rows '
         'and each trial captures its own interval', () async {
       final clock = TestClock(DateTime.utc(2026, 5, 4, 11));
@@ -1891,6 +2020,36 @@ class _GatedDraftStore extends InMemoryResearchSessionStore {
   @override
   Future<void> writeDraft(String? contents) async {
     await _gate.future;
+    await super.writeDraft(contents);
+  }
+}
+
+/// Delays one selected draft write to force lifecycle races deterministically.
+class _DelayedDraftStore extends InMemoryResearchSessionStore {
+  Completer<void>? _nextGate;
+  Completer<void>? _heldGate;
+  Completer<void>? _started;
+
+  Future<void> get heldWriteStarted => _started!.future;
+
+  void holdNextWrite() {
+    _nextGate = Completer<void>();
+    _started = Completer<void>();
+  }
+
+  void releaseHeldWrite() {
+    if (!_heldGate!.isCompleted) _heldGate!.complete();
+  }
+
+  @override
+  Future<void> writeDraft(String? contents) async {
+    final gate = _nextGate;
+    if (gate != null) {
+      _nextGate = null;
+      _heldGate = gate;
+      _started!.complete();
+      await gate.future;
+    }
     await super.writeDraft(contents);
   }
 }

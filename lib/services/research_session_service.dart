@@ -476,6 +476,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
   final Set<String> _unsavedIds = {};
   final Map<String, String> _uploadStatus = {};
   bool _finishing = false;
+  bool _disposed = false;
   String? _uploadingId;
   String? _lastSaveError;
   String? _pauseReason;
@@ -571,7 +572,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
           'A trial row could not be encoded, so logging paused. The invalid row '
           'was not retained; all previously captured rows are kept.';
       _lastSaveError = _pauseReason;
-      unawaited(_pauseAfterCaptureFailure());
+      unawaited(_pauseAfterCaptureFailure(draft));
       return;
     }
     _checkpointIfDue();
@@ -586,8 +587,13 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     }
   }
 
-  Future<void> _pauseAfterCaptureFailure() async {
+  Future<void> _pauseAfterCaptureFailure(_Draft draft) async {
     await pause();
+    if (_disposed ||
+        !identical(_draft, draft) ||
+        _state != ResearchSessionState.paused) {
+      return;
+    }
     _lastSaveError ??= _pauseReason;
     notifyListeners();
   }
@@ -821,6 +827,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
 
   @override
   void dispose() {
+    _disposed = true;
     _watchedDetectorChanges?.removeListener(_handleDetectorModelChanged);
     // Never leave a disposed service receiving live rows.
     _telemetry.unsubscribe(this);
@@ -1116,11 +1123,11 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     _writeChain = write.catchError((Object _) {});
     try {
       await write;
-      if (_draft != null) _lastSaveError = null;
+      if (!_disposed && identical(_draft, draft)) _lastSaveError = null;
     } catch (_) {
       // Nothing is durable yet: the rows stay in memory, the failure is
       // reported, and [finish] still returns its own write result.
-      if (_draft != null) {
+      if (!_disposed && identical(_draft, draft)) {
         _lastSaveError =
             'This trial is kept in memory but could not be checkpointed on this '
             'device. Finish it and export the data to keep it.';
