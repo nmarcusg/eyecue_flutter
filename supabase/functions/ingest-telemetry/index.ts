@@ -90,7 +90,10 @@ Deno.serve(async (request) => {
       .eq('participant_code', participantCode)
       .eq('client_session_id', clientSessionId)
       .maybeSingle()
-    if (error) return 'error'
+    if (error) {
+      console.error('ingest: session lookup failed', error.code)
+      return 'error'
+    }
     return data ? 'found' : 'absent'
   }
 
@@ -103,7 +106,10 @@ Deno.serve(async (request) => {
     'research_ingest_rate_limited',
     { p_token_hash: tokenHash },
   )
-  if (rateLimitError) return json({ error: 'database_write_failed' }, 500)
+  if (rateLimitError) {
+    console.error('ingest: rate limit query failed', rateLimitError.code)
+    return json({ error: 'database_write_failed' }, 500)
+  }
   // Not recorded: a `rate_limited` row would keep the window permanently full.
   if (rateLimited === true) return json({ error: 'rate_limited' }, 429)
 
@@ -178,6 +184,7 @@ Deno.serve(async (request) => {
     },
   )
   if (consumeError) {
+    console.error('ingest: token consumption failed', consumeError.code)
     return reject('database_write_failed', 500)
   }
   const tokenFailure = uploadTokenFailure(tokenStatus)
@@ -241,6 +248,7 @@ Deno.serve(async (request) => {
       ignoreDuplicates: true,
     })
   if (error) {
+    console.error('ingest: session insert failed', error.code)
     return reject('database_write_failed', 500)
   }
   await recordAttempt('accepted', envelope.participantCode)
