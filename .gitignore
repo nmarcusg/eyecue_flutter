@@ -56,3 +56,6 @@ app.*.map.json
 .agents
 
 .roo
+
+# Supabase CLI local state
+/supabase/.temp/

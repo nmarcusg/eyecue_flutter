@@ -367,13 +367,14 @@ test('the migration unique index matches the onConflict target', () => {
 
 test('the migration drops the original payload check by name, unguarded', () => {
   // 202610200001 left the check unnamed, so PostgreSQL named it after the
-  // table. The drop must carry no `if exists`: a name mismatch has to abort the
-  // migration, because a silent no-op would leave the old 2,000,000-byte bound
+  // table and payload column. The drop must carry no `if exists`: a name
+  // mismatch has to abort the migration, because a silent no-op would leave
+  // the old 2,000,000-byte bound
   // in force beside the new one.
   assert.match(
     migrationSql,
-    /alter table public\.telemetry_sessions\s+drop constraint telemetry_sessions_check;/,
-    'the migration must drop telemetry_sessions_check by name',
+    /alter table public\.telemetry_sessions\s+drop constraint telemetry_sessions_payload_check;/,
+    'the migration must drop telemetry_sessions_payload_check by name',
   )
   assert.ok(
     !/drop constraint if exists/i.test(migrationSql),

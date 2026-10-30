@@ -593,7 +593,9 @@ class TelemetryUploadService {
       // use `Transfer-Encoding: chunked` and send no `content-length`, which the
       // ingest function refuses with `411 length_required`.
       requestHandle.contentLength = request.contentLengthBytes;
-      requestHandle.write(request.body);
+      // Write the same UTF-8 bytes used for contentLength. HttpClientRequest
+      // otherwise defaults to Latin-1 when the content type has no charset.
+      requestHandle.add(utf8.encode(request.body));
       final response = await requestHandle.close().timeout(
         const Duration(seconds: 20),
       );

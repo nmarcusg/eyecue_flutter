@@ -1367,6 +1367,47 @@ void main() {
     });
   });
 
+  test('production sender writes real exports as UTF-8 bytes', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final received = Completer<List<int>>();
+    var declaredLength = -1;
+    final requests = server.listen((request) async {
+      declaredLength = request.contentLength;
+      final bytes = await request.fold<List<int>>(
+        <int>[],
+        (buffer, chunk) => buffer..addAll(chunk),
+      );
+      received.complete(bytes);
+      request.response.statusCode = 201;
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await requests.cancel();
+      await server.close(force: true);
+    });
+
+    const unicodeMetadata = ResearchSessionMetadata(
+      participantCode: 'P-001',
+      studyScenario: 'Walk → finish: café',
+      uploadToken: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    final result = await TelemetryUploadService(
+      configuration: TelemetryUploadConfiguration(
+        ingestUrl: 'http://${server.address.address}:${server.port}/upload',
+        publishableKey: 'publishable-key',
+      ),
+      debugMode: true,
+      clock: () => now,
+    ).upload(telemetry: telemetry(), metadata: unicodeMetadata);
+
+    expect(result.errorMessage, isNull);
+    final bytes = await received.future.timeout(const Duration(seconds: 2));
+    expect(bytes.length, declaredLength);
+    final body = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    expect(body['study'], unicodeMetadata.toJson());
+    expect(body['telemetry'], isA<Map<String, dynamic>>());
+  });
+
   test('production sender times out on a stalled response body', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final finishResponse = Completer<void>();
