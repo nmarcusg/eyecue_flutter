@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Static-Image Test — Camera Removed From the Equation
 
 > **Status:** COMPLETE — evidence collected on-device (Android 13, arm64).
@@ -9,6 +11,10 @@
 > **Historical snapshot notice (2026-09-01):** This test report predates the
 > current candidate-device retry. Its static-image conclusions remain valid;
 > current model/backend status is tracked in [`project-status.md`](project-status.md).
+>
+> **WS4 retirement notice (2026-10-19):** the static-image mode, its service and
+> screen code, and `assets/test_image.jpg` were removed in WS4. This document is
+> historical evidence only; its procedures are no longer runnable as written.
 
 ---
 

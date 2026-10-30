@@ -23,25 +23,6 @@ const List<BoxShadow> kHomeShadowSoft = [
   ),
 ];
 
-/// Elevated shadow for a large Home surface (only if one is retained).
-const List<BoxShadow> kHomeShadowElevated = [
-  BoxShadow(
-    color: Color(0x120A0A0A), // rgba(10,10,10,0.07)
-    offset: Offset(0, 10),
-    blurRadius: 28,
-  ),
-];
-
-/// Knob shadow reserved for a future control; not used by the current Home
-/// composition.
-const List<BoxShadow> kHomeShadowKnob = [
-  BoxShadow(
-    color: Color(0x1F000000), // rgba(0,0,0,0.12)
-    offset: Offset(0, 2),
-    blurRadius: 5,
-  ),
-];
-
 /// Builds the Home-local light `ThemeData`.
 ///
 /// Disables runtime font fetching before any `GoogleFonts` call so the bundled

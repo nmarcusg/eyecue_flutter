@@ -19,6 +19,12 @@
 > assessment's research, broad-device, native-crash, licensing, Android
 > identity/signing, and Play-release risks remain relevant unless those current
 > documents explicitly mark them resolved.
+>
+> **WS4 addendum (2026-10-19):** forensic file writes and PNG dumps are now gated
+> out of release builds (`!kReleaseMode`); debug/profile still write them, and
+> some eager forensic CPU calculations remain. The dated "always-on" cost
+> observation below is therefore historical, and no measured speed or storage
+> improvement is claimed.
 
 ## Executive Summary
 

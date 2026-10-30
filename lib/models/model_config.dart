@@ -2,7 +2,6 @@ abstract final class EyeCueModelConfig {
   /// Metadata-enriched copy of the validated graph. The packager preserves the
   /// base FlatBuffer byte-for-byte and appends the Ultralytics label payload.
   static const modelAssetPath = 'assets/yolov8n_int8_new_metadata.tflite';
-  static const baseModelAssetPath = 'assets/yolov8n_int8_new.tflite';
   static const labelsAssetPath = 'assets/labels.txt';
   static const defaultConfidenceThreshold = 0.25;
 
@@ -10,6 +9,32 @@ abstract final class EyeCueModelConfig {
   /// default as a compile-time constant.
   static const confidenceThreshold = defaultConfidenceThreshold;
   static const nmsIouThreshold = 0.45;
+
+  /// Bundled official Ultralytics depth model (id `yolo26n-depth`, w8a32 LiteRT
+  /// export, release v0.6.6). Bundled rather than downloaded so MDE works
+  /// offline; the app's `INTERNET` permission exists only for the optional
+  /// manual telemetry upload.
+  static const depthModelAssetPath = 'assets/yolo26n-depth_w8a32.tflite';
+
+  /// Readable identity of the depth model. It is a fixed bundled asset with no
+  /// selectable counterpart, so it is labelled next to depth measurements and
+  /// never attributed to the selected detector.
+  static const depthModelId = 'yolo26n-depth';
+
+  /// Minimum gap between depth inferences; detection keeps its own cadence.
+  ///
+  /// The gap is enforced natively by the view's depth tick, not by a Dart timer.
+  static const depthMinIntervalMs = 500;
+
+  /// Longest side of the block-mean depth grid the native transport emits. The
+  /// short side keeps the analysed frame's aspect ratio, so a 640×360 crop
+  /// yields 96×54 (20 736 bytes) and a square crop is the 96×96 worst case
+  /// (36 864 bytes) — versus a dense map of hundreds of KB.
+  static const depthGridMaxDim = 96;
+
+  /// A depth map older than this is stale: boxes fall back to bbox distance and
+  /// the heatmap is hidden.
+  static const depthStaleAfterMs = 1000;
 
   /// The validated range shared by the Custom parser and Ultralytics native
   /// engine. Values are applied at engine restart/reload, not per frame.
@@ -22,3 +47,37 @@ abstract final class EyeCueModelConfig {
     return (clamped / 0.05).round() * 0.05;
   }
 }
+
+/// Requested depth accelerator.
+///
+/// A build-time benchmark/measurement switch, not a user setting and not
+/// persisted: `auto` is what ships. It exists so the device matrix in
+/// [`benchmark-procedure.md`](../../docs/benchmark-procedure.md) can pin depth
+/// to CPU without a settings UI.
+enum DepthAccelerator {
+  auto,
+  cpu,
+  gpu;
+
+  /// Whether to ask the plugin for the GPU delegate.
+  ///
+  /// `auto` asks, and `LiteRtModel` falls back to CPU when the GPU cannot run
+  /// the graph — the behaviour the app had before this knob existed.
+  bool get useGpu => this != DepthAccelerator.cpu;
+}
+
+/// The `--dart-define=EYECUE_DEPTH_ACCELERATOR=...` value; empty when unset.
+const depthAcceleratorDefine = String.fromEnvironment(
+  'EYECUE_DEPTH_ACCELERATOR',
+);
+
+/// Resolves the build-time accelerator request.
+///
+/// Pure and total: an unknown or empty value means [DepthAccelerator.auto], so
+/// a typo in a build flag cannot disable the GPU path silently.
+DepthAccelerator resolveDepthAccelerator(String raw) =>
+    switch (raw.trim().toLowerCase()) {
+      'cpu' => DepthAccelerator.cpu,
+      'gpu' => DepthAccelerator.gpu,
+      _ => DepthAccelerator.auto,
+    };

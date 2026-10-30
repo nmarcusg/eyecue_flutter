@@ -10,32 +10,27 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # 1. Camera (Bumped to 0.12.0+1)
+  # 1. Camera (used for availableCameras() sensor metadata)
   camera: ^0.12.0+1
-  
-  # 2. Machine Learning (classic Interpreter API)
-  tflite_flutter: ^0.12.1
-  
-  # 3. Audio Feedback
+
+  # 2. Audio Feedback
   flutter_tts: ^4.2.0
   
-  # 4. State Management (Keeping Riverpod at 2.6.1 for stability, as 3.x is very new and changes syntax)
-  flutter_riverpod: ^3.3.2
-  
-  # 5. Permissions (Bumped to 12.0.3)
+  # 4. Permissions (Bumped to 12.0.3)
   permission_handler: ^12.0.3
 
-  # 6. Path Provider
+  # 5. Path Provider
   path_provider: ^2.1.4
 
-  # 7. Data Visualization (For your Logs/Reports dashboard)
+  # 6. Data Visualization (For your Logs/Reports dashboard)
   fl_chart: ^1.2.0
 
-  # 8. Alternative native YOLO pipeline (runtime-comparable with custom mode)
-  ultralytics_yolo: 0.6.13
+  # 7. Alternative native YOLO pipeline (runtime-comparable with custom mode)
+  ultralytics_yolo:
+    path: plugins/ultralytics_yolo
   marionette_flutter: ^0.6.0
 
-  # 9. Offline IBM Plex Sans typography for the Home-local light theme
+  # 8. Offline IBM Plex Sans typography for the Home-local light theme
   google_fonts: ^8.2.1
 
 dev_dependencies:
@@ -47,12 +42,11 @@ flutter:
   uses-material-design: true
   assets:
     - assets/yolov8n_int8_new_metadata.tflite
-    - assets/yolov8n_int8_new.tflite
-    - assets/yolov8n.tflite
+    # Official Ultralytics depth model (yolo26n-depth, w8a32, v0.6.6). Bundled
+    # so MDE runs offline; the manifest's INTERNET permission is only for the
+    # optional manual telemetry upload.
+    - assets/yolo26n-depth_w8a32.tflite
     - assets/labels.txt
-    # TEMPORARY (test-image mode): known-good RGB photo of COCO objects.
-    # Remove together with the useTestImage flag.
-    - assets/test_image.jpg
     # Home visual mark (decorative; wordmark stays live text).
     - assets/logo.png
     # Offline IBM Plex Sans fonts for the Home-local light theme.

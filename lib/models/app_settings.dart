@@ -1,21 +1,37 @@
+import 'detector_model.dart';
+
+/// The one detection engine. Kept as an enum because telemetry records and
+/// persisted settings carry the value as a stable discriminator.
 enum InferenceEngine {
-  custom,
   ultralytics;
 
-  String get label => switch (this) {
-    InferenceEngine.custom => 'Custom EyeCue',
-    InferenceEngine.ultralytics => 'Ultralytics',
-  };
+  String get label => 'Ultralytics';
 
-  String get description => switch (this) {
-    InferenceEngine.custom =>
-      'Advanced / compatibility fallback. Uses the EyeCue Dart preprocessing, '
-          'parsing, and XNNPACK/CPU path.',
-    InferenceEngine.ultralytics =>
-      'Recommended. Uses the native CameraX and LiteRT GPU-to-CPU path.',
-  };
+  String get description =>
+      'Recommended. Uses the native CameraX and LiteRT GPU-to-CPU path.';
 
-  bool get isRecommended => this == InferenceEngine.ultralytics;
+  bool get isRecommended => true;
+}
+
+/// How object distance is estimated.
+///
+/// [monocularDepth] runs the depth model and reports metric estimates.
+/// [boundingBoxApproximation] stops depth inference entirely and keeps the
+/// original box-height heuristic.
+enum DistanceEstimationMode {
+  monocularDepth(
+    'Depth estimate',
+    'Estimate distance in metres with the depth model. Slower but metric.',
+  ),
+  boundingBoxApproximation(
+    'Bounding box',
+    'Approximate distance from box size only. Lightest option.',
+  );
+
+  final String label;
+  final String description;
+
+  const DistanceEstimationMode(this.label, this.description);
 }
 
 /// Plain-language confidence presets exposed by the settings screen.
@@ -59,15 +75,28 @@ enum DetectionSensitivityPreset {
 /// All values have safe defaults so a missing/corrupt settings file never
 /// breaks startup.
 class AppSettings {
-  // Incremented 1 -> 2 when `detectionConfidence` was added and 2 -> 3 when
-  // `hideBottomNavigation` was added: the established convention is that a new
-  // persisted field bumps the schema version. The parser is field-tolerant and
-  // has no migration branch, so this is a marker only; older JSON that lacks
-  // the field still parses with the safe default.
-  static const int currentSchemaVersion = 3;
+  // Incremented 1 -> 2 when `detectionConfidence` was added, 2 -> 3 when
+  // `hideBottomNavigation` was added, 3 -> 4 when the distance/overlay fields
+  // were added, 4 -> 5 when the inference cadence targets were added, 5 -> 6
+  // when the first-use safety acknowledgement was added, and 6 -> 7 when the
+  // detector model selection was added: the established convention is that a
+  // new persisted field bumps the schema version. The parser is field-tolerant
+  // and has no migration branch, so this is a marker only; older JSON that
+  // lacks the fields still parses with the safe default (built-in detector).
+  static const int currentSchemaVersion = 7;
   static const double defaultDetectionConfidence = 0.25;
   static const double minDetectionConfidence = 0.10;
   static const double maxDetectionConfidence = 0.75;
+
+  /// Requested detector cadence bounds. `null` means Automatic (the previous
+  /// uncapped native behaviour).
+  static const int minDetectionTargetHz = 1;
+  static const int maxDetectionTargetHz = 30;
+
+  /// Requested depth cadence bounds. A target, not a guaranteed rate.
+  static const int defaultDepthTargetHz = 2;
+  static const int minDepthTargetHz = 2;
+  static const int maxDepthTargetHz = 10;
 
   final bool vibrationFeedback;
   final bool autoStartDetection;
@@ -82,6 +111,47 @@ class AppSettings {
   /// depends on the accessibility-navigation state, which is never written
   /// back here (see `AppShellState`).
   final bool hideBottomNavigation;
+
+  /// Whether native bounding-box overlays are drawn while the depth heatmap is
+  /// hidden. When the heatmap is visible, boxes are painted in Flutter instead.
+  final bool showBoundingBoxes;
+
+  /// Whether the depth heatmap is drawn when [distanceEstimationMode] is
+  /// [DistanceEstimationMode.monocularDepth].
+  final bool showDepthHeatmap;
+
+  final DistanceEstimationMode distanceEstimationMode;
+
+  /// Requested detector cadence in Hz. `null` means Automatic, which keeps the
+  /// previous uncapped native cadence.
+  final int? detectionTargetHz;
+
+  /// Requested depth cadence in Hz. A target, not a guaranteed rate.
+  final int depthTargetHz;
+
+  /// Whether the user has explicitly acknowledged the first-use safety
+  /// disclosure. `false` means the acknowledgement has not been shown yet.
+  final bool safetyAcknowledged;
+
+  /// Selected detector graph. Older persisted JSON has no value and means the
+  /// bundled [DetectorModelKind.builtIn] detector.
+  final DetectorModelKind detectorModelKind;
+
+  /// Researcher-provided display name of the imported custom model. Never a raw
+  /// filename. Only meaningful when [detectorModelKind] is custom.
+  final String? customModelName;
+
+  /// Content-derived fingerprint of the imported graph.
+  ///
+  /// The app-owned copy lives at `<modelsDir>/<fingerprint>.tflite`; the path is
+  /// derived from this value rather than persisted, because settings reach
+  /// exported study data and a filesystem path must never cross that boundary.
+  final String? customModelFingerprint;
+
+  /// Class count of the imported graph. Labels themselves are **not** persisted
+  /// here (settings reach exported study data); they live in the model sidecar.
+  final int? customModelClassCount;
+
   final int schemaVersion;
 
   const AppSettings({
@@ -92,8 +162,22 @@ class AppSettings {
     this.inferenceEngine = InferenceEngine.ultralytics,
     this.detectionConfidence = defaultDetectionConfidence,
     this.hideBottomNavigation = false,
+    this.showBoundingBoxes = true,
+    this.showDepthHeatmap = true,
+    this.distanceEstimationMode = DistanceEstimationMode.monocularDepth,
+    this.detectionTargetHz,
+    this.depthTargetHz = defaultDepthTargetHz,
+    this.safetyAcknowledged = false,
+    this.detectorModelKind = DetectorModelKind.builtIn,
+    this.customModelName,
+    this.customModelFingerprint,
+    this.customModelClassCount,
     this.schemaVersion = currentSchemaVersion,
   });
+
+  /// Sentinel so [copyWith] can distinguish "leave the detection target
+  /// unchanged" from "set it back to Automatic (`null`)".
+  static const Object _unset = Object();
 
   AppSettings copyWith({
     bool? vibrationFeedback,
@@ -103,6 +187,16 @@ class AppSettings {
     InferenceEngine? inferenceEngine,
     double? detectionConfidence,
     bool? hideBottomNavigation,
+    bool? showBoundingBoxes,
+    bool? showDepthHeatmap,
+    DistanceEstimationMode? distanceEstimationMode,
+    Object? detectionTargetHz = _unset,
+    int? depthTargetHz,
+    bool? safetyAcknowledged,
+    DetectorModelKind? detectorModelKind,
+    Object? customModelName = _unset,
+    Object? customModelFingerprint = _unset,
+    Object? customModelClassCount = _unset,
   }) {
     return AppSettings(
       vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
@@ -114,6 +208,27 @@ class AppSettings {
           ? this.detectionConfidence
           : normalizeDetectionConfidence(detectionConfidence),
       hideBottomNavigation: hideBottomNavigation ?? this.hideBottomNavigation,
+      showBoundingBoxes: showBoundingBoxes ?? this.showBoundingBoxes,
+      showDepthHeatmap: showDepthHeatmap ?? this.showDepthHeatmap,
+      distanceEstimationMode:
+          distanceEstimationMode ?? this.distanceEstimationMode,
+      detectionTargetHz: identical(detectionTargetHz, _unset)
+          ? this.detectionTargetHz
+          : normalizeDetectionTargetHz(detectionTargetHz),
+      depthTargetHz: depthTargetHz == null
+          ? this.depthTargetHz
+          : normalizeDepthTargetHz(depthTargetHz),
+      safetyAcknowledged: safetyAcknowledged ?? this.safetyAcknowledged,
+      detectorModelKind: detectorModelKind ?? this.detectorModelKind,
+      customModelName: identical(customModelName, _unset)
+          ? this.customModelName
+          : customModelName as String?,
+      customModelFingerprint: identical(customModelFingerprint, _unset)
+          ? this.customModelFingerprint
+          : customModelFingerprint as String?,
+      customModelClassCount: identical(customModelClassCount, _unset)
+          ? this.customModelClassCount
+          : customModelClassCount as int?,
     );
   }
 
@@ -126,12 +241,21 @@ class AppSettings {
     'inferenceEngine': inferenceEngine.name,
     'detectionConfidence': detectionConfidence,
     'hideBottomNavigation': hideBottomNavigation,
+    'showBoundingBoxes': showBoundingBoxes,
+    'showDepthHeatmap': showDepthHeatmap,
+    'distanceEstimationMode': distanceEstimationMode.name,
+    'detectionTargetHz': detectionTargetHz,
+    'depthTargetHz': depthTargetHz,
+    'safetyAcknowledged': safetyAcknowledged,
+    'detectorModelKind': detectorModelKind.name,
+    'customModelName': customModelName,
+    'customModelFingerprint': customModelFingerprint,
+    'customModelClassCount': customModelClassCount,
   };
 
   /// Parses old and partially written settings without allowing one malformed
-  /// field to discard every other valid preference. Missing engine values use
-  /// the new-install default (Ultralytics); an explicit legacy Custom value is
-  /// preserved.
+  /// field to discard every other valid preference. Missing or unknown engine
+  /// values (including the removed Custom engine) use Ultralytics.
   factory AppSettings.fromJson(Map<String, dynamic> json) {
     final engineName = json['inferenceEngine'];
     final engine = engineName is String
@@ -141,6 +265,37 @@ class AppSettings {
           )
         : InferenceEngine.ultralytics;
     final confidence = json['detectionConfidence'];
+    final modeName = json['distanceEstimationMode'];
+    final mode = modeName is String
+        ? DistanceEstimationMode.values.firstWhere(
+            (candidate) => candidate.name == modeName,
+            orElse: () => DistanceEstimationMode.monocularDepth,
+          )
+        : DistanceEstimationMode.monocularDepth;
+    // Older persisted JSON has no detector fields at all; anything naming a
+    // custom model without its full identity is treated as the built-in choice
+    // so settings can never claim a model that cannot be resolved.
+    final kindName = json['detectorModelKind'];
+    final customName = _stringOrNull(json['customModelName']);
+    final customFingerprint = _fingerprintOrNull(
+      json['customModelFingerprint'],
+    );
+    final customClassCount = json['customModelClassCount'];
+    // Older files may still carry `customModelPath`; unknown keys are ignored.
+    final customComplete =
+        customName != null &&
+        customFingerprint != null &&
+        customClassCount is int &&
+        customClassCount > 0;
+    final parsedKind = kindName is String
+        ? DetectorModelKind.values.firstWhere(
+            (candidate) => candidate.name == kindName,
+            orElse: () => DetectorModelKind.builtIn,
+          )
+        : DetectorModelKind.builtIn;
+    final kind = parsedKind == DetectorModelKind.custom && !customComplete
+        ? DetectorModelKind.builtIn
+        : parsedKind;
     return AppSettings(
       vibrationFeedback: _boolOr(json['vibrationFeedback'], true),
       autoStartDetection: _boolOr(json['autoStartDetection'], true),
@@ -153,6 +308,21 @@ class AppSettings {
       // Older persisted JSON lacks this field; default to a visible bar so
       // upgrading users keep the navigation bar they already had.
       hideBottomNavigation: _boolOr(json['hideBottomNavigation'], false),
+      showBoundingBoxes: _boolOr(json['showBoundingBoxes'], true),
+      showDepthHeatmap: _boolOr(json['showDepthHeatmap'], true),
+      distanceEstimationMode: mode,
+      detectionTargetHz: normalizeDetectionTargetHz(json['detectionTargetHz']),
+      depthTargetHz: normalizeDepthTargetHz(json['depthTargetHz']),
+      // Older persisted JSON lacks the field, so an upgrading user sees the
+      // first-use disclosure once.
+      safetyAcknowledged: _boolOr(json['safetyAcknowledged'], false),
+      detectorModelKind: kind,
+      // The identity is parsed independently of the selection: switching to the
+      // built-in detector keeps the last import re-selectable after a restart,
+      // so only completeness gates it — never the selected kind.
+      customModelName: customComplete ? customName : null,
+      customModelFingerprint: customComplete ? customFingerprint : null,
+      customModelClassCount: customComplete ? customClassCount : null,
       schemaVersion: currentSchemaVersion,
     );
   }
@@ -163,12 +333,41 @@ class AppSettings {
   static bool _boolOr(Object? value, bool fallback) =>
       value is bool ? value : fallback;
 
+  static String? _stringOrNull(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value.trim() : null;
+
+  /// A persisted fingerprint names an app-owned file, so it is accepted only in
+  /// the shape [tfliteFingerprint] produces. Anything else (a traversal value
+  /// such as `"../outside"`, a hand-edited store) is treated as an incomplete
+  /// identity and dropped before it can reach a file path.
+  static final RegExp _fingerprintShape = RegExp(r'^[0-9a-f]{16}-\d{1,10}$');
+
+  static String? _fingerprintOrNull(Object? value) {
+    final text = _stringOrNull(value);
+    return text != null && _fingerprintShape.hasMatch(text) ? text : null;
+  }
+
   /// Keeps persisted and runtime values within the supported advanced-slider
   /// range and on its 0.05 step grid. NaN and infinity use the default.
   static double normalizeDetectionConfidence(double value) {
     if (!value.isFinite) return defaultDetectionConfidence;
     final clamped = value.clamp(minDetectionConfidence, maxDetectionConfidence);
     return (clamped / 0.05).round() * 0.05;
+  }
+
+  /// Normalizes a persisted/requested detector cadence. Anything that is not a
+  /// finite positive number means Automatic (`null`); the rest is rounded and
+  /// clamped to the supported slider range.
+  static int? normalizeDetectionTargetHz(Object? value) {
+    if (value is! num || !value.isFinite || value <= 0) return null;
+    return value.round().clamp(minDetectionTargetHz, maxDetectionTargetHz);
+  }
+
+  /// Normalizes a persisted/requested depth cadence. Non-numeric or non-finite
+  /// input falls back to the default; the rest is rounded and clamped.
+  static int normalizeDepthTargetHz(Object? value) {
+    if (value is! num || !value.isFinite) return defaultDepthTargetHz;
+    return value.round().clamp(minDepthTargetHz, maxDepthTargetHz);
   }
 
   @override
@@ -180,7 +379,17 @@ class AppSettings {
       other.audioEnabled == audioEnabled &&
       other.inferenceEngine == inferenceEngine &&
       other.detectionConfidence == detectionConfidence &&
-      other.hideBottomNavigation == hideBottomNavigation;
+      other.hideBottomNavigation == hideBottomNavigation &&
+      other.showBoundingBoxes == showBoundingBoxes &&
+      other.showDepthHeatmap == showDepthHeatmap &&
+      other.distanceEstimationMode == distanceEstimationMode &&
+      other.detectionTargetHz == detectionTargetHz &&
+      other.depthTargetHz == depthTargetHz &&
+      other.safetyAcknowledged == safetyAcknowledged &&
+      other.detectorModelKind == detectorModelKind &&
+      other.customModelName == customModelName &&
+      other.customModelFingerprint == customModelFingerprint &&
+      other.customModelClassCount == customModelClassCount;
 
   @override
   int get hashCode => Object.hash(
@@ -191,5 +400,15 @@ class AppSettings {
     inferenceEngine,
     detectionConfidence,
     hideBottomNavigation,
+    showBoundingBoxes,
+    showDepthHeatmap,
+    distanceEstimationMode,
+    detectionTargetHz,
+    depthTargetHz,
+    safetyAcknowledged,
+    detectorModelKind,
+    customModelName,
+    customModelFingerprint,
+    customModelClassCount,
   );
 }

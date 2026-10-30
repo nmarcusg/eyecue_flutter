@@ -5,6 +5,232 @@
 
 ---
 
+## Unreleased — Researcher-selectable detector models and research logging sessions
+
+Branch `feat/researcher-detector-models`, commit range `5ba1b38..2779f9c`:
+`a9e3a7d`, `58111ac`, `c0d7a79`, `f9f5df4`, `bd2b6fc`, `d4035ff`, `2a12f3e`,
+`05ec5d2`, `9d7958d`, `2779f9c`. The carried U5 fixes and these documentation
+corrections land on top of `2779f9c`.
+
+### Added
+- A researcher can import a custom TFLite detection graph from Settings →
+  **Detector Model**. The import is validated (parseable TFLite, embedded
+  Ultralytics label metadata, a `detect` task when the metadata reports one,
+  label/class agreement, at most 40 MB, at most 1 000 labels), copied into
+  app-owned storage under a content-derived fingerprint, and restored across
+  restarts. The bundled detector stays available and is never modified.
+- The selection drives detection end to end — model path, label list, rendering,
+  speech and priority mapping come from the selected descriptor, so a custom
+  class `0` does not inherit COCO person priority.
+- A model change is a deliberate stop: detection stops, callbacks from the
+  superseded native view are rejected, detections/overlay/tracks/correction
+  context are cleared, and nothing restarts automatically. Covered for the
+  active, paused, stopped and still-loading states.
+- Explicit respondent logging trials: Start / Pause / Resume / Finish / Discard,
+  with retained detections, runtime samples, failures, fallbacks, recoveries,
+  corrections, and alert-lifecycle records (operational telemetry continues during
+  study Pause), interval-baseline counters, and checkpoints after 100 captured rows
+  across collection callbacks or when a later captured row observes at least 5
+  seconds since the prior checkpoint. This elapsed-time check is not a standalone
+  timer and does not flush during idle periods. Writes are serialized to a flushed
+  temporary file followed by rename; a handled write failure preserves the last good
+  saved draft. Ordinary interrupted-run recovery restores paused at the last saved
+  checkpoint; rows captured since then are the bounded unsaved window while captures
+  continue. No every-event or platform-independent filesystem/power-loss durability
+  guarantee is made. Pause/Finish failures remain visible and preserve data for
+  retry/export; pre-repair metadata-only drafts remain incomplete and missing rows
+  are never recreated. Capacity is 10,000 detections / 2,000 samples per trial and
+  20 stored trials (refuse with explicit discard). Local save/export preserves all
+  available trial rows and is not thinned for the 2,000,000-byte upload cap, which
+  refuses oversized payloads without changing local data.
+- Every sample and detection row records the detector that produced it: JSON adds
+  a `detectorModels` dictionary (`<id>`, then `<id>~2` for a second identity with
+  the same content id) and CSV adds `model_id`, `model_name`,
+  `model_fingerprint`. No path, file name or URI is exported.
+
+### Changed
+- Logs & Reports names the model beside detection and performance rows. The
+  Charts tab and log list filter by model; Overview Avg FPS/Avg Latency stay
+  unfiltered and label single-model, mixed-model, unknown legacy, or no-data scope.
+  Alert Latency explicitly reports per-engine speech latency across all detector
+  models. Upload acts on one finished trial, stored once per participant/trial with
+  retries deduplicated; the upload-size cap does not constrain complete local export.
+- The live app-session upload is unavailable once a trial exists in that run;
+  local JSON/CSV export of the live session stays available.
+
+### Verified
+- Verified on the local worktree, never on a device: `flutter test --no-pub
+  --concurrency=1` over `test/services/ test/screens/ test/models/ test/widgets/
+  test/navigation/ test/accessibility/ test/architecture/ test/theme_test.dart
+  test/widget_test.dart`, `dart format --output=none --set-exit-if-changed` on the
+  changed files, `flutter analyze --no-pub` and `git diff --check`.
+- One Kotlin file did change this round —
+  [`MainActivity.kt`](../android/app/src/main/kotlin/app/eyecue/mobile/MainActivity.kt),
+  the app-local file picker — and `./gradlew :app:compileDebugKotlin --offline`
+  finished `BUILD SUCCESSFUL`. That is a compile of that source only: no device
+  run, no signed APK/AAB, no Play Console check and no live Supabase upload. Real
+  custom-model execution, picker/provider permissions, accelerator behaviour and
+  physical accessibility remain device gates.
+
+---
+
+## Unreleased — Truthful Ultralytics readiness
+
+### Fixed
+- Ultralytics remains Preparing until the mounted native view delivers its first
+  valid inference payload (including empty detections); a live session with no
+  payload fails after 30 seconds. Added production platform-view/event-channel
+  regression coverage for resolution-only, empty/non-empty payloads, startup
+  timeout, and live model-resolution failure.
+
+---
+
+## Unreleased — Configurable inference cadence (2026-10-23)
+
+### Added
+- Persisted **Inference Cadence** settings: detector target Automatic (default)
+  or 1–30 Hz, and depth target 2–10 Hz (default 2 Hz). Settings schema `4 → 5`.
+- Pure [`InferenceCadence.resolve`](../lib/services/inference_cadence.dart)
+  policy: low power caps detection at 4 Hz and depth at 2 Hz, a numeric detector
+  rate also caps depth (source-limited), and bounding-box distance mode disables
+  depth work.
+- Detector cadence is applied through `YOLOStreamingConfig.inferenceFrequency`
+  and re-applied live with `setStreamingConfig`; depth cadence re-arms the single
+  latest-frame scheduler without queueing.
+- Telemetry schema **3** adds per-sample cadence fields (requested/effective
+  rates, automatic flag, low-power and source-limit flags, observed depth
+  cadence and latency), carried through the manual Supabase upload; no migration
+  is needed.
+- `INTERNET` is declared in the main manifest for that optional manual upload
+  only. Both detection and depth models remain bundled; nothing is downloaded.
+
+### Verified
+- `flutter analyze --no-pub`: 4 pre-existing issues; `flutter test --no-pub`:
+  527 passing, 1 pre-existing `tts_service_test` failure. No build, device or
+  performance measurement was run, so no cadence/FPS figure is claimed.
+
+---
+
+## 2026-10-22 — MDE depth model bundled
+
+> **Later change (2026-10-23):** the main manifest now also declares `INTERNET`,
+> but only for the optional manual telemetry upload. The depth model remains
+> bundled and no model is downloaded.
+
+### Fixed
+- Depth could not run in a release build. The estimator passed the official
+  `yolo26n-depth` id, so the plugin downloaded the model on first use, but
+  release manifests declare only `CAMERA` (`INTERNET` exists only in the
+  debug/profile manifests). The load always failed, the estimator degraded, and
+  the screen showed the degraded banner while detection kept working.
+- `yolo26n-depth_w8a32.tflite` is now a bundled asset
+  ([`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite)),
+  loaded through the same asset path detection already uses. MDE is fully
+  offline and needs no `INTERNET` permission.
+
+### Added
+- One-shot `[Depth]` diagnostics: the requested model path and `useGpu` before
+  loading, the error string on load failure, and the first frame's map size,
+  depth range, elapsed milliseconds and accelerator choice.
+
+### Verified
+- Static only: `dart format`, `flutter analyze`, `flutter test` and
+  `flutter build apk --release`. **No device run** — the heatmap, metric
+  distances and on-device latency remain unverified.
+
+---
+
+## 2026-10-21 — Monocular depth estimation; single engine
+
+### Added
+- Optional metric distance from the official `yolo26n-depth` model, run as a
+  second `ultralytics_yolo` instance on the streamed analysis JPEG; see
+  [`mde-integration.md`](mde-integration.md).
+- `DistanceEstimationMode` (`monocularDepth` default, `boundingBoxApproximation`)
+  plus independent `showBoundingBoxes` / `showDepthHeatmap` preferences and the
+  Settings "Distance & Overlays" card; settings schema `3 → 4`.
+- Pure depth helpers ([`depth_distance_service.dart`](../lib/services/depth_distance_service.dart)),
+  the scheduler/estimator ([`monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart)),
+  and the rotated centre-crop heatmap widget
+  ([`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart)).
+- Metric distance on `DetectionInfo` (`estimatedMeters`, `distanceSource`,
+  `distanceLabel`) mapped onto the existing proximity bands; speech says
+  "about N m" when a metric estimate exists.
+- Non-blocking degraded path (model load failure, offline, stale map, geometry
+  change, GPU failure after one CPU retry) with a banner and retry.
+
+### Removed
+- The Custom EyeCue engine and its Dart/TFLite runtime, `tflite_flutter`, the
+  Gradle classic-LiteRT native-library workaround, the `yolov8n` base/INT8
+  assets, the forensic tooling, and the two-engine coordinator fallback APIs.
+- `InferenceEngine.custom`; a persisted legacy value now loads as
+  `ultralytics`.
+
+### Verified
+- `dart format` clean; `flutter analyze` shows only 4 pre-existing issues;
+  `flutter test` **452 passing, 1 pre-existing failure** (the
+  2026-10-21 revision total); `flutter build apk --release` succeeds (82.9 MB,
+  no `libtensorflowlite_jni.so` in the APK).
+- **No device run.** Depth accuracy, on-device latency/FPS, thermal behaviour
+  and the manual matrix in [`mde-integration.md`](mde-integration.md) remain
+  unverified.
+
+---
+
+## Unreleased — Waste-Reduction Cleanup (WS4, 2026-10-19)
+
+### Changed
+- `28ffa9c` — removed the static-image diagnostic chain: service/screen branch, decoder-only API, `InputProbe.rgbaToI420`, `pubspec.yaml` declaration, and `assets/test_image.jpg`.
+- `6188974` — deleted verified zero-fan-in probes, debug overlay, info panel, compatibility export wrappers, and unused model/theme declarations.
+- `a466077` — removed the unused `flutter_riverpod` dependency; the tool-regenerated lockfile also normalized ten documented toolchain-forced downgrades under Flutter 3.44.2. This is not a dependency upgrade and no build was validated.
+- `1516dfe` — stopped bundling `assets/yolov8n_int8_new.tflite` and `assets/yolov8n.tflite`; both remain tracked for tools, tests, and history.
+- `7e89461` — C5 changed the existing forensic master switch to `!kReleaseMode`, so forensic file logging is now release-disabled. Debug/profile diagnostics remain, and some eager forensic CPU work still runs before the gated writes.
+- Current documentation and stale source comments were reconciled, and historical investigations now carry retirement/current-status notices instead of rewritten evidence.
+
+### Verified
+- **Static only.** WS4 commits were checked with focused reference searches, exact diff/boundary checks, `git diff --check`, clean status, and preserved-ref/lock checks.
+- No tests, analyzer, dependency resolution (beyond the authorized C3 regeneration), Gradle/build, APK/bundle inspection, emulator/device, or benchmark run was performed. No speed, storage, privacy, or release-readiness improvement is claimed.
+
+---
+
+## Unreleased — Alert-Latency Telemetry (Workstream 2)
+
+> **Later changes:** the Custom engine was removed on 2026-10-21, so only the
+> four Ultralytics summaries carry samples; the export schema is now **3** after
+> the cadence telemetry, and the suite has since run (527 passing, 1 known
+> pre-existing failure).
+
+### Added
+- Bounded alert-lifecycle telemetry in [`alert_lifecycle.dart`](../lib/models/alert_lifecycle.dart) and [`telemetry_service.dart`](../lib/services/telemetry_service.dart): one event-delta record per terminal TTS submission (capped at 500) plus a replace-only cumulative scheduler-counter snapshot.
+- Custom frame anchors (analysis received, worker inference start/completion, result receipt, detection accepted) correlated through the shared assistive controller and TTS request. Ultralytics records only result receipt and later app-side anchors; pre-result fields stay null.
+- Eight detection-origin alert-latency summaries — four intervals per engine — using nearest-rank p50/p95/max/count, with null or negative endpoints excluded and zero-duration samples retained.
+- Additive schema-v2 export in [`telemetry_export.dart`](../lib/models/telemetry_export.dart) and [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart): `alertLifecycle`, `alertCounters`, and `alertSummaries` JSON payloads plus `alert_lifecycle`, `alert_counter`, and `alert_summary` CSV rows. Schema-v1 input still parses with empty alert collections.
+- Logs & Reports Overview section `Alert latency and scheduler health` showing every interval and scheduler counter, with `No samples` for empty distributions.
+
+### Verified
+- **Static only.** Owning tests were written but not executed; `flutter analyze`, the test suite, Gradle, builds, and emulator/device runs were not performed.
+- Physical audible-warning latency remains unmeasured. The Ultralytics interval is `app-side / post-inference`, not full inference or end-to-end latency, and no performance, safety, or release-readiness claim is made.
+
+---
+
+## Unreleased — Lifecycle-Aware TTS Safety Arbitration (Workstream 1)
+
+### Changed
+- Replaced the fire-and-forget TTS path with a serialized scheduler in [`tts_service.dart`](../lib/services/tts_service.dart): exactly one utterance in flight and exactly one pending request (higher priority replaces lower; newest replaces oldest at equal priority).
+- Accepted-alert history, cooldowns, and repeat-last state are now committed **only from a confirmed `onStart`**. A decision that is rejected, dropped, or cancelled before speech begins arms nothing.
+- Completion, cancellation, drop and failure are distinct terminal states reconciled from paired platform signals (`onComplete` + result `1`, `onCancel` + result `0`). Missing signals enter a bounded recovery with a restartable quiet-period quarantine.
+- Label-only suppression was replaced by track-aware identity in the new [`alert_policy.dart`](../lib/services/alert_policy.dart). A different person (different track ID) is independently eligible even when the `person` label was announced moments earlier.
+- Escalation re-alerts within the ordinary same-object window on risk increase, `stable/unknown → approaching`, proximity-band increase, centre-corridor entry, or smoothed-box growth. Parked decisions are revalidated semantically (TTL-aware) before speaking.
+- Added controlled preemption: imminent safety alerts outrank lower priorities, and a distinct suddenly-approaching track may preempt an equal-priority, non-approaching active warning. Both preserve a preemption cooldown and the serialized stop/cancel/reconcile path.
+- Wayfinding (destination/boundary phrases) now runs through the serialized scheduler: accepted only while idle, never queued behind Detection speech, never replacing Detection repeat-last state, with anti-repeat history committed only on confirmed `onStart`.
+- Widget-test fake engines now install lifecycle handlers, emit start before completion, and are disposed after each test.
+
+### Verified
+- **Static checks only.** `dart format` and `git diff --check` are clean; no conflict markers or unmerged paths remain.
+- `flutter analyze`, the full test suite, Gradle, and builds were **not** run after relocating this work onto `origin/dev`. Test totals from earlier revisions are historical, not current verification.
+
+---
+
 ## Unreleased — Presentation-Only Visual Redesign Closeout (2026-09-29)
 
 ### Changed

@@ -2,12 +2,23 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`project-status.md`](project-status.md) (current state), [`implementation-progress.md`](implementation-progress.md) (tracking), and [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned application task areas and their acceptance criteria).
 
-> **Current app-only status (2026-09-05):** Shared runtime/error handling,
+> **Current status (2026-10-17):** Workstream 1 replaced the TTS scheduler with a
+> lifecycle-aware arbiter — one active utterance, one pending request,
+> confirmed-`onStart` history, paired-signal reconciliation, track-aware
+> suppression/escalation, controlled preemption, and idle-only wayfinding. See
+> [`architecture.md`](architecture.md#speech-scheduling-workstream-1). The
+> Workstream 1 feature branch has **not** been re-verified: no Flutter tests
+> or analyzer ran after relocation, and device validation, audible-latency
+> measurement, telemetry instrumentation, and Play-readiness documentation remain
+> pending.
+>
+> **App-only status (2026-09-05 — historical):** Shared runtime/error handling,
 > dual-engine coordination, bounded Custom-worker recovery, accessibility,
 > corrections, sensitivity, telemetry/export, metadata packaging, tracking, and
-> scene summaries are implemented and covered by **127 passing tests**. Android
-> identity, production signing, release AAB generation, device validation, formal
-> benchmarking, and external licence/Play-release decisions remain gated items.
+> scene summaries were implemented and covered by **127 passing tests at that
+> revision**. Android identity, production signing, release AAB generation, device
+> validation, formal benchmarking, and external licence/Play-release decisions
+> remain gated items.
 
 ## Long-Term Roadmap
 
@@ -18,7 +29,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 ### Milestone 1: "Audible MVP" (Target: ~2 weeks)
 
 **Definition of Done:**
-- TTS speaks detected object names aloud with priority-based cooldown
+- TTS speaks detected object names aloud through serialized, lifecycle-aware arbitration (one active utterance, one pending request, risk- and priority-based preemption)
 - Bounding boxes rendered on camera preview via `CustomPainter`
 - Error handling in inference isolate (try/catch + typed error state propagation)
 - Permission-denied UI with explanation and settings redirect
@@ -36,7 +47,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 - Performance logging: FPS, inference latency, confidence scores, timestamps — ✅ done (5-second summaries + Info Panel metrics + Logs & Reports telemetry)
 - Pause/resume detection toggle with camera deactivation — ✅ done (v0.2.0 — single-tap pause/resume via [`gesture_controller.dart`](../lib/services/gesture_controller.dart) + visible controls)
 - `fl_chart` logging dashboard for real-time metrics visualization — ✅ done (v0.2.0 — Logs & Reports Overview/Charts/Logs, [`charts.dart`](../lib/widgets/charts.dart))
-- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ release baseline had 59 passing across navigation, screens, widgets, services, charts, theme; the current repository has **127** including NHWC/NCHW tensor rotation, engine settings, per-engine telemetry, Ultralytics-result adaptation, lifecycle recovery, exports, tracking, summaries, and accessibility
+- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ release baseline had 59 passing across navigation, screens, widgets, services, charts and theme; the **2026-09-05 revision** had **127** including NHWC/NCHW tensor rotation, engine settings, per-engine telemetry, Ultralytics-result adaptation, lifecycle recovery, exports, tracking, summaries, and accessibility. That count is historical evidence for that revision, not a result for the current Workstream 1 branch.
 - Adaptive throttling based on measured inference time — 🟡 partial (v0.2.0 Low Power Mode applies a dispatch throttle; formal measured throttling remains)
 
 **Feature Dependencies:**
@@ -49,17 +60,17 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 
 **Definition of Done:**
 - Accessibility features: TalkBack/VoiceOver semantics, gesture controls — ✅ gesture controls and tested TalkBack/Semantics coverage implemented; device TalkBack validation remains manual
-- Priority-based TTS queue (person > vehicle > obstacle > other) — ✅ done (v0.2.0 — class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart))
+- Priority-based TTS queue (person > vehicle > obstacle > other) — ✅ done (v0.2.0 — class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart); the 2026-10-17 arbiter replaces the bypass and label de-duplication with track-aware priority, suppression and escalation in [`alert_policy.dart`](../lib/services/alert_policy.dart))
 - Adaptive throttling fully implemented — 🟡 partial (Low Power Mode dispatch throttle)
 - GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU — 🟡 explicit XNNPACK candidate, initial target-device evidence, and recoverable CPU fallback are present; extended native stability validation and NNAPI/GPU alternatives remain pending
 - Integration tests for end-to-end pipeline — 🟡 deterministic unit/widget/orchestration coverage is in place; physical-device and full camera-to-runtime integration remain manual
-- Package name fixed to `com.eyecue` — ❌ (still `com.example.eyecue_flutter`)
+- Package name finalised as `app.eyecue.mobile` (owner-approved, supersedes the earlier `com.eyecue` target) — ✅ `2d0d0cd`
 - `minSdkVersion` set explicitly to thesis-aligned API 29 — 🟡 (currently relies on Flutter default 24)
-- All documentation up to date — ✅ (2026-09-05 synchronization; historical records remain dated)
+- All documentation up to date — ⚠️ (the 2026-09-05 synchronization was accurate at that revision; as of 2026-10-17, device validation, audible-latency measurement, telemetry instrumentation, and Play-release readiness documentation remain pending)
 
 **Feature Dependencies:**
 - Accessibility depends on: UI elements in place (bounding boxes, labels)
-- TTS priority queue depends on: TTS integration (M1), multi-object detection (M2)
+- Speech arbitration depends on: TTS integration (M1), multi-object detection (M2); implemented as one pending request plus risk-based preemption, not a class-priority queue
 - GPU delegate depends on: XNNPACK investigation resolution
 
 ### Milestone 4: "Production Candidate" (Target: ~8 weeks)
@@ -78,7 +89,7 @@ EyeCue is a thesis project evaluating whether on-device object detection can ser
 Camera Pipeline (done)
     └── Detection Stream (done)
         ├── TTS Audio (M1)
-        │   └── Priority Queue (M3)
+        │   └── Alert Arbitration (M3 — done; serialized + risk-aware)
         ├── Bounding Boxes (done — M1)
         │   └── Accessibility (M3)
         ├── NMS (done — M2)
