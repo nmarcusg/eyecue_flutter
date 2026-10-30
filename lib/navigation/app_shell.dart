@@ -7,12 +7,15 @@ import '../screens/home_screen.dart';
 import '../screens/logs_reports_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/correction_service.dart';
+import '../services/detector_model_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
+import '../services/research_session_service.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../services/tts_service.dart';
 import '../theme/app_home_theme.dart';
+import '../widgets/safety_disclosure.dart';
 
 /// Arena-aware, **exactly-one-active-pointer** horizontal drag recognizer.
 ///
@@ -43,15 +46,18 @@ class _SingleFingerHorizontalDragRecognizer
 
   /// Whether the shell may own a horizontal drag at all.
   ///
-  /// Detection (index 1) owns horizontal navigation inside its own viewport
+  /// Detection (index 1) owns horizontal navigation over its whole main area
   /// through its raw [GestureSurface] `Listener`. That surface does not compete
   /// in the gesture arena, so if the shell recognizer also accepted the same
   /// physical swipe it would produce two primary-tab moves. When this returns
   /// `false` the recognizer never claims the pointer, so Detection is the
-  /// single owner of horizontal navigation inside its viewport.
+  /// single owner of horizontal navigation over its whole main area.
   final bool Function()? enabled;
 
   /// True once a second pointer has joined the current sequence.
+  ///
+  /// Stays true until the next sequence starts, so a second pointer that
+  /// entered and then lifted can never re-arm the remaining pointer.
   bool _invalidated = false;
   double _accumulatedDx = 0;
 
@@ -68,12 +74,14 @@ class _SingleFingerHorizontalDragRecognizer
       resolve(GestureDisposition.rejected);
       return;
     }
-    // A second pointer joining invalidates the whole sequence.
-    if (_trackedPointers.isNotEmpty) {
-      _invalidated = true;
-    } else {
-      // First pointer of a new sequence: reset the accumulator.
+    if (_trackedPointers.isEmpty) {
+      // First pointer of a new sequence: reset the accumulator and the
+      // invalidation carried by the previous sequence.
       _accumulatedDx = 0;
+      _invalidated = false;
+    } else {
+      // A second pointer joining invalidates the whole sequence.
+      _invalidated = true;
     }
     _trackedPointers.add(event.pointer);
     super.addAllowedPointer(event);
@@ -82,14 +90,9 @@ class _SingleFingerHorizontalDragRecognizer
   @override
   void didStopTrackingLastPointer(int pointer) {
     _trackedPointers.remove(pointer);
-    _invalidated = false;
+    // super() dispatches the drag end, so the invalidation flag must still be
+    // visible to [_handleEnd] here; only a new sequence clears it.
     super.didStopTrackingLastPointer(pointer);
-  }
-
-  @override
-  void rejectGesture(int pointer) {
-    _invalidated = false;
-    super.rejectGesture(pointer);
   }
 
   void _handleStart(DragStartDetails details) {
@@ -128,6 +131,15 @@ class AppShell extends StatefulWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The loaded detector selection shared by Settings and Detection.
+  final DetectorModelService? detectorModel;
+
+  /// Explicit respondent-logging trials, shared by Logs & Reports and Detection.
+  ///
+  /// Optional only so widget tests can build the shell without file-system
+  /// channels; production always supplies the loaded instance.
+  final ResearchSessionService? researchSessions;
+
   /// Test hook — supply your own page widgets instead of the real screens.
   final List<Widget> Function(BuildContext context, AppShellState shell)?
   pagesOverride;
@@ -144,6 +156,8 @@ class AppShell extends StatefulWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    this.detectorModel,
+    this.researchSessions,
     this.pagesOverride,
     this.coordinatorOverride,
   });
@@ -187,10 +201,47 @@ class AppShellState extends State<AppShell> {
     _syncAudio();
     widget.settings.addListener(_syncAudio);
     widget.settings.addListener(_handleSettingsChanged);
-    _applyLaunchPolicy();
+    // The launch policy can start detection, so on a fresh install it waits for
+    // the first-use disclosure instead of firing behind the unacknowledged
+    // modal (see [_applyLaunchPolicy]).
+    if (widget.settings.safetyAcknowledged) _applyLaunchPolicy();
+    _scheduleFirstUseSafetyDisclosure();
+  }
+
+  /// Shows the first-use safety disclosure after the first frame, until the
+  /// acknowledgement is persisted.
+  ///
+  /// It is a modal that cannot be dismissed without the explicit action, and it
+  /// is never a transient message. The Help tab holds the permanent copy, so
+  /// this is the only first-use surface and there is no second one to compete
+  /// with it.
+  void _scheduleFirstUseSafetyDisclosure() {
+    if (widget.settings.safetyAcknowledged) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || widget.settings.safetyAcknowledged) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        useSafeArea: true,
+        builder: (dialogContext) => SafetyDisclosureDialog(
+          onAcknowledge: () {
+            Navigator.of(dialogContext).pop();
+            widget.settings.setSafetyAcknowledged(true);
+            // Consent is recorded, so the withheld launch policy applies now.
+            _applyLaunchPolicy();
+            if (mounted) setState(() {});
+          },
+        ),
+      );
+    });
   }
 
   /// Applies the finalized startup policy from the already-loaded preference.
+  ///
+  /// Only ever called once the first-use disclosure is acknowledged: starting
+  /// detection behind an unacknowledged consent modal would run the camera,
+  /// the start haptic and the "Detection started" speech over the announcement
+  /// the user is being asked to read.
   ///
   /// Auto-start ON: mark Detect visited/cached before the first shell build and
   /// issue one silent launch start intent while Home remains selected. The
@@ -292,6 +343,8 @@ class AppShellState extends State<AppShell> {
           telemetry: widget.telemetry,
           settings: widget.settings,
           corrections: widget.corrections,
+          researchSessions: widget.researchSessions,
+          detectorModel: widget.detectorModel,
         ),
       ),
     );
@@ -312,6 +365,8 @@ class AppShellState extends State<AppShell> {
           corrections: widget.corrections,
           haptics: widget.haptics,
           coordinator: _coordinator,
+          detectorModel: widget.detectorModel,
+          researchSession: widget.researchSessions,
           onNavigateRelative: navigateRelative,
         );
       case 2:
@@ -319,6 +374,7 @@ class AppShellState extends State<AppShell> {
           settings: widget.settings,
           onOpenLogsReports: openLogsReports,
           telemetry: widget.telemetry,
+          detectorModel: widget.detectorModel,
         );
       case 3:
         return const HelpScreen();
@@ -363,8 +419,8 @@ class AppShellState extends State<AppShell> {
                   () => _SingleFingerHorizontalDragRecognizer(
                     onCommit: navigateRelative,
                     commitDistance: _primarySwipeCommitDistance,
-                    // Detection (index 1) owns horizontal navigation inside
-                    // its own viewport via its raw GestureSurface; the shell
+                    // Detection (index 1) owns horizontal navigation over its
+                    // whole main area via its raw GestureSurface; the shell
                     // recognizer must not claim the pointer there, or one
                     // physical swipe would move two primary tabs.
                     enabled: () => _index != 1,

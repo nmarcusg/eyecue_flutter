@@ -4,6 +4,8 @@
 
 This document records important engineering decisions made during the development of EyeCue. Each entry captures the decision, context, alternatives considered, and consequences.
 
+> **Historical scope:** Decisions 1–10 and the Custom-engine discussion describe the Dart/TFLite pipeline removed on 2026-10-21. They are retained as the rationale record for that work, not as current runtime documentation.
+
 ---
 
 ## Decision 1: Persistent Inference Isolate
@@ -135,6 +137,7 @@ This document records important engineering decisions made during the developmen
   - Documentation distinguishes release behavior from the current committed but unreleased candidate.
   - No XNNPACK speedup, model-quality improvement, full graph delegation, or crash resolution is claimed.
   - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and long-duration device validation remain open. Bounded Custom-worker restart recovery is implemented and covered by deterministic lifecycle tests.
+  - **Current packaging (WS4, 2026-10-19):** `yolov8n_int8_new_metadata.tflite` is the sole Flutter-bundled runtime model, declared alongside `assets/labels.txt`. The base graph and v0.2.2 baseline remain tracked for tools, tests, and historical comparison but are not bundled.
 
 ## Decision 7: Flutter over React Native
 
@@ -150,3 +153,25 @@ This document records important engineering decisions made during the developmen
   - Camera preview is smooth even during inference
   - Lost: existing React Native TTS, accessibility, and UI work (must be reimplemented)
   - Gained: cleaner architecture, GPU overlays via CustomPainter, true multithreading
+
+---
+
+## Speech Scheduling: Lifecycle-Aware Arbitration
+
+- **Decision:** Replace the cooldown/label-deduplication TTS path with a serialized, lifecycle-aware scheduler plus a separate track-aware alert policy.
+- **Date:** 2026-10
+- **Reason:** A device test produced an obstacle warning after the user had already collided. Code review found four contributory defects: (1) label and announcement cooldowns were written *before* speech was attempted, so a rejected utterance still suppressed the next alert; (2) suppression was keyed on the label, so a second person was silenced by a first; (3) announcement decisions were not serialized, allowing concurrent frame results to race; (4) `flutter_tts` returns result `1` only at completion, so a dropped submission could be recorded as success.
+- **Alternatives Considered:**
+  - Keep the existing scheduler and only lengthen/shorten cooldowns — rejected; the defect is ordering and identity, not tuning.
+  - Stop and flush before every urgent alert — rejected; it floods speech, truncates utterances, and does not fix untracked history.
+  - Correlate callbacks by utterance ID — not possible; `flutter_tts` exposes no utterance identifier.
+  - Add a general `>=` priority preemption rule — rejected; it would let repeated frames preempt continuously.
+- **Consequences:**
+  - Accepted-alert history is committed only from a confirmed `onStart`; completion/cancellation require paired platform signals.
+  - Identity is track-based with label fallback, so distinct people are independently eligible.
+  - Exactly one in-flight utterance and one pending request; preemption only for imminent safety and for distinct approaching tracks at equal priority.
+  - Wayfinding is advisory: idle-only acceptance, never queued behind Detection, separate confirmed-start anti-repeat state.
+  - Parked decisions are revalidated semantically (`shouldSpeakPending`) so a newer accepted state discards them only when it already covers them; a genuine escalation is retained. Escalation covers risk tier, `stable/unknown` to `approaching`, proximity-band increase, centre entry, and size growth.
+  - The scheduler and policy tests run in the current suite (`flutter test --no-pub`: 527 passing, 1 known pre-existing failure).
+  - Alert-latency telemetry is implemented (bounded lifecycle records, cumulative scheduler counters, four Ultralytics interval summaries, schema-3 export); the Ultralytics interval is `app-side / post-inference` only, per-frame inference timing must not be presented as audible-warning latency, and the owning tests run in the current suite.
+  - Residual limitation: a sufficiently late native callback after the bounded quiet period cannot be distinguished without native utterance IDs. Device callback ordering, cancellation timing and audible-warning latency remain unverified, so EyeCue is **not** proven safe for independent navigation.

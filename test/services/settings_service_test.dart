@@ -1,4 +1,5 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,6 +65,150 @@ void main() {
       await service.load();
       expect(service.vibrationFeedback, isTrue);
     });
+
+    test('cadence targets default to Automatic and 2 Hz', () async {
+      final service = SettingsService(store: InMemorySettingsStore());
+      await service.load();
+      expect(service.detectionTargetHz, isNull);
+      expect(service.depthTargetHz, AppSettings.defaultDepthTargetHz);
+      // Bumped 6 -> 7 when the detector model selection was added.
+      expect(AppSettings.currentSchemaVersion, 7);
+    });
+
+    test('detector selection defaults to the built-in model', () async {
+      final service = SettingsService(store: InMemorySettingsStore());
+      await service.load();
+      expect(service.detectorModelKind, DetectorModelKind.builtIn);
+      expect(service.customModelFingerprint, isNull);
+    });
+
+    test('setDetectorModel keeps the custom identity on built-in', () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      await service.setDetectorModel(
+        kind: DetectorModelKind.custom,
+        name: 'Obstacle Detector v2',
+        fingerprint: '0123456789abcdef-1234',
+        classCount: 3,
+      );
+
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.detectorModelKind, DetectorModelKind.custom);
+      expect(reloaded.customModelName, 'Obstacle Detector v2');
+      expect(reloaded.customModelFingerprint, '0123456789abcdef-1234');
+      expect(reloaded.customModelClassCount, 3);
+
+      // Selecting built-in only changes the selection: the last import stays
+      // re-selectable.
+      await reloaded.setDetectorModel(kind: DetectorModelKind.builtIn);
+      expect(reloaded.detectorModelKind, DetectorModelKind.builtIn);
+      expect(reloaded.customModelName, 'Obstacle Detector v2');
+      expect(reloaded.customModelFingerprint, '0123456789abcdef-1234');
+      expect(reloaded.customModelClassCount, 3);
+
+      await reloaded.setDetectorModel(
+        kind: DetectorModelKind.builtIn,
+        clearCustomModel: true,
+      );
+      expect(reloaded.customModelName, isNull);
+      expect(reloaded.customModelFingerprint, isNull);
+      expect(reloaded.customModelClassCount, isNull);
+    });
+
+    test(
+      'the custom identity survives a restart on the built-in selection',
+      () async {
+        final store = InMemorySettingsStore();
+        final service = SettingsService(store: store);
+        await service.setDetectorModel(
+          kind: DetectorModelKind.custom,
+          name: 'Obstacle Detector v2',
+          fingerprint: '0123456789abcdef-1234',
+          classCount: 3,
+        );
+        await service.setDetectorModel(kind: DetectorModelKind.builtIn);
+
+        final reloaded = SettingsService(store: store);
+        await reloaded.load();
+        expect(reloaded.detectorModelKind, DetectorModelKind.builtIn);
+        expect(reloaded.customModelName, 'Obstacle Detector v2');
+        expect(reloaded.customModelFingerprint, '0123456789abcdef-1234');
+        expect(reloaded.customModelClassCount, 3);
+        expect(store.contents, isNot(contains('customModelPath')));
+      },
+    );
+
+    test('an incomplete custom identity falls back to built-in', () {
+      final json = AppSettings(
+        detectorModelKind: DetectorModelKind.custom,
+        customModelName: 'Only a name',
+      ).toJson();
+      final parsed = AppSettings.fromJson(json);
+      expect(parsed.detectorModelKind, DetectorModelKind.builtIn);
+      expect(parsed.customModelName, isNull);
+      expect(parsed.customModelFingerprint, isNull);
+    });
+
+    test('persisted settings carry no model path', () {
+      final json = AppSettings(
+        detectorModelKind: DetectorModelKind.builtIn,
+        customModelName: 'Obstacle Detector v2',
+        customModelFingerprint: '0123456789abcdef-1234',
+        customModelClassCount: 3,
+      ).toJson();
+      expect(json.containsKey('customModelPath'), isFalse);
+      expect(json.values.whereType<String>(), isNot(contains(startsWith('/'))));
+    });
+
+    test(
+      'safety acknowledgement defaults to unacknowledged and persists',
+      () async {
+        final store = InMemorySettingsStore();
+        final service = SettingsService(store: store);
+        await service.load();
+        expect(service.safetyAcknowledged, isFalse);
+
+        var notified = 0;
+        service.addListener(() => notified++);
+        await service.setSafetyAcknowledged(true);
+        expect(service.safetyAcknowledged, isTrue);
+        expect(notified, 1);
+
+        final reloaded = SettingsService(store: store);
+        await reloaded.load();
+        expect(reloaded.safetyAcknowledged, isTrue);
+      },
+    );
+
+    test('cadence setters update, notify and persist', () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      var notified = 0;
+      service.addListener(() => notified++);
+      await service.setDetectionTargetHz(12);
+      await service.setDepthTargetHz(6);
+      expect(service.detectionTargetHz, 12);
+      expect(service.depthTargetHz, 6);
+      expect(notified, 2);
+
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.detectionTargetHz, 12);
+      expect(reloaded.depthTargetHz, 6);
+    });
+
+    test('detection target persists back to Automatic (null)', () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      await service.setDetectionTargetHz(8);
+      await service.setDetectionTargetHz(null);
+      expect(service.detectionTargetHz, isNull);
+
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.detectionTargetHz, isNull);
+    });
   });
 
   group('AppSettings', () {
@@ -104,12 +249,12 @@ void main() {
       expect(settings.inferenceEngine, InferenceEngine.ultralytics);
     });
 
-    test('explicit custom engine remains custom after migration', () {
+    test('a legacy custom engine value migrates to the single engine', () {
       final settings = AppSettings.fromJson({
         'schemaVersion': 1,
         'inferenceEngine': 'custom',
       });
-      expect(settings.inferenceEngine, InferenceEngine.custom);
+      expect(settings.inferenceEngine, InferenceEngine.ultralytics);
     });
 
     test('confidence values are clamped and quantized', () {
@@ -125,6 +270,71 @@ void main() {
         AppSettings.fromJson({'detectionConfidence': 2.0}).detectionConfidence,
         0.75,
       );
+    });
+
+    test('cadence targets round-trip through JSON', () {
+      const a = AppSettings(detectionTargetHz: 7, depthTargetHz: 4);
+      expect(AppSettings.fromJson(a.toJson()), a);
+    });
+
+    test('copyWith clears the detection target without touching the rest', () {
+      const a = AppSettings(detectionTargetHz: 9, depthTargetHz: 3);
+      final cleared = a.copyWith(detectionTargetHz: null);
+      expect(cleared.detectionTargetHz, isNull);
+      expect(cleared.depthTargetHz, 3);
+      // Other copyWith calls must not resurrect the cleared value.
+      final unchanged = cleared.copyWith(audioEnabled: false);
+      expect(unchanged.detectionTargetHz, isNull);
+      expect(unchanged.depthTargetHz, 3);
+    });
+
+    test('legacy and invalid cadence JSON normalizes safely', () {
+      expect(AppSettings.fromJson({}).detectionTargetHz, isNull);
+      expect(AppSettings.fromJson({}).depthTargetHz, 2);
+      expect(
+        AppSettings.fromJson({
+          'schemaVersion': 4,
+          'detectionTargetHz': 31,
+        }).detectionTargetHz,
+        30,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': 12.4}).detectionTargetHz,
+        12,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': 0}).detectionTargetHz,
+        isNull,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': -3}).detectionTargetHz,
+        isNull,
+      );
+      expect(
+        AppSettings.fromJson({'detectionTargetHz': '12'}).detectionTargetHz,
+        isNull,
+      );
+      expect(
+        AppSettings.fromJson({
+          'detectionTargetHz': double.infinity,
+        }).detectionTargetHz,
+        isNull,
+      );
+      expect(AppSettings.fromJson({'depthTargetHz': 1}).depthTargetHz, 2);
+      expect(AppSettings.fromJson({'depthTargetHz': 99}).depthTargetHz, 10);
+      expect(AppSettings.fromJson({'depthTargetHz': 5.6}).depthTargetHz, 6);
+      expect(
+        AppSettings.fromJson({'depthTargetHz': double.nan}).depthTargetHz,
+        2,
+      );
+    });
+
+    test('public normalizers round and clamp', () {
+      expect(AppSettings.normalizeDetectionTargetHz(null), isNull);
+      expect(AppSettings.normalizeDetectionTargetHz(2.6), 3);
+      expect(AppSettings.normalizeDetectionTargetHz(30.4), 30);
+      expect(AppSettings.normalizeDepthTargetHz(null), 2);
+      expect(AppSettings.normalizeDepthTargetHz(10.6), 10);
     });
   });
 }

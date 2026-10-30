@@ -1,5 +1,7 @@
 # EyeCue — App-Only Implementation Plan
 
+> **Superseded for speech scheduling (2026-10-17):** any statements in this plan describing TTS as "cooldown + label de-duplication + urgent bypass", or implying that speech history is written when an announcement is requested, no longer describe the implementation. The current behaviour is a lifecycle-aware arbiter described in [`architecture.md`](architecture.md#speech-scheduling-workstream-1). The rest of this plan is a dated implementation record and is retained as historical evidence.
+
 > **Created:** 2026-09-01
 > **Status:** App-only implementation substantially complete and validated through 2026-09-05; Android release engineering remains gated on owner decisions, credentials, and device availability.
 > **Scope:** Fifteen repository-owned application tasks that can be built without
@@ -80,7 +82,7 @@ needed to avoid duplicating them across the two detection screens.
 - Existing detection cards, TTS, gestures, and telemetry remain behaviorally
   unchanged before the new features are enabled.
 - No engine-specific camera object crosses into the shared controller.
-- The historical 77-test baseline remains intact; the current repository passes 127 tests after feature-specific coverage was added.
+- The historical 77-test and 127-test totals are **revision-specific results** (77 for the earlier release baseline, 127 for the 2026-09-05 revision). Neither verifies the relocated Workstream 1 commits; this plan is retained as dated evidence.
 
 ## 4. Delivery order
 
@@ -535,9 +537,9 @@ treated as a release guarantee.
 **Goal:** Replace the placeholder Android identity with the final EyeCue identity
 before any Play release is created.
 
-**Pending owner decision:** Namespace and application ID are still
-`com.example.eyecue_flutter`; the release identity must not be changed to
-`com.eyecue` until the project owner confirms that it is final and controlled.
+**Resolved (owner decision):** the namespace and application ID are the
+owner-approved final `app.eyecue.mobile` (`2d0d0cd`; gate D1 decided). The thesis
+placeholder `com.eyecue` was not used.
 
 **Design:**
 
@@ -860,7 +862,7 @@ Each phase must pass these gates before the next phase becomes the default branc
 behavior:
 
 1. `flutter analyze` reports zero issues — ✅ current validation.
-2. Existing tests plus new feature tests pass — ✅ 127 tests currently pass.
+2. Existing tests plus new feature tests pass — ✅ 127 tests passed **at the 2026-09-05 revision** (historical; not a result for the current Workstream 1 branch).
 3. Settings migration preserves valid existing preferences.
 4. Custom and Ultralytics can each start/stop without duplicate camera ownership.
 5. Switching engines leaves no late callback, stream, TTS, or telemetry writer.

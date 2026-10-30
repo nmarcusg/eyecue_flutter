@@ -1,0 +1,2 @@
+[functions.ingest-telemetry]
+verify_jwt = false

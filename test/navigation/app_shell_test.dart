@@ -1,6 +1,9 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/navigation/app_shell.dart';
+import 'package:eyecue_flutter/screens/engine_detection_screen.dart';
+import 'package:eyecue_flutter/screens/help_screen.dart';
+import 'package:eyecue_flutter/screens/home_screen.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
 import 'package:eyecue_flutter/services/engine_coordinator.dart';
 import 'package:eyecue_flutter/services/gesture_controller.dart';
@@ -10,18 +13,64 @@ import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
+import 'package:eyecue_flutter/widgets/safety_disclosure.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Fake engine that models the real lifecycle signal order.
+///
+/// `TtsService.init()` installs all four handlers; `speak()` then models a
+/// successful utterance by emitting start, emitting completion, and resolving
+/// with result `1`. Without the callbacks the serialized scheduler would wait
+/// for reconciliation and leave a start-confirmation timer pending.
 class _FakeTtsEngine implements TtsEngine {
+  VoidCallback? _onStart;
+  VoidCallback? _onComplete;
+  VoidCallback? _onCancel;
+  void Function(dynamic)? _onError;
+
+  /// When set, the next utterance fails deterministically instead of speaking.
+  bool failNext = false;
+
   @override
   Future<void> dispose() async {}
+
   @override
   Future<void> init() async {}
+
   @override
-  Future<void> speak(String text) async {}
+  Future<int> speak(String text) async {
+    if (failNext) {
+      failNext = false;
+      _onError?.call('simulated TTS failure');
+      return 0;
+    }
+    _onStart?.call();
+    _onComplete?.call();
+    return 1;
+  }
+
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    _onCancel?.call();
+  }
+
+  @override
+  Future<void> recover() async {}
+
+  @override
+  void setStartHandler(VoidCallback? callback) => _onStart = callback;
+
+  @override
+  void setCompletionHandler(VoidCallback? callback) => _onComplete = callback;
+
+  @override
+  void setCancelHandler(VoidCallback? callback) => _onCancel = callback;
+
+  @override
+  void setErrorHandler(void Function(dynamic error)? handler) =>
+      _onError = handler;
 }
 
 /// Stub pages so the shell can be tested without a real camera/inference stack.
@@ -45,9 +94,15 @@ void main() {
   late HapticsService haptics;
   late List<String> hapticCalls;
 
-  setUp(() {
+  setUp(() async {
     settings = SettingsService(store: InMemorySettingsStore());
+    // The first-use safety disclosure is exercised by its own group below; the
+    // shell behaviour here is about navigation, so the acknowledgement is
+    // pre-recorded to keep the modal out of the way.
+    await settings.setSafetyAcknowledged(true);
     tts = TtsService(engine: _FakeTtsEngine());
+    // init() installs the lifecycle handlers the scheduler depends on.
+    await tts.init();
     telemetry = TelemetryService();
     hapticCalls = [];
     haptics = HapticsService(
@@ -55,6 +110,10 @@ void main() {
       medium: () async => hapticCalls.add('medium'),
       heavy: () async => hapticCalls.add('heavy'),
     );
+  });
+
+  tearDown(() {
+    tts.dispose();
   });
 
   Widget buildShell({bool accessibleNavigation = false}) {
@@ -244,6 +303,119 @@ void main() {
     );
   });
 
+  group('pointer contract and commit on release', () {
+    /// A system Back request, as the Android back gesture/button would send.
+    Future<void> systemBack(WidgetTester tester) async {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'flutter/navigation',
+        const JSONMethodCodec().encodeMethodCall(const MethodCall('popRoute')),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'a long swipe moves exactly one tab and does not commit early',
+      (tester) async {
+        await tester.pumpWidget(buildShell());
+        final center = tester.getCenter(find.byType(IndexedStack));
+        final gesture = await tester.startGesture(center);
+        for (var i = 0; i < 16; i++) {
+          await gesture.moveBy(const Offset(-20, 0)); // 320 px total
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(find.text('PAGE0'), findsOneWidget); // nothing before release
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(find.text('PAGE1'), findsOneWidget);
+        expect(find.text('PAGE2'), findsNothing); // exactly one tab
+        expect(hapticCalls, ['light']);
+      },
+    );
+
+    testWidgets('a fast swipe moves exactly one tab, only on release', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildShell());
+      final center = tester.getCenter(find.byType(IndexedStack));
+      final gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(-240, 0)); // one large jump
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.text('PAGE0'), findsOneWidget);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE1'), findsOneWidget);
+      expect(find.text('PAGE2'), findsNothing);
+    });
+
+    testWidgets(
+      'a second pointer that enters and leaves cannot re-arm the sequence',
+      (tester) async {
+        await tester.pumpWidget(buildShell());
+        final center = tester.getCenter(find.byType(IndexedStack));
+        final first = await tester.startGesture(center);
+        await first.moveBy(const Offset(-40, 0)); // past slop, below commit
+        await tester.pump(const Duration(milliseconds: 16));
+
+        final second = await tester.startGesture(center + const Offset(0, 40));
+        await tester.pump(const Duration(milliseconds: 16));
+        await second.up(); // the second pointer leaves again
+        await tester.pump(const Duration(milliseconds: 16));
+
+        // The first pointer completes a full-length swipe on its own.
+        for (var i = 0; i < 6; i++) {
+          await first.moveBy(const Offset(-30, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await first.up();
+        await tester.pumpAndSettle();
+
+        expect(find.text('PAGE0'), findsOneWidget);
+        expect(hapticCalls, isEmpty);
+      },
+    );
+
+    testWidgets('a second pointer without movement still invalidates', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildShell());
+      final center = tester.getCenter(find.byType(IndexedStack));
+      final first = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 100));
+      final second = await tester.startGesture(center + const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 16));
+      // The first pointer must still complete a full-length swipe on its own,
+      // otherwise "nothing changed" would pass even with no invalidation.
+      for (var i = 0; i < 6; i++) {
+        await first.moveBy(const Offset(-40, 0)); // -240 px, past commit
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await first.up();
+      await tester.pump(const Duration(milliseconds: 16));
+      await second.up();
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE0'), findsOneWidget);
+      expect(hapticCalls, isEmpty);
+    });
+
+    testWidgets('system Back returns to Home from another tab', (tester) async {
+      await tester.pumpWidget(buildShell());
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE2'), findsOneWidget);
+
+      await systemBack(tester);
+      expect(find.text('PAGE0'), findsOneWidget);
+      expect(hapticCalls, isEmpty); // Back is not gesture-origin feedback
+    });
+
+    testWidgets('system Back on Home leaves the tab unchanged', (tester) async {
+      await tester.pumpWidget(buildShell());
+      await systemBack(tester);
+      expect(find.text('PAGE0'), findsOneWidget);
+    });
+  });
+
   group('Detection owns horizontal navigation (single tab change)', () {
     /// Builds the shell with a Detection stub that mirrors the real engine
     /// wiring: a raw [GestureSurface] over the viewport feeding a
@@ -394,7 +566,14 @@ void main() {
         await tester.tap(find.text('Settings'));
         await tester.pumpAndSettle();
 
-        final sliderFinder = find.byType(Slider);
+        // The Settings page now also holds the inference-cadence sliders, so
+        // target the confidence slider by its own range.
+        final sliderFinder = find.byWidgetPredicate(
+          (widget) =>
+              widget is Slider &&
+              widget.min == AppSettings.minDetectionConfidence &&
+              widget.max == AppSettings.maxDetectionConfidence,
+        );
         expect(sliderFinder, findsOneWidget);
 
         // The Settings ListView is long; scroll the real Slider into view so
@@ -571,6 +750,156 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.element(find.text('PAGE1')), same(detectElement));
+    });
+  });
+
+  group('first-use safety disclosure', () {
+    Widget shellFor(SettingsService service) {
+      return MaterialApp(
+        home: AppShell(
+          settings: service,
+          tts: tts,
+          telemetry: telemetry,
+          haptics: haptics,
+          pagesOverride: stubPages(),
+        ),
+      );
+    }
+
+    testWidgets('appears once, needs the explicit action, and persists', (
+      tester,
+    ) async {
+      // Tall phone-sized surface so the Help copy is fully built at the end.
+      tester.view.physicalSize = const Size(390 * 3, 1600 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      final store = InMemorySettingsStore();
+      final fresh = SettingsService(store: store);
+      await tester.pumpWidget(shellFor(fresh));
+      await tester.pumpAndSettle();
+
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      expect(find.text('I understand'), findsOneWidget);
+      for (final point in kSafetyDisclosurePoints) {
+        expect(find.textContaining(point), findsOneWidget);
+      }
+
+      // No implicit dismissal: a barrier tap leaves the surface on screen.
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      expect(fresh.safetyAcknowledged, isFalse);
+
+      await tester.tap(find.text('I understand'));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+      expect(fresh.safetyAcknowledged, isTrue);
+
+      // Persisted: a reload from the same store does not show it again.
+      final reloaded = SettingsService(store: store);
+      await reloaded.load();
+      expect(reloaded.safetyAcknowledged, isTrue);
+      await tester.pumpWidget(shellFor(reloaded));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+
+      // The permanent copy is still readable on Help afterwards.
+      await tester.pumpWidget(const MaterialApp(home: HelpScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      for (final point in kSafetyDisclosurePoints) {
+        expect(find.textContaining(point), findsOneWidget);
+      }
+    });
+
+    testWidgets('is skipped when the acknowledgement is already persisted', (
+      tester,
+    ) async {
+      final service = SettingsService(store: InMemorySettingsStore());
+      await service.setSafetyAcknowledged(true);
+      await tester.pumpWidget(shellFor(service));
+      await tester.pumpAndSettle();
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+      // The shell stays usable immediately.
+      await tester.tap(find.text('Detect'));
+      await tester.pumpAndSettle();
+      expect(find.text('PAGE1'), findsOneWidget);
+    });
+
+    /// Answers the two platform channels the real Detection page touches.
+    ///
+    /// No camera is reported, so no native platform view is involved.
+    void mockCameraChannels() {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('flutter.baseflow.com/permissions/methods'),
+        (call) async {
+          if (call.method == 'checkPermissionStatus') return 1;
+          if (call.method == 'requestPermissions') return <int, int>{1: 1};
+          return null;
+        },
+      );
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/camera'),
+        (call) async => <Object?>[],
+      );
+    }
+
+    testWidgets('withholds the launch policy until the acknowledgement', (
+      tester,
+    ) async {
+      // Real pages and a fresh (unacknowledged) SettingsService: this is the
+      // fresh-install path, where a launch policy applied in initState would
+      // run the camera, the start haptic and the start speech behind the
+      // unacknowledged consent modal.
+      tester.view.physicalSize = const Size(390 * 3, 1600 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      mockCameraChannels();
+
+      final fresh = SettingsService(store: InMemorySettingsStore());
+      final coordinator = EngineCoordinator(
+        preferredEngine: InferenceEngine.ultralytics,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppShell(
+            settings: fresh,
+            tts: tts,
+            telemetry: telemetry,
+            haptics: haptics,
+            coordinatorOverride: coordinator,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Disclosure up, nothing running behind it: no start intent, idle
+      // coordinator, and no start feedback.
+      expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+      expect(fresh.safetyAcknowledged, isFalse);
+      expect(coordinator.pendingStartIntent, isNull);
+      expect(coordinator.state, DetectionRuntimeState.idle);
+      expect(hapticCalls, isEmpty);
+
+      await tester.tap(find.text('I understand'));
+      // Bounded pumps, not pumpAndSettle: the real Detection page that the
+      // policy now caches keeps its own timers/animations running.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Consent recorded → the withheld policy applies: Detect is cached and
+      // exactly one silent launch intent is issued while Home stays selected.
+      expect(fresh.safetyAcknowledged, isTrue);
+      expect(find.text(kSafetyDisclosureTitle), findsNothing);
+      expect(coordinator.pendingStartIntent?.origin, StartIntentOrigin.launch);
+      expect(
+        find.byType(EngineDetectionScreen, skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.byType(HomeScreen), findsOneWidget);
     });
   });
 }

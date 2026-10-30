@@ -5,6 +5,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/safety_disclosure.dart';
 
 /// Help & Gestures — an auditory- and visual-friendly user manual explaining
 /// how EyeCue works, the gesture controls, confirmation feedback, and Android
@@ -60,6 +61,9 @@ class HelpScreen extends StatelessWidget {
                         vertical: kSpace16,
                       ),
                       children: const [
+                        // The permanent copy of the safety disclosure. The
+                        // first-use acknowledgement renders the same wording.
+                        SafetyDisclosureCard(),
                         _HelpCard(
                           title: 'How It Works',
                           body:

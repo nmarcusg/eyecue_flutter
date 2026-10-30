@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/app_settings.dart';
+import '../models/detector_model.dart';
 
 /// Minimal storage abstraction so [SettingsService] can be unit-tested without
 /// platform channels.
@@ -72,6 +73,17 @@ class SettingsService extends ChangeNotifier {
   InferenceEngine get inferenceEngine => _settings.inferenceEngine;
   double get detectionConfidence => _settings.detectionConfidence;
   bool get hideBottomNavigation => _settings.hideBottomNavigation;
+  bool get showBoundingBoxes => _settings.showBoundingBoxes;
+  bool get showDepthHeatmap => _settings.showDepthHeatmap;
+  DistanceEstimationMode get distanceEstimationMode =>
+      _settings.distanceEstimationMode;
+  int? get detectionTargetHz => _settings.detectionTargetHz;
+  int get depthTargetHz => _settings.depthTargetHz;
+  bool get safetyAcknowledged => _settings.safetyAcknowledged;
+  DetectorModelKind get detectorModelKind => _settings.detectorModelKind;
+  String? get customModelName => _settings.customModelName;
+  String? get customModelFingerprint => _settings.customModelFingerprint;
+  int? get customModelClassCount => _settings.customModelClassCount;
 
   /// Loads persisted settings. Safe to call once at startup; on any failure
   /// (missing/corrupt file) the defaults are kept.
@@ -107,6 +119,56 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setHideBottomNavigation(bool value) =>
       _update(_settings.copyWith(hideBottomNavigation: value));
+
+  Future<void> setShowBoundingBoxes(bool value) =>
+      _update(_settings.copyWith(showBoundingBoxes: value));
+
+  Future<void> setShowDepthHeatmap(bool value) =>
+      _update(_settings.copyWith(showDepthHeatmap: value));
+
+  Future<void> setDistanceEstimationMode(DistanceEstimationMode value) =>
+      _update(_settings.copyWith(distanceEstimationMode: value));
+
+  /// `null` selects Automatic (native uncapped cadence).
+  Future<void> setDetectionTargetHz(int? value) =>
+      _update(_settings.copyWith(detectionTargetHz: value));
+
+  Future<void> setDepthTargetHz(int value) =>
+      _update(_settings.copyWith(depthTargetHz: value));
+
+  /// Records that the user has read and acknowledged the first-use safety
+  /// disclosure, so it is never shown again.
+  Future<void> setSafetyAcknowledged(bool value) =>
+      _update(_settings.copyWith(safetyAcknowledged: value));
+
+  /// Persists the detector selection as a unit. The custom fields are always
+  /// written together, and selecting the built-in detector **keeps** them so
+  /// the last import stays re-selectable; pass [clearCustomModel] to drop them
+  /// when the app-owned copy is gone or unusable.
+  ///
+  /// Labels are deliberately not persisted here: settings reach exported study
+  /// data and labels live in the model sidecar instead. Neither is the copy's
+  /// path: it is derived from the fingerprint at load time.
+  Future<void> setDetectorModel({
+    required DetectorModelKind kind,
+    String? name,
+    String? fingerprint,
+    int? classCount,
+    bool clearCustomModel = false,
+  }) {
+    if (kind == DetectorModelKind.builtIn && !clearCustomModel) {
+      return _update(_settings.copyWith(detectorModelKind: kind));
+    }
+    final custom = kind == DetectorModelKind.custom;
+    return _update(
+      _settings.copyWith(
+        detectorModelKind: kind,
+        customModelName: custom ? name : null,
+        customModelFingerprint: custom ? fingerprint : null,
+        customModelClassCount: custom ? classCount : null,
+      ),
+    );
+  }
 
   Future<void> _update(AppSettings next) async {
     if (next == _settings) return;

@@ -223,7 +223,7 @@ void main() {
           // mid-build, producing `setState() or markNeedsBuild() called during
           // build`. The fix defers the intent to a post-frame callback.
           final coordinator = EngineCoordinator(
-            preferredEngine: InferenceEngine.custom,
+            preferredEngine: InferenceEngine.ultralytics,
           );
           var notificationsDuringBuild = 0;
           var building = false;
