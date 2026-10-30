@@ -6,7 +6,6 @@ import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/services/assistive_detection_controller.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Minimal engine that confirms start and completion immediately.
@@ -48,7 +47,7 @@ void main() {
     await tts.init();
     addTearDown(tts.dispose);
     controller = AssistiveDetectionController(
-      engine: InferenceEngine.custom,
+      engine: InferenceEngine.ultralytics,
       tts: tts,
       telemetry: TelemetryService(),
     );
@@ -83,7 +82,7 @@ void main() {
 
       final record = records.single;
       expect(record.origin, AlertOrigin.detection);
-      expect(record.engine, InferenceEngine.custom);
+      expect(record.engine, InferenceEngine.ultralytics);
       expect(record.frameNumber, 7);
       expect(record.analysisReceivedAt, timing.analysisReceivedAt);
       expect(record.inferenceStartedAt, timing.inferenceStartedAt);

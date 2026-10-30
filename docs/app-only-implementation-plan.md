@@ -537,9 +537,9 @@ treated as a release guarantee.
 **Goal:** Replace the placeholder Android identity with the final EyeCue identity
 before any Play release is created.
 
-**Pending owner decision:** Namespace and application ID are still
-`com.example.eyecue_flutter`; the release identity must not be changed to
-`com.eyecue` until the project owner confirms that it is final and controlled.
+**Resolved (owner decision):** the namespace and application ID are the
+owner-approved final `app.eyecue.mobile` (`2d0d0cd`; gate D1 decided). The thesis
+placeholder `com.eyecue` was not used.
 
 **Design:**
 

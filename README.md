@@ -10,9 +10,9 @@ EyeCue captures camera frames, runs them through a YOLOv8n TFLite model, and spe
 
 **Stable release: v0.2.2** — The documented release contains the thesis-aligned application structure: Home / Detect / Settings / Help navigation, **TTS audio guidance** (cooldown + de-duplication + repeat), **thesis gestures** (two-finger double-tap, single tap, three-finger scan, swipe-down repeat), persisted settings (vibration, auto-start, low-power, audio), and a **Logs & Reports** dashboard with charts. Its CPU-only, NHWC inference baseline was validated on the Snapdragon 695 test device.
 
-The current repository also contains a **committed but unreleased dual-engine candidate**. Settings can select the existing Custom EyeCue pipeline or an `ultralytics_yolo` native path; both use the same metadata-enriched `yolov8n_int8_new_metadata.tflite` artifact, authoritative `labels.txt`, and thresholds, then feed EyeCue's assistive layer. The artifact preserves the validated `yolov8n_int8_new.tflite` FlatBuffer byte-for-byte and appends a deterministic `metadata.json` ZIP containing the 80 indexed labels for the native overlay. Regenerate or validate it with `dart run tool/package_ultralytics_metadata.dart` and `dart run tool/package_ultralytics_metadata.dart --check`; details and SHA-256 values are recorded in [`model-assets.md`](docs/model-assets.md). The debug APK builds, installs, and has processed live camera frames in both modes on the Snapdragon 695 target (`2201116SG`, Android 13/API 33, arm64). Bidirectional switching also passed after a late-isolate-result race was fixed. Short unmatched readings suggest that Ultralytics may be faster, but delegate selection and sustained comparative performance are not yet proven; no winner is claimed before controlled paired runs.
+The current branch replaces the dual-engine candidate with a **single native detection engine** (`ultralytics_yolo`) plus an **optional monocular-depth model** that estimates metric distance (see [`docs/mde-integration.md`](docs/mde-integration.md)). The Custom EyeCue Dart/TFLite engine, `tflite_flutter` and the Gradle classic-LiteRT workaround were removed. Detection uses the metadata-enriched `yolov8n_int8_new_metadata.tflite` artifact and the authoritative `labels.txt`; the depth model `yolo26n-depth` is bundled as [`assets/yolo26n-depth_w8a32.tflite`](assets/yolo26n-depth_w8a32.tflite), so no model is downloaded at runtime. Detection and depth cadence are configurable (see [Inference cadence](docs/architecture.md#inference-cadence)). Distance is an **estimate**, not a calibrated measurement; no FPS, latency or depth-accuracy figure is claimed without a device run.
 
-Historical verification at that revision reported `flutter analyze` clean and **127 passing tests**; dated totals are recorded in [`docs/session-log.md`](docs/session-log.md). Those numbers are **not** current verification.
+Verification on this branch (`feat/granular-inference-cadence`, 2026-10-23): `flutter analyze --no-pub` reports only 4 pre-existing issues and `flutter test --no-pub` reports **527 passing and 1 pre-existing failure** (the `tts_service_test` reconciliation-timeout test also fails on `dev@94f74d8`). No release build, device run or measurement was performed on this branch, so runtime behaviour, depth accuracy and performance remain unverified. Dated totals are recorded in [`docs/session-log.md`](docs/session-log.md).
 
 ### Unreleased on-device speech changes (Workstream 1)
 
@@ -27,9 +27,9 @@ Workstream 1 was developed on `fix/tts-lifecycle-arbitration` and merged to `dev
 - parked decisions are revalidated semantically before speaking, and a same-track escalation (`stable/unknown` to `approaching`, proximity-band increase, centre entry, or box growth) re-alerts inside the ordinary suppression window;
 - preemption is limited to imminent safety and to a **distinct** equal-priority track that is suddenly approaching; a preemption cooldown plus per-submission guards prevent repeated frames from churning the engine.
 
-**Limits and verification.** `flutter_tts` exposes **no utterance identifier**, so callbacks are correlated by strict serialization and paired signals; the recovery quiet period is a bounded mitigation, not an absolute guarantee against a very late native callback. Alert-latency telemetry is implemented in the unreleased Workstream 2 candidate as bounded lifecycle records, cumulative scheduler counters, and eight per-engine interval summaries exported in schema v2 (see [`telemetry-data-dictionary.md`](docs/telemetry-data-dictionary.md)); the Ultralytics interval is `app-side / post-inference` only, physical audible-warning latency remains unmeasured, and per-frame inference timing must not be read as speech latency. Tests exist for this work but have **not** been executed since the relocation or since the PR #5 merge; `flutter analyze`, Gradle and builds were not run either, and no physical-device TTS validation was performed after the merge. Real Android callback ordering, cancellation timing and total audible-warning latency remain unmeasured on device. EyeCue is **not** proven safe for independent navigation.
+**Limits and verification.** `flutter_tts` exposes **no utterance identifier**, so callbacks are correlated by strict serialization and paired signals; the recovery quiet period is a bounded mitigation, not an absolute guarantee against a very late native callback. Alert-latency telemetry is implemented as bounded lifecycle records, cumulative scheduler counters, and four Ultralytics interval summaries exported in schema 3 (see [`telemetry-data-dictionary.md`](docs/telemetry-data-dictionary.md)); the Ultralytics interval is `app-side / post-inference` only, physical audible-warning latency remains unmeasured, and per-frame inference timing must not be read as speech latency. The owning tests run in this branch's suite (`flutter test --no-pub`: 527 passing, 1 known pre-existing failure); no physical-device TTS validation has been performed. Real Android callback ordering, cancellation timing and total audible-warning latency remain unmeasured on device. EyeCue is **not** proven safe for independent navigation.
 
-Fresh settings default to **Ultralytics**. An explicit persisted **Custom EyeCue** choice is preserved, and Custom remains available as the bounded Advanced/compatibility fallback. Detection sensitivity is also persisted through shared presets or the bounded advanced threshold range; both engines apply the selected value when they start or reload.
+EyeCue has a single detection engine, **Ultralytics** (`ultralytics_yolo` 0.6.13); the Custom EyeCue engine was removed on 2026-10-21, so no engine selector exists. Detection sensitivity is persisted through shared presets or the bounded advanced threshold range and applied when the engine starts or reloads. Detection cadence (Automatic or 1–30 Hz) and depth cadence (2–10 Hz; default 2 Hz) are persisted in Settings.
 
 For an honest thesis-product completion baseline, see [`docs/thesis-product-status-audit.md`](docs/thesis-product-status-audit.md) and [`docs/project-status.md`](docs/project-status.md).
 
@@ -52,6 +52,7 @@ All project documentation is in the [`docs/`](docs/) directory:
 |----------|---------|
 | [`project-status.md`](docs/project-status.md) | Current state, blockers, next steps — **read first** |
 | [`architecture.md`](docs/architecture.md) | System design, data flow, component map |
+| [`mde-integration.md`](docs/mde-integration.md) | Monocular depth distance estimation: model, coordinates, cadence, settings matrix, licences |
 | [`implementation-plan.md`](docs/implementation-plan.md) | Roadmap, milestones, feature dependencies |
 | [`app-only-implementation-plan.md`](docs/app-only-implementation-plan.md) | Detailed status and acceptance criteria for the 15 original repository-owned app task areas; runtime work is complete and release engineering remains gated |
 | [`implementation-progress.md`](docs/implementation-progress.md) | Completed/in-progress/remaining work |
@@ -60,6 +61,7 @@ All project documentation is in the [`docs/`](docs/) directory:
 | [`testing-plan.md`](docs/testing-plan.md) | Unit, widget, integration, and manual testing |
 | [`benchmark-results.md`](docs/benchmark-results.md) | Performance measurement template |
 | [`telemetry-data-dictionary.md`](docs/telemetry-data-dictionary.md) | Stable JSON/CSV telemetry fields, units, and privacy boundaries |
+| [`supabase-research-telemetry.md`](docs/supabase-research-telemetry.md) | Optional manual Supabase upload: consent boundary, envelope, provisioning, verification limits |
 | [`development-workflow.md`](docs/development-workflow.md) | Session checklist for developers and AI agents |
 | [`session-log.md`](docs/session-log.md) | Per-session log of objectives, progress, and decisions |
 | [`changelog.md`](docs/changelog.md) | Human-readable version history |
@@ -67,13 +69,17 @@ All project documentation is in the [`docs/`](docs/) directory:
 
 ### Investigations & Diagnosis
 
+These are point-in-time investigation records. Documents whose diagnostic code
+was retired in WS4 carry a retirement notice at the top; their procedures are
+historical evidence, not runnable instructions.
+
 | Document | Purpose |
 |----------|---------|
-| [`camera-path-forensics.md`](docs/camera-path-forensics.md) | Live-camera path forensics — orientation defect isolated & fixed |
-| [`static-image-test.md`](docs/static-image-test.md) | Static-image ground-truth test (camera removed) |
-| [`input-pipeline-investigation.md`](docs/input-pipeline-investigation.md) | "max confidence ≈ 0.05" input-side forensics |
-| [`inference-pipeline-probe.md`](docs/inference-pipeline-probe.md) | "Objects: 0" parser-side forensics (graph-verified) |
-| [`inference-tensor-diagnosis.md`](docs/inference-tensor-diagnosis.md) | Tensor-handling crash diagnosis (reshape/ByteBuffer) |
+| [`camera-path-forensics.md`](docs/camera-path-forensics.md) | Live-camera path forensics — orientation defect isolated & fixed (historical evidence) |
+| [`static-image-test.md`](docs/static-image-test.md) | Static-image ground-truth test (historical; mode, code, and asset removed in WS4) |
+| [`input-pipeline-investigation.md`](docs/input-pipeline-investigation.md) | "max confidence ≈ 0.05" input-side forensics (historical; probe removed in WS4) |
+| [`inference-pipeline-probe.md`](docs/inference-pipeline-probe.md) | "Objects: 0" parser-side forensics (historical; probe removed in WS4) |
+| [`inference-tensor-diagnosis.md`](docs/inference-tensor-diagnosis.md) | Tensor-handling crash diagnosis (historical; current model packaging annotated) |
 | [`phase1-preprocessing-diagnosis.md`](docs/phase1-preprocessing-diagnosis.md) | Preprocessing health after the converter fix |
 | [`painter-coordinate-review.md`](docs/painter-coordinate-review.md) | Painter ↔ preview coordinate-space math review |
 | [`orientation-design-review.md`](docs/orientation-design-review.md) | Orientation architecture design review |
@@ -90,12 +96,12 @@ All project documentation is in the [`docs/`](docs/) directory:
 | Layer | Technology |
 |-------|-----------|
 | Framework | Flutter/Dart |
-| ML Inference | Custom LiteRT via `tflite_flutter`; optional native path via `ultralytics_yolo` |
-| Model | YOLOv8n candidate (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) |
+| ML Inference | Native Ultralytics (`ultralytics_yolo` 0.6.13) detection; optional second `ultralytics_yolo` instance for monocular depth |
+| Model | Bundled YOLOv8n detection graph (FLOAT32 I/O, INT8 weights — weight-quantized; 80 COCO classes) + bundled `yolo26n-depth` depth graph |
 | Camera | `camera` plugin (YUV420, low resolution) |
 | TTS | `flutter_tts` (wired via `TtsService`) |
-| State | `ChangeNotifier` services + `setState` (Riverpod declared, unused) |
-| Reports | `fl_chart` (latency/FPS/frequency charts in Logs & Reports), forensic file logging (active) |
+| State | `ChangeNotifier` services + `setState`; no Riverpod dependency |
+| Reports | `fl_chart` (latency/FPS/frequency charts in Logs & Reports), forensic file logging (debug/profile only; release file I/O disabled) |
 | Platforms | **Android only** (per thesis). iOS, desktop (Windows/macOS/Linux), and web are out of scope — their scaffolding was removed |
 
 ## Project Structure
@@ -109,31 +115,28 @@ lib/
 │   ├── detection.dart                 # Detection data class
 │   ├── detection_info.dart            # Spatial/priority/proximity info
 │   ├── detection_correction.dart      # Versioned correction record
-│   ├── detection_failure.dart         # Typed runtime failure model
 │   ├── detection_runtime_state.dart   # Shared runtime states and failures
-│   ├── engine_runtime_selection.dart  # Preferred/active engine state
-│   ├── inference_lifecycle_event.dart # Worker lifecycle event payload
-│   ├── inference_recovery_policy.dart # Bounded restart policy
-│   ├── app_settings.dart              # Persisted settings model
+│   ├── inference_lifecycle_event.dart # Recovery event payload (telemetry)
+│   ├── app_settings.dart              # Persisted settings (incl. distance/overlays)
 │   ├── box_transform.dart             # Device-independent orientation math
-│   ├── model_metadata.dart            # Runtime model introspection snapshot
-│   ├── tensor_rotation.dart           # NHWC/NCHW square tensor rotation helper
 │   ├── tflite_flatbuffer.dart         # Pure-Dart flatbuffer tensor-type scanner
 │   ├── telemetry_export.dart           # Versioned JSON/CSV export DTOs
-│   ├── tracked_detection.dart          # Timestamped motion state
-│   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
+│   └── tracked_detection.dart          # Timestamped motion state
 ├── screens/
-│   ├── home_screen.dart               # Home: branding, status card, Go to Live Camera
-│   ├── detection_screen.dart          # Detection: assistive UI + camera/inference pipeline
+│   ├── home_screen.dart               # Home: branding + coordinator-derived status
+│   ├── engine_detection_screen.dart   # Mounts the single detection engine
+│   ├── ultralytics_detection_screen.dart # Detection UI, streaming data, MDE layers
 │   ├── settings_screen.dart           # Settings: haptics/performance/audio/research
 │   ├── help_screen.dart               # Help & Gestures manual
 │   └── logs_reports_screen.dart       # Logs & Reports dashboard
 ├── services/
-│   ├── inference_isolate.dart         # Isolate bridge + inference + preprocessing
-│   ├── inference_worker_lifecycle.dart # Injectable bounded worker recovery
 │   ├── assistive_detection_controller.dart # Shared normalized detection behavior
-│   ├── engine_coordinator.dart         # Preferred/active engine and fallback
+│   ├── engine_coordinator.dart         # Shared Detection lifecycle/status source
 │   ├── ultralytics_detection_adapter.dart # Native result → Detection mapping
+│   ├── depth_distance_service.dart    # Pure depth sampling, bands, EMA, staleness
+│   ├── monocular_depth_estimator.dart  # Second YOLO instance + configurable scheduler
+│   ├── inference_cadence.dart        # Pure cadence policy (Automatic/numeric, clamps)
+│   ├── telemetry_upload_service.dart # Optional manual Supabase upload
 │   ├── tts_service.dart               # Lifecycle-aware speech arbiter: one in-flight
 │   │                                  #   utterance, one pending request, preemption,
 │   │                                  #   wayfinding, repeat-last
@@ -147,10 +150,7 @@ lib/
 │   ├── correction_service.dart        # Correction capture and records
 │   ├── object_tracker.dart             # Cross-frame motion estimates
 │   ├── scene_summary_service.dart      # Deterministic alert/scan summaries
-│   ├── gesture_controller.dart        # Thesis gesture state machine (pure)
-│   ├── forensic_log.dart              # File-based structured diagnostics
-│   ├── inference_probe.dart           # Parser probe (disabled)
-│   └── input_probe.dart               # Input pipeline probe (disabled)
+│   └── gesture_controller.dart        # Thesis gesture state machine (pure)
 └── widgets/
     ├── bounding_box_painter.dart      # Bounding box CustomPainter overlay
     ├── gesture_surface.dart           # Transparent gesture capture layer
@@ -162,16 +162,24 @@ lib/
     ├── detection_state_panel.dart      # Shared loading/error/recovery panel
     ├── detection_correction_sheet.dart # Correct/incorrect/unsure workflow
     ├── charts.dart                    # fl_chart latency/FPS/frequency charts
-    ├── debug_overlay.dart             # Debug HUD (retained, unused)
-    └── info_panel.dart                # Old metrics panel (unused in primary UI)
+    └── depth_heatmap_view.dart        # Rotated, centre-cropped depth heatmap
 
 tool/
 ├── validate_flatbuffer.dart           # CLI: validates the flatbuffer scanner
-├── validate_png.dart                  # CLI: validates the PNG encoder
-├── dump_graph_tail.py                 # CLI: dumps TFLite graph tail ops
-└── dump_decode_consts.py              # CLI: dumps decode constants
+└── package_ultralytics_metadata.dart  # CLI: appends metadata to a base graph
 ```
 
 ## License
 
-Thesis project — not yet licensed for distribution.
+The EyeCue application source is licensed **`AGPL-3.0-only`** (SPDX), © the EyeCue
+project owner. The complete canonical GNU Affero General Public License version 3 text
+is in [`LICENSE`](LICENSE).
+
+The vendored [`ultralytics_yolo`](plugins/ultralytics_yolo) plugin and the bundled YOLO
+model weights are also AGPL-3.0, so the AGPL obligations apply to the application
+itself as well: every distributed build has to be accompanied by the complete
+corresponding source — including the modified vendored plugin and the instructions to
+build it ([`docs/release-procedure.md`](docs/release-procedure.md) §7). Third-party
+components keep their own copyright notices and terms; the inventory, the obligations
+and the items that still warrant qualified legal review are in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No legal review has been performed.

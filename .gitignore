@@ -35,6 +35,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Vendored plugin build output. `/build/` above is anchored to the repo root and does
+# not cover the in-tree plugin, so its Gradle/CMake output is ignored explicitly.
+plugins/**/android/build/
+plugins/**/android/.cxx/
+
 # Symbolication related
 app.*.symbols
 
@@ -51,3 +56,6 @@ app.*.map.json
 .agents
 
 .roo
+
+# Supabase CLI local state
+/supabase/.temp/

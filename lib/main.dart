@@ -6,7 +6,9 @@ import 'package:marionette_flutter/marionette_flutter.dart';
 import 'models/model_config.dart';
 import 'navigation/app_shell.dart';
 import 'services/correction_service.dart';
+import 'services/detector_model_service.dart';
 import 'services/haptics_service.dart';
+import 'services/research_session_service.dart';
 import 'services/settings_service.dart';
 import 'services/telemetry_service.dart';
 import 'services/tts_service.dart';
@@ -34,6 +36,22 @@ Future<void> main() async {
   final haptics = HapticsService(isEnabled: () => settings.vibrationFeedback);
 
   await settings.load();
+  final detectorModels = DetectorModelService(
+    settings,
+    builtInLabelsLoader: () async => labels,
+  );
+  await detectorModels.load();
+  // Stored trials are restored and an interrupted draft comes back paused
+  // before the first frame, so nothing can silently resume recording.
+  final researchSessions = ResearchSessionService(telemetry: telemetry);
+  await researchSessions.load();
+  // One subscription for the app run, registered with the services it joins: a
+  // model change pauses the trial and records the boundary even when the lazily
+  // built Logs & Reports route was never opened.
+  researchSessions.watchDetectorModel(
+    detectorModels,
+    () => detectorModels.current.ref,
+  );
   await tts.init();
   telemetry.startSession();
 
@@ -44,6 +62,8 @@ Future<void> main() async {
       telemetry: telemetry,
       corrections: corrections,
       haptics: haptics,
+      detectorModel: detectorModels,
+      researchSessions: researchSessions,
     ),
   );
 }
@@ -69,6 +89,13 @@ class EyeCueApp extends StatelessWidget {
   final CorrectionService? corrections;
   final HapticsService haptics;
 
+  /// The loaded detector selection. Optional only so widget tests can build the
+  /// app without file-system or picker channels; production always supplies it.
+  final DetectorModelService? detectorModel;
+
+  /// Explicit respondent-logging trials. Optional only for widget tests.
+  final ResearchSessionService? researchSessions;
+
   const EyeCueApp({
     super.key,
     required this.settings,
@@ -76,6 +103,8 @@ class EyeCueApp extends StatelessWidget {
     required this.telemetry,
     this.corrections,
     required this.haptics,
+    this.detectorModel,
+    this.researchSessions,
   });
 
   @override
@@ -92,6 +121,8 @@ class EyeCueApp extends StatelessWidget {
         telemetry: telemetry,
         corrections: corrections,
         haptics: haptics,
+        detectorModel: detectorModel,
+        researchSessions: researchSessions,
       ),
     );
   }

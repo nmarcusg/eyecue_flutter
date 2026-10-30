@@ -1,10 +1,33 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- Camera frames are the only input to the on-device detector; no image is
+         stored or uploaded (exported telemetry carries numeric detections only). -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Manual telemetry upload only; models stay bundled and work offline. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- camera_android_camerax injects RECORD_AUDIO for its video-with-audio
+         path. This app only reads the CameraX analysis stream and never records
+         audio, so the permission is unused. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
+    <!-- camera_android_camerax injects WRITE_EXTERNAL_STORAGE (maxSdkVersion 28)
+         for its shared-storage save path. Exports go to the app's own documents
+         directory, so nothing here writes shared storage. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove"/>
+    <!-- The merger derives READ_EXTERNAL_STORAGE from camerax's
+         WRITE_EXTERNAL_STORAGE request ("IMPLIED from ... reason:
+         io.flutter.plugins.camerax requested WRITE_EXTERNAL_STORAGE"), so the
+         rule above does not cover it: measured on this tree, a merge run with
+         only the two rules above still declares it. Hence its own rule. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove"/>
     <application
-        android:label="eyecue_flutter"
+        android:label="EyeCue"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -26,9 +49,4 @@
             android:name="flutterEmbedding"
             android:value="2"/>
     </application>
-    <queries>
-        <intent>
-            <action android:name="android.media.action.IMAGE_CAPTURE"/>
-        </intent>
-    </queries>
 </manifest>

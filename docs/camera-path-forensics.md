@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Live-Camera Path Forensic Investigation
 
 > **Status:** COMPLETE — camera path empirically isolated on-device (Android 13,
@@ -10,6 +12,10 @@
 > The later NCHW/XNNPACK candidate has separate initial device evidence in
 > [`project-status.md`](project-status.md); its longer stability and orientation
 > validation remain open.
+>
+> **WS4 retirement notice (2026-10-19):** the static-image adapter
+> (`rgbaToI420`) was removed in WS4. The live-camera findings below remain
+> historical evidence; the removed adapter is not runnable.
 
 ---
 

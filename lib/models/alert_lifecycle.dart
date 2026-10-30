@@ -124,6 +124,49 @@ class AlertLifecycleRecord {
     'resultReceivedAt': resultReceivedAt?.toUtc().toIso8601String(),
     'detectionAcceptedAt': detectionAcceptedAt?.toUtc().toIso8601String(),
   };
+
+  /// Inverse of [toJson], so a frozen trial restores identical rows.
+  factory AlertLifecycleRecord.fromJson(Map<String, dynamic> json) {
+    DateTime? date(Object? value) =>
+        value is String ? DateTime.tryParse(value) : null;
+    T pick<T extends Enum>(List<T> values, Object? name, T fallback) => values
+        .firstWhere((value) => value.name == name, orElse: () => fallback);
+    final engineName = json['engine'];
+    return AlertLifecycleRecord(
+      origin: pick(AlertOrigin.values, json['origin'], AlertOrigin.detection),
+      engine: engineName == null
+          ? null
+          : pick(
+              InferenceEngine.values,
+              engineName,
+              InferenceEngine.ultralytics,
+            ),
+      requestedAt:
+          date(json['requestedAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      submittedAt:
+          date(json['submittedAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      alertStartedAt: date(json['alertStartedAt']),
+      terminalAt:
+          date(json['terminalAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      terminalState: pick(
+        AlertTerminalState.values,
+        json['terminalState'],
+        AlertTerminalState.completed,
+      ),
+      terminalCause: json['terminalCause'] as String?,
+      hadStarted: json['hadStarted'] == true,
+      reconciledAt: date(json['reconciledAt']),
+      frameNumber: (json['frameNumber'] as num?)?.toInt(),
+      analysisReceivedAt: date(json['analysisReceivedAt']),
+      inferenceStartedAt: date(json['inferenceStartedAt']),
+      inferenceCompletedAt: date(json['inferenceCompletedAt']),
+      resultReceivedAt: date(json['resultReceivedAt']),
+      detectionAcceptedAt: date(json['detectionAcceptedAt']),
+    );
+  }
 }
 
 /// Immutable cumulative scheduler counters.
@@ -194,12 +237,42 @@ class AlertCounters {
     'rejectedAfterRecovery': rejectedAfterRecovery,
     'rejectedByReason': rejectedByReason,
   };
+
+  /// Inverse of [toJson]; a missing counter stays `0`, as it was written.
+  factory AlertCounters.fromJson(Map<String, dynamic> json) {
+    int count(String key) => (json[key] as num?)?.toInt() ?? 0;
+    return AlertCounters(
+      dropped: count('dropped'),
+      cancelledBeforeStart: count('cancelledBeforeStart'),
+      cancelledAfterStart: count('cancelledAfterStart'),
+      failedBeforeStart: count('failedBeforeStart'),
+      failedAfterStart: count('failedAfterStart'),
+      reconciliationTimeout: count('reconciliationTimeout'),
+      watchdogRecovery: count('watchdogRecovery'),
+      quietPeriodCapReached: count('quietPeriodCapReached'),
+      recoveryFailed: count('recoveryFailed'),
+      quarantinedCallback: count('quarantinedCallback'),
+      lateCallbackIgnored: count('lateCallbackIgnored'),
+      callbackOrderViolation: count('callbackOrderViolation'),
+      preemptionRequested: count('preemptionRequested'),
+      preempted: count('preempted'),
+      superseded: count('superseded'),
+      muted: count('muted'),
+      staleDecision: count('staleDecision'),
+      rejectedAfterRecovery: count('rejectedAfterRecovery'),
+      rejectedByReason: {
+        for (final entry
+            in (json['rejectedByReason'] as Map? ?? const {}).entries)
+          '${entry.key}': (entry.value as num?)?.toInt() ?? 0,
+      },
+    );
+  }
 }
 
 /// Stable identity of one required alert-latency interval.
 ///
-/// The start anchor for the "received" intervals is engine-specific:
-/// analysis receipt for Custom and result receipt for Ultralytics.
+/// The start anchor for the "received" intervals is the app-side result
+/// receipt, which is the first observable point for the native engine.
 enum AlertLatencyInterval {
   receivedToAccepted,
   acceptedToStarted,
@@ -208,17 +281,13 @@ enum AlertLatencyInterval {
 
   String label(InferenceEngine engine) => switch (this) {
     AlertLatencyInterval.receivedToAccepted =>
-      engine == InferenceEngine.custom
-          ? 'Analysis received → detection accepted'
-          : 'Result received → detection accepted',
+      'Result received → detection accepted',
     AlertLatencyInterval.acceptedToStarted =>
       'Detection accepted → alert started',
     AlertLatencyInterval.submittedToStarted =>
       'Alert submitted → alert started',
     AlertLatencyInterval.receivedToStarted =>
-      engine == InferenceEngine.custom
-          ? 'Analysis received → alert started'
-          : 'Result received → alert started (app-side / post-inference)',
+      'Result received → alert started (app-side / post-inference)',
   };
 }
 

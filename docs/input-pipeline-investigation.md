@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Input Pipeline Investigation — Why max confidence ≈ 0.05
 
 > **Status:** Historical forensic investigation record. No pipeline behavior was
@@ -11,6 +13,10 @@
 > pre-candidate input investigation. The current pipeline includes the later
 > geometry, orientation, and ByteBuffer fixes; current candidate status is
 > tracked in [`project-status.md`](project-status.md).
+>
+> **WS4 retirement notice (2026-10-19):** `InputProbe` and the static-image mode
+> were removed in WS4. This document is historical evidence only; current status
+> is tracked in [`project-status.md`](project-status.md).
 
 ---
 

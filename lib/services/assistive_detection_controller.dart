@@ -5,6 +5,7 @@ import '../models/app_settings.dart';
 import '../models/detection_correction.dart';
 import '../models/detection_info.dart';
 import '../models/detection.dart';
+import '../models/detector_model.dart';
 import '../models/tracked_detection.dart';
 import 'correction_service.dart';
 import 'object_tracker.dart';
@@ -26,6 +27,8 @@ class AssistiveDetectionController extends ChangeNotifier {
     ObjectTracker? tracker,
     this.corrections,
     this.confidenceThreshold = 0.25,
+    this.priorityResolver,
+    this.detectorModel,
   }) : tracker = tracker ?? ObjectTracker(),
        super();
 
@@ -35,6 +38,16 @@ class AssistiveDetectionController extends ChangeNotifier {
   final ObjectTracker tracker;
   final CorrectionService? corrections;
   final double confidenceThreshold;
+
+  /// Overrides the default COCO class-id priority (see
+  /// [SpatialAnalysisService.analyze]). Null keeps the built-in policy; the
+  /// detection screen replaces it when the active model is a custom one.
+  ObjectPriority Function(Detection)? priorityResolver;
+
+  /// The detector active at record time, stamped on every recorded row so a
+  /// later rename or switch cannot relabel history. Null until the detection
+  /// screen supplies it.
+  DetectorModelRef? detectorModel;
 
   List<DetectionInfo> _detections = const [];
   List<TrackedDetection> _tracks = const [];
@@ -46,6 +59,8 @@ class AssistiveDetectionController extends ChangeNotifier {
   ///
   /// [frameLatency] is Custom frame timing. [resultReceivedAt] is the optional
   /// app-side receipt anchor for engines that expose no pre-result timing.
+  ///
+  /// [meters] is optional, index-aligned metric distance from the depth model.
   List<DetectionInfo> updateDetections(
     List<Detection> detections, {
     double latencyMs = 0,
@@ -53,11 +68,16 @@ class AssistiveDetectionController extends ChangeNotifier {
     DateTime? timestamp,
     FrameLatency? frameLatency,
     DateTime? resultReceivedAt,
+    List<double?>? meters,
   }) {
     // Acceptance anchor: entry, before spatial analysis or tracking work.
     final acceptedAt = DateTime.now();
     final timing = frameLatency?.withDetectionAcceptedAt(acceptedAt);
-    _detections = SpatialAnalysisService.analyzeAll(detections);
+    _detections = SpatialAnalysisService.analyzeAll(
+      detections,
+      meters: meters,
+      priorityResolver: priorityResolver,
+    );
     _tracks = tracker.update(detections, timestamp);
     for (final info in _detections) {
       TrackedDetection? track;
@@ -73,6 +93,7 @@ class AssistiveDetectionController extends ChangeNotifier {
         engine: engine,
         confidenceThreshold: confidenceThreshold,
         track: track,
+        detectorModel: detectorModel,
       );
     }
     if (announce) {
@@ -98,6 +119,7 @@ class AssistiveDetectionController extends ChangeNotifier {
   void recordMetrics({
     required double latencyMs,
     required double inferenceFps,
+    CadenceSample? cadence,
   }) {
     telemetry.recordSample(
       latencyMs: latencyMs,
@@ -105,6 +127,28 @@ class AssistiveDetectionController extends ChangeNotifier {
       objectCount: _detections.length,
       engine: engine,
       confidenceThreshold: confidenceThreshold,
+      requestedDetectionHz: cadence?.requestedDetectionHz,
+      detectionCadenceAutomatic: cadence?.detectionCadenceAutomatic ?? false,
+      effectiveDetectionHz: cadence?.effectiveDetectionHz,
+      requestedDepthHz: cadence?.requestedDepthHz,
+      effectiveDepthHz: cadence?.effectiveDepthHz,
+      depthObservedHz: cadence?.depthObservedHz,
+      depthLatencyMs: cadence?.depthLatencyMs,
+      depthStatus: cadence?.depthStatus,
+      detectorPreMs: cadence?.detectorPreMs,
+      detectorInferenceMs: cadence?.detectorInferenceMs,
+      detectorPostMs: cadence?.detectorPostMs,
+      depthPreMs: cadence?.depthPreMs,
+      depthInferenceMs: cadence?.depthInferenceMs,
+      depthPostMs: cadence?.depthPostMs,
+      depthAccelerator: cadence?.depthAccelerator,
+      depthGridWidth: cadence?.depthGridWidth,
+      depthGridHeight: cadence?.depthGridHeight,
+      heatmapBuildMs: cadence?.heatmapBuildMs,
+      depthDroppedTicks: cadence?.depthDroppedTicks,
+      lowPowerClamped: cadence?.lowPowerClamped ?? false,
+      sourceLimited: cadence?.sourceLimited ?? false,
+      detectorModel: detectorModel,
     );
   }
 

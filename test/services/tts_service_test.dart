@@ -8,7 +8,6 @@ import 'package:eyecue_flutter/models/detection_info.dart';
 import 'package:eyecue_flutter/models/tracked_detection.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 enum FakeMode { autoComplete, drop, startOnly, manual }
@@ -24,6 +23,8 @@ class FakeTtsEngine implements TtsEngine {
   int recoverCalls = 0;
   int stopCalls = 0;
   bool throwOnRecover = false;
+  bool throwOnSpeak = false;
+  Completer<void>? stopCompleter;
   FakeMode mode = FakeMode.autoComplete;
 
   VoidCallback? _onStart;
@@ -47,6 +48,7 @@ class FakeTtsEngine implements TtsEngine {
   @override
   Future<void> stop() async {
     stopCalls++;
+    await stopCompleter?.future;
   }
 
   @override
@@ -67,10 +69,12 @@ class FakeTtsEngine implements TtsEngine {
   void emitCancel() => _onCancel?.call();
   void emitError([dynamic error = 'engine error']) => _onError?.call(error);
   void resolveCurrent(int value) => _current?.complete(value);
+  void rejectCurrent(Object error) => _current?.completeError(error);
 
   @override
   Future<int> speak(String text) {
     spoken.add(text);
+    if (throwOnSpeak) return Future<int>.error(StateError('speak failed'));
     switch (mode) {
       case FakeMode.autoComplete:
         _onStart?.call();
@@ -941,11 +945,11 @@ void main() {
       expect(
         await instrumented.announceDetections([
           nearPerson(),
-        ], engine: InferenceEngine.custom),
+        ], engine: InferenceEngine.ultralytics),
         isTrue,
       );
       expect(records.single.origin, AlertOrigin.detection);
-      expect(records.single.engine, InferenceEngine.custom);
+      expect(records.single.engine, InferenceEngine.ultralytics);
 
       now = now.add(const Duration(seconds: 5));
       expect(await instrumented.speakWayfinding('Settings'), isTrue);
@@ -971,7 +975,7 @@ void main() {
       expect(
         await instrumented.announceDetections(
           [nearPerson()],
-          engine: InferenceEngine.custom,
+          engine: InferenceEngine.ultralytics,
           frameLatency: timing,
         ),
         isTrue,
@@ -1002,7 +1006,7 @@ void main() {
       expect(
         await instrumented.announceDetections([
           nearPerson(),
-        ], engine: InferenceEngine.custom),
+        ], engine: InferenceEngine.ultralytics),
         isTrue,
       );
 
@@ -1057,7 +1061,7 @@ void main() {
       expect(
         await instrumented.announceDetections(
           [nearPerson()],
-          engine: InferenceEngine.custom,
+          engine: InferenceEngine.ultralytics,
           frameLatency: timing,
           resultReceivedAt: now,
           detectionAcceptedAt: now,
@@ -1148,7 +1152,9 @@ void main() {
       expect(counters.last.failedAfterStart, 1);
       expect(counters.last.reconciliationTimeout, 1);
       expect(counters.last.watchdogRecovery, 1);
-      expect(await pending, isFalse);
+      // The caller future reports the confirmed-start flag, so an utterance
+      // that did start resolves true; its failure is the record/counters above.
+      expect(await pending, isTrue);
     });
 
     test('a late result after the terminal publishes its counter', () async {
@@ -1164,6 +1170,19 @@ void main() {
       await pumpEventQueue();
 
       expect(counters.last.lateCallbackIgnored, 1);
+      expect(await pending, isFalse);
+    });
+
+    test('a throwing speak fails the submission as an engine error', () async {
+      engine.throwOnSpeak = true;
+      addTearDown(() => engine.throwOnSpeak = false);
+      final pending = instrumented.speak('boom');
+      await pumpEventQueue();
+
+      final record = records.single;
+      expect(record.terminalState, AlertTerminalState.failed);
+      expect(record.terminalCause, 'engineError');
+      expect(counters.last.watchdogRecovery, 0);
       expect(await pending, isFalse);
     });
 
@@ -1189,7 +1208,7 @@ void main() {
       expect(
         await instrumented.announceDetections([
           nearPerson(),
-        ], engine: InferenceEngine.custom),
+        ], engine: InferenceEngine.ultralytics),
         isFalse,
       );
 
@@ -1246,5 +1265,199 @@ void main() {
         expect(instrumented.recoveryFailed, isTrue);
       },
     );
+  });
+
+  group('mute and lifecycle settlement', () {
+    late List<AlertLifecycleRecord> records;
+    late List<AlertCounters> counters;
+    late TtsService instrumented;
+    late bool disposed;
+
+    setUp(() async {
+      records = [];
+      counters = [];
+      disposed = false;
+      instrumented = TtsService(
+        engine: engine,
+        clock: () => now,
+        onAlertLifecycle: records.add,
+        onAlertCounters: counters.add,
+        startConfirmationTimeout: const Duration(milliseconds: 60),
+        preemptionConfirmTimeout: const Duration(milliseconds: 40),
+        reconciliationTimeout: const Duration(milliseconds: 40),
+        callbackQuietPeriod: const Duration(milliseconds: 25),
+        maxSettlingDuration: const Duration(milliseconds: 200),
+        recoveryTimeout: const Duration(milliseconds: 100),
+        preemptionCooldown: Duration.zero,
+      );
+      await instrumented.init();
+      addTearDown(() {
+        if (!disposed) instrumented.dispose();
+      });
+    });
+
+    test('a request parked before the mute is discarded, not spoken', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('current speech', urgent: true);
+      await pumpEventQueue();
+      final parked = instrumented.speak('queued speech', urgent: true);
+      await pumpEventQueue();
+      expect(engine.spoken, ['current speech']);
+
+      instrumented.setAudioEnabled(false);
+      expect(counters.last.muted, 1);
+
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      await pumpEventQueue();
+
+      // A muted rejection is a counter, never a lifecycle record: only the
+      // utterance that was already audible produced one.
+      expect(records, hasLength(1));
+      expect(records.single.terminalState, AlertTerminalState.completed);
+      expect(engine.spoken, ['current speech']);
+      expect(await parked, isFalse);
+      expect(await active, isTrue);
+    });
+
+    test('mute then unmute does not resurrect the parked request', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('current speech', urgent: true);
+      await pumpEventQueue();
+      final parked = instrumented.speak('queued speech', urgent: true);
+      await pumpEventQueue();
+
+      instrumented.setAudioEnabled(false);
+      instrumented.setAudioEnabled(true);
+
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      await pumpEventQueue();
+
+      expect(engine.spoken, ['current speech']);
+      expect(await parked, isFalse);
+      expect(await active, isTrue);
+    });
+
+    test('dispose before a start settles the caller false', () async {
+      engine.mode = FakeMode.manual;
+      final pending = instrumented.speak('silent', urgent: true);
+      await pumpEventQueue();
+      expect(instrumented.isSpeaking, isTrue);
+
+      instrumented.dispose();
+      disposed = true;
+
+      expect(await pending.timeout(const Duration(milliseconds: 200)), isFalse);
+    });
+
+    test('dispose after a confirmed start settles the caller true', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+      expect(instrumented.isSpeaking, isTrue);
+
+      instrumented.dispose();
+      disposed = true;
+
+      expect(await pending.timeout(const Duration(milliseconds: 200)), isTrue);
+    });
+
+    test('a rejected preemption stop after dispose is inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = instrumented.speak('current speech');
+      await pumpEventQueue();
+      engine.stopCompleter = Completer<void>();
+
+      final pending = instrumented.announceDetections(
+        [nearPerson()],
+        tracks: [trackOf(nearPerson(), id: 92)],
+      );
+      await pumpEventQueue();
+      expect(engine.stopCalls, 1);
+
+      instrumented.dispose();
+      disposed = true;
+      expect(await active, isTrue);
+      expect(await pending, isFalse);
+      final state = instrumented.state;
+      final recordCount = records.length;
+      final counterCount = counters.length;
+      final lastCounters = counters.last;
+
+      engine.stopCompleter!.completeError(StateError('late stop failure'));
+      await pumpEventQueue();
+
+      expect(records, hasLength(recordCount));
+      expect(counters, hasLength(counterCount));
+      expect(counters.last, same(lastCounters));
+      expect(instrumented.state, state);
+    });
+
+    test('late callbacks after dispose are inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+      final state = instrumented.state;
+
+      instrumented.dispose();
+      disposed = true;
+
+      engine.emitStart();
+      engine.emitComplete();
+      engine.emitCancel();
+      engine.emitError();
+      await pumpEventQueue();
+
+      expect(instrumented.state, state);
+      expect(instrumented.isSpeaking, isFalse);
+      expect(await pending, isTrue);
+    });
+
+    test('late engine success after dispose is inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+
+      instrumented.dispose();
+      disposed = true;
+      expect(await pending, isTrue);
+      final state = instrumented.state;
+      final recordCount = records.length;
+      final counterCount = counters.length;
+      final lastCounters = counters.last;
+
+      engine.resolveCurrent(1);
+      await pumpEventQueue();
+
+      expect(records, hasLength(recordCount));
+      expect(counters, hasLength(counterCount));
+      expect(counters.last, same(lastCounters));
+      expect(instrumented.state, state);
+      expect(await pending, isTrue);
+    });
+
+    test('late engine error after dispose is inert', () async {
+      engine.mode = FakeMode.startOnly;
+      final pending = instrumented.speak('status', urgent: true);
+      await pumpEventQueue();
+
+      instrumented.dispose();
+      disposed = true;
+      expect(await pending, isTrue);
+      final state = instrumented.state;
+      final recordCount = records.length;
+      final counterCount = counters.length;
+      final lastCounters = counters.last;
+
+      engine.rejectCurrent(StateError('late engine failure'));
+      await pumpEventQueue();
+
+      expect(records, hasLength(recordCount));
+      expect(counters, hasLength(counterCount));
+      expect(counters.last, same(lastCounters));
+      expect(instrumented.state, state);
+      expect(await pending, isTrue);
+    });
   });
 }

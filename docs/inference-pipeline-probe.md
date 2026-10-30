@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Inference Pipeline Probe — "Objects: 0" Forensic Investigation
 
 > **Status:** Historical investigation record. No pipeline behavior was changed
@@ -10,6 +12,10 @@
 > orientation changes are reflected in the current implementation; the
 > committed-but-unreleased NCHW/XNNPACK candidate is tracked in
 > [`project-status.md`](project-status.md).
+>
+> **WS4 retirement notice (2026-10-19):** `InferenceProbe` and the static-image
+> path were removed in WS4. This document is historical evidence only; its
+> procedures are no longer runnable as written.
 
 ---
 

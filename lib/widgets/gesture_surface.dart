@@ -5,9 +5,9 @@ import '../services/gesture_controller.dart';
 /// A transparent touch surface that feeds raw pointer events into a
 /// [GestureController].
 ///
-/// Placed over the camera viewport so thesis gestures work without relying on
-/// visible buttons. It is translucent, so the camera preview and overlays stay
-/// fully visible beneath it.
+/// Wraps the live viewport only; non-live panels and the depth notice are
+/// outside it. It is translucent, so the camera preview and overlays stay fully
+/// visible beneath it.
 class GestureSurface extends StatefulWidget {
   final GestureController controller;
   final Widget child;
@@ -25,6 +25,10 @@ class GestureSurface extends StatefulWidget {
 class _GestureSurfaceState extends State<GestureSurface> {
   @override
   Widget build(BuildContext context) {
+    // shortcut: the placement fix only holds while the wrapped subtree stays
+    // pointer-inert. Any interactive child added inside it would compete with
+    // this Listener and re-introduce tap→pause classification, so keep buttons
+    // outside the surface and revisit this if the viewport itself needs taps.
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (e) =>
