@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import '../models/app_settings.dart';
+import '../services/detector_model_service.dart';
+import '../services/inference_cadence.dart';
 import '../services/settings_service.dart';
 import '../services/telemetry_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/accessible_button.dart';
+import '../widgets/warning_banner.dart';
 
 /// Settings — runtime configuration for users and facilitators.
 ///
@@ -28,11 +32,17 @@ class SettingsScreen extends StatelessWidget {
   /// When `null`, the card renders `—` placeholders with no live updates.
   final TelemetryService? telemetry;
 
+  /// Optional detector selection owner. When supplied, the Detector Model card
+  /// renders from [DetectorModelService.current] — never from settings, which
+  /// keeps naming `custom` after an unreadable-copy recovery.
+  final DetectorModelService? detectorModel;
+
   const SettingsScreen({
     super.key,
     required this.settings,
     required this.onOpenLogsReports,
     this.telemetry,
+    this.detectorModel,
   });
 
   @override
@@ -170,7 +180,7 @@ class SettingsScreen extends StatelessWidget {
                                           ),
                                         ),
                                         subtitle: Text(
-                                          'Use the recommended native engine for normal detection.',
+                                          'The native engine used for detection.',
                                         ),
                                       ),
                                       RadioListTile<InferenceEngine>(
@@ -190,47 +200,94 @@ class SettingsScreen extends StatelessWidget {
                                         ),
                                         value: InferenceEngine.ultralytics,
                                       ),
-                                      const ListTile(
-                                        contentPadding: EdgeInsets.symmetric(
-                                          horizontal: kSpace16,
-                                        ),
-                                        title: Text(
-                                          'Advanced / compatibility',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          'Custom EyeCue is slower and retained for recovery and testing.',
-                                        ),
-                                      ),
-                                      // The Custom EyeCue option is a direct
-                                      // child row of the section, so it shares
-                                      // the parent title's leading edge
-                                      // (kSpace16) like the other direct child
-                                      // rows. Only its sensitivity sub-options
-                                      // are indented (see _SensitivityControls).
-                                      RadioListTile<InferenceEngine>(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: kSpace16,
-                                            ),
-                                        controlAffinity:
-                                            ListTileControlAffinity.trailing,
-                                        title: Text(
-                                          InferenceEngine.custom.label,
-                                        ),
-                                        subtitle: Text(
-                                          InferenceEngine.custom.description,
-                                        ),
-                                        value: InferenceEngine.custom,
-                                      ),
                                     ],
                                   ),
                                 ),
                                 _SensitivityControls(settings: settings),
                               ],
                             ),
+                            _SettingsCard(
+                              title: 'Distance & Overlays',
+                              children: [
+                                RadioGroup<DistanceEstimationMode>(
+                                  groupValue: settings.distanceEstimationMode,
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      settings.setDistanceEstimationMode(value);
+                                    }
+                                  },
+                                  child: Column(
+                                    children: [
+                                      for (final option
+                                          in DistanceEstimationMode.values)
+                                        RadioListTile<DistanceEstimationMode>(
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: kSpace16,
+                                              ),
+                                          controlAffinity:
+                                              ListTileControlAffinity.trailing,
+                                          title: Text(option.label),
+                                          subtitle: Text(option.description),
+                                          value: option,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                SwitchListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: kSpace16,
+                                  ),
+                                  title: const Text('Show Bounding Boxes'),
+                                  subtitle: const Text(
+                                    'Draw a box around each detected object',
+                                  ),
+                                  value: settings.showBoundingBoxes,
+                                  onChanged: settings.setShowBoundingBoxes,
+                                ),
+                                SwitchListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: kSpace16,
+                                  ),
+                                  title: const Text('Show Depth Heatmap'),
+                                  subtitle: const Text(
+                                    'Colour the scene by estimated distance',
+                                  ),
+                                  // The preference is preserved while the
+                                  // bounding-box mode is selected; only the
+                                  // control is disabled.
+                                  value: settings.showDepthHeatmap,
+                                  onChanged:
+                                      settings.distanceEstimationMode ==
+                                          DistanceEstimationMode.monocularDepth
+                                      ? settings.setShowDepthHeatmap
+                                      : null,
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    kSpace16,
+                                    kSpace4,
+                                    kSpace16,
+                                    0,
+                                  ),
+                                  child: Text(
+                                    'Distances in metres are estimates from the '
+                                    'depth model and are not calibrated '
+                                    'measurements.',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: kHomeInkMuted),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            _SettingsCard(
+                              title: 'Inference Cadence',
+                              children: [
+                                _InferenceCadenceControls(settings: settings),
+                              ],
+                            ),
+                            if (detectorModel != null)
+                              _DetectorModelCard(detectorModel: detectorModel!),
                             _SystemPerformanceCard(
                               telemetry: telemetry,
                               onOpenLogsReports: onOpenLogsReports,
@@ -295,9 +352,9 @@ class _SensitivityControlsState extends State<_SensitivityControls> {
           },
           child: Column(
             children: [
-              // The sensitivity presets are sub-options of the Custom EyeCue
-              // engine option, so their text is indented to the right of the
-              // parent row using the existing spacing token. The indent is
+              // The sensitivity presets are sub-options of the engine option,
+              // so their text is indented to the right of the parent row using
+              // the existing spacing token. The indent is
               // applied through contentPadding (not a wrapping Padding) so the
               // trailing radio controls keep the same horizontal position as
               // the other radios and stay vertically aligned with each other.
@@ -363,6 +420,418 @@ class _SensitivityControlsState extends State<_SensitivityControls> {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Detection and depth cadence targets.
+///
+/// Sliders keep a local draft while dragging (like [_SensitivityControls]) so a
+/// drag does not persist on every tick, while the persisted value stays the
+/// single source of truth when the setting changes elsewhere.
+class _InferenceCadenceControls extends StatefulWidget {
+  final SettingsService settings;
+
+  const _InferenceCadenceControls({required this.settings});
+
+  @override
+  State<_InferenceCadenceControls> createState() =>
+      _InferenceCadenceControlsState();
+}
+
+class _InferenceCadenceControlsState extends State<_InferenceCadenceControls> {
+  /// Target applied when Automatic is switched off.
+  static const int _manualDetectionHz = 15;
+
+  late double _detectionDraft =
+      (widget.settings.detectionTargetHz ?? _manualDetectionHz).toDouble();
+  late double _depthDraft = widget.settings.depthTargetHz.toDouble();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.settings.addListener(_handleSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.settings.removeListener(_handleSettingsChanged);
+    super.dispose();
+  }
+
+  void _handleSettingsChanged() {
+    final settings = widget.settings;
+    final detection = (settings.detectionTargetHz ?? _manualDetectionHz)
+        .toDouble();
+    final depth = settings.depthTargetHz.toDouble();
+    if (!mounted || (detection == _detectionDraft && depth == _depthDraft)) {
+      return;
+    }
+    setState(() {
+      _detectionDraft = detection;
+      _depthDraft = depth;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final captionStyle = theme.textTheme.bodySmall?.copyWith(
+      color: kHomeInkMuted,
+    );
+    final settings = widget.settings;
+    final automatic = settings.detectionTargetHz == null;
+    final depthDisabled =
+        settings.distanceEstimationMode ==
+        DistanceEstimationMode.boundingBoxApproximation;
+    final cadence = InferenceCadence.resolve(
+      requestedDetectionHz: settings.detectionTargetHz,
+      requestedDepthHz: settings.depthTargetHz,
+      lowPowerMode: settings.lowPowerMode,
+      distanceEstimationMode: settings.distanceEstimationMode,
+    );
+    final detectionHz = _detectionDraft.round();
+    final depthHz = _depthDraft.round();
+    final lowPowerCaps = <String>[
+      if (cadence.lowPowerClamped &&
+          (settings.detectionTargetHz == null ||
+              settings.detectionTargetHz! >
+                  InferenceCadence.lowPowerDetectionCapHz))
+        'detection to ${cadence.effectiveDetectionHz} Hz',
+      if (cadence.lowPowerClamped &&
+          cadence.depthEnabled &&
+          settings.depthTargetHz > InferenceCadence.lowPowerDepthCapHz)
+        'depth to ${cadence.effectiveDepthHz} Hz',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: kSpace16),
+          title: const Text('Automatic detector cadence'),
+          subtitle: Text(
+            automatic
+                ? 'Runs as fast as the device allows.'
+                : 'Target: $detectionHz Hz',
+          ),
+          value: automatic,
+          onChanged: (value) =>
+              settings.setDetectionTargetHz(value ? null : _manualDetectionHz),
+        ),
+        Semantics(
+          container: true,
+          label: 'Detector cadence target, $detectionHz Hz',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, 0),
+                child: Text(
+                  'Detector cadence target: $detectionHz Hz',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+              Slider(
+                key: const ValueKey('cadenceDetectionSlider'),
+                min: AppSettings.minDetectionTargetHz.toDouble(),
+                max: AppSettings.maxDetectionTargetHz.toDouble(),
+                divisions:
+                    AppSettings.maxDetectionTargetHz -
+                    AppSettings.minDetectionTargetHz,
+                value: _detectionDraft,
+                label: '$detectionHz Hz',
+                onChanged: automatic
+                    ? null
+                    : (value) => setState(() => _detectionDraft = value),
+                onChangeEnd: automatic
+                    ? null
+                    : (value) => settings.setDetectionTargetHz(value.round()),
+              ),
+            ],
+          ),
+        ),
+        Semantics(
+          container: true,
+          // The value is preserved while Bounding box mode disables the control.
+          label:
+              'Depth cadence target, $depthHz Hz'
+              '${depthDisabled ? ', disabled in bounding box mode' : ''}',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace16,
+                  kSpace8,
+                  kSpace16,
+                  0,
+                ),
+                child: Text(
+                  'Depth cadence target: $depthHz Hz',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+              Slider(
+                key: const ValueKey('cadenceDepthSlider'),
+                min: AppSettings.minDepthTargetHz.toDouble(),
+                max: AppSettings.maxDepthTargetHz.toDouble(),
+                divisions:
+                    AppSettings.maxDepthTargetHz - AppSettings.minDepthTargetHz,
+                value: _depthDraft,
+                label: '$depthHz Hz',
+                onChanged: depthDisabled
+                    ? null
+                    : (value) => setState(() => _depthDraft = value),
+                onChangeEnd: depthDisabled
+                    ? null
+                    : (value) => settings.setDepthTargetHz(value.round()),
+              ),
+              if (depthDisabled)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, 0),
+                  child: Text(
+                    'Depth inference is off in Bounding box mode. The target is '
+                    'kept for when Depth estimate is selected again.',
+                    style: captionStyle,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(kSpace16, kSpace8, kSpace16, 0),
+          child: Text(
+            'Actual throughput depends on the device; the value is a target, '
+            'not a guaranteed rate.',
+            style: captionStyle,
+          ),
+        ),
+        if (lowPowerCaps.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(kSpace16, kSpace4, kSpace16, 0),
+            child: Text(
+              'Low power mode limits ${lowPowerCaps.join(' and ')}.',
+              style: captionStyle,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The researcher's detector selection.
+///
+/// Renders only from [DetectorModelService.current]: after an unreadable-copy
+/// recovery the settings file still names `custom` while the built-in detector
+/// is active, so reading settings here would mislabel the active model.
+class _DetectorModelCard extends StatefulWidget {
+  final DetectorModelService detectorModel;
+
+  const _DetectorModelCard({required this.detectorModel});
+
+  @override
+  State<_DetectorModelCard> createState() => _DetectorModelCardState();
+}
+
+class _DetectorModelCardState extends State<_DetectorModelCard> {
+  String? _message;
+  bool _busy = false;
+
+  DetectorModelService get _service => widget.detectorModel;
+
+  Future<void> _choose() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => const _ModelNameDialog(),
+    );
+    if (name == null) return;
+    await _run(() => _service.importFromPicker(displayName: name));
+  }
+
+  Future<void> _useBuiltIn() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    await _service.selectBuiltIn();
+    if (!mounted) return;
+    setState(() => _busy = false);
+  }
+
+  Future<void> _useImported() => _run(_service.selectStoredCustom);
+
+  Future<void> _run(Future<ModelImportResult> Function() action) async {
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    final result = await action();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      // Cancellation is silent; a failure carries its actionable message.
+      _message = result.message;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final caption = theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted);
+    return ListenableBuilder(
+      listenable: _service,
+      builder: (context, _) {
+        final model = _service.current;
+        final recovery = _service.selectionRecoveryMessage;
+        final message = _message;
+        final builtIn = !model.isCustom;
+        return _SettingsCard(
+          title: 'Detector Model',
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kSpace16),
+              child: Text(
+                '${model.displayName} · ${model.classCount} classes',
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace4,
+                kSpace16,
+                0,
+              ),
+              child: Text(
+                builtIn ? 'Built-in detector' : 'Imported model',
+                style: caption,
+              ),
+            ),
+            if (recovery != null) WarningBanner(message: recovery),
+            if (message != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace16,
+                  kSpace8,
+                  kSpace16,
+                  0,
+                ),
+                child: Semantics(
+                  container: true,
+                  liveRegion: true,
+                  label: message,
+                  child: ExcludeSemantics(
+                    child: Text(
+                      message,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: kWarningRed,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace8,
+                kSpace16,
+                0,
+              ),
+              child: Text(
+                'Changing the detector stops detection. Press Start on the '
+                'Detection screen to run the selected model.',
+                style: caption,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace12,
+                kSpace16,
+                0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AccessibleButton(
+                    label: 'Choose model file…',
+                    icon: Icons.upload_file,
+                    onPressed: _busy ? null : _choose,
+                  ),
+                  const SizedBox(height: kSpace8),
+                  AccessibleButton(
+                    label: 'Use built-in detector',
+                    icon: Icons.memory,
+                    onPressed: _busy || builtIn ? null : _useBuiltIn,
+                  ),
+                  const SizedBox(height: kSpace8),
+                  AccessibleButton(
+                    label: 'Use imported model',
+                    icon: Icons.folder_open,
+                    onPressed: !_busy && builtIn && _service.hasStoredCustom
+                        ? _useImported
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Asks for the researcher's model name before the picker opens.
+class _ModelNameDialog extends StatefulWidget {
+  const _ModelNameDialog();
+
+  @override
+  State<_ModelNameDialog> createState() => _ModelNameDialogState();
+}
+
+class _ModelNameDialogState extends State<_ModelNameDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Name this model'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Use a short name for the model, such as Obstacle Detector v2. '
+            'Use up to 40 letters, numbers, spaces and . _ - only, and never a '
+            'respondent name or email address.',
+          ),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            maxLength: 40,
+            decoration: const InputDecoration(hintText: 'Model name'),
+            onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('Import'),
         ),
       ],
     );

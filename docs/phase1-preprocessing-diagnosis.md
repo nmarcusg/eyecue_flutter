@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Phase 1 — Preprocessing Diagnosis After the Converter Fix
 
 > **Status:** Historical diagnosis record. No code was changed as part of this

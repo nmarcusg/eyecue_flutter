@@ -5,6 +5,112 @@
 
 ---
 
+## 2026-10-23 — CADENCE-C7 documentation of configurable model cadence
+
+### Context
+Documentation for the configurable inference cadence work (settings, policy,
+runtime wiring, telemetry schema 3, manual-upload permission) on
+`feat/granular-inference-cadence` above `b4d306e`. No `lib/` behaviour, test
+assertion, telemetry schema, export key, manifest permission, Supabase function
+or settings value was changed.
+
+### Changed
+- README, architecture, MDE integration, telemetry data dictionary and
+  model-assets records now describe the single Ultralytics engine, the two
+  bundled models, the cadence settings/policy and export schema 3.
+- Stale statements (Custom engine availability, depth download, schema v2,
+  `CAMERA`-only manifest, unexecuted tests) were corrected or explicitly marked
+  historical.
+- `tool/package_ultralytics_metadata.dart` no longer overwrites
+  `docs/model-assets.md` by default; the document is hand-maintained and the
+  tool writes a report only with an explicit `--report=<path>`.
+
+### Verified
+- `flutter analyze --no-pub`: 4 pre-existing issues.
+- `flutter test --no-pub`: 527 passing, 1 failing
+  (`tts_service_test.dart` reconciliation timeout, pre-existing on `dev@94f74d8`).
+- No build, device or measurement was run; no cadence/FPS claim is made.
+
+---
+
+## 2026-10-21 — MDE integration and Custom engine removal
+
+### Context
+The approved MDE contract asked for metric distance from the official
+`yolo26n-depth` model inside the existing one-camera-session architecture, with
+the Custom EyeCue engine removed once the depth work passed analyze and tests.
+Work was done in an isolated worktree (`/home/nico/repos/eyecue_flutter-mde`,
+branch `codex/mde-integration`, base `dev@94f74d8`); the original worktree was
+never modified.
+
+### Changed
+- Added a second `ultralytics_yolo` instance (`YOLOTask.depth`,
+  `useMultiInstance: true`) fed by the streamed analysis JPEG, with a 500 ms
+  latest-frame-wins scheduler, one pending slot, GPU→CPU single retry and a
+  non-blocking degraded state; see [`mde-integration.md`](mde-integration.md).
+- Detection now consumes `onStreamingData` (which replaces `onResult` +
+  `onPerformanceMetrics`) and parses with the public
+  `YOLODetectionResults.fromMap` / `YOLOPerformanceMetrics.fromMap`.
+- Added `DistanceEstimationMode`, `showBoundingBoxes`, `showDepthHeatmap`
+  (schema v4), the Settings "Distance & Overlays" card, and the
+  `DepthOverlayState` presentation rules.
+- Added `estimatedMeters` / `distanceSource` / `distanceLabel` to
+  `DetectionInfo`, mapped metres onto the existing proximity bands, and made
+  speech say "about N m" when a metric estimate exists.
+- Removed the Custom engine, its probes/forensics/PNG tooling,
+  `tflite_flutter`, the Gradle classic-LiteRT workaround, the unused `yolov8n`
+  assets, and the coordinator's fallback APIs; `InferenceEngine` is now the
+  single `ultralytics` value.
+
+### Verified
+- `dart format --output=none --set-exit-if-changed lib test tool`: clean.
+- `flutter analyze`: 4 issues, all pre-existing on `dev@94f74d8`.
+- `flutter test`: **452 passing, 1 failing** — `tts_service_test.dart` "a
+  partial signal pair records a reconciliation timeout", which fails the same
+  way on the untouched `dev@94f74d8` worktree.
+- `flutter build apk --release`: success, 82.9 MB (82,882,016 bytes); no
+  R8/WorkManager missing-class warning. `assembleRelease` took 627.6 s cold and
+  147.1 s on the review re-run with the Gradle cache warm.
+- **No Android device was attached** (`flutter devices` shows Linux only,
+  `adb devices` empty), so nothing here is a device or performance result.
+
+### Known limitations
+- Depth accuracy in metres is uncalibrated; phone/lens calibration is out of
+  scope and required for research-grade use.
+- Device rotation is approximated from portrait/landscape because the plugin
+  exposes no angle to Dart; 180° and landscape-left/right are not observable.
+- Depth latency, detection FPS, thermal impact and the manual validation matrix
+  are unmeasured.
+
+---
+
+## 2026-10-19 — WS4: waste reduction (C1–C5 accepted, C6 documentation reconciliation)
+
+### Context
+Six ordered atomic commits on local/no-upstream `feat/waste-reduction`, starting from verified merge `94f74d8380d721c8649e7e52fe0faf15127e53e6`.
+
+### Accepted commits
+- `28ffa9cef41d689f33b07f08d2e72cff80765157` — `chore(diagnostics): remove static-image test path`
+- `618897481ffaaa983e97d6dc37c63dc29523eb4b` — `chore: remove verified zero-fan-in code`
+- `a466077ac627c62fa92bd348b5bedc3728dc919d` — `chore(deps): remove unused riverpod`
+- `1516dfe3282341f8917d3ffc81755c5f397f6b30` — `chore(assets): stop bundling tooling-only models`
+- `7e89461583eea847b65ae12b0cd90a84f49681ea` — `fix(diagnostics): disable forensic logging in release`
+
+Each was independently reviewed `PASS_WITH_NOTES` with no P0, P1, or scope-relevant P2. C3's ten lock downgrades are owner-authorized toolchain normalization under Flutter 3.44.2, not a dependency upgrade.
+
+### Changed
+- C6 reconciles current source-of-truth documentation and stale live comments: removed files/dependency are no longer described as active, only `yolov8n_int8_new_metadata.tflite` is described as bundled, release forensic file I/O is described as gated, and historical investigations keep their evidence with added retirement/current-status notices.
+
+### Verified
+- **Static only:** focused repository searches, Markdown/file-link inspection, `git diff --check`, exact file boundary, clean status, lock blob `13bbe15e73850cac2c4ebf3ac070522f7b7bf6ab`, and preserved refs/stashes.
+- No `flutter test`, `flutter analyze`, dependency resolution beyond the single authorized C3 `flutter pub get` used to regenerate the lock, Gradle/build, APK/bundle inspection, emulator/device, benchmark, or network command was run for WS4.
+
+### Deferred / risks
+- Release file I/O is statically gated, but eager forensic CPU calculations remain, profile diagnostics still affect profile measurements, and runtime release behavior is unproven.
+- Automated tests and analyzer were not run; the external IDE/Flutter resolver hazard remains, so `pubspec.lock` must stay at the recorded blob.
+
+---
+
 ## 2026-10-18 — Workstream 2: Alert-latency telemetry and reporting
 
 ### Context
@@ -18,6 +124,9 @@ Workstream 1 recorded nothing between an alert decision and confirmed speech sta
 ### Verified
 - **Static only:** the implementation was reviewed by static inspection and `git diff --check`; no `flutter test`, `flutter analyze`, Gradle, build, emulator, or device command was run.
 - Owning tests were written but not executed, so no passing result is claimed.
+- **Later (2026-10-23):** the Custom engine was removed on 2026-10-21, leaving the
+  four Ultralytics summaries; the export schema is now 3 and the suite has since
+  run (527 passing, 1 known pre-existing failure).
 - Physical audible-warning latency remains unmeasured.
 
 ### Known limitations

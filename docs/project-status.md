@@ -1,17 +1,17 @@
 # EyeCue — Project Status
 
-> **Last Updated:** 2026-10-18 (Workstream 1 TTS lifecycle arbitration — developed on `fix/tts-lifecycle-arbitration` and **merged into `dev` through PR #5 at `665b59b` on 2026-10-17**; still unreleased and not yet re-verified with Flutter tests, analyzer, builds, or physical-device TTS checks)
+> **Last Updated:** 2026-10-23 (inference cadence documentation; the Workstream 1 TTS lifecycle arbitration described below was developed on `fix/tts-lifecycle-arbitration` and **merged into `dev` through PR #5 at `665b59b` on 2026-10-17**; still unreleased and, as of that 2026-10-17 merge, not yet re-verified with Flutter tests, analyzer, builds, or physical-device TTS checks)
 > See also: [`implementation-progress.md`](implementation-progress.md) (detailed progress), [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned app task areas and their acceptance criteria), [`known-issues.md`](known-issues.md) (blockers), [`thesis-product-status-audit.md`](thesis-product-status-audit.md) (thesis-aligned completion baseline).
 
 > **Latest release:** v0.2.2. Since the v0.2.0 UI landed, v0.2.1 fixed the startup theme-construction assertion and v0.2.2 fixed the camera viewport resizing with detections plus chart overflow in Logs & Reports. The repository contains committed but unreleased model/layout/backend changes; see the section below and [`changelog.md`](changelog.md).
 >
 > **Unreleased speech work (2026-10-17, merged to `dev` through PR #5 at `665b59b`):** the TTS layer is now a lifecycle-aware arbiter (one in-flight utterance, one pending request, confirmed-`onStart` history, paired-signal reconciliation, bounded recovery, track-aware [`alert_policy.dart`](../lib/services/alert_policy.dart), controlled preemption, idle-only wayfinding). Status: **implemented and statically checked only** — no Flutter tests, analyzer, builds, or physical-device TTS checks were run after relocating onto `origin/dev` or after the merge. Device callback ordering, cancellation timing and audible-warning latency remain unmeasured. See [`architecture.md`](architecture.md#speech-scheduling-workstream-1).
 >
-> **Unreleased telemetry work (Workstream 2, on `feat/alert-latency-telemetry` above `5e965ae`):** the speech scheduler now emits one bounded alert-lifecycle record per terminal submission (event deltas, capped at 500) plus a replace-only cumulative scheduler-counter snapshot. Custom frames carry analysis/inference/result anchors; Ultralytics carries only result receipt and later app-side anchors. Logs & Reports shows eight detection-origin intervals (four per engine) with nearest-rank p50/p95/max/count and an honest `No samples` state, and exports are schema v2 with additive `alertLifecycle`, `alertCounters`, and `alertSummaries` payloads. Status: **implemented and static-checked only** — tests were written but not executed, and no analyzer, Gradle, build, emulator/device, or physical audible-latency validation occurred. The Ultralytics interval is `app-side / post-inference`, not full inference or end-to-end latency, and no performance, safety, or release-readiness improvement is claimed. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
+> **Unreleased telemetry work (Workstream 2, on `feat/alert-latency-telemetry` above `5e965ae`):** the speech scheduler now emits one bounded alert-lifecycle record per terminal submission (event deltas, capped at 500) plus a replace-only cumulative scheduler-counter snapshot. New records carry result receipt and later app-side anchors (the Custom engine was removed on 2026-10-21). Logs & Reports shows four detection-origin Ultralytics intervals with nearest-rank p50/p95/max/count and an honest `No samples` state, and exports are schema 3 with additive `alertLifecycle`, `alertCounters`, `alertSummaries`, and per-sample cadence payloads. Status: **implemented and statically tested** — `flutter analyze --no-pub` shows 4 pre-existing issues and `flutter test --no-pub` gives 527 passing / 1 known pre-existing failure; no build, device, or physical audible-latency validation occurred. The Ultralytics interval is `app-side / post-inference`, not full inference or end-to-end latency, and no performance, safety, or release-readiness improvement is claimed. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 
 ## Overall Progress
 
-**ML/inference pipeline:** stable v0.2.2 baseline is ~80% complete and on-device validated; the current dual-engine candidate is statically/build validated and both modes have initial one-device smoke evidence, but neither is formally compared or release-validated.
+**ML/inference pipeline:** stable v0.2.2 baseline is ~80% complete and on-device validated; the current single-engine (Ultralytics detection + bundled depth) candidate is statically validated and its suite runs; earlier dual-engine smoke evidence is historical and the current pipeline is not formally benchmarked or release-validated.
 **Thesis product (app as a whole):** ~70% (range 65–75%) — see the [thesis-product-status-audit](thesis-product-status-audit.md) for the weighted breakdown (re-scored after the v0.2.x assistive-UI phase; the earlier ~30% measured the pre-assistive-UI state, and the historical "~60%" measured only the ML/debug pipeline).
 
 ## What Changed (v0.2.x — Assistive Application UI)
@@ -20,23 +20,25 @@ The app is no longer a single developer camera screen. It now has the thesis-ali
 
 - **Navigation:** 4-tab bottom bar — Home, Detect, Settings, Help ([`app_shell.dart`](../lib/navigation/app_shell.dart)); Logs & Reports pushed from Settings.
 - **Home:** branding, coordinator-derived status (Preparing/Ready/Paused/Stopped/Unavailable), live `EyeCue` wordmark. The `Go to Live Camera` CTA was removed without replacement (unreleased candidate).
-- **Detection:** the validated camera/inference pipeline preserved, now with an assistive UI — status pill, audio mute, and thesis gestures (two-finger double-tap start/stop, single tap pause/resume, three-finger scan, swipe-down repeat) with haptic + TTS confirmation. The unreleased candidate adds a persisted Custom EyeCue / Ultralytics engine selector; both feed EyeCue's spatial, priority, TTS, and telemetry layers. The unreleased Detection redesign (PD1–PD3) consolidates the normal screen into a dominant camera viewport, a compact two-row in-viewport information overlay, and exactly two side-by-side physical controls (one coordinator-driven lifecycle control plus Quick Scan); the normal card list, warning banner, gesture hint, visible Repeat, standalone Start/Stop/Pause/Resume, visible correction/report actions, and Ultralytics developer metrics were removed from the normal UI while their underlying systems remain.
+- **Detection:** the validated camera/inference pipeline preserved, now with an assistive UI — status pill, audio mute, and thesis gestures (two-finger double-tap start/stop, single tap pause/resume, three-finger scan, swipe-down repeat) with haptic + TTS confirmation. The unreleased candidate adds configurable detection and depth cadence; the single Ultralytics engine feeds EyeCue's spatial, priority, TTS, and telemetry layers. The unreleased Detection redesign (PD1–PD3) consolidates the normal screen into a dominant camera viewport, a compact two-row in-viewport information overlay, and exactly two side-by-side physical controls (one coordinator-driven lifecycle control plus Quick Scan); the normal card list, warning banner, gesture hint, visible Repeat, standalone Start/Stop/Pause/Resume, visible correction/report actions, and Ultralytics developer metrics were removed from the normal UI while their underlying systems remain.
 - **TTS audio feedback:** implemented ([`tts_service.dart`](../lib/services/tts_service.dart)) — lifecycle-aware scheduler with one active utterance and one pending request, history committed only on a confirmed `onStart`, paired-signal reconciliation, track-aware suppression/escalation in [`alert_policy.dart`](../lib/services/alert_policy.dart), controlled preemption, idle-only wayfinding, repeat-last and mute state. `flutter_tts` remains the platform engine.
-- **Settings:** persisted preferences — Vibration, Auto-Start, Low Power Mode (dispatch throttle), Audio guidance, inference engine, Logs & Reports ([`settings_service.dart`](../lib/services/settings_service.dart)).
+- **Settings:** persisted preferences — Vibration, Auto-Start, Low Power Mode (dispatch throttle), Audio guidance, detection engine (single Ultralytics engine since the Custom engine was removed on 2026-10-21), Logs & Reports ([`settings_service.dart`](../lib/services/settings_service.dart)).
 - **Help:** how it works, gestures, confirmation feedback, Android usage tips.
 - **Logs & Reports:** Overview / Charts / Logs with `fl_chart`; accuracy/precision/recall/mAP explicitly shown as unavailable (require ground truth).
 - **Spatial/priority layer:** left/center/right + priority tiers + approximate proximity band ([`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart)) — kept separate from the inference pipeline.
-- Stable v0.2.2 validation remains the historical **59-test** on-device baseline. At the 2026-09-05 revision the repository had **127 passing tests** and `flutter analyze` reported **0 issues**; those figures are historical evidence, not current verification. The merged Workstream 1 state (PR #5, `665b59b`) has **not** run Flutter tests or the analyzer.
+- Stable v0.2.2 validation remains the historical **59-test** on-device baseline. At the 2026-09-05 revision the repository had **127 passing tests** and `flutter analyze` reported **0 issues**; those figures are historical evidence, not current verification. The merged Workstream 1 state (PR #5, `665b59b`) had **not** run Flutter tests or the analyzer as of the 2026-10-17 merge.
 
 ## Current Unreleased Candidate (2026-09-05)
 
-The following changes are present in the repository but are not a new release yet:
+> Rows describing the Custom engine and its isolate recovery are historical: the Custom engine was removed on 2026-10-21.
+
+The following changes were present in the repository at that revision but are not a new release yet:
 
 - **Two selectable inference modes:** Settings now persists either **Custom EyeCue** (the existing Dart/isolate camera, conversion, resize, orientation, parser, and class-wise NMS path) or **Ultralytics** (`ultralytics_yolo` 0.6.13, native camera/inference/post-processing path). [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) switches implementations while keeping the surrounding application unchanged.
-- **Controlled inputs:** both modes load the same metadata-enriched runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite), generated from the byte-identical base graph [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite), plus the authoritative COCO label file. The active confidence threshold defaults to `0.25`, is persisted through settings, and is applied by both engines; IoU remains fixed at `0.45`. [`model_config.dart`](../lib/models/model_config.dart) is the shared source of the artifact paths and bounds.
+- **Controlled inputs:** both modes load the same metadata-enriched runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite), generated from the byte-identical base graph `yolov8n_int8_new.tflite` (deleted with the Custom engine on 2026-10-21), plus the authoritative COCO label file. The active confidence threshold defaults to `0.25`, is persisted through settings, and is applied by both engines; IoU remains fixed at `0.45`. [`model_config.dart`](../lib/models/model_config.dart) is the shared source of the artifact paths and bounds.
 - **Comparable app outputs:** [`ultralytics_detection_adapter.dart`](../lib/services/ultralytics_detection_adapter.dart) maps native results into EyeCue's existing `Detection` model. Spatial descriptions, priorities, warnings, TTS, gestures, and telemetry therefore remain available in both modes. Logs & Reports now shows separate Custom and Ultralytics summaries instead of mixing their samples.
-- **Model:** the runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite) preserves the base graph [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite): input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and FLOAT32 runtime I/O with internally quantized tensors. [`ModelMetadata`](../lib/models/model_metadata.dart) classifies it as *Weight-Quantized* from inspection rather than from the filename.
-- **Preprocessing:** the inference path now chooses NHWC or NCHW from runtime input shape. [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) provides pure, unit-tested rotation/mirror logic for both layouts.
+- **Model:** the runtime artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite) preserves the base graph `yolov8n_int8_new.tflite` (deleted with the Custom engine on 2026-10-21): input `[1,3,640,640]` (NCHW), output `[1,84,8400]`, and FLOAT32 runtime I/O with internally quantized tensors. `ModelMetadata` (deleted with the Custom engine on 2026-10-21) classifies it as *Weight-Quantized* from inspection rather than from the filename.
+- **Preprocessing:** the inference path now chooses NHWC or NCHW from runtime input shape. `tensor_rotation.dart` (deleted with the Custom engine on 2026-10-21) provides pure, unit-tested rotation/mirror logic for both layouts.
 - **Backend:** the isolate attempts explicit XNNPACK, retains the delegate for the interpreter lifetime, and retries on CPU for recoverable Dart-level setup/invocation failures. A native SIGSEGV cannot be caught by Dart, so the historical Snapdragon 695 XNNPACK crash is not considered resolved.
 - **Static/build verification (2026-09-05 revision — historical, not current verification):** at that revision `flutter analyze` passed, `flutter test` passed with 127 tests, the flatbuffer and PNG validators passed, the metadata packaging check passed, and the debug APK built with both native runtime families plus the shared model/labels. APK inspection confirmed both runtime families for the packaged ABIs. These results do **not** verify the merged Workstream 1 state. See [`dual-inference-engine-test.md`](dual-inference-engine-test.md).
 - **Device validation:** the fixed dual-engine debug APK installed successfully on the API 33 Snapdragon 695 target (`2201116SG`, arm64). Both modes processed live camera frames and rendered EyeCue outputs. The first Custom→Ultralytics switch revealed a late-result/closed-stream race; lifecycle guards and frame-acceptance handling were added, and post-fix switching succeeded in both directions without recurrence in captured Flutter logs. Fresh settings now default to Ultralytics; an explicitly persisted Custom preference remains Custom, and temporary fallback does not rewrite that preference.
@@ -45,6 +47,8 @@ The following changes are present in the repository but are not a new release ye
 This candidate must remain labelled **unreleased and initially device-observed**. The smoke tests are not a formal benchmark, accuracy evaluation, thermal/memory test, long-duration stability test, broad compatibility result, or proof of delegate selection. The controlled paired comparison is still required, and the native SIGSEGV risk remains unresolved.
 
 ## Current Milestone
+
+> Rows describing the Custom engine and its isolate recovery are historical: the Custom engine was removed on 2026-10-21.
 
 **Milestone 2: "Research-Ready"** (extends the v0.1 "Audible MVP" work — audio + assistive UI now landed)
 
@@ -56,7 +60,7 @@ This candidate must remain labelled **unreleased and initially device-observed**
 | Persisted settings (vibration, auto-start, low-power, audio) | ✅ Implemented (v0.2.0) |
 | Spatial position (left/center/right) + priority classification | ✅ Implemented (heuristic proximity band) (v0.2.0) |
 | Runtime telemetry + charts (latency/FPS/frequency) | ✅ Implemented (v0.2.0) |
-| Persisted Custom/Ultralytics test selector + per-engine reports | ✅ Implemented (unreleased candidate) |
+| Configurable detection/depth inference cadence + per-sample telemetry | ✅ Implemented (unreleased candidate, 2026-10-23) |
 | Error handling in isolate | ✅ Implemented — typed errors, generation filtering, bounded worker recovery, and terminal failure state |
 | Permission-denied UI | ✅ Implemented (v0.2.0 — camera-denied screen with retry/open-settings) |
 | Isolate restart recovery | ✅ Implemented — injectable coordinator, immediate/delayed bounded retries, stale-event guards, healthy-budget reset, and disposal safety |
@@ -67,15 +71,17 @@ This candidate must remain labelled **unreleased and initially device-observed**
 
 ## Current Blocker
 
-**XNNPACK/device validation is incomplete.** The stable v0.2.2 path is CPU-only because XNNPACK previously crashed on Snapdragon 695 with the older bundled YOLOv8n model (FLOAT32 I/O, INT8 weights). The current unreleased candidate now installs and runs on the target: the explicit XNNPACK interpreter completed 65 logged live frames in a short observation, with approximately 5.7–6.2 inference FPS in 5-second summaries and no observed candidate-process fatal signal. Native crashes remain uncatchable, and the short run does not establish a performance improvement, long-term stability, full graph delegation, or accuracy result.
+> **Historical (Custom engine, removed 2026-10-21).** The XNNPACK and 5.7–6.2 FPS evidence below was measured on that removed Dart inference path; it says nothing about the current Ultralytics pipeline, which has no measured device performance.
+
+**XNNPACK/device validation is incomplete.** The stable v0.2.2 path is CPU-only because XNNPACK previously crashed on Snapdragon 695 with the older bundled YOLOv8n model (FLOAT32 I/O, INT8 weights). The then-current candidate installed and ran on the target: the explicit XNNPACK interpreter completed 65 logged live frames in a short observation, with approximately 5.7–6.2 inference FPS in 5-second summaries and no observed candidate-process fatal signal. Native crashes remain uncatchable, and the short run does not establish a performance improvement, long-term stability, full graph delegation, or accuracy result.
 
 See [`known-issues.md`](known-issues.md) for full blocker details.
 
 ## Next Objective
 
-1. **Extend candidate device validation** — repeat the target-device run for a controlled duration, collect fallback/crash evidence, and measure detections without treating the short observation as a release benchmark.
+1. ~~**Extend candidate device validation**~~ — obsolete: it targeted the removed Custom-engine NCHW/XNNPACK candidate and its CPU fallback (removed 2026-10-21), not the current Ultralytics pipeline; the short observation was never a release benchmark.
 2. **Re-validate orientation on-device** — candidate NCHW portrait/landscape and front-camera runs, plus the deferred stable-baseline cases.
-3. **Run the controlled dual-engine benchmark** — compare Custom EyeCue and Ultralytics on the same device, model, scene, settings, duration, and thermal starting state using [`dual-inference-engine-test.md`](dual-inference-engine-test.md); do not infer performance from static inspection or a short observational run.
+3. ~~**Run the controlled dual-engine benchmark**~~ — obsolete: the Custom engine was removed on 2026-10-21. Measure the single Ultralytics pipeline plus bundled depth instead, without inferring performance from static inspection or a short observational run.
 4. **Complete the v0.2.x UI validation** — gestures, TTS, mute toggle, settings persistence, and Logs & Reports charts.
 5. **Validate the Home/Detection shared lifecycle on a physical device** — confirm Auto-start ON background preparation, Auto-start OFF entry start, and matching shared status across Home and both Detection implementations (currently **Needs Verification**).
 6. **Close out the Detection redesign non-blocking items** — dedicated full-app teardown verification for the FlutterJNI fatal (not fixed), and the deferred strict PD3 result provenance/freshness work under its existing scope boundary.
@@ -88,12 +94,12 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 | 1 | On-device validation of gestures + TTS + settings persistence | 🔴 Critical |
 | 2 | ~~Implement TTS audio feedback~~ | ✅ Complete (v0.2.0) |
 | 3 | ~~Add permission-denied and error UI states~~ | ✅ Complete — permission UI plus typed runtime/recovery states |
-| 4 | Extend XNNPACK candidate validation safely and retain a working CPU fallback | 🔴 Critical |
+| 4 | ~~Extend XNNPACK candidate validation safely and retain a working CPU fallback~~ (obsolete: XNNPACK and its CPU fallback belonged to the Custom engine removed 2026-10-21) | — |
 | 5 | ~~Implement thesis gesture controls~~ | ✅ Complete (v0.2.0) |
 | 6 | ~~Isolate restart recovery~~ | ✅ Complete — bounded, generation-safe Custom-worker lifecycle |
 | 7 | Orientation re-validation (back landscape + front camera) | 🟡 High |
 | 8 | Formal FPS/latency benchmark + accuracy evaluation | 🟡 High |
-| 9 | Controlled Custom EyeCue vs Ultralytics device comparison | 🔴 Critical |
+| 9 | ~~Controlled Custom EyeCue vs Ultralytics comparison~~ (obsolete: Custom removed 2026-10-21) | — |
 
 ## Recent Accomplishments
 
@@ -120,12 +126,12 @@ See [`known-issues.md`](known-issues.md) for full blocker details.
 - ✅ Camera initialization with YUV420 format at low resolution
 - ✅ Project documentation system established (`docs/` directory)
 - ✅ Bounding box overlay with `CustomPainter`, coordinate transformation, and front-camera mirroring
-- ✅ Debug instrumentation: structured `debugPrint` logging (`[Service]`/`[Model]`/`[Camera]`/`[Inference]`/`[Detection]`/`[Painter]`/`[Performance]`/`[Error]`) + visual debug overlay (debug builds only)
+- ✅ Debug instrumentation: structured `debugPrint` logging (`[Service]`/`[Model]`/`[Camera]`/`[Inference]`/`[Detection]`/`[Painter]`/`[Performance]`/`[Error]`); the former visual debug overlay (debug builds only) was removed in WS4
 - ✅ Performance logging: 5-second summaries with camera FPS, inference FPS, and avg/min/max latency
 - ✅ Partial isolate error handling: try/catch + error propagation to main isolate
-- ✅ Forensic file-based diagnostics (`ForensicLog`): structured logs + first-frame PNG dumps + auto-diagnosis written under `<documents>/debug/run_*` (replaces console probes)
+- ✅ Forensic file-based diagnostics (`ForensicLog`): structured logs + first-frame PNG dumps + auto-diagnosis written under `<documents>/debug/run_*` (replaces console probes); WS4 gates all file I/O out of release builds while debug/profile keep it
 - ✅ Camera preprocessing repair: geometry-aware YUV420→RGB (rowStride/pixelStride honored; planar I420 + semi-planar NV12/NV21)
 - ✅ Aspect-correct preview: `FittedBox` + painter share `applyBoxFit` math; no stretching/warping
-- ✅ Camera preview UI redesign: strict 3:4 portrait preview + permanent Metrics/Detections info panel
+- ✅ Camera preview UI redesign: strict 3:4 portrait preview + permanent Metrics/Detections info panel (the panel was removed in WS4)
 - ✅ Class-wise NMS (IoU 0.45) + pre-NMS confidence threshold lowered to 0.25 (standard YOLOv8)
 - ✅ **Device-independent orientation** (`BoxTransform`): input tensor rotated/mirrored to upright per runtime metadata; portrait detections 0 → 0.91 on-device; static-image regression byte-identical

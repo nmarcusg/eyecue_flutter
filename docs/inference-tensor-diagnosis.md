@@ -1,3 +1,5 @@
+> **Historical: describes the Custom EyeCue engine removed on 2026-10-21.**
+
 # Inference Tensor-Handling Diagnosis
 
 > **Status:** Historical investigation record — no code was modified as part of
@@ -14,6 +16,11 @@
 > evidence. The old line references and `camera_screen.dart` references below
 > are retained as historical evidence; use [`project-status.md`](project-status.md)
 > for current status.
+>
+> **WS4 current-status correction (2026-10-19):** `yolov8n_int8_new_metadata.tflite`
+> is the sole bundled/runtime model. The base graph and v0.2.2 baseline files
+> remain tracked for tools, tests, and historical comparison but are unbundled;
+> the original diagnosis below is preserved unchanged.
 
 ---
 

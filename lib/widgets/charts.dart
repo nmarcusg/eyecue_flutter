@@ -235,7 +235,23 @@ class DetectionFrequencyChart extends StatelessWidget {
 
 String _engineSummary(List<RuntimeSample> samples) {
   final engines = samples.map((sample) => sample.engine.label).toSet();
-  return engines.isEmpty ? 'no engine' : engines.join(', ');
+  final engineText = engines.isEmpty ? 'no engine' : engines.join(', ');
+  // Counted by graph identity, not by name: two same-named graphs are still
+  // two models, and one graph renamed mid-session is still one model.
+  final namesById = <String, String?>{};
+  for (final sample in samples) {
+    final id = sample.detectorModelId;
+    if (id == null) continue;
+    final name = sample.detectorModelName;
+    // The latest recorded name wins, so a renamed graph shows its current name.
+    if (name != null || !namesById.containsKey(id)) namesById[id] = name;
+  }
+  final models = namesById.values.whereType<String>().toSet();
+  if (models.isEmpty) return engineText;
+  final mixed = namesById.length > 1;
+  // A chart drawn from more than one detector never claims one model's data.
+  return '$engineText; detector model ${models.join(', ')}'
+      '${mixed ? ' (mixed-model data)' : ''}';
 }
 
 String _sampleSummary(

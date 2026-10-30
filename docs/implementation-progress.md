@@ -4,10 +4,29 @@
 >
 > **Reading the milestones below:** every "Current validation" bullet is relative to **its own dated section** and describes the repository at that time. None of them validates the merged Workstream 1 state.
 >
-> **Workstream 2 (unreleased, `feat/alert-latency-telemetry`):** alert-latency instrumentation and reporting are implemented — bounded lifecycle records (500), replace-only cumulative scheduler counters, Custom frame anchors versus Ultralytics app-side anchors, eight detection-origin summaries with nearest-rank p50/p95/max/count, schema-v2 JSON/CSV export, and a Logs & Reports section. **Verification status: static only** — owning tests were written but not executed; no analyzer, Gradle, build, emulator/device, or physical audible-latency validation ran. The Ultralytics interval is `app-side / post-inference`, never full inference or end-to-end latency. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
+> **Workstream 2 (unreleased):** alert-latency instrumentation and reporting are implemented — bounded lifecycle records (500), replace-only cumulative scheduler counters, Ultralytics app-side anchors (the Custom engine was removed on 2026-10-21), four detection-origin Ultralytics summaries with nearest-rank p50/p95/max/count, schema-3 JSON/CSV export, and a Logs & Reports section. **Verification status: static suite run** — `flutter analyze --no-pub` shows 4 pre-existing issues and `flutter test --no-pub` gives 527 passing / 1 known pre-existing failure; no build, device, or physical audible-latency validation ran. The Ultralytics interval is `app-side / post-inference`, never full inference or end-to-end latency. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 
-> **Last Updated:** 2026-10-18 (Workstream 1 merge status recorded; the milestone dates below are historical)
+> **Last Updated:** 2026-10-27 (researcher-selectable detector models and explicit research logging sessions; the Workstream and milestone dates below are historical)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
+
+## Current Unreleased Candidate (2026-10-27) — Researcher-Selectable Detector Models
+
+- ✅ Added [`DetectorModelService`](../lib/services/detector_model_service.dart): one built-in detector or one imported TFLite detection graph, validated (parseable graph, embedded Ultralytics `names` metadata, `task: detect`, label/class agreement, ≤ 40 MB, ≤ 1 000 labels), copied under a content fingerprint into app-owned storage, and restored across restarts. Storage stays at one app-owned custom copy plus its label sidecar; a replacement import deletes the previous copy and switching to the built-in model deletes nothing.
+- ✅ Added the Settings "Detector Model" card: display name and class count, the kind caption, an inline recovery message, the stop-and-press-Start notice, and three labelled controls (choose a file, use the built-in detector, use the imported model).
+- ✅ The selection drives detection end to end — model path, label list, rendering, speech and priority mapping — so a custom model's class `0` cannot inherit COCO person priority. A change is a deliberate stop that rejects a late payload from the superseded native view.
+- ✅ Added [`ResearchSessionService`](../lib/services/research_session_service.dart): explicit Start / Pause / Resume / Finish / Discard trials, wall-clock and active durations kept distinct, interval-baseline alert counters (the live engine is never reset), an immutable finished snapshot, bounded storage that refuses a new trial instead of evicting a stored one, and an interrupted draft restored as **paused**.
+- ✅ A model change during a recording trial pauses logging and records the boundary. The subscription is registered in [`main.dart`](../lib/main.dart) where the services are created, so a restored paused draft takes the boundary before the Logs & Reports route is ever built; a notification that keeps the same identity (re-selecting the active model) neither pauses nor appends.
+- ✅ Detector attribution in rows and exports: `detectorModelId` on sample/detection rows, a top-level `detectorModels` dictionary keyed `<id>` then `<id>~2`, `<id>~3`, and the CSV columns `model_id`, `model_name`, `model_fingerprint`. The `~n` suffix is **per export** — the app's model filter walks records then samples while the export table walks samples then records — so a key must not be joined across exports. No path, file name or URI is exported.
+- ⚠️ **Remaining device gates:** real custom-model execution, the Android SAF picker and its content-provider permissions, accelerator behaviour for a custom graph, physical screen-reader access to the new card, and upload against the live research database are all unverified; every result in this round comes from the local test suite.
+- ✅ Current validation: static only. `flutter analyze --no-pub` reports no issues, `dart format --output=none --set-exit-if-changed` is clean on the touched files, `git diff --check` is empty, and `flutter test --no-pub --concurrency=1` passes over `test/services/ test/screens/ test/models/ test/widgets/ test/navigation/ test/accessibility/ test/architecture/ test/theme_test.dart test/widget_test.dart`. No Android build, device run, Play Console check or performance measurement was performed, and no test total is restated here: the dated totals elsewhere in this file describe older revisions.
+
+## Current Unreleased Candidate (2026-10-23) — Configurable Inference Cadence
+
+- ✅ Added persisted detector cadence (Automatic default, or 1–30 Hz) and depth cadence (2–10 Hz, default 2 Hz), settings schema `4 → 5`, with sliders in the Settings "Inference Cadence" card.
+- ✅ Added the pure [`InferenceCadence.resolve`](../lib/services/inference_cadence.dart) policy: low power caps 4 Hz detection / 2 Hz depth, a numeric detector rate caps depth (source-limited), and bounding-box distance mode disables depth.
+- ✅ Detector cadence is applied via `YOLOStreamingConfig.inferenceFrequency` and live re-applied with `setStreamingConfig`; depth cadence re-arms the single latest-frame scheduler.
+- ✅ Telemetry schema **3** adds per-sample requested/effective rates, automatic/low-power/source-limited flags, and observed depth cadence/latency; the manual Supabase upload carries them without a migration.
+- ✅ Current validation: `flutter analyze --no-pub` shows the 4 pre-existing issues and `flutter test --no-pub` gives **527 passing, 1 known pre-existing failure**. No build, device run or cadence measurement was performed.
 
 ## Current Unreleased Candidate (2026-09-29) — Presentation-Only Visual Redesign Closeout
 
@@ -30,7 +49,7 @@
 - ✅ **Runtime repairs after physical-device validation:** Custom infinite-height layout cascade fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen); Custom `setState() or markNeedsBuild() called during build` fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart); Ultralytics Stop → Start stuck in Preparing fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
 - ✅ **Behavioral-deviation audit:** no unintended deviations. Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
 - ✅ Current validation: `flutter analyze` reports 0 issues and `flutter test` reports **323 passing tests**.
-- ⚠️ **Deferred (non-blocking):** strict PD3 result provenance/freshness remains deferred under its existing scope boundary. Additional non-blocking notes: Ultralytics Ready timing semantics (Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`; the current definition is model/native initialization readiness, not strict pipeline-operational proof); post-resume freshness diagnostic limitation (the epoch diagnostic cannot isolate the first result after Resume); FlutterJNI teardown fatal not reproduced in the latest capture and **not fixed** (dedicated full-app teardown verification pending); Ultralytics GPU path falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced); native CameraX graph churn during recreation is expected plugin settling, not a proven leak.
+- ⚠️ **Deferred (non-blocking):** strict PD3 result provenance/freshness remains deferred under its existing scope boundary. Ultralytics Ready now requires the first valid inference payload; model-path resolution alone stays Preparing, and an absent first payload fails after the bounded 30-second startup interval. The new production-seam regression test covers this lifecycle. Post-resume freshness diagnostic limitation remains (the epoch diagnostic cannot isolate the first result after Resume); FlutterJNI teardown fatal was not reproduced and is **not fixed** (dedicated full-app teardown verification pending); Ultralytics GPU path falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced); native CameraX graph churn during recreation is expected plugin settling, not a proven leak.
 
 ## Current Unreleased Candidate (2026-09-28) — Home/Detection Shared Lifecycle State
 
@@ -201,7 +220,7 @@ sections below remain historical release records.
 
 ### Notes
 
-- The former developer single-screen UI (`camera_screen.dart`) was retired in v0.2.0 and **removed** during the Android-only platform cleanup; the current primary screen is [`detection_screen.dart`](../lib/screens/detection_screen.dart), while `info_panel.dart` / `debug_overlay.dart` remain but are unused by that UI.
+- The former developer single-screen UI (`camera_screen.dart`) was retired in v0.2.0 and **removed** during the Android-only platform cleanup; the current primary screen is [`detection_screen.dart`](../lib/screens/detection_screen.dart). The unused `info_panel.dart` / `debug_overlay.dart` widgets were removed in WS4.
 - The ML pipeline (camera, YUV, orientation, TFLite, parser, NMS, thresholds, painter, forensics) was **not** modified.
 
 ## Completed Work
@@ -283,15 +302,15 @@ sections below remain historical release records.
 
 ### Forensic File Logging (100%) — NEW (2026-08-01)
 
-- ✅ [`ForensicLog`](../lib/services/forensic_log.dart) — structured file diagnostics under `<documents>/debug/run_*` (summary/camera/preprocess/tensor/output/parser/performance/errors.txt), synchronous flush-per-write, fully try/catch-isolated
+- ✅ [`ForensicLog`](../lib/services/forensic_log.dart) — structured file diagnostics under `<documents>/debug/run_*` (summary/camera/preprocess/tensor/output/parser/performance/errors.txt), synchronous flush-per-write when diagnostics are enabled (debug/profile; release gates file I/O off), fully try/catch-isolated
 - ✅ First-frame PNG dumps (`frame_original/rgb/resized/model_input.png`) via pure-Dart [`PngEncoder`](../lib/models/png_encoder.dart)
 - ✅ Auto-generated `summary.txt` every 50 frames + on close (per-stage PASS/FAIL, ranked root causes)
-- ✅ Console probes (`InferenceProbe`/`InputProbe`) disabled (`enabled=false`), call sites removed
+- ✅ Console probes (`InferenceProbe`/`InputProbe`) disabled (`enabled=false`) with call sites removed; both files were later removed in WS4
 
 ### Camera Preview & UI (100%) — NEW (2026-08-01)
 
 - ✅ Strict 3:4 portrait preview anchored to the top, feed contained via `BoxFit.contain` (never stretched/warped/cropped)
-- ✅ Permanent bottom info panel ([`info_panel.dart`](../lib/widgets/info_panel.dart)) with exactly two tabs: Metrics + Detections
+- ✅ Permanent bottom info panel (`info_panel.dart`, removed in WS4) with exactly two tabs: Metrics + Detections
 - ✅ Metrics tab: FPS, avg FPS, inference time, end-to-end latency, confidence stats, camera/preview/model input resolutions, aspect ratio, model name, backend, quantization, thread count
 - ✅ Detections tab: chronological history (newest first), capped at 50, 1-second age timer
 - ✅ Painter-vs-preview alignment via shared `applyBoxFit(BoxFit.contain)` math
@@ -324,7 +343,7 @@ sections below remain historical release records.
   - `[Painter]` — Box count, screen dimensions, scale factor, rendered coordinates
   - `[Performance]` — 5-second summaries: camera FPS, inference FPS, avg/min/max latency, frame stats
   - `[Error]` — Model load failures, interpreter exceptions, isolate errors with stack traces
-- ✅ Visual debug overlay ([`DebugOverlay`](../lib/widgets/debug_overlay.dart) widget, debug builds only via `kDebugMode`)
+- ✅ Visual debug overlay (`DebugOverlay` widget, debug builds only via `kDebugMode`; removed in WS4)
   - Camera FPS, inference FPS, latency, frame number, dropped frames
   - Detection count, last detected object, confidence
   - Camera resolution, lens direction, image format
@@ -383,7 +402,7 @@ sections below remain historical release records.
 | Bounding box `CustomPainter` | ✅ Complete (2026-07-22) |
 | Error handling in isolate | ✅ Complete — typed errors, explicit worker-exit handling, generation-safe bounded recovery, and terminal failure state |
 | Permission-denied UI | ✅ Complete (v0.2.0 — camera-denied state with retry/open-settings) |
-| Remove/wire unused dependencies | ✅ Mostly complete — `flutter_tts`/`path_provider`/`fl_chart` wired; `flutter_riverpod` retained (deliberately unused) |
+| Remove/wire unused dependencies | ✅ Mostly complete at v0.2.0 — `flutter_tts`/`path_provider`/`fl_chart` wired; `flutter_riverpod` retained (deliberately unused), removed in WS4 |
 | Debug instrumentation & logging | ✅ Complete (2026-07-22) |
 | Forensic file logging | ✅ Complete (2026-08-01, v0.1.3) |
 | Camera preprocessing repair | ✅ Complete (2026-08-01, v0.1.4) |
@@ -397,7 +416,7 @@ sections below remain historical release records.
 0. **Re-validate orientation on-device** — back landscape physical hold + front camera portrait/landscape (see [`docs/orientation-implementation.md`](orientation-implementation.md)).
 1. ~~**Implement TTS audio feedback**~~ — ✅ Done (v0.2.0). See [`lib/services/tts_service.dart`](../lib/services/tts_service.dart).
 2. ~~**Implement bounding box `CustomPainter`**~~ — ✅ Done. See [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
-3. ~~**Add debug instrumentation**~~ — ✅ Done. See [`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart), [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart), [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart), [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
+3. ~~**Add debug instrumentation**~~ — ✅ Done. See [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart), [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart), and [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart); the former `DebugOverlay` widget was removed in WS4.
 4. ~~**Implement NMS**~~ — ✅ Done (2026-08-01). Class-wise, IoU 0.45, pre-NMS conf 0.25. See [`_parseYolov8Output`](../lib/services/inference_isolate.dart).
 5. **On-device validation of the v0.2.x UI** — gestures, TTS, mute toggle, settings persistence, Logs & Reports charts on the Snapdragon 695 device.
 6. ~~**Complete error handling in inference isolate**~~ — ✅ Done for the app-only scope: typed errors and bounded generation-safe worker recovery.
@@ -451,7 +470,7 @@ The following checklist was verified via code review and static analysis (`flutt
 | Overlay aligned | ✅ | Coordinate transform logged: norm→screen with scale factor |
 | No crashes | ⚠️ Static | Requires on-device testing; try/catch added around critical paths |
 | No memory leaks observed | ⚠️ Static | Requires on-device profiling; pre-allocated buffers unchanged |
-| Debug overlay visible | ✅ | `DebugOverlay` widget, `kDebugMode` guard, positioned top-left |
+| Debug overlay visible | ✅ | `DebugOverlay` widget, `kDebugMode` guard, positioned top-left (widget removed in WS4; historical check) |
 | Performance logging | ✅ | `[Performance]` 5-second summaries with FPS/latency/frame stats |
 | Error logging active | ✅ | `[Error]` try/catch in model load, interpreter creation, frame loop |
 | Message protocol intact | ✅ | Backward-compatible: `type:'result'/'error'/'model_loaded'` |

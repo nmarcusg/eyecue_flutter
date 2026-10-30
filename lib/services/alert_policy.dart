@@ -94,14 +94,13 @@ class AlertDecision {
 /// used only when no track is available.
 class AlertPolicy {
   AlertPolicy({
-    DateTime Function()? clock,
     this.summary = const SceneSummaryService(),
     this.minEscalationGap = const Duration(milliseconds: 300),
     this.heightGrowthThreshold = 0.12,
     this.validity = const Duration(milliseconds: 1500),
     this.maxKeys = 64,
     this.stateTtl = const Duration(seconds: 30),
-  }) : _clock = clock ?? DateTime.now;
+  });
 
   final SceneSummaryService summary;
 
@@ -120,8 +119,6 @@ class AlertPolicy {
 
   /// How long an accepted identity stays suppressed without being refreshed.
   final Duration stateTtl;
-
-  final DateTime Function() _clock;
 
   final Map<String, _KeyState> _states = {};
   String? _lastStartedUtterance;
