@@ -436,7 +436,7 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Upload this session?'),
+    title: const Text('Confirm research upload'),
     content: SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
