@@ -269,8 +269,8 @@ class UltralyticsDetectionScreen extends StatefulWidget {
       _UltralyticsDetectionScreenState();
 }
 
-class _UltralyticsDetectionScreenState
-    extends State<UltralyticsDetectionScreen> {
+class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
+    with WidgetsBindingObserver {
   late final SettingsService _settings = widget.settings;
   late final TtsService _tts = widget.tts;
   late final TelemetryService _telemetry = widget.telemetry;
@@ -368,6 +368,7 @@ class _UltralyticsDetectionScreenState
   /// The callback captures the epoch it was built with and is ignored unless it
   /// matches this field.
   int _activeNativeEpoch = 0;
+  int _speechSessionGeneration = 0;
   Timer? _readinessTimer;
   bool _pausedWhileLoading = false;
 
@@ -532,6 +533,7 @@ class _UltralyticsDetectionScreenState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _lastStreamingConfigKey = streamingConfigKey(
       cadence: _cadence,
       mdeEnabled: _mdeEnabled,
@@ -581,6 +583,7 @@ class _UltralyticsDetectionScreenState
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _readinessTimer?.cancel();
     _pausedWhileLoading = false;
     _settings.removeListener(_handleSettingsChanged);
@@ -594,6 +597,18 @@ class _UltralyticsDetectionScreenState
     _controller.dispose();
     _assistive.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _speechSessionGeneration++;
+      _assistive.tts.invalidateAutomaticDetection(reason: 'app background');
+      _assistive.reset(reason: 'app background');
+    }
   }
 
   /// A new depth map only changes presentation (heatmap + which box layer is
@@ -730,20 +745,26 @@ class _UltralyticsDetectionScreenState
   /// next rebuild and attempts an immediate native `switchModel` on the retained,
   /// stopped controller; that result is discarded, and Start remounts the view.
   Future<void> _handleDetectorModelChanged() async {
+    if (!mounted) return;
     // The study trial pauses at this boundary and records the replacement's
     // identity from `ResearchSessionService.watchDetectorModel`, not here: the
     // service must react even when this lazily built page was never opened.
     if (_detectionActive) await _stopDetection();
+    if (!mounted) return;
     // Reject every callback captured under the previous view, including a late
     // payload from the superseded session.
     _activeNativeEpoch++;
+    _speechSessionGeneration++;
     // The previous model's interpretation must not carry over: detections,
     // tracks, announced context and correction records all belong to it.
     widget.corrections?.clear();
-    _assistive.reset();
+    _assistive.reset(reason: 'app background');
+    _tts.cancelPendingDetectionForModelSwitch();
     // New rows carry the replacement; already recorded rows keep the identity
     // they were written with.
     _assistive.detectorModel = widget.detectorModel?.current.ref;
+    _assistive.priorityResolver = (d) =>
+        priorityForClass(_modelKind, d.classId, d.label);
     _firstResultLogged = false;
     if (!mounted) return;
     setState(() {
@@ -828,6 +849,7 @@ class _UltralyticsDetectionScreenState
           _nativeViewEpoch++;
         }
         _activeNativeEpoch = _nativeViewEpoch;
+        _speechSessionGeneration++;
       });
       if (recreate) {
         debugPrint(
@@ -855,6 +877,8 @@ class _UltralyticsDetectionScreenState
     _readinessTimer?.cancel();
     _pausedWhileLoading = false;
     _activeNativeEpoch++;
+    _speechSessionGeneration++;
+    _assistive.tts.invalidateAutomaticDetection(reason: 'stop');
     debugPrint(
       '[Ultralytics] Stop requested — coordinator=${widget.coordinator.state} '
       'local(active=$_detectionActive paused=$_paused epoch=$_nativeViewEpoch)',
@@ -902,6 +926,9 @@ class _UltralyticsDetectionScreenState
   Future<void> _pauseDetection() async {
     if (!_detectionActive || _paused) return;
     _pausedWhileLoading = _runtimeState == DetectionRuntimeState.loadingModel;
+    _speechSessionGeneration++;
+    _assistive.tts.invalidateAutomaticDetection(reason: 'pause');
+    _assistive.reset(reason: 'pause');
     _readinessTimer?.cancel();
     await _haptics.lightTick();
     await _controller.pause();
@@ -954,6 +981,8 @@ class _UltralyticsDetectionScreenState
     // App-side receipt anchor: this callback is the first observable point.
     // Pre-result anchors stay unavailable here; metrics are never correlated.
     final resultReceivedAt = DateTime.now();
+    final monotonicReceivedAt = _assistive.tts.monotonicNow;
+    final acceptedSession = _speechSessionGeneration;
     final results = YOLODetectionResults.fromMap(data).detections;
     if (_runtimeState == DetectionRuntimeState.loadingModel) {
       _pausedWhileLoading = false;
@@ -980,6 +1009,10 @@ class _UltralyticsDetectionScreenState
       detections,
       latencyMs: _inferenceMs,
       resultReceivedAt: resultReceivedAt,
+      monotonicReceivedAt: monotonicReceivedAt,
+      session: '$callbackEpoch:$acceptedSession',
+      model: widget.detectorModel?.current.ref.fingerprint ?? _modelPath,
+      camera: 'native-view-$_nativeViewEpoch',
       meters: meters,
     );
     // Track identity for the next frame's EMA smoothing.
@@ -1358,7 +1391,7 @@ class _UltralyticsDetectionScreenState
                 ],
                 // A model change is a stop: state the required next action
                 // instead of silently returning to a stopped viewport.
-                if (_modelChangeNotice)
+                if (_modelChangeNotice && !_nativeViewMounted)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
                       kSpace16,

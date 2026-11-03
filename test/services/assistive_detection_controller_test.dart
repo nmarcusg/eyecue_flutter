@@ -77,7 +77,15 @@ void main() {
     'accepted frame timing reaches one detection lifecycle record',
     () async {
       final timing = frameLatency();
-      controller.updateDetections(nearPerson(), frameLatency: timing);
+      controller.updateDetections(
+        nearPerson(),
+        frameLatency: timing,
+        resultReceivedAt: timing.resultReceivedAt,
+        monotonicReceivedAt: Duration.zero,
+        session: 'test-session',
+        model: 'test-model',
+        camera: 'test-camera',
+      );
       await pumpEventQueue();
 
       final record = records.single;
@@ -119,7 +127,14 @@ void main() {
         telemetry: TelemetryService(),
       );
       final received = DateTime.utc(2026, 1, 1, 12);
-      controller.updateDetections(nearPerson(), resultReceivedAt: received);
+      controller.updateDetections(
+        nearPerson(),
+        resultReceivedAt: received,
+        monotonicReceivedAt: Duration.zero,
+        session: 'test-session',
+        model: 'test-model',
+        camera: 'test-camera',
+      );
       await pumpEventQueue();
 
       final record = records.single;
@@ -137,10 +152,78 @@ void main() {
     },
   );
 
+  test(
+    'production receipt clock domain allows current automatic speech to start',
+    () async {
+      var monotonic = const Duration(seconds: 420);
+      final clockDomainTts = TtsService(
+        engine: _AutoTtsEngine(),
+        monotonicClock: () => monotonic,
+        onAlertLifecycle: records.add,
+      );
+      await clockDomainTts.init();
+      addTearDown(clockDomainTts.dispose);
+      final productionController = AssistiveDetectionController(
+        engine: InferenceEngine.ultralytics,
+        tts: clockDomainTts,
+        telemetry: TelemetryService(),
+      );
+
+      productionController.updateDetections(
+        nearPerson(),
+        resultReceivedAt: DateTime.utc(2026, 1, 1, 12),
+        monotonicReceivedAt: clockDomainTts.monotonicNow,
+        session: '3:7',
+        model: 'model-fingerprint',
+        camera: 'native-view-3',
+      );
+      monotonic += const Duration(milliseconds: 20);
+      await pumpEventQueue();
+
+      expect(records, hasLength(1));
+      expect(records.single.origin, AlertOrigin.detection);
+      expect(records.single.alertStartedAt, isNotNull);
+    },
+  );
+
   test('empty detections create no alert record', () async {
-    controller.updateDetections(const [], frameLatency: frameLatency());
+    controller.updateDetections(
+      const [],
+      frameLatency: frameLatency(),
+      resultReceivedAt: frameLatency().resultReceivedAt,
+      monotonicReceivedAt: Duration.zero,
+      session: 'test-session',
+      model: 'test-model',
+      camera: 'test-camera',
+    );
     await pumpEventQueue();
 
     expect(records, isEmpty);
+    expect(controller.detections, isEmpty);
+    expect(controller.tracks, isEmpty);
   });
+
+  test(
+    'latest accepted detections are current visible set, even with retained tracks',
+    () {
+      controller.updateDetections(
+        nearPerson(),
+        announce: false,
+        timestamp: DateTime.utc(2026, 1, 1),
+      );
+      expect(controller.detections, hasLength(1));
+      controller.updateDetections(
+        const [],
+        announce: false,
+        timestamp: DateTime.utc(
+          2026,
+          1,
+          1,
+        ).add(const Duration(milliseconds: 30)),
+      );
+      expect(controller.tracker.activeTracks, hasLength(1));
+      expect(controller.detections, isEmpty);
+      expect(controller.tracks, isEmpty);
+    },
+  );
 }

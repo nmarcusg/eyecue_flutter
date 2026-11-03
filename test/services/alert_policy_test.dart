@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/models/tracked_detection.dart';
 import 'package:eyecue_flutter/services/alert_policy.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
@@ -22,6 +23,20 @@ DetectionInfo info({
     ),
   );
 }
+
+DetectionInfo metricInfo(
+  double meters, {
+  String label = 'person',
+  int classId = 0,
+}) => SpatialAnalysisService.analyze(
+  Detection(
+    classId: classId,
+    label: label,
+    confidence: 0.9,
+    box: const Rect.fromLTWH(0.4, 0.2, 0.2, 0.2),
+  ),
+  meters: meters,
+);
 
 TrackedDetection trackOf(
   DetectionInfo source, {
@@ -278,6 +293,112 @@ void main() {
   });
 
   group('priority and gating', () {
+    test('custom detector metric alert uses center-path thresholds', () {
+      final decision = policy.decide(
+        detections: [metricInfo(1.2)],
+        tracks: const [],
+        now: now,
+        audioEnabled: true,
+        detectorKind: DetectorModelKind.custom,
+        detectorIdentity: 'fingerprint-a',
+      );
+      expect(decision.announce, isTrue);
+      expect(decision.priority, AlertPriority.imminent);
+      expect(decision.suppressionKey, startsWith('fingerprint-a|'));
+    });
+
+    test('custom metric beyond two metres and side metric do not alert', () {
+      final far = policy.decide(
+        detections: [metricInfo(2.2)],
+        tracks: const [],
+        now: now,
+        audioEnabled: true,
+        detectorKind: DetectorModelKind.custom,
+        detectorIdentity: 'custom-a',
+      );
+      expect(far.announce, isFalse);
+
+      final side = SpatialAnalysisService.analyze(
+        Detection(
+          classId: 0,
+          label: 'person',
+          confidence: .9,
+          box: const Rect.fromLTWH(.05, .2, .2, .2),
+        ),
+        meters: 1.0,
+      );
+      expect(
+        policy
+            .decide(
+              detections: [side],
+              tracks: const [],
+              now: now,
+              audioEnabled: true,
+              detectorKind: DetectorModelKind.custom,
+              detectorIdentity: 'custom-a',
+            )
+            .announce,
+        isFalse,
+      );
+    });
+
+    test('custom decisions do not inherit another detector identity state', () {
+      final person = metricInfo(1.8);
+      final first = policy.decide(
+        detections: [person],
+        tracks: const [],
+        now: now,
+        audioEnabled: true,
+        detectorKind: DetectorModelKind.custom,
+        detectorIdentity: 'custom-a',
+      );
+      policy.commitStarted(first, now);
+      now = now.add(const Duration(seconds: 1));
+      final switched = policy.decide(
+        detections: [person],
+        tracks: const [],
+        now: now,
+        audioEnabled: true,
+        detectorKind: DetectorModelKind.custom,
+        detectorIdentity: 'custom-b',
+      );
+      expect(switched.announce, isTrue);
+    });
+
+    test('custom metric thresholds re-arm above threshold plus hysteresis', () {
+      final track = trackOf(metricInfo(2.5), id: 48);
+      final first = policy.decide(
+        detections: [metricInfo(2.5)],
+        tracks: [track],
+        now: now,
+        audioEnabled: true,
+        detectorKind: DetectorModelKind.custom,
+        detectorIdentity: 'custom-hyst',
+      );
+      policy.commitStarted(first, now);
+      now = now.add(const Duration(seconds: 1));
+      final atTwo = policy.decide(
+        detections: [metricInfo(1.9)],
+        tracks: [track],
+        now: now,
+        audioEnabled: true,
+        detectorKind: DetectorModelKind.custom,
+        detectorIdentity: 'custom-hyst',
+      );
+      expect(atTwo.announce, isTrue);
+      policy.commitStarted(atTwo, now);
+      now = now.add(const Duration(seconds: 1));
+      final oscillation = policy.decide(
+        detections: [metricInfo(2.1)],
+        tracks: [track],
+        now: now,
+        audioEnabled: true,
+        detectorKind: DetectorModelKind.custom,
+        detectorIdentity: 'custom-hyst',
+      );
+      expect(oscillation.announce, isFalse);
+    });
+
     test('near person is imminent and preemption-eligible', () {
       final near = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
       final decision = decide([near], tracks: [trackOf(near, id: 21)]);

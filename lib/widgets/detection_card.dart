@@ -68,7 +68,8 @@ class DetectionCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           '${(info.confidence * 100).toStringAsFixed(0)}% · '
-                          '${info.positionLabel} · approximately ${info.proximityLabel}',
+                          '${info.positionLabel} · '
+                          '${info.distanceLabel ?? 'approximately ${info.proximityLabel}'}',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: kHomeInkMuted,
                           ),

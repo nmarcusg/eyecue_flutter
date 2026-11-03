@@ -6,6 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
 import '../models/detection_info.dart';
+import '../models/detector_model.dart';
 import '../models/tracked_detection.dart';
 import 'alert_policy.dart';
 import 'scene_summary_service.dart';
@@ -27,6 +28,7 @@ abstract class TtsEngine {
   Future<int> speak(String text);
 
   Future<void> stop();
+
   Future<void> dispose();
 
   // Lifecycle callbacks. Default no-ops keep test doubles small; the real
@@ -37,8 +39,15 @@ abstract class TtsEngine {
   void setErrorHandler(void Function(dynamic error)? handler) {}
 }
 
+/// Optional capability for TTS backends whose stop operation can request
+/// cancellation of an active utterance. Callback reconciliation still decides
+/// when that utterance has actually ended.
+abstract interface class TtsCancellationCapability {
+  bool get supportsCancellation;
+}
+
 /// Real TTS engine backed by [FlutterTts] (Android).
-class FlutterTtsEngine implements TtsEngine {
+class FlutterTtsEngine implements TtsEngine, TtsCancellationCapability {
   FlutterTtsEngine({this.language = 'en-US'});
 
   final String language;
@@ -98,6 +107,9 @@ class FlutterTtsEngine implements TtsEngine {
   Future<void> stop() => _tts.stop();
 
   @override
+  bool get supportsCancellation => true;
+
+  @override
   Future<void> dispose() async {
     try {
       await _tts.stop();
@@ -143,6 +155,7 @@ class TtsService extends ChangeNotifier {
   TtsService({
     required this.engine,
     DateTime Function()? clock,
+    Duration Function()? monotonicClock,
     this.onAlertLifecycle,
     this.onAlertCounters,
     this.announcementCooldown = const Duration(seconds: 3),
@@ -155,8 +168,11 @@ class TtsService extends ChangeNotifier {
     this.maxSettlingDuration = const Duration(milliseconds: 1800),
     this.recoveryTimeout = const Duration(seconds: 2),
     this.preemptionCooldown = const Duration(milliseconds: 1500),
+    this.maxDetectionAge = const Duration(milliseconds: 500),
+    this.disappearanceGrace = const Duration(milliseconds: 250),
     AlertPolicy? policy,
   }) : _clock = clock ?? DateTime.now,
+       _monotonicClock = monotonicClock ?? (() => _stopwatch.elapsed),
        policy = policy ?? AlertPolicy();
 
   final TtsEngine engine;
@@ -200,10 +216,24 @@ class TtsService extends ChangeNotifier {
   final Duration recoveryTimeout;
   final Duration preemptionCooldown;
 
+  /// Initial automatic-detection freshness target; not yet device-measured.
+  final Duration maxDetectionAge;
+
+  /// Proposed grace before requesting cancellation of a vanished target.
+  /// Product tuning remains unverified; this is an initial policy default.
+  final Duration disappearanceGrace;
+
   final DateTime Function() _clock;
+  final Duration Function() _monotonicClock;
+  static final Stopwatch _stopwatch = Stopwatch()..start();
+
+  /// Reads the monotonic clock used to validate automatic detection freshness.
+  /// Producers must stamp observations in this same clock domain.
+  Duration get monotonicNow => _monotonicClock();
 
   // -- Observable state -------------------------------------------------------
   bool _audioEnabled = true;
+  String? _activeDetectorIdentity;
   bool get audioEnabled => _audioEnabled;
 
   String? _lastUtterance;
@@ -270,6 +300,156 @@ class TtsService extends ChangeNotifier {
   Timer? _settleCapTimer;
   DateTime? _lastAnnouncementAt;
   DateTime? _lastPreemptionAt;
+  int _observationGeneration = 0;
+  Duration? _observationMonotonicAt;
+  String? _observationSession;
+  String? _observationModel;
+  String? _observationCamera;
+  Set<String> _visibleDetectionKeys = const {};
+  Set<int> _visibleTrackIds = const {};
+  List<DetectionInfo> _latestDetections = const [];
+  List<TrackedDetection> _latestTracks = const [];
+  DetectorModelKind _observationDetectorKind = DetectorModelKind.builtIn;
+  String? _observationDetectorIdentity;
+  Timer? _disappearanceTimer;
+  int _automaticDiscardCount = 0;
+  int _automaticStartCount = 0;
+  Duration? _lastAutomaticStartAge;
+  int get automaticDiscardCount => _automaticDiscardCount;
+  int get automaticStartCount => _automaticStartCount;
+  Duration? get lastAutomaticStartAge => _lastAutomaticStartAge;
+
+  /// Replaces the authoritative latest visible detector set, including empty.
+  /// Receipt timestamp is app-observed receipt time, not native frame time.
+  void updateDetectionObservation({
+    required Iterable<DetectionInfo> detections,
+    required DateTime receivedAt,
+    required Duration monotonicReceivedAt,
+    required String session,
+    required String model,
+    required String camera,
+    List<TrackedDetection> tracks = const [],
+    DetectorModelKind detectorKind = DetectorModelKind.builtIn,
+    String? detectorIdentity,
+  }) {
+    _observationGeneration++;
+    _observationMonotonicAt = monotonicReceivedAt;
+    _observationSession = session;
+    _observationModel = model;
+    _observationCamera = camera;
+    _observationDetectorKind = detectorKind;
+    _observationDetectorIdentity = detectorIdentity;
+    _latestDetections = List.unmodifiable(detections);
+    _latestTracks = List.unmodifiable(tracks);
+    _visibleTrackIds = tracks.map((track) => track.trackId).toSet();
+    _visibleDetectionKeys = detections.map(_targetKey).toSet();
+    if (_visibleDetectionKeys.isEmpty) {
+      policy.clearForDetector(_activeDetectorIdentity);
+    }
+    _disappearanceTimer?.cancel();
+    _disappearanceTimer = null;
+    final pending = _pending;
+    if (pending?.origin == AlertOrigin.detection &&
+        (pending?.decision?.target == null ||
+            !_targetIsVisible(pending!.decision!))) {
+      _pending = null;
+      if (!pending!.done.isCompleted) pending.done.complete(false);
+      _recordRejection(AlertReason.suppressedNoCandidates);
+      _automaticDiscardCount++;
+    }
+    final active = _active;
+    final decision = active?.request.decision;
+    if (active?.didStart == true &&
+        active!.request.origin == AlertOrigin.detection &&
+        decision?.target != null &&
+        !_targetIsVisible(decision!)) {
+      final generation = _observationGeneration;
+      _disappearanceTimer = Timer(disappearanceGrace, () {
+        final cancellation = engine;
+        if (_observationGeneration != generation ||
+            _targetIsVisible(decision) ||
+            !identical(_active, active) ||
+            active.terminal != null ||
+            active.stopRequested ||
+            !(cancellation is TtsCancellationCapability &&
+                (cancellation as TtsCancellationCapability)
+                    .supportsCancellation)) {
+          return;
+        }
+        active.stopRequested = true;
+        unawaited(engine.stop());
+      });
+    }
+  }
+
+  /// Invalidates only unstarted automatic detection work. It deliberately does
+  /// not release the active slot or treat a stop request as completion.
+  void invalidateAutomaticDetection({required String reason}) {
+    _observationGeneration++;
+    _observationMonotonicAt = null;
+    _visibleDetectionKeys = const {};
+    _visibleTrackIds = const {};
+    _latestDetections = const [];
+    _latestTracks = const [];
+    _disappearanceTimer?.cancel();
+    _disappearanceTimer = null;
+    final pending = _pending;
+    if (pending != null && pending.origin == AlertOrigin.detection) {
+      _pending = null;
+      if (!pending.done.isCompleted) pending.done.complete(false);
+      _recordRejection(AlertReason.suppressedNoCandidates);
+      _automaticDiscardCount++;
+      debugPrint('[Tts] Automatic detection request discarded: $reason');
+    }
+  }
+
+  static String _targetKey(DetectionInfo info) {
+    return '${info.detection.classId}';
+  }
+
+  bool _targetIsVisible(AlertDecision decision) {
+    final target = decision.target;
+    if (target == null) return false;
+    final trackId = decision.trackId;
+    if (trackId != null) {
+      if (_latestTracks.isNotEmpty) {
+        return _visibleTrackIds.contains(trackId) &&
+            _latestTracks.any(
+              (track) =>
+                  track.trackId == trackId &&
+                  track.classId == target.detection.classId,
+            );
+      }
+      return _visibleDetectionKeys.contains(_targetKey(target));
+    }
+    return _visibleDetectionKeys.contains(_targetKey(target));
+  }
+
+  bool _automaticRequestIsCurrent(_SpeechRequest request) {
+    final decision = request.decision;
+    if (request.origin != AlertOrigin.detection || decision?.target == null) {
+      return true;
+    }
+    final receivedAt = _observationMonotonicAt;
+    final now = _monotonicClock();
+    final age = receivedAt == null ? null : now - receivedAt;
+    final valid =
+        age != null &&
+        age >= Duration.zero &&
+        age <= maxDetectionAge &&
+        _targetIsVisible(decision!) &&
+        request.session == _observationSession &&
+        request.model == _observationModel &&
+        request.camera == _observationCamera;
+    if (!valid) {
+      _recordRejection(AlertReason.suppressedNoCandidates);
+      _automaticDiscardCount++;
+      debugPrint(
+        '[Tts] Automatic detection request discarded: stale/unseen/provenance',
+      );
+    }
+    return valid;
+  }
 
   /// Wayfinding anti-repeat state, committed only from a confirmed start and
   /// kept deliberately separate from Detection cooldown/replay state.
@@ -383,8 +563,27 @@ class TtsService extends ChangeNotifier {
     FrameLatency? frameLatency,
     DateTime? resultReceivedAt,
     DateTime? detectionAcceptedAt,
+    DetectorModelKind? detectorKind,
+    String? detectorIdentity,
+    String? session,
+    String? model,
+    String? camera,
   }) {
+    _activeDetectorIdentity = detectorIdentity;
     if (detections.isEmpty) return Future<bool>.value(false);
+    // Compatibility seam for direct TTS callers/tests that do not go through
+    // AssistiveDetectionController. The submitted list itself is their latest
+    // observation; screen/controller production calls publish richer identity.
+    if (session == null && model == null && camera == null) {
+      updateDetectionObservation(
+        detections: detections,
+        receivedAt: _clock(),
+        monotonicReceivedAt: _monotonicClock(),
+        session: session ?? 'direct-call',
+        model: model ?? detectorIdentity ?? 'unknown-model',
+        camera: camera ?? 'unknown-camera',
+      );
+    }
     // Alert-request anchor: entry, before policy evaluation.
     final now = _clock();
     final decision = policy.decide(
@@ -392,6 +591,12 @@ class TtsService extends ChangeNotifier {
       tracks: tracks,
       now: now,
       audioEnabled: _audioEnabled,
+      detectorKind:
+          detectorKind ??
+          (detectorIdentity == null
+              ? DetectorModelKind.builtIn
+              : DetectorModelKind.custom),
+      detectorIdentity: detectorIdentity,
       force: force,
     );
     if (!decision.announce) {
@@ -410,6 +615,10 @@ class TtsService extends ChangeNotifier {
         frameLatency: frameLatency,
         resultReceivedAt: resultReceivedAt,
         detectionAcceptedAt: detectionAcceptedAt,
+        session: session ?? _observationSession,
+        model: model ?? _observationModel,
+        camera: camera ?? _observationCamera,
+        observationGeneration: _observationGeneration,
       ),
     );
   }
@@ -431,6 +640,15 @@ class TtsService extends ChangeNotifier {
         origin: AlertOrigin.quickScan,
       ),
     );
+  }
+
+  /// Drops a queued automatic alert on detector-model switch.
+  void cancelPendingDetectionForModelSwitch() {
+    final pending = _pending;
+    if (pending == null || pending.origin != AlertOrigin.detection) return;
+    _pending = null;
+    if (!pending.done.isCompleted) pending.done.complete(false);
+    _recordRejection(AlertReason.suppressedSameObject);
   }
 
   /// Replays the most recent utterance that actually started.
@@ -478,6 +696,7 @@ class TtsService extends ChangeNotifier {
     _disposed = true;
     _quietTimer?.cancel();
     _settleCapTimer?.cancel();
+    _disappearanceTimer?.cancel();
     final active = _active;
     if (active != null) {
       _cancelTimers(active);
@@ -647,6 +866,16 @@ class TtsService extends ChangeNotifier {
   }
 
   void _start(_SpeechRequest request) {
+    if (!_automaticRequestIsCurrent(request)) {
+      if (!request.done.isCompleted) request.done.complete(false);
+      _drain();
+      return;
+    }
+    if (!_automaticRequestIsCurrent(request)) {
+      if (!request.done.isCompleted) request.done.complete(false);
+      _drain();
+      return;
+    }
     final submission = _Submission(
       id: ++_nextId,
       request: request,
@@ -720,6 +949,13 @@ class TtsService extends ChangeNotifier {
 
     active.didStart = true;
     active.startedAt = _clock();
+    if (active.request.origin == AlertOrigin.detection) {
+      _automaticStartCount++;
+      final receivedAt = _observationMonotonicAt;
+      if (receivedAt != null) {
+        _lastAutomaticStartAge = _monotonicClock() - receivedAt;
+      }
+    }
     active.startTimer?.cancel();
     active.completionTimer = Timer(
       _completionBudget(active.request.text),
@@ -935,17 +1171,45 @@ class TtsService extends ChangeNotifier {
       return;
     }
     _pending = null;
+    if (!_automaticRequestIsCurrent(next)) {
+      if (!next.done.isCompleted) next.done.complete(false);
+      _drain();
+      return;
+    }
     if (!_audioEnabled) {
       _recordRejection(AlertReason.muted);
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
       return;
     }
+    if (!_automaticRequestIsCurrent(next)) {
+      if (!next.done.isCompleted) next.done.complete(false);
+      _drain();
+      return;
+    }
     final decision = next.decision;
-    if (decision != null && !policy.shouldSpeakPending(decision, _clock())) {
+    if (decision != null &&
+        (decision.detectorIdentity != _activeDetectorIdentity ||
+            !policy.shouldSpeakPending(decision, _clock()))) {
       // Newer accepted state already covers this parked decision; speaking it
       // now would double-announce the same object. A decision that still
       // represents an escalation is retained.
+      _staleDecisions++;
+      _publishCounters();
+      if (!next.done.isCompleted) next.done.complete(false);
+      _drain();
+      return;
+    }
+    if (decision != null && !_refreshPendingTarget(next, decision)) {
+      _recordRejection(AlertReason.suppressedNoCandidates);
+      _automaticDiscardCount++;
+      if (!next.done.isCompleted) next.done.complete(false);
+      _drain();
+      return;
+    }
+    final refreshedDecision = next.decision;
+    if (refreshedDecision != null &&
+        !policy.shouldSpeakPending(refreshedDecision, _clock())) {
       _staleDecisions++;
       _publishCounters();
       if (!next.done.isCompleted) next.done.complete(false);
@@ -960,6 +1224,52 @@ class TtsService extends ChangeNotifier {
       return;
     }
     _start(next);
+  }
+
+  bool _refreshPendingTarget(_SpeechRequest request, AlertDecision previous) {
+    if (request.observationGeneration == _observationGeneration) return true;
+    final target = previous.target;
+    if (target == null) return false;
+    final trackId = previous.trackId;
+    TrackedDetection? currentTrack;
+    if (trackId != null) {
+      for (final track in _latestTracks) {
+        if (track.trackId == trackId &&
+            track.classId == target.detection.classId) {
+          currentTrack = track;
+          break;
+        }
+      }
+    }
+    DetectionInfo? currentInfo;
+    if (currentTrack != null) {
+      for (final info in _latestDetections) {
+        if (info.detection.classId == currentTrack.classId &&
+            info.detection.box == currentTrack.detection.box) {
+          currentInfo = info;
+          break;
+        }
+      }
+    } else {
+      for (final info in _latestDetections) {
+        if (info.detection.classId == target.detection.classId) {
+          currentInfo = info;
+          break;
+        }
+      }
+    }
+    if (currentInfo == null) return false;
+    final refreshed = policy.decide(
+      detections: [currentInfo],
+      tracks: currentTrack == null ? const [] : [currentTrack],
+      now: _clock(),
+      audioEnabled: _audioEnabled,
+      detectorKind: _observationDetectorKind,
+      detectorIdentity: _observationDetectorIdentity,
+    );
+    if (!refreshed.announce || refreshed.trackId != trackId) return false;
+    request.replaceDecision(refreshed);
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -1179,11 +1489,11 @@ class TtsService extends ChangeNotifier {
 }
 
 class _SpeechRequest {
-  final String text;
-  final AlertPriority priority;
+  String text;
+  AlertPriority priority;
   final DateTime createdAt;
   final Duration validity;
-  final AlertDecision? decision;
+  AlertDecision? decision;
   final InferenceEngine? engine;
 
   /// True for advisory navigation feedback. Wayfinding never contributes to
@@ -1201,6 +1511,10 @@ class _SpeechRequest {
   /// [frameLatency] is absent.
   final DateTime? resultReceivedAt;
   final DateTime? detectionAcceptedAt;
+  final String? session;
+  final String? model;
+  final String? camera;
+  final int? observationGeneration;
   final Completer<bool> done = Completer<bool>();
 
   _SpeechRequest({
@@ -1215,9 +1529,19 @@ class _SpeechRequest {
     this.frameLatency,
     this.resultReceivedAt,
     this.detectionAcceptedAt,
+    this.session,
+    this.model,
+    this.camera,
+    this.observationGeneration,
   });
 
   bool isCurrent(DateTime now) => now.difference(createdAt) <= validity;
+
+  void replaceDecision(AlertDecision value) {
+    decision = value;
+    text = value.text;
+    priority = value.priority;
+  }
 }
 
 class _Submission {
