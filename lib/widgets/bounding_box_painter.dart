@@ -206,6 +206,7 @@ class BoundingBoxPainter extends CustomPainter {
       // --- Draw label ---
       _drawLabel(
         canvas,
+        size,
         screenRect,
         detection.label,
         detection.confidence,
@@ -216,6 +217,7 @@ class BoundingBoxPainter extends CustomPainter {
 
   void _drawLabel(
     Canvas canvas,
+    Size viewportSize,
     Rect boxRect,
     String label,
     double confidence,
@@ -227,16 +229,26 @@ class BoundingBoxPainter extends CustomPainter {
     final TextPainter textPainter = TextPainter(
       text: TextSpan(text: text, style: _labelTextStyle),
       textDirection: TextDirection.ltr,
-    )..layout(maxWidth: boxRect.width);
+      maxLines: 2,
+      ellipsis: '\u2026',
+    )..layout(maxWidth: (viewportSize.width - 8).clamp(0.0, double.infinity));
 
-    // Position label above the box, or inside if box is at top of screen
-    final double labelY = boxRect.top - textPainter.height - 2 > 0
+    // Keep the whole pill visible even when the detection touches a viewport
+    // edge or its label is wider than the detection itself.
+    final double preferredY = boxRect.top - textPainter.height - 2 > 0
         ? boxRect.top - textPainter.height - 2
         : boxRect.top + 2;
+    final double labelY = preferredY.clamp(
+      1.0,
+      (viewportSize.height - textPainter.height - 1).clamp(
+        1.0,
+        double.infinity,
+      ),
+    );
 
     final double labelX = boxRect.left.clamp(
-      0,
-      boxRect.right - textPainter.width,
+      4.0,
+      (viewportSize.width - textPainter.width - 4).clamp(4.0, double.infinity),
     );
 
     // Background pill behind text
