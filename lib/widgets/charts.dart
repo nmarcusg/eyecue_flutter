@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../services/telemetry_service.dart';
+import '../theme/app_colors.dart';
 
 /// Shared chart styling so all charts stay high-contrast and consistent.
 const Color _axisColor = Color(0xFFBDBDBD);
@@ -33,9 +34,17 @@ class LatencyChart extends StatelessWidget {
         child: ExcludeSemantics(child: _NoData()),
       );
     }
+    final firstTime = samples.first.timestamp;
+    final elapsedSeconds = samples
+        .map(
+          (sample) =>
+              sample.timestamp.difference(firstTime).inMicroseconds / 1000000,
+        )
+        .toList(growable: false);
+    final maxX = math.max(elapsedSeconds.last, 1.0);
     final spots = <FlSpot>[
       for (var i = 0; i < samples.length; i++)
-        FlSpot(i.toDouble(), samples[i].latencyMs),
+        FlSpot(elapsedSeconds[i], samples[i].latencyMs),
     ];
     final dataMax = samples
         .map((s) => s.latencyMs)
@@ -58,6 +67,8 @@ class LatencyChart extends StatelessWidget {
           LineChartData(
             minY: 0,
             maxY: maxY,
+            minX: 0,
+            maxX: maxX,
             gridData: FlGridData(show: true, drawVerticalLine: false),
             borderData: FlBorderData(
               show: true,
@@ -66,7 +77,12 @@ class LatencyChart extends StatelessWidget {
                 bottom: BorderSide(color: _axisColor),
               ),
             ),
-            titlesData: const FlTitlesData(show: false),
+            titlesData: _chartTitles(
+              xName: 'Elapsed time (s)',
+              yName: 'Latency (ms)',
+              xInterval: maxX / 4,
+              yInterval: maxY / 4,
+            ),
             extraLinesData: ExtraLinesData(
               horizontalLines: showBenchmark
                   ? [
@@ -111,9 +127,17 @@ class FpsChart extends StatelessWidget {
         child: ExcludeSemantics(child: _NoData()),
       );
     }
+    final firstTime = samples.first.timestamp;
+    final elapsedSeconds = samples
+        .map(
+          (sample) =>
+              sample.timestamp.difference(firstTime).inMicroseconds / 1000000,
+        )
+        .toList(growable: false);
+    final maxX = math.max(elapsedSeconds.last, 1.0);
     final spots = <FlSpot>[
       for (var i = 0; i < samples.length; i++)
-        FlSpot(i.toDouble(), samples[i].inferenceFps),
+        FlSpot(elapsedSeconds[i], samples[i].inferenceFps),
     ];
     final dataMax = samples
         .map((s) => s.inferenceFps)
@@ -133,6 +157,8 @@ class FpsChart extends StatelessWidget {
           LineChartData(
             minY: 0,
             maxY: maxY,
+            minX: 0,
+            maxX: maxX,
             gridData: FlGridData(show: true, drawVerticalLine: false),
             borderData: FlBorderData(
               show: true,
@@ -141,7 +167,12 @@ class FpsChart extends StatelessWidget {
                 bottom: BorderSide(color: _axisColor),
               ),
             ),
-            titlesData: const FlTitlesData(show: false),
+            titlesData: _chartTitles(
+              xName: 'Elapsed time (s)',
+              yName: 'FPS',
+              xInterval: maxX / 4,
+              yInterval: maxY / 4,
+            ),
             extraLinesData: ExtraLinesData(
               horizontalLines: showBenchmark
                   ? [
@@ -223,7 +254,13 @@ class DetectionFrequencyChart extends StatelessWidget {
                 bottom: BorderSide(color: _axisColor),
               ),
             ),
-            titlesData: const FlTitlesData(show: false),
+            titlesData: _chartTitles(
+              xName: 'Minute',
+              yName: 'Detections',
+              xInterval: math.max((buckets.length / 4).ceilToDouble(), 1),
+              yInterval: math.max(maxY / 4, 1),
+              minuteLabels: true,
+            ),
             barGroups: groups,
             barTouchData: const BarTouchData(enabled: false),
           ),
@@ -231,6 +268,59 @@ class DetectionFrequencyChart extends StatelessWidget {
       ),
     );
   }
+}
+
+FlTitlesData _chartTitles({
+  required String xName,
+  required String yName,
+  required double xInterval,
+  required double yInterval,
+  bool minuteLabels = false,
+}) {
+  TextStyle tickStyle() => const TextStyle(color: kHomeInkMuted, fontSize: 10);
+  return FlTitlesData(
+    topTitles: const AxisTitles(sideTitles: SideTitles()),
+    rightTitles: const AxisTitles(sideTitles: SideTitles()),
+    leftTitles: AxisTitles(
+      axisNameWidget: RotatedBox(
+        quarterTurns: 3,
+        child: Text(yName, style: tickStyle(), maxLines: 1),
+      ),
+      axisNameSize: 24,
+      sideTitles: SideTitles(
+        showTitles: true,
+        interval: yInterval,
+        reservedSize: 38,
+        getTitlesWidget: (value, meta) => SideTitleWidget(
+          meta: meta,
+          space: 4,
+          child: Text(
+            value.toStringAsFixed(yInterval < 1 ? 1 : 0),
+            style: tickStyle(),
+          ),
+        ),
+      ),
+    ),
+    bottomTitles: AxisTitles(
+      axisNameWidget: Text(xName, style: tickStyle(), maxLines: 1),
+      axisNameSize: 22,
+      sideTitles: SideTitles(
+        showTitles: true,
+        interval: xInterval,
+        reservedSize: 22,
+        getTitlesWidget: (value, meta) => SideTitleWidget(
+          meta: meta,
+          space: 4,
+          child: Text(
+            minuteLabels
+                ? '${value.round() + 1}'
+                : value.toStringAsFixed(xInterval < 1 ? 1 : 0),
+            style: tickStyle(),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 String _engineSummary(List<RuntimeSample> samples) {

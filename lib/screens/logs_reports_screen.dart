@@ -245,7 +245,7 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
       return;
     }
     _showMessage(
-      'Recording trial ${request.trialLabel.trim()} with '
+      'Recording trial ${_sessions.trialLabel} with '
       '${_detectorRef.name}.',
     );
   }
@@ -275,6 +275,7 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
       builder: (_) => _UploadMetadataDialog(
         initialParticipantCode: session.participantCode,
         initialScenario: session.trialLabel,
+        frozenDetector: session.detectorName,
         lockIdentity: true,
       ),
     );
@@ -372,11 +373,13 @@ class _UploadMetadataDialog extends StatefulWidget {
   /// typo here cannot move the data to another participant.
   final String? initialParticipantCode;
   final String? initialScenario;
+  final String? frozenDetector;
   final bool lockIdentity;
 
   const _UploadMetadataDialog({
     this.initialParticipantCode,
     this.initialScenario,
+    this.frozenDetector,
     this.lockIdentity = false,
   });
 
@@ -410,8 +413,12 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
 
   void _confirm() {
     final value = ResearchSessionMetadata(
-      participantCode: _participantController.text,
-      studyScenario: _scenarioController.text,
+      participantCode: widget.lockIdentity
+          ? widget.initialParticipantCode ?? ''
+          : _participantController.text,
+      studyScenario: widget.lockIdentity
+          ? widget.initialScenario ?? ''
+          : _scenarioController.text,
       uploadToken: _tokenController.text,
     );
     if (!value.hasValidUploadToken) {
@@ -441,24 +448,37 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
             'server, and later recording belongs to a new trial.',
           ),
           const SizedBox(height: kSpace12),
-          TextField(
-            controller: _participantController,
-            maxLength: 64,
-            readOnly: widget.lockIdentity,
-            decoration: const InputDecoration(
-              labelText: 'Participant code',
-              hintText: 'P-001',
+          if (widget.lockIdentity) ...[
+            _UploadSummaryRow(
+              label: 'Participant',
+              value: widget.initialParticipantCode ?? '',
             ),
-          ),
-          TextField(
-            controller: _scenarioController,
-            maxLength: 80,
-            readOnly: widget.lockIdentity,
-            decoration: const InputDecoration(
-              labelText: 'Study scenario',
-              hintText: 'indoor-obstacle-course',
+            _UploadSummaryRow(
+              label: 'Trial',
+              value: widget.initialScenario ?? '',
             ),
-          ),
+            _UploadSummaryRow(
+              label: 'Detector',
+              value: widget.frozenDetector ?? 'Unknown detector',
+            ),
+          ] else ...[
+            TextField(
+              controller: _participantController,
+              maxLength: 64,
+              decoration: const InputDecoration(
+                labelText: 'Participant code',
+                hintText: 'P-001',
+              ),
+            ),
+            TextField(
+              controller: _scenarioController,
+              maxLength: 80,
+              decoration: const InputDecoration(
+                labelText: 'Study scenario',
+                hintText: 'indoor-obstacle-course',
+              ),
+            ),
+          ],
           TextField(
             controller: _tokenController,
             maxLength: 128,
@@ -485,6 +505,25 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
       ),
       FilledButton(onPressed: _confirm, child: const Text('Confirm upload')),
     ],
+  );
+}
+
+class _UploadSummaryRow extends StatelessWidget {
+  const _UploadSummaryRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: kSpace4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label: ', style: Theme.of(context).textTheme.titleSmall),
+        Expanded(child: Text(value, softWrap: true)),
+      ],
+    ),
   );
 }
 
@@ -524,18 +563,16 @@ class _StartSessionDialogState extends State<_StartSessionDialog> {
       _participantController.text.trim(),
       _trialController.text.trim(),
     );
-    // Same rules the upload applies, so an unusable trial cannot be started.
-    final metadata = ResearchSessionMetadata(
-      participantCode: request.participantCode,
-      studyScenario: request.trialLabel,
-      uploadToken: '',
-    );
-    if (!metadata.isValid) {
+    if (!RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(request.participantCode)) {
       setState(() {
-        _error =
-            'Use letters, digits, - or _ for the participant code, and a trial '
-            'label of at most 80 characters.';
+        _error = 'Enter a participant code using only letters, digits, - or _.';
       });
+      return;
+    }
+    if (request.trialLabel.length > 80) {
+      setState(
+        () => _error = 'A custom trial label may be at most 80 characters.',
+      );
       return;
     }
     Navigator.pop(context, request);
@@ -569,8 +606,9 @@ class _StartSessionDialogState extends State<_StartSessionDialog> {
             controller: _trialController,
             maxLength: 80,
             decoration: const InputDecoration(
-              labelText: 'Trial label',
-              hintText: 'indoor-course-1',
+              labelText: 'Trial label (optional)',
+              hintText: 'Generated if left blank',
+              helperText: 'A readable trial label is generated when blank.',
             ),
           ),
           if (_error != null)

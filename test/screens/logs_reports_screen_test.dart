@@ -1770,23 +1770,77 @@ void main() {
       expect(sessions.state, isNot(ResearchSessionState.recording));
 
       await tester.enterText(find.byType(TextField).at(0), 'P-001');
-      await tester.enterText(find.byType(TextField).at(1), 'trial-1');
+      expect(find.text('Trial label (optional)'), findsOneWidget);
       await tester.tap(find.text('Start trial'));
       await tester.pumpAndSettle();
 
       expect(sessions.state, ResearchSessionState.recording);
+      final generatedLabel = sessions.trialLabel!;
+      expect(generatedLabel, startsWith('Trial 2026-01-01T12:00:00.000Z '));
       expect(find.text('Recording'), findsOneWidget);
       expect(find.text('Pause logging'), findsOneWidget);
       expect(
-        find.textContaining('Participant P-001 · trial trial-1'),
+        find.textContaining('Participant P-001 · trial $generatedLabel'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Recording trial $generatedLabel with Built-in YOLOv8n.'),
         findsOneWidget,
       );
 
-      await tester.tap(find.text('Pause logging'));
+      final pauseButton = find.text('Pause logging');
+      await tester.tap(pauseButton);
       await tester.pumpAndSettle();
       expect(find.text('Paused'), findsOneWidget);
       expect(find.text('Resume logging'), findsOneWidget);
       expect(find.text('Finish session'), findsOneWidget);
+    });
+
+    testWidgets('start errors are field-specific and a new dialog is blank', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetry();
+      final sessions = ResearchSessionService(
+        telemetry: telemetry,
+        store: InMemoryResearchSessionStore(),
+        clock: () => DateTime.utc(2026, 1, 1, 12),
+      );
+      await pumpLogsScreen(
+        tester,
+        telemetry: telemetry,
+        researchSessions: sessions,
+      );
+
+      await tester.tap(find.text('Start logging'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), 'P 001');
+      await tester.tap(find.text('Start trial'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Enter a participant code using only letters, digits, - or _.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'P-001');
+      await tester.enterText(find.byType(TextField).at(1), '  custom trial  ');
+      await tester.tap(find.text('Start trial'));
+      await tester.pumpAndSettle();
+      expect(sessions.trialLabel, 'custom trial');
+      await tester.tap(find.text('Finish session'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Start logging'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField).at(0)).controller!.text,
+        isEmpty,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField).at(1)).controller!.text,
+        isEmpty,
+      );
     });
 
     testWidgets('a finished trial is listed with its own controls', (
@@ -1822,6 +1876,72 @@ void main() {
       expect(find.text('Upload trial'), findsOneWidget);
       expect(find.text('Export trial'), findsOneWidget);
       expect(find.text('Discard trial'), findsOneWidget);
+    });
+
+    testWidgets('finished upload freezes identity in wrapping summary text', (
+      tester,
+    ) async {
+      final telemetry = buildTelemetry();
+      final fake = _FakeUploadService(const TelemetryUploadResult.success());
+      final participant = 'P' * 64;
+      final trialLabel = 'L' * 80;
+      final sessions = ResearchSessionService(
+        telemetry: telemetry,
+        store: InMemoryResearchSessionStore(),
+        clock: () => DateTime.utc(2026, 1, 1, 12),
+        uploadService: fake,
+      );
+      await sessions.start(
+        participantCode: participant,
+        trialLabel: trialLabel,
+        detector: const DetectorModelRef(
+          id: 'custom:0123456789ab',
+          name: 'Long detector display name that wraps in the upload summary',
+          fingerprint: '0123456789ab0000-4200',
+          classCount: 12,
+        ),
+      );
+      await sessions.finish();
+      await pumpLogsScreen(
+        tester,
+        telemetry: telemetry,
+        researchSessions: sessions,
+        uploadService: fake,
+        textScale: 2,
+        size: const Size(360 * 3, 900 * 3),
+      );
+
+      final uploadButton = find.text('Upload trial');
+      await scrollOverviewTo(tester, uploadButton);
+      await tester.ensureVisible(uploadButton);
+      await tester.pumpAndSettle();
+      await tester.tap(uploadButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Participant: '), findsOneWidget);
+      expect(find.text(participant), findsOneWidget);
+      expect(find.text(trialLabel), findsOneWidget);
+      expect(
+        find.text(
+          'Long detector display name that wraps in the upload summary',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.enterText(find.byType(TextField), screenUploadToken);
+      await tester.tap(find.text('Confirm upload'));
+      await tester.pumpAndSettle();
+      expect(fake.lastMetadata!.participantCode, participant);
+      expect(fake.lastMetadata!.studyScenario, trialLabel);
+      expect(fake.lastMetadata!.uploadToken, screenUploadToken);
     });
 
     testWidgets('a paused trial cannot upload the live app-lifetime session', (
@@ -1901,7 +2021,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(uploadTrial);
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).at(2), screenUploadToken);
+      await tester.enterText(find.byType(TextField), screenUploadToken);
       await tester.tap(find.text('Confirm upload'));
       await tester.pumpAndSettle();
 

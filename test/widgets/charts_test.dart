@@ -1,6 +1,7 @@
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/widgets/charts.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -18,9 +19,12 @@ List<RuntimeSample> samples(List<double> latencies, {List<double>? fps}) {
   ];
 }
 
-Widget wrap(Widget child) => MaterialApp(
-  home: Scaffold(
-    body: Center(child: SizedBox(width: 360, height: 180, child: child)),
+Widget wrap(Widget child, {double textScale = 1}) => MaterialApp(
+  home: MediaQuery(
+    data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+    child: Scaffold(
+      body: Center(child: SizedBox(width: 360, height: 180, child: child)),
+    ),
   ),
 );
 
@@ -73,6 +77,75 @@ void main() {
   ) async {
     await tester.pumpWidget(wrap(DetectionFrequencyChart(buckets: const [1])));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('populated charts show named axes and numeric ticks', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(LatencyChart(samples: samples([30, 40]))));
+    expect(find.text('Elapsed time (s)'), findsOneWidget);
+    expect(find.text('Latency (ms)'), findsOneWidget);
+    expect(find.text('0'), findsWidgets);
+
+    await tester.pumpWidget(wrap(FpsChart(samples: samples([30, 40]))));
+    expect(find.text('Elapsed time (s)'), findsOneWidget);
+    expect(find.text('FPS'), findsOneWidget);
+    expect(find.text('0'), findsWidgets);
+
+    await tester.pumpWidget(wrap(DetectionFrequencyChart(buckets: [0, 4, 1])));
+    expect(find.text('Minute'), findsOneWidget);
+    expect(find.text('Detections'), findsOneWidget);
+    expect(find.text('1'), findsWidgets);
+  });
+
+  testWidgets(
+    'line-chart X values use elapsed seconds at irregular intervals',
+    (tester) async {
+      final first = DateTime.utc(2026);
+      final irregular = [
+        for (final offset in [0, 2, 9])
+          RuntimeSample(
+            timestamp: first.add(Duration(seconds: offset)),
+            latencyMs: 30,
+            inferenceFps: 12,
+            objectCount: 1,
+            engine: InferenceEngine.ultralytics,
+          ),
+      ];
+      await tester.pumpWidget(wrap(LatencyChart(samples: irregular)));
+      final chart = tester.widget<LineChart>(find.byType(LineChart));
+      expect(chart.data.minX, 0);
+      expect(chart.data.maxX, 9);
+      expect(chart.data.lineBarsData.single.spots.map((spot) => spot.x), [
+        0,
+        2,
+        9,
+      ]);
+    },
+  );
+
+  testWidgets('axis labels fit at narrow width and 200% text scale', (
+    tester,
+  ) async {
+    final charts = [
+      (
+        LatencyChart(samples: samples([30, 40])),
+        'Elapsed time (s)',
+        'Latency (ms)',
+      ),
+      (FpsChart(samples: samples([30, 40])), 'Elapsed time (s)', 'FPS'),
+      (
+        DetectionFrequencyChart(buckets: List.filled(30, 12)),
+        'Minute',
+        'Detections',
+      ),
+    ];
+    for (final (chart, xAxis, yAxis) in charts) {
+      await tester.pumpWidget(wrap(chart, textScale: 2));
+      expect(find.text(xAxis), findsOneWidget);
+      expect(find.text(yAxis), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('the chart summary calls two same-named graphs mixed', (
