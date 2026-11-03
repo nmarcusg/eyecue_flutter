@@ -332,6 +332,11 @@ class TtsService extends ChangeNotifier {
     DetectorModelKind detectorKind = DetectorModelKind.builtIn,
     String? detectorIdentity,
   }) {
+    final contextChanged =
+        _observationSession != null &&
+        (_observationSession != session ||
+            _observationModel != model ||
+            _observationCamera != camera);
     _observationGeneration++;
     _observationMonotonicAt = monotonicReceivedAt;
     _observationSession = session;
@@ -343,11 +348,22 @@ class TtsService extends ChangeNotifier {
     _latestTracks = List.unmodifiable(tracks);
     _visibleTrackIds = tracks.map((track) => track.trackId).toSet();
     _visibleDetectionKeys = detections.map(_targetKey).toSet();
+    policy.observeDetections(
+      detections: _latestDetections,
+      tracks: _latestTracks,
+      detectorKind: detectorKind,
+      detectorIdentity: detectorIdentity,
+    );
     if (_visibleDetectionKeys.isEmpty) {
       policy.clearForDetector(_activeDetectorIdentity);
     }
-    _disappearanceTimer?.cancel();
-    _disappearanceTimer = null;
+    final visibleActiveDecision = _active?.request.decision;
+    if (contextChanged ||
+        (visibleActiveDecision?.target != null &&
+            _targetIsVisible(visibleActiveDecision!))) {
+      _disappearanceTimer?.cancel();
+      _disappearanceTimer = null;
+    }
     final pending = _pending;
     if (pending?.origin == AlertOrigin.detection &&
         (pending?.decision?.target == null ||
@@ -362,12 +378,12 @@ class TtsService extends ChangeNotifier {
     if (active?.didStart == true &&
         active!.request.origin == AlertOrigin.detection &&
         decision?.target != null &&
-        !_targetIsVisible(decision!)) {
-      final generation = _observationGeneration;
+        !_targetIsVisible(decision!) &&
+        _disappearanceTimer == null) {
       _disappearanceTimer = Timer(disappearanceGrace, () {
+        _disappearanceTimer = null;
         final cancellation = engine;
-        if (_observationGeneration != generation ||
-            _targetIsVisible(decision) ||
+        if (_targetIsVisible(decision) ||
             !identical(_active, active) ||
             active.terminal != null ||
             active.stopRequested ||
@@ -377,8 +393,25 @@ class TtsService extends ChangeNotifier {
           return;
         }
         active.stopRequested = true;
-        unawaited(engine.stop());
+        active.preemptionTimer = Timer(preemptionConfirmTimeout, () {
+          if (identical(_active, active) && active.terminal == null) {
+            _fail(active, _CancelCause.reconciliationTimeout);
+          }
+        });
+        unawaited(_stopAfterDisappearance(active));
       });
+    }
+  }
+
+  Future<void> _stopAfterDisappearance(_Submission active) async {
+    try {
+      await engine.stop();
+    } catch (error) {
+      if (_disposed || !identical(_active, active) || active.terminal != null) {
+        return;
+      }
+      debugPrint('[Tts] stop after target disappearance failed: $error');
+      _fail(active, _CancelCause.engineError);
     }
   }
 
@@ -871,11 +904,6 @@ class TtsService extends ChangeNotifier {
       _drain();
       return;
     }
-    if (!_automaticRequestIsCurrent(request)) {
-      if (!request.done.isCompleted) request.done.complete(false);
-      _drain();
-      return;
-    }
     final submission = _Submission(
       id: ++_nextId,
       request: request,
@@ -1100,6 +1128,8 @@ class TtsService extends ChangeNotifier {
     if (submission.terminal != null) return;
     submission.terminal = terminal;
     submission.finishedAt = _clock();
+    _disappearanceTimer?.cancel();
+    _disappearanceTimer = null;
     _cancelTimers(submission);
 
     final decision = submission.request.decision;

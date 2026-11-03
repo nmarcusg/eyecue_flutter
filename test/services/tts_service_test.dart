@@ -5,6 +5,7 @@ import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/models/tracked_detection.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
@@ -24,6 +25,7 @@ class FakeTtsEngine implements TtsEngine, TtsCancellationCapability {
   int stopCalls = 0;
   bool throwOnRecover = false;
   bool throwOnSpeak = false;
+  bool throwOnStop = false;
   @override
   bool supportsCancellation = true;
   Completer<void>? stopCompleter;
@@ -50,6 +52,7 @@ class FakeTtsEngine implements TtsEngine, TtsCancellationCapability {
   @override
   Future<void> stop() async {
     stopCalls++;
+    if (throwOnStop) throw StateError('stop failed');
     await stopCompleter?.future;
   }
 
@@ -104,7 +107,7 @@ DetectionInfo info({
       classId: classId,
       label: label,
       confidence: conf,
-      box: box ?? const Rect.fromLTWH(0.4, 0.2, 0.2, 0.2),
+      box: box ?? const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5),
     ),
   );
 }
@@ -273,6 +276,33 @@ void main() {
       },
     );
 
+    test(
+      'queued metric warning is revalidated against a fresh far result',
+      () async {
+        engine.mode = FakeMode.startOnly;
+        final active = tts.speak('busy', urgent: true);
+        await Future<void>.delayed(Duration.zero);
+        engine.emitStart();
+        final raw = const Detection(
+          classId: 56,
+          label: 'chair',
+          confidence: 0.9,
+          box: Rect.fromLTWH(0.3, 0.2, 0.4, 0.5),
+        );
+        final near = SpatialAnalysisService.analyze(raw, meters: 1.4);
+        observe([near]);
+        final pending = tts.announceDetections([near]);
+        final far = SpatialAnalysisService.analyze(raw, meters: 5.0);
+        observe([far]);
+
+        engine.emitComplete();
+        engine.resolveCurrent(1);
+        await active;
+        expect(await pending, isFalse);
+        expect(engine.spoken, ['busy']);
+      },
+    );
+
     test('target freshness expires at 501ms before scheduler start', () async {
       engine.mode = FakeMode.startOnly;
       final active = tts.speak('busy', urgent: true);
@@ -305,6 +335,48 @@ void main() {
       engine.resolveCurrent(1);
       expect(await active, isTrue);
     });
+
+    test('repeated empty frames share the first absence deadline', () async {
+      engine.mode = FakeMode.startOnly;
+      final target = nearPerson();
+      observe([target]);
+      final active = tts.announceDetections([target]);
+      await Future<void>.delayed(Duration.zero);
+      engine.emitStart();
+
+      observe([info(label: 'cup', classId: 41)]);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      observe([info(label: 'cup', classId: 41)]);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      observe([info(label: 'cup', classId: 41)]);
+      expect(engine.stopCalls, 0);
+      await Future<void>.delayed(const Duration(milliseconds: 75));
+      expect(engine.stopCalls, 1);
+      expect(tts.isSpeaking, isTrue);
+
+      engine.emitCancel();
+      engine.resolveCurrent(0);
+      expect(await active, isTrue);
+    });
+
+    test(
+      'failed disappearance stop is reconciled and does not throw',
+      () async {
+        engine.mode = FakeMode.startOnly;
+        engine.throwOnStop = true;
+        final target = nearPerson();
+        observe([target]);
+        final active = tts.announceDetections([target]);
+        await Future<void>.delayed(Duration.zero);
+        engine.emitStart();
+        observe(const []);
+        await Future<void>.delayed(const Duration(milliseconds: 275));
+        expect(engine.stopCalls, 1);
+        await pumpEventQueue();
+        expect(engine.recoverCalls, 1);
+        expect(await active, isTrue);
+      },
+    );
 
     test(
       'disappearance requests cancellation after grace, without slot release',
@@ -426,7 +498,7 @@ void main() {
       final high = info(
         classId: 0,
         label: 'person',
-        box: const Rect.fromLTWH(0.7, 0.1, 0.2, 0.3),
+        box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5),
         conf: 0.6,
       );
       expect(await tts.announceDetections([low, high]), isTrue);
@@ -625,6 +697,80 @@ void main() {
     });
 
     test(
+      'metric-imminent chair preempts with bounded app-side timing',
+      () async {
+        final records = <AlertLifecycleRecord>[];
+        final localEngine = FakeTtsEngine()..mode = FakeMode.startOnly;
+        final local = TtsService(
+          engine: localEngine,
+          clock: () => now,
+          monotonicClock: () => monotonicNow,
+          onAlertLifecycle: records.add,
+          preemptionConfirmTimeout: const Duration(seconds: 1),
+        );
+        await local.init();
+        addTearDown(local.dispose);
+
+        final routine = local.speak('Routine status', urgent: true);
+        await Future<void>.delayed(Duration.zero);
+        localEngine.emitStart();
+        now = now.add(const Duration(milliseconds: 10));
+        monotonicNow += const Duration(milliseconds: 10);
+        final acceptedAt = now;
+        final chair = SpatialAnalysisService.analyze(
+          const Detection(
+            classId: 56,
+            label: 'chair',
+            confidence: 0.9,
+            box: Rect.fromLTWH(0.3, 0.2, 0.4, 0.5),
+          ),
+          meters: 1.4,
+        );
+        local.updateDetectionObservation(
+          detections: [chair],
+          receivedAt: acceptedAt,
+          monotonicReceivedAt: monotonicNow,
+          session: 'timing-session',
+          model: 'builtin-model',
+          camera: 'camera-1',
+          detectorKind: DetectorModelKind.builtIn,
+          detectorIdentity: 'builtin-yolov8n-int8-metadata',
+        );
+        final warning = local.announceDetections(
+          [chair],
+          detectorKind: DetectorModelKind.builtIn,
+          detectorIdentity: 'builtin-yolov8n-int8-metadata',
+          session: 'timing-session',
+          model: 'builtin-model',
+          camera: 'camera-1',
+          resultReceivedAt: acceptedAt,
+          detectionAcceptedAt: acceptedAt,
+        );
+        await pumpEventQueue();
+        expect(localEngine.stopCalls, 1);
+        expect(localEngine.spoken, ['Routine status']);
+
+        now = now.add(const Duration(milliseconds: 12));
+        monotonicNow += const Duration(milliseconds: 12);
+        localEngine.mode = FakeMode.autoComplete;
+        localEngine.emitCancel();
+        localEngine.resolveCurrent(0);
+        await routine;
+        await warning;
+
+        final record = records.singleWhere(
+          (item) => item.origin == AlertOrigin.detection,
+        );
+        expect(record.detectionAcceptedAt, acceptedAt);
+        expect(
+          record.alertStartedAt!.difference(record.detectionAcceptedAt!),
+          const Duration(milliseconds: 12),
+        );
+        expect(localEngine.spoken.last, contains('chair'));
+      },
+    );
+
+    test(
       'a distinct approaching track preempts an equal-priority warning',
       () async {
         final personA = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
@@ -638,7 +784,7 @@ void main() {
 
         // A second, distinct obstacle suddenly approaching. Both decisions are
         // AlertPriority.imminent, which previously never preempted.
-        final personB = info(box: const Rect.fromLTWH(0.7, 0.2, 0.4, 0.5));
+        final personB = info(box: const Rect.fromLTWH(0.4, 0.2, 0.4, 0.5));
         final trackB = trackOf(
           personB,
           id: 102,
@@ -881,7 +1027,7 @@ void main() {
       );
 
       now = now.add(const Duration(seconds: 1));
-      final second = info(box: const Rect.fromLTWH(0.7, 0.2, 0.2, 0.2));
+      final second = info(box: const Rect.fromLTWH(0.45, 0.2, 0.3, 0.5));
       expect(
         await tts.announceDetections(
           [second],

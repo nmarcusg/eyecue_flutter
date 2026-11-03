@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:eyecue_flutter/models/detection.dart';
 import 'package:eyecue_flutter/models/detection_info.dart';
+import 'package:eyecue_flutter/models/tracked_detection.dart';
 import 'package:eyecue_flutter/services/scene_summary_service.dart';
 import 'package:eyecue_flutter/services/spatial_analysis_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -64,6 +65,50 @@ void main() {
     expect(text.indexOf('person'), lessThan(text.indexOf('car')));
     expect(text, contains('approximately'));
     expect(text.length, lessThanOrEqualTo(240));
+  });
+
+  test('speech describes relative size trends and qualifies distance', () {
+    final raw = Detection(
+      classId: 56,
+      label: 'chair',
+      confidence: 0.9,
+      box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5),
+    );
+    final info = SpatialAnalysisService.analyze(raw);
+    final track = TrackedDetection(
+      detection: raw,
+      trackId: 7,
+      firstSeen: DateTime(2026),
+      lastSeen: DateTime(2026),
+      smoothedCenter: Offset(raw.box.center.dx, raw.box.center.dy),
+      smoothedArea: raw.box.width * raw.box.height,
+      smoothedHeight: raw.box.height,
+      confidence: raw.confidence,
+      hitCount: 3,
+      missedUpdateCount: 0,
+      motion: MotionState.approaching,
+      centerDisplacement: 0,
+    );
+    for (final text in [
+      service.alert([info], tracks: [track]),
+      service.quickScan([info], tracks: [track]),
+    ]) {
+      expect(text, contains('getting closer'));
+      expect(text, isNot(contains('approaching')));
+    }
+    expect(service.urgentAlert(info), contains('approximately near'));
+
+    final mislabeledFallback = DetectionInfo(
+      detection: raw,
+      position: info.position,
+      priority: info.priority,
+      proximity: info.proximity,
+      distanceLabel: 'about 5.0 m',
+    );
+    expect(service.alert([mislabeledFallback]), isNot(contains(' m')));
+
+    final metric = SpatialAnalysisService.analyze(raw, meters: 1.2);
+    expect(service.urgentAlert(metric), contains('about 1.0 m'));
   });
 
   test('alert ordering is independent of input order', () {
