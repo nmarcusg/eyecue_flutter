@@ -1212,11 +1212,6 @@ class TtsService extends ChangeNotifier {
       _drain();
       return;
     }
-    if (!_automaticRequestIsCurrent(next)) {
-      if (!next.done.isCompleted) next.done.complete(false);
-      _drain();
-      return;
-    }
     final decision = next.decision;
     if (decision != null &&
         (decision.detectorIdentity != _activeDetectorIdentity ||
