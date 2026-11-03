@@ -2015,6 +2015,8 @@ void main() {
       await tester.tap(uploadButton);
       await tester.pumpAndSettle();
 
+      expect(find.text('Confirm research upload'), findsOneWidget);
+      expect(find.text('Upload this session?'), findsNothing);
       expect(find.text('Participant: '), findsOneWidget);
       expect(find.text(participant), findsOneWidget);
       expect(find.text(trialLabel), findsOneWidget);
