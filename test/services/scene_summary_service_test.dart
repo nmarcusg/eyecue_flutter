@@ -96,7 +96,10 @@ void main() {
       expect(text, contains('getting closer'));
       expect(text, isNot(contains('approaching')));
     }
-    expect(service.urgentAlert(info), contains('approximately near'));
+    expect(
+      service.urgentAlert(info, urgentBelowMeters: 1.5),
+      contains('approximately near'),
+    );
 
     final mislabeledFallback = DetectionInfo(
       detection: raw,
@@ -108,7 +111,14 @@ void main() {
     expect(service.alert([mislabeledFallback]), isNot(contains(' m')));
 
     final metric = SpatialAnalysisService.analyze(raw, meters: 1.2);
-    expect(service.urgentAlert(metric), contains('about 1.0 m'));
+    expect(
+      service.urgentAlert(metric, urgentBelowMeters: 1.5),
+      contains('about 1.0 m'),
+    );
+    expect(
+      service.urgentAlert(metric, urgentBelowMeters: 1.0),
+      isNot(contains('very close')),
+    );
   });
 
   test('alert ordering is independent of input order', () {
