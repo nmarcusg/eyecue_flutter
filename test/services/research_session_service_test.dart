@@ -186,6 +186,142 @@ void main() {
     );
   });
 
+  group('optional trial labels', () {
+    test('blank labels use the fresh ID and persist through finish', () async {
+      final clock = TestClock(DateTime.utc(2026, 5, 1, 9));
+      final telemetry = buildTelemetry(clock);
+      addTearDown(telemetry.dispose);
+      final store = InMemoryResearchSessionStore();
+      final sessions = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: store,
+      );
+      addTearDown(sessions.dispose);
+
+      expect(
+        await sessions.start(
+          participantCode: ' P-001 ',
+          trialLabel: '  ',
+          detector: builtInRef,
+        ),
+        isNull,
+      );
+      final expected =
+          'Trial ${clock.now.toUtc().toIso8601String()} '
+          '${(jsonDecode(store.draft!) as Map<String, dynamic>)['id'].toString().split('-').last}';
+      expect(sessions.participantCode, 'P-001');
+      expect(sessions.trialLabel, expected);
+      expect(sessions.trialLabel, matches(RegExp(r'^Trial .+ [0-9a-f]+$')));
+      expect(sessions.trialLabel!.length, lessThanOrEqualTo(80));
+      expect(
+        (jsonDecode(store.draft!) as Map<String, dynamic>)['trialLabel'],
+        expected,
+      );
+
+      final finished = (await sessions.finish())!;
+      expect(finished.session.trialLabel, expected);
+      expect(store.finished.values.single, contains(expected));
+    });
+
+    test(
+      'custom labels trim, and same-clock generated labels follow IDs',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 1, 9));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = InMemoryResearchSessionStore();
+        final sessions = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(sessions.dispose);
+
+        expect(
+          await sessions.start(
+            participantCode: 'P-001',
+            trialLabel: '  custom label  ',
+            detector: builtInRef,
+          ),
+          isNull,
+        );
+        expect(sessions.trialLabel, 'custom label');
+        await sessions.finish();
+
+        expect(
+          await sessions.start(
+            participantCode: 'P-001',
+            trialLabel: '',
+            detector: builtInRef,
+          ),
+          isNull,
+        );
+        final firstId =
+            (jsonDecode(store.draft!) as Map<String, dynamic>)['id'] as String;
+        final firstLabel = sessions.trialLabel!;
+        await sessions.finish();
+        expect(
+          await sessions.start(
+            participantCode: 'P-001',
+            trialLabel: '',
+            detector: builtInRef,
+          ),
+          isNull,
+        );
+        expect(
+          (jsonDecode(store.draft!) as Map<String, dynamic>)['id'],
+          isNot(firstId),
+        );
+        expect(sessions.trialLabel, isNot(firstLabel));
+      },
+    );
+
+    test(
+      'invalid participant and overlong label do not create a draft',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 1, 9));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = InMemoryResearchSessionStore();
+        final sessions = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(sessions.dispose);
+
+        expect(
+          await sessions.start(
+            participantCode: 'P 001',
+            trialLabel: '',
+            detector: builtInRef,
+          ),
+          contains('participant code'),
+        );
+        expect(store.draft, isNull);
+        expect(
+          await sessions.start(
+            participantCode: 'P-001',
+            trialLabel: 'L' * 81,
+            detector: builtInRef,
+          ),
+          contains('80 characters'),
+        );
+        expect(store.draft, isNull);
+        expect(
+          await sessions.start(
+            participantCode: 'P-001',
+            trialLabel: 'L' * 80,
+            detector: builtInRef,
+          ),
+          isNull,
+        );
+        expect(sessions.trialLabel, 'L' * 80);
+      },
+    );
+  });
+
   group('2. Pause freezes study accumulation, not detection', () {
     test(
       'paused detections and samples are absent while telemetry grows',
