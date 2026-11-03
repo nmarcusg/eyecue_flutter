@@ -564,7 +564,11 @@ class AlertPolicy {
   }) {
     final urgent = priority.index >= AlertPriority.urgentEscalation.index;
     final text = urgent
-        ? summary.urgentAlert(candidate.info, track: candidate.track)
+        ? summary.urgentAlert(
+            candidate.info,
+            urgentBelowMeters: distanceConfig.urgentBelowMeters,
+            track: candidate.track,
+          )
         : summary.alert([
             candidate.info,
           ], tracks: candidate.track == null ? const [] : [candidate.track!]);

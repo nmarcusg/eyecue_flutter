@@ -81,7 +81,11 @@ class SceneSummaryService {
   /// Urgent speech must convey the hazard before the qualifiers, so it never
   /// begins with "Alert." or "high priority obstacle". Detailed wording stays
   /// available through [alert] and [quickScan].
-  String urgentAlert(DetectionInfo info, {TrackedDetection? track}) {
+  String urgentAlert(
+    DetectionInfo info, {
+    required double urgentBelowMeters,
+    TrackedDetection? track,
+  }) {
     final motion = _confirmedMotion(track);
     final position = info.position == RelativePosition.center
         ? ''
@@ -92,7 +96,7 @@ class SceneSummaryService {
     if (meters != null && meters.isFinite && meters >= 0.1 && meters <= 80) {
       final distance =
           info.distanceLabel ?? 'about ${meters.toStringAsFixed(1)} m';
-      if (meters < 1.5) {
+      if (meters < urgentBelowMeters) {
         return _limit('${info.label} very close, $distance$position.');
       }
       return _limit('${info.label}, $distance$position.');
