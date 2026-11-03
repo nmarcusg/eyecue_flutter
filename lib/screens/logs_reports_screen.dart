@@ -442,10 +442,10 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'Manually upload the selected finished trial after confirming '
-            'participant consent. Camera frames and device identifiers are '
-            'excluded. The study token is used only for this upload and is not '
-            'saved.',
+            'Manually upload the selected session or finished trial after '
+            'confirming participant consent. Camera frames and device '
+            'identifiers are excluded. The study token is used only for this '
+            'upload and is not saved.',
           ),
           ExpansionTile(
             title: const Text('Upload details'),
