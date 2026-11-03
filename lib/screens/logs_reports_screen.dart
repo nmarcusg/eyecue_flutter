@@ -159,6 +159,14 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   void _selectModelFilter(String? modelId) =>
       setState(() => _modelFilter = modelId);
 
+  Future<T?> _showLightDialog<T>(WidgetBuilder builder) => showDialog<T>(
+    context: context,
+    builder: (_) => Theme(
+      data: buildHomeTheme(),
+      child: Builder(builder: builder),
+    ),
+  );
+
   Future<void> _upload() async {
     if (_uploading || !_uploadService.isConfigured) return;
     if (_sessions.state != ResearchSessionState.idle) {
@@ -197,10 +205,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
     }
   }
 
-  Future<ResearchSessionMetadata?> _requestUploadMetadata() => showDialog(
-    context: context,
-    builder: (_) => const _UploadMetadataDialog(),
-  );
+  Future<ResearchSessionMetadata?> _requestUploadMetadata() =>
+      _showLightDialog((_) => const _UploadMetadataDialog());
 
   Future<void> _export({required bool csv}) async {
     if (_exporting) return;
@@ -229,9 +235,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   }
 
   Future<void> _startSession() async {
-    final request = await showDialog<_StartSessionRequest>(
-      context: context,
-      builder: (_) => _StartSessionDialog(detectorName: _detectorRef.name),
+    final request = await _showLightDialog<_StartSessionRequest>(
+      (_) => _StartSessionDialog(detectorName: _detectorRef.name),
     );
     if (request == null || !mounted) return;
     final error = await _sessions.start(
@@ -270,9 +275,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
 
   Future<void> _uploadStored(ResearchSession session) async {
     if (_sessions.isUploading || !_uploadService.isConfigured) return;
-    final metadata = await showDialog<ResearchSessionMetadata>(
-      context: context,
-      builder: (_) => _UploadMetadataDialog(
+    final metadata = await _showLightDialog<ResearchSessionMetadata>(
+      (_) => _UploadMetadataDialog(
         initialParticipantCode: session.participantCode,
         initialScenario: session.trialLabel,
         frozenDetector: session.detectorName,
@@ -320,9 +324,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   }
 
   Future<void> _discardStored(ResearchSession session) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
+    final confirmed = await _showLightDialog<bool>(
+      (context) => AlertDialog(
         title: const Text('Discard this trial?'),
         content: Text(
           'This deletes only the stored trial ${session.trialLabel} '
@@ -439,13 +442,21 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'This manually sends one finished, image-free trial to the research '
-            'database. It does not include camera frames or device IDs. Use only '
-            'a study participant code, never a name or email address. The study '
-            'upload token comes from the study coordinator; it is used for this '
-            'upload only and is not saved. Each participant and trial is stored '
-            'once: re-sending the same trial is deduplicated by the research '
-            'server, and later recording belongs to a new trial.',
+            'Manually upload the selected finished trial after confirming '
+            'participant consent. Camera frames and device identifiers are '
+            'excluded. The study token is used only for this upload and is not '
+            'saved.',
+          ),
+          ExpansionTile(
+            title: const Text('Upload details'),
+            tilePadding: EdgeInsets.zero,
+            children: const [
+              Text(
+                'Use a study participant code, never a name or email address. '
+                'Each participant and trial is stored once; later recording '
+                'belongs to a new trial.',
+              ),
+            ],
           ),
           const SizedBox(height: kSpace12),
           if (widget.lockIdentity) ...[

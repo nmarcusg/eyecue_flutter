@@ -15,6 +15,8 @@ import 'package:eyecue_flutter/services/telemetry_export_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/telemetry_upload_service.dart';
 import 'package:eyecue_flutter/theme/app_colors.dart';
+import 'package:eyecue_flutter/theme/app_home_theme.dart';
+import 'package:eyecue_flutter/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
@@ -212,12 +214,18 @@ Future<void> pumpLogsScreen(
   ResearchSessionService? researchSessions,
   double textScale = 1.0,
   Size size = const Size(390 * 3, 2400 * 3),
+  ThemeData? rootTheme,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 3.0;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
+      theme: rootTheme,
+      darkTheme: rootTheme,
+      themeMode: rootTheme?.brightness == Brightness.dark
+          ? ThemeMode.dark
+          : ThemeMode.system,
       home: MediaQuery(
         data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
         child: LogsReportsScreen(
@@ -271,6 +279,36 @@ void main() {
       final theme = Theme.of(tester.element(find.text('Logs & Reports')));
       expect(theme.brightness, Brightness.light);
       expect(theme.scaffoldBackgroundColor, kHomeSurfaceBase);
+    });
+
+    testWidgets('start dialog is light under the production dark root', (
+      tester,
+    ) async {
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(),
+        rootTheme: buildEyeCueTheme(),
+      );
+      await tester.tap(find.text('Start logging'));
+      await tester.pumpAndSettle();
+
+      final dialog = find.byType(AlertDialog);
+      final dialogTheme = Theme.of(tester.element(dialog));
+      expect(dialogTheme.brightness, Brightness.light);
+      expect(dialogTheme.colorScheme.brightness, Brightness.light);
+      expect(
+        dialogTheme.dialogTheme.backgroundColor,
+        buildHomeTheme().dialogTheme.backgroundColor,
+      );
+      expect(find.text('Start logging?'), findsOneWidget);
+      expect(find.text('Start trial'), findsOneWidget);
+      expect(
+        DefaultTextStyle.of(
+          tester.element(find.text('Start logging?')),
+        ).style.color,
+        dialogTheme.colorScheme.onSurface,
+      );
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('app bar and body share the fixed light surface', (
@@ -815,11 +853,9 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the confirm dialog states the one-upload-per-run rule', (
+    testWidgets('upload details keep secondary facts available on demand', (
       tester,
     ) async {
-      // The rule has to be readable *before* the researcher commits, not only
-      // in the duplicate message after the second attempt.
       await pumpLogsScreen(
         tester,
         telemetry: buildTelemetry(),
@@ -834,19 +870,80 @@ void main() {
       await tester.tap(button);
       await tester.pumpAndSettle();
 
-      // Scoped to the dialog: a screen-wide match would not prove the sentence
-      // is part of what the researcher is confirming.
       expect(
         find.descendant(
           of: find.byType(AlertDialog),
-          matching: find.textContaining(
-            'Each participant and trial is stored once: re-sending the same '
-            'trial is deduplicated by the research server, and later '
-            'recording belongs to a new trial.',
-          ),
+          matching: find.textContaining('Manually upload the selected'),
         ),
         findsOneWidget,
       );
+      expect(find.text('Upload details'), findsOneWidget);
+      expect(find.textContaining('Each participant and trial'), findsNothing);
+      await tester.tap(find.text('Upload details'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Each participant and trial'), findsOneWidget);
+      await tester.tap(find.text('Upload details'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Each participant and trial'), findsNothing);
+    });
+
+    testWidgets('dark-root upload dialog remains usable at narrow large text', (
+      tester,
+    ) async {
+      final fake = _FakeUploadService(const TelemetryUploadResult.success());
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(),
+        uploadService: fake,
+        textScale: 2,
+        size: const Size(320 * 3, 640 * 3),
+        rootTheme: buildEyeCueTheme(),
+      );
+      tester.view.viewInsets = const FakeViewPadding(bottom: 220);
+      await tester.pump();
+      final button = find.text('Upload session to research database');
+      await scrollOverviewTo(tester, button);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      final dialog = find.byType(AlertDialog);
+      final dialogTheme = Theme.of(tester.element(dialog));
+      expect(dialogTheme.brightness, Brightness.light);
+      expect(
+        dialogTheme.dialogTheme.backgroundColor,
+        buildHomeTheme().dialogTheme.backgroundColor,
+      );
+      expect(find.text('Upload details'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Confirm upload'), findsOneWidget);
+      final token = find.byType(TextField).at(2);
+      for (final interactive in [
+        token,
+        find.text('Cancel'),
+        find.text('Confirm upload'),
+      ]) {
+        expect(
+          Theme.of(tester.element(interactive)).brightness,
+          Brightness.light,
+        );
+      }
+      await tester.ensureVisible(token);
+      await tester.enterText(token, 'not-a-valid-token');
+      await tester.tap(find.text('Confirm upload'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(TelemetryUploadResult.tokenShapeMessage),
+        findsOneWidget,
+      );
+      expect(fake.uploads, 0);
+
+      await tester.ensureVisible(find.text('Cancel'));
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('a duplicate upload says so instead of reporting success', (
