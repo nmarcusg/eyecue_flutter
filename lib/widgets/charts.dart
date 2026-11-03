@@ -278,13 +278,6 @@ FlTitlesData _chartTitles({
   bool minuteLabels = false,
 }) {
   TextStyle tickStyle() => const TextStyle(color: kHomeInkMuted, fontSize: 10);
-  var xPrecision = 0;
-  var scaledInterval = xInterval;
-  while (xPrecision < 6 &&
-      (scaledInterval - scaledInterval.round()).abs() > 1e-8) {
-    scaledInterval *= 10;
-    xPrecision++;
-  }
   return FlTitlesData(
     topTitles: const AxisTitles(sideTitles: SideTitles()),
     rightTitles: const AxisTitles(sideTitles: SideTitles()),
@@ -301,10 +294,7 @@ FlTitlesData _chartTitles({
         getTitlesWidget: (value, meta) => SideTitleWidget(
           meta: meta,
           space: 4,
-          child: Text(
-            value.toStringAsFixed(yInterval < 1 ? 1 : 0),
-            style: tickStyle(),
-          ),
+          child: Text(_formatAxisTick(value, yInterval), style: tickStyle()),
         ),
       ),
     ),
@@ -321,20 +311,31 @@ FlTitlesData _chartTitles({
           child: Text(
             minuteLabels
                 ? '${value.round() + 1}'
-                : xInterval < 1
-                ? value == 0
-                      ? '0'
-                      : value
-                            .toStringAsFixed(xPrecision)
-                            .replaceFirst(RegExp(r'0+$'), '')
-                            .replaceFirst(RegExp(r'\.$'), '')
-                : value.toStringAsFixed(0),
+                : _formatAxisTick(value, xInterval),
             style: tickStyle(),
           ),
         ),
       ),
     ),
   );
+}
+
+String _formatAxisTick(double value, double interval) {
+  var precision = 0;
+  var scaledValue = value;
+  var scaledInterval = interval;
+  while (precision < 6 &&
+      ((scaledValue - scaledValue.round()).abs() > 1e-8 ||
+          (scaledInterval - scaledInterval.round()).abs() > 1e-8)) {
+    scaledValue *= 10;
+    scaledInterval *= 10;
+    precision++;
+  }
+  if (precision == 0) return value.toStringAsFixed(0);
+  return value
+      .toStringAsFixed(precision)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
 }
 
 String _engineSummary(List<RuntimeSample> samples) {

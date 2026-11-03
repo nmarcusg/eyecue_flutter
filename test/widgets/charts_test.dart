@@ -162,6 +162,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('fractional elapsed ticks above one second stay accurate', (
+    tester,
+  ) async {
+    final first = DateTime.utc(2026);
+    final threeSeconds = [
+      for (final offset in [0, 1500, 3000])
+        RuntimeSample(
+          timestamp: first.add(Duration(milliseconds: offset)),
+          latencyMs: 30,
+          inferenceFps: 12,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+        ),
+    ];
+    await tester.pumpWidget(
+      wrap(LatencyChart(samples: threeSeconds), textScale: 2, width: 260),
+    );
+
+    for (final label in ['0', '1.5', '3']) {
+      expect(find.text(label), findsWidgets);
+    }
+    final tickRects = [
+      for (final label in ['0', '1.5', '3'])
+        find
+            .text(label)
+            .evaluate()
+            .map((element) => tester.getRect(find.byWidget(element.widget)))
+            .reduce((a, b) => a.top > b.top ? a : b),
+    ];
+    for (var i = 1; i < tickRects.length; i++) {
+      expect(tickRects[i - 1].overlaps(tickRects[i]), isFalse);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('axis labels fit at narrow width and 200% text scale', (
     tester,
   ) async {
