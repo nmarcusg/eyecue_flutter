@@ -145,6 +145,7 @@ class AlertPolicy {
 
   final Map<String, _KeyState> _states = {};
   final Set<String> _rearmedKeys = {};
+  final Set<String> _urgentRearmedKeys = {};
   String? _lastStartedUtterance;
   DateTime? _lastCompletedAt;
   int _cancelledAfterStartCount = 0;
@@ -215,7 +216,13 @@ class AlertPolicy {
         candidate,
         detectorKind == DetectorModelKind.custom ? detectorIdentity : null,
       );
-      final state = _rearmedKeys.contains(key) ? null : _liveState(key, now);
+      final meters = _validMetric(candidate.info);
+      final rearmed =
+          _rearmedKeys.contains(key) ||
+          (_urgentRearmedKeys.contains(key) &&
+              meters != null &&
+              meters < distanceConfig.urgentBelowMeters);
+      final state = rearmed ? null : _liveState(key, now);
       final risk = _riskFor(candidate);
       if (state == null) {
         return _accept(
@@ -265,6 +272,7 @@ class AlertPolicy {
   void commitStarted(AlertDecision decision, DateTime startedAt) {
     if (!decision.announce) return;
     _rearmedKeys.remove(decision.suppressionKey);
+    _urgentRearmedKeys.remove(decision.suppressionKey);
     _states[decision.suppressionKey] = _KeyState(
       lastStartedAt: startedAt,
       lastRisk: decision.risk,
@@ -288,7 +296,12 @@ class AlertPolicy {
   bool shouldSpeakPending(AlertDecision decision, DateTime now) {
     if (!decision.announce) return false;
     if (decision.reason == AlertReason.forced) return true;
-    if (_rearmedKeys.contains(decision.suppressionKey)) return true;
+    if (_rearmedKeys.contains(decision.suppressionKey) ||
+        (_urgentRearmedKeys.contains(decision.suppressionKey) &&
+            decision.metricMeters != null &&
+            decision.metricMeters! < distanceConfig.urgentBelowMeters)) {
+      return true;
+    }
     final state = _liveState(decision.suppressionKey, now);
     if (state == null) return true;
     if (state.lastStartedAt == decision.basedOnStartedAt) return true;
@@ -310,15 +323,23 @@ class AlertPolicy {
       tracks: tracks,
     )) {
       final meters = _validMetric(candidate.info);
-      if (meters != null &&
-          meters >
-              distanceConfig.normalMaxMeters +
-                  distanceConfig.hysteresisMeters) {
+      if (meters != null) {
         final key = _keyFor(
           candidate,
           detectorKind == DetectorModelKind.custom ? detectorIdentity : null,
         );
-        if (_states.containsKey(key)) _rearmedKeys.add(key);
+        if (_states.containsKey(key)) {
+          if (meters >
+              distanceConfig.normalMaxMeters +
+                  distanceConfig.hysteresisMeters) {
+            _rearmedKeys.add(key);
+          }
+          if (meters >=
+              distanceConfig.urgentBelowMeters +
+                  distanceConfig.hysteresisMeters) {
+            _urgentRearmedKeys.add(key);
+          }
+        }
       }
     }
   }
@@ -329,6 +350,7 @@ class AlertPolicy {
         detectorIdentity == null || key.startsWith('$detectorIdentity|');
     _states.removeWhere((key, _) => matches(key));
     _rearmedKeys.removeWhere(matches);
+    _urgentRearmedKeys.removeWhere(matches);
   }
 
   void commitCompleted(AlertDecision decision, DateTime completedAt) {
@@ -369,9 +391,7 @@ class AlertPolicy {
       return info.position == RelativePosition.center &&
           meters <= distanceConfig.normalMaxMeters;
     }
-    if (info.distanceSource == DistanceSource.monocularDepth) return false;
-    return info.distanceSource == DistanceSource.boundingBox &&
-        info.position == RelativePosition.center &&
+    return info.position == RelativePosition.center &&
         info.proximity == ProximityBand.near;
   }
 
@@ -408,7 +428,11 @@ class AlertPolicy {
       _validMetric(b.info) ?? double.infinity,
     );
     if (distance != 0) return distance;
-    return b.info.confidence.compareTo(a.info.confidence);
+    final confidence = b.info.confidence.compareTo(a.info.confidence);
+    if (confidence != 0) return confidence;
+    final label = a.info.label.compareTo(b.info.label);
+    if (label != 0) return label;
+    return a.info.detection.classId.compareTo(b.info.detection.classId);
   }
 
   RiskLevel _riskFor(RankedCandidate candidate) {
@@ -523,6 +547,8 @@ class AlertPolicy {
     _states.removeWhere(
       (_, state) => now.difference(state.lastStartedAt) > stateTtl,
     );
+    _rearmedKeys.removeWhere((key) => !_states.containsKey(key));
+    _urgentRearmedKeys.removeWhere((key) => !_states.containsKey(key));
   }
 
   AlertDecision _accept(
@@ -592,6 +618,8 @@ class AlertPolicy {
         (a, b) => a.value.lastStartedAt.isBefore(b.value.lastStartedAt) ? a : b,
       );
       _states.remove(oldest.key);
+      _rearmedKeys.remove(oldest.key);
+      _urgentRearmedKeys.remove(oldest.key);
     }
   }
 }

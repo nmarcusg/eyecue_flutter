@@ -349,7 +349,7 @@ void main() {
       }
     });
 
-    test('invalid metric depth never falls through to bounding geometry', () {
+    test('invalid metric depth uses bounded approximate geometry only', () {
       final raw = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
       final invalidDepth = DetectionInfo(
         detection: raw.detection,
@@ -369,7 +369,10 @@ void main() {
           detectorKind: detector,
           detectorIdentity: 'detector-${detector.name}',
         );
-        expect(decision.announce, isFalse);
+        expect(decision.announce, isTrue);
+        expect(decision.metricMeters, isNull);
+        expect(decision.text, contains('approximately near'));
+        expect(decision.text, isNot(contains('1.0 m')));
       }
     });
 
@@ -452,6 +455,65 @@ void main() {
         expect(rearmed.announce, isTrue);
       },
     );
+
+    test(
+      'urgent metric band re-arms only after the 1.8 m hysteresis point',
+      () {
+        final first = policy.decide(
+          detections: [metricInfo(1.4, label: 'chair', classId: 56)],
+          tracks: const [],
+          now: now,
+          audioEnabled: true,
+        );
+        policy.commitStarted(first, now);
+
+        policy.observeDetections(
+          detections: [metricInfo(1.79, label: 'chair', classId: 56)],
+          tracks: const [],
+          detectorKind: DetectorModelKind.builtIn,
+        );
+        now = now.add(const Duration(seconds: 1));
+        expect(
+          policy
+              .decide(
+                detections: [metricInfo(1.4, label: 'chair', classId: 56)],
+                tracks: const [],
+                now: now,
+                audioEnabled: true,
+              )
+              .announce,
+          isFalse,
+        );
+
+        policy.observeDetections(
+          detections: [metricInfo(1.8, label: 'chair', classId: 56)],
+          tracks: const [],
+          detectorKind: DetectorModelKind.builtIn,
+        );
+        now = now.add(const Duration(seconds: 1));
+        expect(
+          policy
+              .decide(
+                detections: [metricInfo(1.4, label: 'chair', classId: 56)],
+                tracks: const [],
+                now: now,
+                audioEnabled: true,
+              )
+              .announce,
+          isTrue,
+        );
+      },
+    );
+
+    test('automatic candidate ties break by label then class ID', () {
+      final zebra = metricInfo(1.8, label: 'zebra', classId: 22);
+      final apple = metricInfo(1.8, label: 'apple', classId: 47);
+      expect(decide([zebra, apple]).target?.label, 'apple');
+
+      final laterClass = metricInfo(1.8, label: 'object', classId: 8);
+      final earlierClass = metricInfo(1.8, label: 'object', classId: 3);
+      expect(decide([laterClass, earlierClass]).target?.detection.classId, 3);
+    });
 
     test('near person is imminent and preemption-eligible', () {
       final near = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
