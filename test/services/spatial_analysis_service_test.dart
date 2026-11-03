@@ -104,6 +104,21 @@ void main() {
       expect(info.proximityLabel, 'near');
     });
 
+    test('metric distance is used instead of heuristic proximity wording', () {
+      final detection = det(
+        classId: 0,
+        label: 'person',
+        box: Rect.fromLTWH(0.25, 0.2, 0.2, 0.5),
+      );
+
+      final info = SpatialAnalysisService.analyze(detection, meters: 12.0);
+
+      expect(info.proximity, ProximityBand.far);
+      expect(info.distanceSource, DistanceSource.monocularDepth);
+      expect(info.semanticLabel, contains('about 12 m'));
+      expect(info.semanticLabel, isNot(contains('approximately near')));
+    });
+
     test('priorityResolver replaces the COCO class-id policy per model', () {
       ObjectPriority custom(Detection d) =>
           priorityForClass(DetectorModelKind.custom, d.classId, d.label);

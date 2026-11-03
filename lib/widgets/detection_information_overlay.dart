@@ -110,7 +110,8 @@ class _DetectionOverlayRow extends StatelessWidget {
     final isHigh = info.priority == ObjectPriority.high;
     final accent = isHigh ? kHomeWarningAmber : kHomeAccentCyan;
     final label =
-        '${info.label}, ${info.positionLabel}, ${info.proximityLabel}';
+        '${info.label}, ${info.positionLabel}, '
+        '${info.distanceLabel ?? info.proximityLabel}';
 
     return Semantics(
       container: true,

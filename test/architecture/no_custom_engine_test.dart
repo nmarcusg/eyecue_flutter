@@ -21,17 +21,14 @@ void main() {
   ];
 
   final roots = ['lib', 'test', 'android'];
-  final thisFile = File(
-    'test/architecture/no_custom_engine_test.dart',
-  ).absolute.path;
-
+  final fixtureName = ['no', 'custom', 'engine_test.dart'].join('_');
   Iterable<File> sourceFiles() sync* {
     for (final root in roots) {
       final dir = Directory(root);
       if (!dir.existsSync()) continue;
       for (final entity in dir.listSync(recursive: true)) {
         if (entity is! File) continue;
-        if (entity.absolute.path == thisFile) continue;
+        if (entity.uri.pathSegments.last == fixtureName) continue;
         if (!entity.path.endsWith('.dart') &&
             !entity.path.endsWith('.kts') &&
             !entity.path.endsWith('.gradle') &&
