@@ -1,0 +1,198 @@
+name: Android cloud build
+
+on:
+  push:
+    branches: [main, dev, codex/android-cloud-build]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      signed_release:
+        description: Build signed APK and Play AAB (main only; signing secrets required)
+        type: boolean
+        default: false
+      build_name:
+        description: Version name for this build
+        type: string
+        default: '1.0.0'
+      build_number:
+        description: Version code (blank uses the workflow run number)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FLUTTER_VERSION: '3.44.2'
+      SIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}
+      BUILD_NAME: ${{ inputs.build_name || '1.0.0' }}
+      BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+      EYECUE_TELEMETRY_INGEST_URL: ${{ vars.EYECUE_TELEMETRY_INGEST_URL }}
+      EYECUE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.EYECUE_SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate build selection
+        env:
+          BUILD_REF: ${{ github.ref }}
+        run: |
+          if [[ "$SIGNED_RELEASE" == true && "$BUILD_REF" != refs/heads/main ]]; then
+            echo '::error::Signed releases must be dispatched on main.'
+            exit 1
+          fi
+          [[ "$BUILD_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo '::error::Version name must have the form 1.0.0.'; exit 1;
+          }
+          [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]] || {
+            echo '::error::Version code must be a positive integer of at most nine digits.'; exit 1;
+          }
+          if [[ -n "$EYECUE_TELEMETRY_INGEST_URL" || -n "$EYECUE_SUPABASE_PUBLISHABLE_KEY" ]]; then
+            python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          url = os.environ['EYECUE_TELEMETRY_INGEST_URL']
+          key = os.environ['EYECUE_SUPABASE_PUBLISHABLE_KEY']
+          parsed = urlsplit(url)
+          if (not key or key != key.strip() or not key.startswith('sb_publishable_')
+              or url != url.strip() or parsed.scheme != 'https' or not parsed.hostname
+              or parsed.username or parsed.password or parsed.query or parsed.fragment):
+              raise SystemExit('Configure both a valid HTTPS ingest URL and an sb_publishable_ client key. Never supply a secret/service-role key.')
+          PY
+            echo 'TELEMETRY_MODE=configured' >> "$GITHUB_ENV"
+          else
+            if [[ "$SIGNED_RELEASE" == true ]]; then
+              echo '::error::Configure both telemetry repository variables before building a signed release.'
+              exit 1
+            fi
+            echo '::notice::Telemetry variables are unset; this test APK will save/export locally but cannot upload.'
+            echo 'TELEMETRY_MODE=not-configured' >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Limit Gradle memory on the hosted runner
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m
+          org.gradle.workers.max=2
+          org.gradle.parallel=false
+          org.gradle.daemon=false
+          EOF
+
+      - name: Restore dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Static analysis
+        run: flutter analyze --no-pub
+
+      - name: Flutter tests
+        run: flutter test --no-pub --concurrency=1
+
+      - name: Backend validator tests
+        run: node --test supabase/functions/ingest-telemetry/validate.test.mjs
+
+      - name: Prepare upload keystore
+        if: env.SIGNED_RELEASE == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.EYECUE_KEYSTORE_BASE64 }}
+          EYECUE_KEYSTORE_PASSWORD: ${{ secrets.EYECUE_KEYSTORE_PASSWORD }}
+          EYECUE_KEY_ALIAS: ${{ secrets.EYECUE_KEY_ALIAS }}
+          EYECUE_KEY_PASSWORD: ${{ secrets.EYECUE_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          for name in ('KEYSTORE_BASE64', 'EYECUE_KEYSTORE_PASSWORD', 'EYECUE_KEY_ALIAS', 'EYECUE_KEY_PASSWORD'):
+              if not os.environ.get(name):
+                  raise SystemExit(f'Missing signing secret: {name}')
+          path = Path(os.environ['RUNNER_TEMP']) / 'eyecue-upload.jks'
+          path.touch(mode=0o600)
+          path.write_bytes(base64.b64decode(''.join(os.environ['KEYSTORE_BASE64'].split()), validate=True))
+          PY
+
+      - name: Build test APK
+        if: env.SIGNED_RELEASE != 'true'
+        run: |
+          flutter build apk --release --no-pub \
+            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+            --dart-define="EYECUE_TELEMETRY_INGEST_URL=$EYECUE_TELEMETRY_INGEST_URL" \
+            --dart-define="EYECUE_SUPABASE_PUBLISHABLE_KEY=$EYECUE_SUPABASE_PUBLISHABLE_KEY"
+          # The repository provides this task specifically for fallback-signed APKs.
+          (cd android && ./gradlew markTestSignedApk)
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release-testsigned.apk dist/eyecue-testsigned.apk
+
+      - name: Build signed APK and AAB
+        if: env.SIGNED_RELEASE == 'true'
+        env:
+          EYECUE_KEYSTORE_PATH: ${{ runner.temp }}/eyecue-upload.jks
+          EYECUE_KEYSTORE_PASSWORD: ${{ secrets.EYECUE_KEYSTORE_PASSWORD }}
+          EYECUE_KEY_ALIAS: ${{ secrets.EYECUE_KEY_ALIAS }}
+          EYECUE_KEY_PASSWORD: ${{ secrets.EYECUE_KEY_PASSWORD }}
+        run: |
+          build_args=(--release --no-pub "--build-name=$BUILD_NAME" "--build-number=$BUILD_NUMBER"
+            "--dart-define=EYECUE_TELEMETRY_INGEST_URL=$EYECUE_TELEMETRY_INGEST_URL"
+            "--dart-define=EYECUE_SUPABASE_PUBLISHABLE_KEY=$EYECUE_SUPABASE_PUBLISHABLE_KEY")
+          flutter build apk "${build_args[@]}"
+          flutter build appbundle "${build_args[@]}"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/eyecue-release.apk
+          cp build/app/outputs/bundle/release/app-release.aab dist/eyecue-release.aab
+
+      - name: Record build provenance and checksums
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          {
+            printf 'commit=%s\n' "$(git rev-parse HEAD)"
+            printf 'flutter=%s\nversion=%s+%s\n' "$FLUTTER_VERSION" "$BUILD_NAME" "$BUILD_NUMBER"
+            printf 'signed_release=%s\ntelemetry=%s\nrun=%s\nattempt=%s\n' \
+              "$SIGNED_RELEASE" "$TELEMETRY_MODE" "$RUN_ID" "$RUN_ATTEMPT"
+          } > dist/BUILD.txt
+          (
+            cd dist
+            shopt -s nullglob
+            artifacts=(./*.apk ./*.aab)
+            sha256sum "${artifacts[@]}" > SHA256SUMS
+          )
+          cat dist/BUILD.txt >> "$GITHUB_STEP_SUMMARY"
+          printf '\nDownload the Android artifact below. No Play upload was performed.\n' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: eyecue-android-${{ github.run_number }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/eyecue-upload.jks"
