@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' show Rect;
 
 import 'package:eyecue_flutter/models/alert_lifecycle.dart';
@@ -85,12 +86,14 @@ ResearchSessionService buildService({
   required TestClock clock,
   required ResearchSessionStore store,
   TelemetryUploadService? uploadService,
+  Random? random,
   int maxStoredSessions = 20,
 }) => ResearchSessionService(
   telemetry: telemetry,
   store: store,
   clock: () => clock.now,
   uploadService: uploadService,
+  random: random,
   maxStoredSessions: maxStoredSessions,
 );
 
@@ -209,10 +212,13 @@ void main() {
       );
       final expected =
           'Trial ${clock.now.toUtc().toIso8601String()} '
-          '${(jsonDecode(store.draft!) as Map<String, dynamic>)['id'].toString().split('-').last}';
+          '${(jsonDecode(store.draft!) as Map<String, dynamic>)['id']}';
       expect(sessions.participantCode, 'P-001');
       expect(sessions.trialLabel, expected);
-      expect(sessions.trialLabel, matches(RegExp(r'^Trial .+ [0-9a-f]+$')));
+      expect(
+        sessions.trialLabel,
+        matches(RegExp(r'^Trial .+ trial-\d+-[0-9a-f]+$')),
+      );
       expect(sessions.trialLabel!.length, lessThanOrEqualTo(80));
       expect(
         (jsonDecode(store.draft!) as Map<String, dynamic>)['trialLabel'],
@@ -223,6 +229,74 @@ void main() {
       expect(finished.session.trialLabel, expected);
       expect(store.finished.values.single, contains(expected));
     });
+
+    test(
+      'generated labels distinguish IDs with a repeated random suffix',
+      () async {
+        final clock = TestClock(DateTime.utc(2026, 5, 1, 9));
+        final telemetry = buildTelemetry(clock);
+        addTearDown(telemetry.dispose);
+        final store = InMemoryResearchSessionStore();
+        final first = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+          random: Random(7),
+        );
+        addTearDown(first.dispose);
+
+        expect(
+          await first.start(
+            participantCode: 'P-001',
+            trialLabel: '',
+            detector: builtInRef,
+          ),
+          isNull,
+        );
+        final firstId =
+            (jsonDecode(store.draft!) as Map<String, dynamic>)['id'] as String;
+        final firstSuffix = firstId.split('-').last;
+        final firstLabel = first.trialLabel!;
+        expect((await first.finish())!.session.trialLabel, firstLabel);
+
+        clock.advance(const Duration(microseconds: 1));
+        final second = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+          random: Random(7),
+        );
+        addTearDown(second.dispose);
+        expect(
+          await second.start(
+            participantCode: 'P-001',
+            trialLabel: '',
+            detector: builtInRef,
+          ),
+          isNull,
+        );
+        final secondId =
+            (jsonDecode(store.draft!) as Map<String, dynamic>)['id'] as String;
+        final secondLabel = second.trialLabel!;
+        expect(secondId, isNot(firstId));
+        expect(secondId.split('-').last, firstSuffix);
+        expect(secondLabel, isNot(firstLabel));
+        expect(secondLabel.length, lessThanOrEqualTo(80));
+        expect((await second.finish())!.session.trialLabel, secondLabel);
+
+        final reloaded = buildService(
+          telemetry: telemetry,
+          clock: clock,
+          store: store,
+        );
+        addTearDown(reloaded.dispose);
+        await reloaded.load();
+        expect(reloaded.sessions.map((session) => session.trialLabel), [
+          secondLabel,
+          firstLabel,
+        ]);
+      },
+    );
 
     test(
       'custom labels trim, and same-clock generated labels follow IDs',

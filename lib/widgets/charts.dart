@@ -80,7 +80,7 @@ class LatencyChart extends StatelessWidget {
             titlesData: _chartTitles(
               xName: 'Elapsed time (s)',
               yName: 'Latency (ms)',
-              xInterval: maxX / 4,
+              xInterval: maxX / 2,
               yInterval: maxY / 4,
             ),
             extraLinesData: ExtraLinesData(
@@ -170,7 +170,7 @@ class FpsChart extends StatelessWidget {
             titlesData: _chartTitles(
               xName: 'Elapsed time (s)',
               yName: 'FPS',
-              xInterval: maxX / 4,
+              xInterval: maxX / 2,
               yInterval: maxY / 4,
             ),
             extraLinesData: ExtraLinesData(
@@ -278,6 +278,13 @@ FlTitlesData _chartTitles({
   bool minuteLabels = false,
 }) {
   TextStyle tickStyle() => const TextStyle(color: kHomeInkMuted, fontSize: 10);
+  var xPrecision = 0;
+  var scaledInterval = xInterval;
+  while (xPrecision < 6 &&
+      (scaledInterval - scaledInterval.round()).abs() > 1e-8) {
+    scaledInterval *= 10;
+    xPrecision++;
+  }
   return FlTitlesData(
     topTitles: const AxisTitles(sideTitles: SideTitles()),
     rightTitles: const AxisTitles(sideTitles: SideTitles()),
@@ -314,7 +321,14 @@ FlTitlesData _chartTitles({
           child: Text(
             minuteLabels
                 ? '${value.round() + 1}'
-                : value.toStringAsFixed(xInterval < 1 ? 1 : 0),
+                : xInterval < 1
+                ? value == 0
+                      ? '0'
+                      : value
+                            .toStringAsFixed(xPrecision)
+                            .replaceFirst(RegExp(r'0+$'), '')
+                            .replaceFirst(RegExp(r'\.$'), '')
+                : value.toStringAsFixed(0),
             style: tickStyle(),
           ),
         ),

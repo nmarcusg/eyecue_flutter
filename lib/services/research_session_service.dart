@@ -444,6 +444,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     ResearchSessionStore? store,
     TelemetryUploadService? uploadService,
     DateTime Function()? clock,
+    Random? random,
     this.maxStoredSessions = 20,
     this.maxTrialRecords = 10000,
     this.maxTrialSamples = 2000,
@@ -451,6 +452,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
        _store = store ?? FileResearchSessionStore(),
        _uploadService = uploadService ?? TelemetryUploadService(),
        _clock = clock ?? DateTime.now,
+       _random = random ?? Random(),
        _appVersion = telemetry.appVersion;
 
   final TelemetryService _telemetry;
@@ -458,7 +460,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
   final TelemetryUploadService _uploadService;
   final DateTime Function() _clock;
   final String _appVersion;
-  final Random _random = Random();
+  final Random _random;
 
   /// Visible storage bound. A full store refuses [start] instead of evicting an
   /// unuploaded trial.
@@ -728,7 +730,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     final id = _newId(now);
     final effectiveLabel = requestedLabel.isNotEmpty
         ? requestedLabel
-        : 'Trial ${now.toUtc().toIso8601String()} ${id.split('-').last}';
+        : 'Trial ${now.toUtc().toIso8601String()} $id';
     // Same rule the upload enforces, so a trial cannot be created that can
     // never be uploaded.
     final metadata = ResearchSessionMetadata(
