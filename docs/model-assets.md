@@ -135,6 +135,33 @@ high set such as person/vehicle/road-hazard names, a medium set for common
 objects and structure, low for everything else), never by `classId`, so a custom
 class `0` cannot inherit COCO person priority.
 
+### Automatic custom-detector distance alerts
+
+Automatic alerts for imported models use the verified active detector identity
+and the active model's label-derived priority. Built-in COCO mapping and its
+alert behavior remain unchanged. The initial configurable policy defaults are
+**urgent below 1.5 m**, **normal metric alert from 1.5 m through 2.0 m**, and
+**no metric-distance alert beyond 2.0 m**. Distance-triggered alerts require a
+center-path detection. Ranking precedence is urgent escalation, center-path
+relevance, model-specific class priority, then eligible metric distance and
+confidence.
+
+Only a fresh, valid, geometry-matched MDE estimate within the existing 0.1–80 m
+valid range participates in these thresholds. A missing, invalid, stale, or
+misaligned estimate is never treated as safe or far. Existing geometry fallback
+warnings remain eligible as clearly approximate legacy warnings; geometry is
+never metric threshold evidence and cannot be described as a metric/far/safe
+result. Metric hysteresis re-arms at 0.3 m above the corresponding threshold;
+urgent escalation eligibility is independent of the normal threshold's re-arm.
+Stationary tracks remain deduplicated through the existing alert lifecycle.
+User-initiated Quick Scan remains independent and may narrate objects outside
+automatic-alert thresholds.
+
+These are centralized initial tuning defaults, not calibrated distance claims.
+Thresholds and hysteresis require measured physical-device validation and may be
+adjusted through the policy configuration; passing tests does not establish MDE
+accuracy, safety, or audible timing.
+
 On startup, a selected custom model whose copy is missing or unreadable falls back
 to the bundled detector with a visible message — the app never keeps claiming a
 model it cannot load. Device execution of an imported graph remains unverified

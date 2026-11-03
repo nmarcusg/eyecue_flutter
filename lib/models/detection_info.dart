@@ -72,7 +72,7 @@ class DetectionInfo {
 
   String get semanticLabel =>
       '$label, ${(confidence * 100).toStringAsFixed(0)} percent confidence, '
-      'on your $positionLabel, approximately $proximityLabel, '
+      'on your $positionLabel, ${distanceLabel ?? 'approximately $proximityLabel'}, '
       '${priority.name} priority';
 
   Map<String, dynamic> toJson() => {

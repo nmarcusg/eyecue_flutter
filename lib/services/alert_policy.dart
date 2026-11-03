@@ -1,6 +1,21 @@
 import '../models/detection_info.dart';
+import '../models/detector_model.dart';
 import '../models/tracked_detection.dart';
 import 'scene_summary_service.dart';
+
+/// Initial custom-detector tuning defaults; these require on-device validation
+/// and do not imply calibrated ground-truth distance.
+class CustomDistanceAlertConfig {
+  const CustomDistanceAlertConfig({
+    this.normalMaxMeters = 2.0,
+    this.urgentBelowMeters = 1.5,
+    this.hysteresisMeters = 0.3,
+  });
+
+  final double normalMaxMeters;
+  final double urgentBelowMeters;
+  final double hysteresisMeters;
+}
 
 /// Why an alert was or was not requested.
 enum AlertReason {
@@ -41,6 +56,8 @@ class AlertDecision {
   /// identity was new). Used to reject a parked decision that was invalidated
   /// by a later `commitStarted` before it could be spoken.
   final DateTime? basedOnStartedAt;
+  final String? detectorIdentity;
+  final double? metricMeters;
 
   const AlertDecision({
     required this.announce,
@@ -59,6 +76,8 @@ class AlertDecision {
     this.position,
     this.preemptEligible = false,
     this.basedOnStartedAt,
+    this.detectorIdentity,
+    this.metricMeters,
   });
 
   /// A pending request older than [validity] is no longer worth speaking.
@@ -81,6 +100,8 @@ class AlertDecision {
     createdAt: createdAt,
     validity: validity,
     basedOnStartedAt: basedOnStartedAt,
+    detectorIdentity: detectorIdentity,
+    metricMeters: metricMeters,
   );
 }
 
@@ -100,6 +121,7 @@ class AlertPolicy {
     this.validity = const Duration(milliseconds: 1500),
     this.maxKeys = 64,
     this.stateTtl = const Duration(seconds: 30),
+    this.customDistanceConfig = const CustomDistanceAlertConfig(),
   });
 
   final SceneSummaryService summary;
@@ -119,6 +141,7 @@ class AlertPolicy {
 
   /// How long an accepted identity stays suppressed without being refreshed.
   final Duration stateTtl;
+  final CustomDistanceAlertConfig customDistanceConfig;
 
   final Map<String, _KeyState> _states = {};
   String? _lastStartedUtterance;
@@ -135,6 +158,9 @@ class AlertPolicy {
     required List<TrackedDetection> tracks,
     required DateTime now,
     required bool audioEnabled,
+    DetectorModelKind detectorKind = DetectorModelKind.builtIn,
+    String? detectorIdentity,
+    double? metricMeters,
     bool force = false,
   }) {
     if (!audioEnabled) {
@@ -147,7 +173,11 @@ class AlertPolicy {
       );
     }
     final ranked = summary.rankCandidates(detections, tracks: tracks);
-    if (ranked.isEmpty) {
+    final candidates = detectorKind == DetectorModelKind.custom
+        ? (ranked.where(_customAutomaticAlertAllowed).toList()
+            ..sort(_compareCustom))
+        : ranked;
+    if (candidates.isEmpty) {
       return _rejection(
         AlertReason.suppressedNoCandidates,
         RiskLevel.low,
@@ -158,57 +188,72 @@ class AlertPolicy {
     }
 
     if (force) {
-      final primary = ranked.first;
+      final primary = candidates.first;
       return _accept(
         primary,
-        _keyFor(primary),
-        _riskFor(primary),
+        _keyFor(
+          primary,
+          detectorKind == DetectorModelKind.custom ? detectorIdentity : null,
+        ),
+        _riskFor(primary, custom: detectorKind == DetectorModelKind.custom),
         AlertPriority.userInitiated,
         AlertReason.forced,
         now,
         preemptEligible: false,
+        detectorIdentity: detectorKind == DetectorModelKind.custom
+            ? detectorIdentity
+            : null,
       );
     }
 
     // Only a candidate that independently qualifies (new identity, or a risk
     // escalation for that identity) may be announced. A suppressed primary
     // never causes a lower-risk substitute to be announced on its own.
-    for (final candidate in ranked) {
-      final key = _keyFor(candidate);
+    for (final candidate in candidates) {
+      final key = _keyFor(
+        candidate,
+        detectorKind == DetectorModelKind.custom ? detectorIdentity : null,
+      );
       final state = _liveState(key, now);
-      final risk = _riskFor(candidate);
+      final custom = detectorKind == DetectorModelKind.custom;
+      final risk = _riskFor(candidate, custom: custom);
       if (state == null) {
         return _accept(
           candidate,
           key,
           risk,
-          _priorityFor(candidate, risk),
+          _customSpeechPriority(candidate, risk, custom),
           candidate.track == null
               ? AlertReason.newLabelFallback
               : AlertReason.newTrack,
           now,
           preemptEligible: _preemptEligible(candidate, risk, escalated: false),
+          detectorIdentity: custom ? detectorIdentity : null,
         );
       }
-      if (_escalated(candidate, state, risk, now)) {
+      if (_escalated(candidate, state, risk, now, custom: custom)) {
         return _accept(
           candidate,
           key,
           risk,
-          _priorityFor(candidate, risk),
+          _customSpeechPriority(candidate, risk, custom),
           AlertReason.riskEscalation,
           now,
           preemptEligible: _preemptEligible(candidate, risk, escalated: true),
           basedOnStartedAt: state.lastStartedAt,
+          detectorIdentity: custom ? detectorIdentity : null,
         );
       }
     }
 
-    final primary = ranked.first;
+    final primary = candidates.first;
     return _rejection(
       AlertReason.suppressedSameObject,
-      _riskFor(primary),
-      _keyFor(primary),
+      _riskFor(primary, custom: detectorKind == DetectorModelKind.custom),
+      _keyFor(
+        primary,
+        detectorKind == DetectorModelKind.custom ? detectorIdentity : null,
+      ),
       now,
       primary.info,
       trackId: primary.track?.trackId,
@@ -226,6 +271,7 @@ class AlertPolicy {
       lastMotion: decision.motion,
       lastProximity: decision.proximity,
       wasCentre: decision.position == RelativePosition.center,
+      lastMetricMeters: decision.metricMeters,
     );
     _lastStartedUtterance = decision.text;
     _pruneExpired(startedAt);
@@ -241,7 +287,6 @@ class AlertPolicy {
   bool shouldSpeakPending(AlertDecision decision, DateTime now) {
     if (!decision.announce) return false;
     if (decision.reason == AlertReason.forced) return true;
-
     final state = _liveState(decision.suppressionKey, now);
     if (state == null) return true;
     if (state.lastStartedAt == decision.basedOnStartedAt) return true;
@@ -250,6 +295,16 @@ class AlertPolicy {
 
   /// Drops accepted-alert state older than [stateTtl].
   void pruneExpired(DateTime now) => _pruneExpired(now);
+
+  /// Clears suppression for a target absent from the newest accepted result.
+  /// This does not affect in-flight speech or decisions for other identities.
+  void clearForDetector(String? detectorIdentity) {
+    if (detectorIdentity == null) {
+      _states.clear();
+    } else {
+      _states.removeWhere((key, _) => key.startsWith('$detectorIdentity|'));
+    }
+  }
 
   void commitCompleted(AlertDecision decision, DateTime completedAt) {
     _lastCompletedAt = completedAt;
@@ -275,11 +330,74 @@ class AlertPolicy {
   // Internals
   // ---------------------------------------------------------------------------
 
-  String _keyFor(RankedCandidate candidate) => candidate.track != null
-      ? 'track:${candidate.track!.trackId}'
-      : 'label:${candidate.info.label}';
+  String _keyFor(RankedCandidate candidate, [String? detectorIdentity]) {
+    final identity = candidate.track != null
+        ? 'track:${candidate.track!.trackId}'
+        : 'label:${candidate.info.label}';
+    return detectorIdentity == null ? identity : '$detectorIdentity|$identity';
+  }
 
-  RiskLevel _riskFor(RankedCandidate candidate) {
+  bool _customAutomaticAlertAllowed(RankedCandidate candidate) {
+    final info = candidate.info;
+    final meters = _validMetric(info);
+    if (meters != null) {
+      return info.position == RelativePosition.center &&
+          meters <= customDistanceConfig.normalMaxMeters;
+    }
+    // Retain legacy geometry-only warnings, but never interpret the heuristic
+    // band as metric threshold evidence.
+    return true;
+  }
+
+  double? _validMetric(DetectionInfo info) {
+    final meters = info.estimatedMeters;
+    if (info.distanceSource != DistanceSource.monocularDepth ||
+        meters == null ||
+        !meters.isFinite ||
+        meters < 0.1 ||
+        meters > 80) {
+      return null;
+    }
+    return meters;
+  }
+
+  int _compareCustom(RankedCandidate a, RankedCandidate b) {
+    int urgent(RankedCandidate c) {
+      final meters = _validMetric(c.info);
+      return meters != null &&
+              c.info.position == RelativePosition.center &&
+              meters < customDistanceConfig.urgentBelowMeters
+          ? 1
+          : 0;
+    }
+
+    final escalation = urgent(b).compareTo(urgent(a));
+    if (escalation != 0) return escalation;
+    final center = (b.info.position == RelativePosition.center ? 1 : 0)
+        .compareTo(a.info.position == RelativePosition.center ? 1 : 0);
+    if (center != 0) return center;
+    final priority = b.info.priority.index.compareTo(a.info.priority.index);
+    if (priority != 0) return priority;
+    final distance = (_validMetric(a.info) ?? double.infinity).compareTo(
+      _validMetric(b.info) ?? double.infinity,
+    );
+    if (distance != 0) return distance;
+    return b.info.confidence.compareTo(a.info.confidence);
+  }
+
+  RiskLevel _riskFor(RankedCandidate candidate, {bool custom = false}) {
+    if (custom) {
+      final meters = _validMetric(candidate.info);
+      if (meters != null &&
+          candidate.info.position == RelativePosition.center) {
+        if (meters < customDistanceConfig.urgentBelowMeters) {
+          return RiskLevel.imminent;
+        }
+        if (meters <= customDistanceConfig.normalMaxMeters) {
+          return RiskLevel.high;
+        }
+      }
+    }
     final approaching = candidate.track?.motion == MotionState.approaching;
     if (candidate.info.proximity == ProximityBand.near || approaching) {
       return RiskLevel.imminent;
@@ -298,6 +416,31 @@ class AlertPolicy {
       return AlertPriority.urgentEscalation;
     }
     return AlertPriority.normal;
+  }
+
+  AlertPriority _customSpeechPriority(
+    RankedCandidate candidate,
+    RiskLevel risk,
+    bool custom,
+  ) {
+    if (custom && _validMetric(candidate.info) == null) {
+      // Geometry-only fallback is advisory and explicitly approximate in the
+      // detailed alert wording; it must not sound like a metric urgent alert.
+      return AlertPriority.normal;
+    }
+    final meters = _validMetric(candidate.info);
+    final isPerson = const {
+      'person',
+      'people',
+      'human',
+      'pedestrian',
+    }.contains(normalizeLabelName(candidate.info.label));
+    if (custom &&
+        meters != null &&
+        (!isPerson || meters >= customDistanceConfig.urgentBelowMeters)) {
+      return AlertPriority.normal;
+    }
+    return _priorityFor(candidate, risk);
   }
 
   /// Preemption is limited to imminent risk, or an escalation to approaching
@@ -319,9 +462,50 @@ class AlertPolicy {
     RankedCandidate candidate,
     _KeyState state,
     RiskLevel risk,
-    DateTime now,
-  ) {
+    DateTime now, {
+    bool custom = false,
+  }) {
     if (now.difference(state.lastStartedAt) < minEscalationGap) return false;
+    if (custom) {
+      final meters = _validMetric(candidate.info);
+      if (meters != null &&
+          candidate.info.position == RelativePosition.center &&
+          state.lastMetricMeters != null &&
+          ((state.lastMetricMeters! >
+                      customDistanceConfig.normalMaxMeters +
+                          customDistanceConfig.hysteresisMeters &&
+                  meters <= customDistanceConfig.normalMaxMeters) ||
+              (state.lastMetricMeters! >=
+                      customDistanceConfig.urgentBelowMeters +
+                          customDistanceConfig.hysteresisMeters &&
+                  meters < customDistanceConfig.urgentBelowMeters))) {
+        return true;
+      }
+      // For custom metric candidates, proximity-band transitions alone do not
+      // bypass the configured distance hysteresis.
+      if (meters != null) {
+        final prior = state.lastMetricMeters;
+        if (prior == null) return false;
+        return (prior >
+                    customDistanceConfig.normalMaxMeters +
+                        customDistanceConfig.hysteresisMeters &&
+                meters <= customDistanceConfig.normalMaxMeters) ||
+            (prior >=
+                    customDistanceConfig.urgentBelowMeters +
+                        customDistanceConfig.hysteresisMeters &&
+                meters < customDistanceConfig.urgentBelowMeters);
+      }
+    }
+    if (custom &&
+        candidate.info.distanceSource == DistanceSource.monocularDepth &&
+        _validMetric(candidate.info) == null) {
+      return false;
+    }
+    if (custom && candidate.info.distanceSource == DistanceSource.boundingBox) {
+      // Geometry fallback remains an approximate legacy warning and cannot
+      // produce metric-distance escalation.
+      return false;
+    }
     if (risk.index > state.lastRisk.index) return true;
     if (candidate.track?.motion == MotionState.approaching &&
         state.lastMotion != MotionState.approaching) {
@@ -383,6 +567,7 @@ class AlertPolicy {
     DateTime now, {
     required bool preemptEligible,
     DateTime? basedOnStartedAt,
+    String? detectorIdentity,
   }) {
     final urgent = priority.index >= AlertPriority.urgentEscalation.index;
     final text = urgent
@@ -407,6 +592,8 @@ class AlertPolicy {
       createdAt: now,
       validity: validity,
       basedOnStartedAt: basedOnStartedAt,
+      detectorIdentity: detectorIdentity,
+      metricMeters: _validMetric(candidate.info),
     );
   }
 
@@ -449,6 +636,7 @@ class _KeyState {
   final MotionState? lastMotion;
   final ProximityBand? lastProximity;
   final bool wasCentre;
+  final double? lastMetricMeters;
 
   const _KeyState({
     required this.lastStartedAt,
@@ -457,5 +645,6 @@ class _KeyState {
     required this.lastMotion,
     required this.lastProximity,
     required this.wasCentre,
+    this.lastMetricMeters,
   });
 }
