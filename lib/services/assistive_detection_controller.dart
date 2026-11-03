@@ -68,6 +68,10 @@ class AssistiveDetectionController extends ChangeNotifier {
     DateTime? timestamp,
     FrameLatency? frameLatency,
     DateTime? resultReceivedAt,
+    Duration? monotonicReceivedAt,
+    String? session,
+    String? model,
+    String? camera,
     List<double?>? meters,
   }) {
     // Acceptance anchor: entry, before spatial analysis or tracking work.
@@ -79,6 +83,36 @@ class AssistiveDetectionController extends ChangeNotifier {
       priorityResolver: priorityResolver,
     );
     _tracks = tracker.update(detections, timestamp);
+    if (resultReceivedAt != null &&
+        monotonicReceivedAt != null &&
+        session != null &&
+        model != null &&
+        camera != null) {
+      tts.updateDetectionObservation(
+        detections: _detections,
+        receivedAt: resultReceivedAt,
+        monotonicReceivedAt: monotonicReceivedAt,
+        session: session,
+        model: model,
+        camera: camera,
+        tracks: _tracks,
+        detectorKind: detectorModel?.id == 'builtin'
+            ? DetectorModelKind.builtIn
+            : (detectorModel == null
+                  ? DetectorModelKind.builtIn
+                  : DetectorModelKind.custom),
+        detectorIdentity: detectorModel?.fingerprint,
+      );
+    } else if (resultReceivedAt != null) {
+      tts.updateDetectionObservation(
+        detections: _detections,
+        receivedAt: resultReceivedAt,
+        monotonicReceivedAt: Duration.zero,
+        session: session ?? '',
+        model: model ?? '',
+        camera: camera ?? '',
+      );
+    }
     for (final info in _detections) {
       TrackedDetection? track;
       for (final candidate in _tracks) {
@@ -110,6 +144,15 @@ class AssistiveDetectionController extends ChangeNotifier {
         // Direct acceptance anchor only for calls that carry a result receipt;
         // everything else stays timing-less rather than inventing an anchor.
         detectionAcceptedAt: resultReceivedAt == null ? null : acceptedAt,
+        detectorKind: detectorModel?.id == 'builtin'
+            ? DetectorModelKind.builtIn
+            : (detectorModel == null
+                  ? DetectorModelKind.builtIn
+                  : DetectorModelKind.custom),
+        detectorIdentity: detectorModel?.fingerprint,
+        session: session,
+        model: model,
+        camera: camera,
       );
     }
     notifyListeners();
@@ -173,7 +216,8 @@ class AssistiveDetectionController extends ChangeNotifier {
     return correction;
   }
 
-  void reset() {
+  void reset({String reason = 'session reset'}) {
+    tts.invalidateAutomaticDetection(reason: reason);
     tracker.reset();
     _detections = const [];
     _tracks = const [];

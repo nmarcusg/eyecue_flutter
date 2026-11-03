@@ -18,12 +18,14 @@ enum FakeMode { autoComplete, drop, startOnly, manual }
 /// `drop`         — result 0 with no callbacks (the platform refused it).
 /// `startOnly`    — onStart, then a pending future resolved by the test.
 /// `manual`       — a pending future with no callbacks at all.
-class FakeTtsEngine implements TtsEngine {
+class FakeTtsEngine implements TtsEngine, TtsCancellationCapability {
   final List<String> spoken = [];
   int recoverCalls = 0;
   int stopCalls = 0;
   bool throwOnRecover = false;
   bool throwOnSpeak = false;
+  @override
+  bool supportsCancellation = true;
   Completer<void>? stopCompleter;
   FakeMode mode = FakeMode.autoComplete;
 
@@ -135,14 +137,17 @@ TrackedDetection trackOf(
 void main() {
   late FakeTtsEngine engine;
   late DateTime now;
+  late Duration monotonicNow;
   late TtsService tts;
 
   setUp(() async {
     engine = FakeTtsEngine();
     now = DateTime(2026, 1, 1, 12);
+    monotonicNow = Duration.zero;
     tts = TtsService(
       engine: engine,
       clock: () => now,
+      monotonicClock: () => monotonicNow,
       startConfirmationTimeout: const Duration(milliseconds: 60),
       preemptionConfirmTimeout: const Duration(milliseconds: 40),
       reconciliationTimeout: const Duration(milliseconds: 40),
@@ -155,6 +160,201 @@ void main() {
   });
 
   tearDown(() => tts.dispose());
+
+  group('fresh automatic detection speech', () {
+    void observe(
+      List<DetectionInfo> detections, {
+      List<TrackedDetection> tracks = const [],
+    }) {
+      tts.updateDetectionObservation(
+        detections: detections,
+        receivedAt: now,
+        monotonicReceivedAt: monotonicNow,
+        session: 'session-1',
+        model: 'model-1',
+        camera: 'camera-1',
+        tracks: tracks,
+      );
+    }
+
+    test('fresh empty observation drops parked automatic speech', () async {
+      engine.mode = FakeMode.startOnly;
+      final first = tts.announceDetections([nearPerson()]);
+      engine.emitStart();
+      await Future<void>.delayed(Duration.zero);
+      final second = tts.announceDetections([info(label: 'cup', classId: 41)]);
+      expect(tts.isSpeaking, isTrue);
+      observe(const []);
+      engine.emitCancel();
+      engine.resolveCurrent(0);
+      await first;
+      expect(await second, isFalse);
+      expect(engine.spoken, hasLength(1));
+    });
+
+    test('box jitter must not discard a still-visible queued target', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = tts.speak('busy', urgent: true);
+      await Future<void>.delayed(Duration.zero);
+      engine.emitStart();
+
+      final target = nearPerson();
+      final originalTrack = trackOf(target, id: 7);
+      observe([target], tracks: [originalTrack]);
+      final pending = tts.announceDetections(
+        [target],
+        tracks: [originalTrack],
+        session: 'session-1',
+        model: 'model-1',
+        camera: 'camera-1',
+      );
+      final shiftedTarget = info(
+        box: const Rect.fromLTWH(0.31, 0.21, 0.4, 0.5),
+      );
+      final shiftedTrack = trackOf(shiftedTarget, id: 7);
+      observe([shiftedTarget], tracks: [shiftedTrack]);
+
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      expect(await active, isTrue);
+      expect(await pending, isTrue);
+      expect(engine.spoken, hasLength(2));
+      expect(
+        tts.lastAnnouncedDetection?.detection.box,
+        shiftedTarget.detection.box,
+      );
+    });
+
+    test(
+      'empty newest frame still invalidates queued tracked speech',
+      () async {
+        engine.mode = FakeMode.startOnly;
+        final active = tts.speak('busy', urgent: true);
+        await Future<void>.delayed(Duration.zero);
+        engine.emitStart();
+        final target = nearPerson();
+        final track = trackOf(target, id: 7);
+        observe([target], tracks: [track]);
+        final pending = tts.announceDetections(
+          [target],
+          tracks: [track],
+          session: 'session-1',
+          model: 'model-1',
+          camera: 'camera-1',
+        );
+        observe(const []);
+
+        engine.emitComplete();
+        engine.resolveCurrent(1);
+        await active;
+        expect(await pending, isFalse);
+        expect(engine.spoken, ['busy']);
+      },
+    );
+
+    test(
+      'tracker retention is not speech visibility after empty observation',
+      () async {
+        engine.mode = FakeMode.startOnly;
+        final target = nearPerson();
+        observe([target]);
+        final first = tts.announceDetections([target]);
+        await Future<void>.delayed(Duration.zero);
+        engine.emitStart();
+        final parked = tts.announceDetections([
+          info(label: 'cup', classId: 41),
+        ]);
+        observe(const []);
+        engine.emitCancel();
+        engine.resolveCurrent(0);
+        await first;
+        expect(await parked, isFalse);
+        expect(engine.spoken, hasLength(1));
+      },
+    );
+
+    test('target freshness expires at 501ms before scheduler start', () async {
+      engine.mode = FakeMode.startOnly;
+      final active = tts.speak('busy', urgent: true);
+      final detection = nearPerson();
+      observe([detection]);
+      final pending = tts.announceDetections([detection]);
+      monotonicNow += const Duration(milliseconds: 501);
+      engine.emitStart();
+      engine.emitCancel();
+      engine.resolveCurrent(0);
+      await active;
+      expect(await pending, isFalse);
+      expect(engine.spoken, ['busy']);
+      expect(tts.automaticDiscardCount, greaterThan(0));
+    });
+
+    test('brief disappearance reappearance prevents cancellation', () async {
+      engine.mode = FakeMode.startOnly;
+      final target = nearPerson();
+      observe([target]);
+      final active = tts.announceDetections([target]);
+      await Future<void>.delayed(Duration.zero);
+      engine.emitStart();
+      observe(const []);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      observe([target]);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(engine.stopCalls, 0);
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      expect(await active, isTrue);
+    });
+
+    test(
+      'disappearance requests cancellation after grace, without slot release',
+      () async {
+        engine.mode = FakeMode.startOnly;
+        final target = nearPerson();
+        observe([target]);
+        final active = tts.announceDetections([target]);
+        await Future<void>.delayed(Duration.zero);
+        engine.emitStart();
+        observe(const []);
+        await Future<void>.delayed(const Duration(milliseconds: 275));
+        expect(engine.stopCalls, 1);
+        expect(tts.isSpeaking, isTrue);
+        engine.emitCancel();
+        engine.resolveCurrent(0);
+        expect(await active, isTrue);
+      },
+    );
+
+    test(
+      'lifecycle invalidation clears freshness and blocks old requests',
+      () async {
+        engine.mode = FakeMode.startOnly;
+        final active = tts.speak('busy', urgent: true);
+        final target = nearPerson();
+        observe([target]);
+        final pending = tts.announceDetections([target]);
+        tts.invalidateAutomaticDetection(reason: 'pause');
+        engine.emitStart();
+        engine.emitCancel();
+        engine.resolveCurrent(0);
+        await active;
+        expect(await pending, isFalse);
+        expect(engine.spoken, ['busy']);
+      },
+    );
+
+    test('reappearance after an accepted miss can alert again', () async {
+      final target = nearPerson();
+      observe([target]);
+      expect(await tts.announceDetections([target]), isTrue);
+      monotonicNow += const Duration(seconds: 4);
+      observe(const []);
+      monotonicNow += const Duration(milliseconds: 1);
+      observe([target]);
+      expect(await tts.announceDetections([target]), isTrue);
+      expect(engine.spoken, hasLength(2));
+    });
+  });
 
   group('speak: cooldown only advances on a confirmed start', () {
     test('speaks and reports true on completion', () async {

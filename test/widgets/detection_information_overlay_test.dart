@@ -9,6 +9,7 @@ DetectionInfo info(
   ObjectPriority priority = ObjectPriority.low,
   RelativePosition position = RelativePosition.center,
   ProximityBand proximity = ProximityBand.medium,
+  String? distanceLabel,
 }) => DetectionInfo(
   detection: Detection(
     classId: 0,
@@ -19,6 +20,7 @@ DetectionInfo info(
   position: position,
   priority: priority,
   proximity: proximity,
+  distanceLabel: distanceLabel,
 );
 
 Widget wrap(Widget child) => MaterialApp(
@@ -131,6 +133,26 @@ void main() {
       expect(find.textContaining('percent'), findsNothing);
       expect(find.textContaining('0.9'), findsNothing);
       expect(find.textContaining('priority'), findsNothing);
+    });
+
+    testWidgets('renders metric distance in the row and semantics', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        wrap(
+          DetectionInformationOverlay(
+            infos: [info('Person', distanceLabel: 'about 12 m')],
+            eligible: true,
+          ),
+        ),
+      );
+
+      expect(find.text('Person, center, about 12 m'), findsOneWidget);
+      final node = tester.getSemantics(find.text('Person, center, about 12 m'));
+      expect(node.label, 'Person, center, about 12 m');
+      expect(node.label, isNot(contains('far')));
+      handle.dispose();
     });
 
     testWidgets('is pointer-inert', (tester) async {
