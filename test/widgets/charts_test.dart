@@ -19,14 +19,17 @@ List<RuntimeSample> samples(List<double> latencies, {List<double>? fps}) {
   ];
 }
 
-Widget wrap(Widget child, {double textScale = 1}) => MaterialApp(
-  home: MediaQuery(
-    data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-    child: Scaffold(
-      body: Center(child: SizedBox(width: 360, height: 180, child: child)),
-    ),
-  ),
-);
+Widget wrap(Widget child, {double textScale = 1, double width = 360}) =>
+    MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+        child: Scaffold(
+          body: Center(
+            child: SizedBox(width: width, height: 180, child: child),
+          ),
+        ),
+      ),
+    );
 
 /// Regression tests: every chart must stay inside its allocated box (no
 /// exceptions/overflows) regardless of the dataset, including empty, very
@@ -123,6 +126,41 @@ void main() {
       ]);
     },
   );
+
+  testWidgets('sub-second elapsed ticks are accurate and fit narrowly', (
+    tester,
+  ) async {
+    final first = DateTime.utc(2026);
+    final subSecond = [
+      for (final offset in [0, 250, 500, 750, 1000])
+        RuntimeSample(
+          timestamp: first.add(Duration(milliseconds: offset)),
+          latencyMs: 30,
+          inferenceFps: 12,
+          objectCount: 1,
+          engine: InferenceEngine.ultralytics,
+        ),
+    ];
+    await tester.pumpWidget(
+      wrap(LatencyChart(samples: subSecond), textScale: 2, width: 260),
+    );
+
+    for (final label in ['0', '0.5', '1']) {
+      expect(find.text(label), findsWidgets);
+    }
+    final tickRects = [
+      for (final label in ['0', '0.5', '1'])
+        find
+            .text(label)
+            .evaluate()
+            .map((element) => tester.getRect(find.byWidget(element.widget)))
+            .reduce((a, b) => a.top > b.top ? a : b),
+    ];
+    for (var i = 1; i < tickRects.length; i++) {
+      expect(tickRects[i - 1].overlaps(tickRects[i]), isFalse);
+    }
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('axis labels fit at narrow width and 200% text scale', (
     tester,
