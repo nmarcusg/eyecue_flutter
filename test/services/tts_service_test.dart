@@ -336,7 +336,7 @@ void main() {
       expect(await active, isTrue);
     });
 
-    test('repeated empty frames share the first absence deadline', () async {
+    test('repeated absent frames let the active warning finish', () async {
       engine.mode = FakeMode.startOnly;
       final target = nearPerson();
       observe([target]);
@@ -351,51 +351,30 @@ void main() {
       observe([info(label: 'cup', classId: 41)]);
       expect(engine.stopCalls, 0);
       await Future<void>.delayed(const Duration(milliseconds: 75));
-      expect(engine.stopCalls, 1);
+      expect(engine.stopCalls, 0);
       expect(tts.isSpeaking, isTrue);
 
-      engine.emitCancel();
-      engine.resolveCurrent(0);
+      engine.emitComplete();
+      engine.resolveCurrent(1);
       expect(await active, isTrue);
     });
 
-    test(
-      'failed disappearance stop is reconciled and does not throw',
-      () async {
-        engine.mode = FakeMode.startOnly;
-        engine.throwOnStop = true;
-        final target = nearPerson();
-        observe([target]);
-        final active = tts.announceDetections([target]);
-        await Future<void>.delayed(Duration.zero);
-        engine.emitStart();
-        observe(const []);
-        await Future<void>.delayed(const Duration(milliseconds: 275));
-        expect(engine.stopCalls, 1);
-        await pumpEventQueue();
-        expect(engine.recoverCalls, 1);
-        expect(await active, isTrue);
-      },
-    );
-
-    test(
-      'disappearance requests cancellation after grace, without slot release',
-      () async {
-        engine.mode = FakeMode.startOnly;
-        final target = nearPerson();
-        observe([target]);
-        final active = tts.announceDetections([target]);
-        await Future<void>.delayed(Duration.zero);
-        engine.emitStart();
-        observe(const []);
-        await Future<void>.delayed(const Duration(milliseconds: 275));
-        expect(engine.stopCalls, 1);
-        expect(tts.isSpeaking, isTrue);
-        engine.emitCancel();
-        engine.resolveCurrent(0);
-        expect(await active, isTrue);
-      },
-    );
+    test('a missing target cannot stop an active warning', () async {
+      engine.mode = FakeMode.startOnly;
+      engine.throwOnStop = true;
+      final target = nearPerson();
+      observe([target]);
+      final active = tts.announceDetections([target]);
+      await Future<void>.delayed(Duration.zero);
+      observe(const []);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(engine.stopCalls, 0);
+      expect(engine.recoverCalls, 0);
+      expect(tts.isSpeaking, isTrue);
+      engine.emitComplete();
+      engine.resolveCurrent(1);
+      expect(await active, isTrue);
+    });
 
     test(
       'lifecycle invalidation clears freshness and blocks old requests',
@@ -415,17 +394,20 @@ void main() {
       },
     );
 
-    test('reappearance after an accepted miss can alert again', () async {
-      final target = nearPerson();
-      observe([target]);
-      expect(await tts.announceDetections([target]), isTrue);
-      monotonicNow += const Duration(seconds: 4);
-      observe(const []);
-      monotonicNow += const Duration(milliseconds: 1);
-      observe([target]);
-      expect(await tts.announceDetections([target]), isTrue);
-      expect(engine.spoken, hasLength(2));
-    });
+    test(
+      'brief misses preserve suppression instead of restarting speech',
+      () async {
+        final target = nearPerson();
+        observe([target]);
+        expect(await tts.announceDetections([target]), isTrue);
+        monotonicNow += const Duration(seconds: 4);
+        observe(const []);
+        monotonicNow += const Duration(milliseconds: 1);
+        observe([target]);
+        expect(await tts.announceDetections([target]), isFalse);
+        expect(engine.spoken, hasLength(1));
+      },
+    );
   });
 
   group('speak: cooldown only advances on a confirmed start', () {
@@ -771,7 +753,7 @@ void main() {
     );
 
     test(
-      'a distinct approaching track preempts an equal-priority warning',
+      'equal-priority track changes wait for the current warning to finish',
       () async {
         final personA = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
         final trackA = trackOf(personA, id: 101); // near, stable
@@ -782,8 +764,7 @@ void main() {
         expect(engine.spoken, hasLength(1));
         expect(tts.isSpeaking, isTrue);
 
-        // A second, distinct obstacle suddenly approaching. Both decisions are
-        // AlertPriority.imminent, which previously never preempted.
+        // A distinct approaching target of equal urgency must not cut speech.
         final personB = info(box: const Rect.fromLTWH(0.4, 0.2, 0.4, 0.5));
         final trackB = trackOf(
           personB,
@@ -795,19 +776,17 @@ void main() {
         final second = tts.announceDetections([personB], tracks: [trackB]);
         await pumpEventQueue();
 
-        // Controlled preemption: the replacement waits for both cancel signals.
+        // The current warning finishes naturally before the latest one starts.
         expect(engine.spoken, hasLength(1));
-        expect(engine.stopCalls, 1);
+        expect(engine.stopCalls, 0);
 
-        // A repeated frame for the same track arrives after stop was requested
-        // but before cancellation is reconciled: no second stop, and only the
-        // newest retained request speaks.
+        // Repeated frames replace the pending request without interrupting.
         final newest = tts.announceDetections([personB], tracks: [trackB]);
         await pumpEventQueue();
-        expect(engine.stopCalls, 1);
+        expect(engine.stopCalls, 0);
 
-        engine.emitCancel();
-        engine.resolveCurrent(0);
+        engine.emitComplete();
+        engine.resolveCurrent(1);
         await pumpEventQueue();
 
         expect(engine.spoken, hasLength(2));
@@ -821,7 +800,7 @@ void main() {
         final repeat = tts.announceDetections([personB], tracks: [trackB]);
         await pumpEventQueue();
         expect(engine.spoken, hasLength(2));
-        expect(engine.stopCalls, 1);
+        expect(engine.stopCalls, 0);
         expect(await repeat, isFalse);
 
         await active;

@@ -5,6 +5,15 @@
 
 ---
 
+## Unreleased — Speech continuity (2026-11-04)
+
+- Active obstacle warnings finish through detector misses instead of being
+  stopped after 250 ms of absence. Queued stale warnings are still discarded.
+- Equal-priority obstacles wait for the current utterance; higher-priority
+  hazards retain bounded preemption and callback reconciliation.
+- Empty frames preserve repeat suppression so brief dropouts do not restart
+  the same warning. Distance eligibility and queued freshness are unchanged.
+
 ## Unreleased — Researcher-selectable detector models and research logging sessions
 
 Branch `feat/researcher-detector-models`, commit range `5ba1b38..2779f9c`:
