@@ -159,6 +159,14 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   void _selectModelFilter(String? modelId) =>
       setState(() => _modelFilter = modelId);
 
+  Future<T?> _showLightDialog<T>(WidgetBuilder builder) => showDialog<T>(
+    context: context,
+    builder: (_) => Theme(
+      data: buildHomeTheme(),
+      child: Builder(builder: builder),
+    ),
+  );
+
   Future<void> _upload() async {
     if (_uploading || !_uploadService.isConfigured) return;
     if (_sessions.state != ResearchSessionState.idle) {
@@ -197,10 +205,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
     }
   }
 
-  Future<ResearchSessionMetadata?> _requestUploadMetadata() => showDialog(
-    context: context,
-    builder: (_) => const _UploadMetadataDialog(),
-  );
+  Future<ResearchSessionMetadata?> _requestUploadMetadata() =>
+      _showLightDialog((_) => const _UploadMetadataDialog());
 
   Future<void> _export({required bool csv}) async {
     if (_exporting) return;
@@ -229,9 +235,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   }
 
   Future<void> _startSession() async {
-    final request = await showDialog<_StartSessionRequest>(
-      context: context,
-      builder: (_) => _StartSessionDialog(detectorName: _detectorRef.name),
+    final request = await _showLightDialog<_StartSessionRequest>(
+      (_) => _StartSessionDialog(detectorName: _detectorRef.name),
     );
     if (request == null || !mounted) return;
     final error = await _sessions.start(
@@ -245,7 +250,7 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
       return;
     }
     _showMessage(
-      'Recording trial ${request.trialLabel.trim()} with '
+      'Recording trial ${_sessions.trialLabel} with '
       '${_detectorRef.name}.',
     );
   }
@@ -270,11 +275,11 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
 
   Future<void> _uploadStored(ResearchSession session) async {
     if (_sessions.isUploading || !_uploadService.isConfigured) return;
-    final metadata = await showDialog<ResearchSessionMetadata>(
-      context: context,
-      builder: (_) => _UploadMetadataDialog(
+    final metadata = await _showLightDialog<ResearchSessionMetadata>(
+      (_) => _UploadMetadataDialog(
         initialParticipantCode: session.participantCode,
         initialScenario: session.trialLabel,
+        frozenDetector: session.detectorName,
         lockIdentity: true,
       ),
     );
@@ -319,9 +324,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   }
 
   Future<void> _discardStored(ResearchSession session) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
+    final confirmed = await _showLightDialog<bool>(
+      (context) => AlertDialog(
         title: const Text('Discard this trial?'),
         content: Text(
           'This deletes only the stored trial ${session.trialLabel} '
@@ -372,11 +376,13 @@ class _UploadMetadataDialog extends StatefulWidget {
   /// typo here cannot move the data to another participant.
   final String? initialParticipantCode;
   final String? initialScenario;
+  final String? frozenDetector;
   final bool lockIdentity;
 
   const _UploadMetadataDialog({
     this.initialParticipantCode,
     this.initialScenario,
+    this.frozenDetector,
     this.lockIdentity = false,
   });
 
@@ -410,8 +416,12 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
 
   void _confirm() {
     final value = ResearchSessionMetadata(
-      participantCode: _participantController.text,
-      studyScenario: _scenarioController.text,
+      participantCode: widget.lockIdentity
+          ? widget.initialParticipantCode ?? ''
+          : _participantController.text,
+      studyScenario: widget.lockIdentity
+          ? widget.initialScenario ?? ''
+          : _scenarioController.text,
       uploadToken: _tokenController.text,
     );
     if (!value.hasValidUploadToken) {
@@ -426,39 +436,60 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Upload this session?'),
+    title: const Text('Confirm research upload'),
     content: SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'This manually sends one finished, image-free trial to the research '
-            'database. It does not include camera frames or device IDs. Use only '
-            'a study participant code, never a name or email address. The study '
-            'upload token comes from the study coordinator; it is used for this '
-            'upload only and is not saved. Each participant and trial is stored '
-            'once: re-sending the same trial is deduplicated by the research '
-            'server, and later recording belongs to a new trial.',
+            'Manually upload the selected session or finished trial after '
+            'confirming participant consent. Camera frames and device '
+            'identifiers are excluded. The study token is used only for this '
+            'upload and is not saved.',
+          ),
+          ExpansionTile(
+            title: const Text('Upload details'),
+            tilePadding: EdgeInsets.zero,
+            children: const [
+              Text(
+                'Use a study participant code, never a name or email address. '
+                'Each participant and trial is stored once; later recording '
+                'belongs to a new trial.',
+              ),
+            ],
           ),
           const SizedBox(height: kSpace12),
-          TextField(
-            controller: _participantController,
-            maxLength: 64,
-            readOnly: widget.lockIdentity,
-            decoration: const InputDecoration(
-              labelText: 'Participant code',
-              hintText: 'P-001',
+          if (widget.lockIdentity) ...[
+            _UploadSummaryRow(
+              label: 'Participant',
+              value: widget.initialParticipantCode ?? '',
             ),
-          ),
-          TextField(
-            controller: _scenarioController,
-            maxLength: 80,
-            readOnly: widget.lockIdentity,
-            decoration: const InputDecoration(
-              labelText: 'Study scenario',
-              hintText: 'indoor-obstacle-course',
+            _UploadSummaryRow(
+              label: 'Trial',
+              value: widget.initialScenario ?? '',
             ),
-          ),
+            _UploadSummaryRow(
+              label: 'Detector',
+              value: widget.frozenDetector ?? 'Unknown detector',
+            ),
+          ] else ...[
+            TextField(
+              controller: _participantController,
+              maxLength: 64,
+              decoration: const InputDecoration(
+                labelText: 'Participant code',
+                hintText: 'P-001',
+              ),
+            ),
+            TextField(
+              controller: _scenarioController,
+              maxLength: 80,
+              decoration: const InputDecoration(
+                labelText: 'Study scenario',
+                hintText: 'indoor-obstacle-course',
+              ),
+            ),
+          ],
           TextField(
             controller: _tokenController,
             maxLength: 128,
@@ -485,6 +516,25 @@ class _UploadMetadataDialogState extends State<_UploadMetadataDialog> {
       ),
       FilledButton(onPressed: _confirm, child: const Text('Confirm upload')),
     ],
+  );
+}
+
+class _UploadSummaryRow extends StatelessWidget {
+  const _UploadSummaryRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: kSpace4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label: ', style: Theme.of(context).textTheme.titleSmall),
+        Expanded(child: Text(value, softWrap: true)),
+      ],
+    ),
   );
 }
 
@@ -524,18 +574,16 @@ class _StartSessionDialogState extends State<_StartSessionDialog> {
       _participantController.text.trim(),
       _trialController.text.trim(),
     );
-    // Same rules the upload applies, so an unusable trial cannot be started.
-    final metadata = ResearchSessionMetadata(
-      participantCode: request.participantCode,
-      studyScenario: request.trialLabel,
-      uploadToken: '',
-    );
-    if (!metadata.isValid) {
+    if (!RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(request.participantCode)) {
       setState(() {
-        _error =
-            'Use letters, digits, - or _ for the participant code, and a trial '
-            'label of at most 80 characters.';
+        _error = 'Enter a participant code using only letters, digits, - or _.';
       });
+      return;
+    }
+    if (request.trialLabel.length > 80) {
+      setState(
+        () => _error = 'A custom trial label may be at most 80 characters.',
+      );
       return;
     }
     Navigator.pop(context, request);
@@ -569,8 +617,9 @@ class _StartSessionDialogState extends State<_StartSessionDialog> {
             controller: _trialController,
             maxLength: 80,
             decoration: const InputDecoration(
-              labelText: 'Trial label',
-              hintText: 'indoor-course-1',
+              labelText: 'Trial label (optional)',
+              hintText: 'Generated if left blank',
+              helperText: 'A readable trial label is generated when blank.',
             ),
           ),
           if (_error != null)

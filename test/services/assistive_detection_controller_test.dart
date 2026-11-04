@@ -1,12 +1,49 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:eyecue_flutter/models/alert_lifecycle.dart';
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
 import 'package:eyecue_flutter/services/assistive_detection_controller.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _QueuedTtsEngine extends TtsEngine {
+  final List<String> spoken = [];
+  VoidCallback? _onStart;
+  VoidCallback? _onComplete;
+  Completer<int>? _current;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<int> speak(String text) {
+    spoken.add(text);
+    _onStart?.call();
+    _current = Completer<int>();
+    return _current!.future;
+  }
+
+  void finishCurrent() {
+    _onComplete?.call();
+    _current!.complete(1);
+  }
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  void setStartHandler(VoidCallback? callback) => _onStart = callback;
+
+  @override
+  void setCompletionHandler(VoidCallback? callback) => _onComplete = callback;
+}
 
 /// Minimal engine that confirms start and completion immediately.
 class _AutoTtsEngine extends TtsEngine {
@@ -185,6 +222,41 @@ void main() {
       expect(records.single.alertStartedAt, isNotNull);
     },
   );
+
+  test('built-in controller identity preserves a queued fresh alert', () async {
+    final queuedEngine = _QueuedTtsEngine();
+    final queuedTts = TtsService(engine: queuedEngine);
+    await queuedTts.init();
+    addTearDown(queuedTts.dispose);
+    final productionController = AssistiveDetectionController(
+      engine: InferenceEngine.ultralytics,
+      tts: queuedTts,
+      telemetry: TelemetryService(),
+      detectorModel: DetectorModel.builtIn(const []).ref,
+    );
+
+    final busy = queuedTts.speak('busy', urgent: true);
+    await Future<void>.delayed(Duration.zero);
+    expect(queuedEngine.spoken, hasLength(1));
+
+    productionController.updateDetections(
+      nearPerson(),
+      resultReceivedAt: DateTime.utc(2026, 1, 1, 12),
+      monotonicReceivedAt: queuedTts.monotonicNow,
+      session: 'builtin-session',
+      model: 'builtin-model',
+      camera: 'builtin-camera',
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(queuedEngine.spoken, hasLength(1));
+
+    queuedEngine.finishCurrent();
+    await busy;
+    await pumpEventQueue();
+    expect(queuedEngine.spoken, hasLength(2));
+    expect(queuedEngine.spoken.last, contains('person'));
+    productionController.dispose();
+  });
 
   test('empty detections create no alert record', () async {
     controller.updateDetections(
