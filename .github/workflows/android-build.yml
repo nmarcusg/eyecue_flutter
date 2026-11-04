@@ -2,7 +2,7 @@ name: Android cloud build
 
 on:
   push:
-    branches: [main, dev, ci/android-cloud-build]
+    branches: [main, dev, ci/android-cloud-build, feat/tts-speech-continuity]
   pull_request:
     branches: [main, dev]
   workflow_dispatch:
