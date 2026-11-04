@@ -169,7 +169,6 @@ class TtsService extends ChangeNotifier {
     this.recoveryTimeout = const Duration(seconds: 2),
     this.preemptionCooldown = const Duration(milliseconds: 1500),
     this.maxDetectionAge = const Duration(milliseconds: 500),
-    this.disappearanceGrace = const Duration(milliseconds: 250),
     AlertPolicy? policy,
   }) : _clock = clock ?? DateTime.now,
        _monotonicClock = monotonicClock ?? (() => _stopwatch.elapsed),
@@ -218,10 +217,6 @@ class TtsService extends ChangeNotifier {
 
   /// Initial automatic-detection freshness target; not yet device-measured.
   final Duration maxDetectionAge;
-
-  /// Proposed grace before requesting cancellation of a vanished target.
-  /// Product tuning remains unverified; this is an initial policy default.
-  final Duration disappearanceGrace;
 
   final DateTime Function() _clock;
   final Duration Function() _monotonicClock;
@@ -311,7 +306,6 @@ class TtsService extends ChangeNotifier {
   List<TrackedDetection> _latestTracks = const [];
   DetectorModelKind _observationDetectorKind = DetectorModelKind.builtIn;
   String? _observationDetectorIdentity;
-  Timer? _disappearanceTimer;
   int _automaticDiscardCount = 0;
   int _automaticStartCount = 0;
   Duration? _lastAutomaticStartAge;
@@ -332,11 +326,6 @@ class TtsService extends ChangeNotifier {
     DetectorModelKind detectorKind = DetectorModelKind.builtIn,
     String? detectorIdentity,
   }) {
-    final contextChanged =
-        _observationSession != null &&
-        (_observationSession != session ||
-            _observationModel != model ||
-            _observationCamera != camera);
     _observationGeneration++;
     _observationMonotonicAt = monotonicReceivedAt;
     _observationSession = session;
@@ -354,16 +343,8 @@ class TtsService extends ChangeNotifier {
       detectorKind: detectorKind,
       detectorIdentity: detectorIdentity,
     );
-    if (_visibleDetectionKeys.isEmpty) {
-      policy.clearForDetector(_activeDetectorIdentity);
-    }
-    final visibleActiveDecision = _active?.request.decision;
-    if (contextChanged ||
-        (visibleActiveDecision?.target != null &&
-            _targetIsVisible(visibleActiveDecision!))) {
-      _disappearanceTimer?.cancel();
-      _disappearanceTimer = null;
-    }
+    // Visibility invalidates queued work, not speech already heard by the user.
+    // Keep suppression through brief detector misses to avoid restart chatter.
     final pending = _pending;
     if (pending?.origin == AlertOrigin.detection &&
         (pending?.decision?.target == null ||
@@ -373,46 +354,8 @@ class TtsService extends ChangeNotifier {
       _recordRejection(AlertReason.suppressedNoCandidates);
       _automaticDiscardCount++;
     }
-    final active = _active;
-    final decision = active?.request.decision;
-    if (active?.didStart == true &&
-        active!.request.origin == AlertOrigin.detection &&
-        decision?.target != null &&
-        !_targetIsVisible(decision!) &&
-        _disappearanceTimer == null) {
-      _disappearanceTimer = Timer(disappearanceGrace, () {
-        _disappearanceTimer = null;
-        final cancellation = engine;
-        if (_targetIsVisible(decision) ||
-            !identical(_active, active) ||
-            active.terminal != null ||
-            active.stopRequested ||
-            !(cancellation is TtsCancellationCapability &&
-                (cancellation as TtsCancellationCapability)
-                    .supportsCancellation)) {
-          return;
-        }
-        active.stopRequested = true;
-        active.preemptionTimer = Timer(preemptionConfirmTimeout, () {
-          if (identical(_active, active) && active.terminal == null) {
-            _fail(active, _CancelCause.reconciliationTimeout);
-          }
-        });
-        unawaited(_stopAfterDisappearance(active));
-      });
-    }
-  }
-
-  Future<void> _stopAfterDisappearance(_Submission active) async {
-    try {
-      await engine.stop();
-    } catch (error) {
-      if (_disposed || !identical(_active, active) || active.terminal != null) {
-        return;
-      }
-      debugPrint('[Tts] stop after target disappearance failed: $error');
-      _fail(active, _CancelCause.engineError);
-    }
+    // Let an active warning finish. A genuinely higher-priority hazard still
+    // uses the serialized preemption path; detector flicker must not cut words.
   }
 
   /// Invalidates only unstarted automatic detection work. It deliberately does
@@ -424,8 +367,6 @@ class TtsService extends ChangeNotifier {
     _visibleTrackIds = const {};
     _latestDetections = const [];
     _latestTracks = const [];
-    _disappearanceTimer?.cancel();
-    _disappearanceTimer = null;
     final pending = _pending;
     if (pending != null && pending.origin == AlertOrigin.detection) {
       _pending = null;
@@ -729,7 +670,6 @@ class TtsService extends ChangeNotifier {
     _disposed = true;
     _quietTimer?.cancel();
     _settleCapTimer?.cancel();
-    _disappearanceTimer?.cancel();
     final active = _active;
     if (active != null) {
       _cancelTimers(active);
@@ -797,50 +737,13 @@ class TtsService extends ChangeNotifier {
   bool _preemptEligible(_SpeechRequest request) =>
       request.decision?.preemptEligible ?? false;
 
-  /// Semantic preemption arbitration.
-  ///
-  /// Priority alone is insufficient: two distinct obstacles can both be
-  /// `imminent`, and the second must not wait behind the first. A strictly
-  /// higher priority always wins; at equal `imminent` priority only a
-  /// **distinct-track** obstacle that is approaching may preempt, and only when
-  /// the active warning is not already an approaching threat. This is not a
-  /// general `>=` comparison: identical decisions and same-track repeats never
-  /// preempt, and the preemption cooldown still applies.
+  /// Interrupt only for a higher-priority hazard. Equal-priority detections
+  /// wait in the bounded pending slot and are revalidated before dispatch.
   bool _shouldPreempt(_SpeechRequest incoming, _Submission active) {
     if (active.preemptionRequested || active.terminal != null) return false;
-
-    // Advisory wayfinding must never delay Detection or safety speech, so any
-    // incoming Detection decision may interrupt it. This is a targeted rule,
-    // not a general equal-priority comparison.
     if (active.request.wayfinding && incoming.decision != null) return true;
-
-    if (!_preemptEligible(incoming)) return false;
-
-    if (incoming.priority.index > active.priority.index) return true;
-
-    if (incoming.priority != AlertPriority.imminent ||
-        active.priority != AlertPriority.imminent) {
-      return false;
-    }
-
-    final incomingDecision = incoming.decision;
-    final activeDecision = active.request.decision;
-    if (incomingDecision == null || activeDecision == null) return false;
-
-    if (incomingDecision.suppressionKey == activeDecision.suppressionKey) {
-      return false;
-    }
-
-    final incomingTrack = incomingDecision.trackId;
-    final activeTrack = activeDecision.trackId;
-    if (incomingTrack == null ||
-        activeTrack == null ||
-        incomingTrack == activeTrack) {
-      return false;
-    }
-
-    if (incomingDecision.motion != MotionState.approaching) return false;
-    return activeDecision.motion != MotionState.approaching;
+    return _preemptEligible(incoming) &&
+        incoming.priority.index > active.priority.index;
   }
 
   /// Offers into the single pending slot using the normative rules:
@@ -1128,8 +1031,6 @@ class TtsService extends ChangeNotifier {
     if (submission.terminal != null) return;
     submission.terminal = terminal;
     submission.finishedAt = _clock();
-    _disappearanceTimer?.cancel();
-    _disappearanceTimer = null;
     _cancelTimers(submission);
 
     final decision = submission.request.decision;
