@@ -444,6 +444,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     ResearchSessionStore? store,
     TelemetryUploadService? uploadService,
     DateTime Function()? clock,
+    Random? random,
     this.maxStoredSessions = 20,
     this.maxTrialRecords = 10000,
     this.maxTrialSamples = 2000,
@@ -451,6 +452,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
        _store = store ?? FileResearchSessionStore(),
        _uploadService = uploadService ?? TelemetryUploadService(),
        _clock = clock ?? DateTime.now,
+       _random = random ?? Random(),
        _appVersion = telemetry.appVersion;
 
   final TelemetryService _telemetry;
@@ -458,7 +460,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
   final TelemetryUploadService _uploadService;
   final DateTime Function() _clock;
   final String _appVersion;
-  final Random _random = Random();
+  final Random _random;
 
   /// Visible storage bound. A full store refuses [start] instead of evicting an
   /// unuploaded trial.
@@ -722,22 +724,28 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
           'trial before starting another; uploading keeps it stored and does '
           'not free a slot, and nothing has been deleted.';
     }
+    final participant = participantCode.trim();
+    final requestedLabel = trialLabel.trim();
+    final now = _clock();
+    final id = _newId(now);
+    final effectiveLabel = requestedLabel.isNotEmpty
+        ? requestedLabel
+        : 'Trial ${now.toUtc().toIso8601String()} $id';
     // Same rule the upload enforces, so a trial cannot be created that can
     // never be uploaded.
     final metadata = ResearchSessionMetadata(
-      participantCode: participantCode,
-      studyScenario: trialLabel,
+      participantCode: participant,
+      studyScenario: effectiveLabel,
       uploadToken: '',
     );
     if (!metadata.isValid) {
-      return 'Enter a participant code (letters, digits, - or _) and a trial '
-          'label of at most 80 characters.';
+      return 'Enter a participant code (letters, digits, - or _); a custom '
+          'trial label may be at most 80 characters.';
     }
-    final now = _clock();
     final draft = _Draft(
-      id: _newId(now),
-      participantCode: participantCode.trim(),
-      trialLabel: trialLabel.trim(),
+      id: id,
+      participantCode: participant,
+      trialLabel: effectiveLabel,
       detectors: [detector],
       intervals: [ResearchInterval(now)],
     );

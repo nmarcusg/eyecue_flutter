@@ -19,7 +19,7 @@ DetectionInfo info({
       classId: classId,
       label: label,
       confidence: conf,
-      box: box ?? const Rect.fromLTWH(0.4, 0.2, 0.2, 0.2),
+      box: box ?? const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5),
     ),
   );
 }
@@ -155,7 +155,7 @@ void main() {
       policy.commitStarted(decide([first], tracks: [firstTrack]), now);
 
       now = now.add(const Duration(milliseconds: 500));
-      final secondBox = const Rect.fromLTWH(0.7, 0.2, 0.2, 0.2);
+      final secondBox = const Rect.fromLTWH(0.5, 0.2, 0.2, 0.5);
       final second = info(box: secondBox);
       final secondTrack = trackOf(second, id: 2);
 
@@ -212,13 +212,12 @@ void main() {
 
   group('risk escalation', () {
     test('proximity band increase re-alerts once', () {
-      final medium = info(box: const Rect.fromLTWH(0.4, 0.2, 0.2, 0.25));
+      final medium = metricInfo(1.7);
       final track = trackOf(medium, id: 11);
       policy.commitStarted(decide([medium], tracks: [track]), now);
 
       now = now.add(const Duration(seconds: 1));
-      final nearBox = const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5);
-      final near = info(box: nearBox);
+      final near = metricInfo(1.4);
       final nearTrack = trackOf(near, id: 11);
 
       final escalated = decide([near], tracks: [nearTrack]);
@@ -231,7 +230,7 @@ void main() {
     });
 
     test('motion approaching re-alerts', () {
-      final primary = info(box: const Rect.fromLTWH(0.4, 0.2, 0.2, 0.25));
+      final primary = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
       policy.commitStarted(
         decide([primary], tracks: [trackOf(primary, id: 12)]),
         now,
@@ -247,46 +246,39 @@ void main() {
       expect(decision.priority, AlertPriority.imminent);
     });
 
-    test('entering the centre corridor re-alerts', () {
-      final left = info(box: const Rect.fromLTWH(0.05, 0.2, 0.2, 0.25));
-      policy.commitStarted(
-        decide([left], tracks: [trackOf(left, id: 13)]),
-        now,
-      );
-
-      now = now.add(const Duration(seconds: 1));
-      final centre = info(box: const Rect.fromLTWH(0.4, 0.2, 0.2, 0.25));
-      final decision = decide([centre], tracks: [trackOf(centre, id: 13)]);
-      expect(decision.announce, isTrue);
-      expect(decision.reason, AlertReason.riskEscalation);
+    test('off-centre geometry fallback is ineligible', () {
+      final side = info(box: const Rect.fromLTWH(0.05, 0.2, 0.2, 0.5));
+      final decision = decide([side], tracks: [trackOf(side, id: 13)]);
+      expect(decision.announce, isFalse);
+      expect(decision.reason, AlertReason.suppressedNoCandidates);
     });
 
     test('substantial size growth re-alerts', () {
-      final small = info(box: const Rect.fromLTWH(0.4, 0.4, 0.12, 0.13));
+      final small = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
       policy.commitStarted(
         decide([small], tracks: [trackOf(small, id: 14)]),
         now,
       );
 
       now = now.add(const Duration(seconds: 1));
-      final grown = info(box: const Rect.fromLTWH(0.4, 0.4, 0.14, 0.16));
+      final grown = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
       final decision = decide(
         [grown],
-        tracks: [trackOf(grown, id: 14, smoothedHeight: 0.16)],
+        tracks: [trackOf(grown, id: 14, smoothedHeight: 0.7)],
       );
       expect(decision.announce, isTrue);
       expect(decision.reason, AlertReason.riskEscalation);
     });
 
     test('minEscalationGap prevents an immediate second escalation', () {
-      final medium = info(box: const Rect.fromLTWH(0.4, 0.2, 0.2, 0.25));
+      final medium = metricInfo(1.7);
       policy.commitStarted(
         decide([medium], tracks: [trackOf(medium, id: 15)]),
         now,
       );
 
       now = now.add(const Duration(milliseconds: 50));
-      final near = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
+      final near = metricInfo(1.4);
       final decision = decide([near], tracks: [trackOf(near, id: 15)]);
       expect(decision.announce, isFalse);
     });
@@ -342,6 +334,57 @@ void main() {
       );
     });
 
+    test('fresh five metre metric suppresses both detector kinds', () {
+      for (final detector in DetectorModelKind.values) {
+        final decision = policy.decide(
+          detections: [metricInfo(5.0)],
+          tracks: const [],
+          now: now,
+          audioEnabled: true,
+          detectorKind: detector,
+          detectorIdentity: 'detector-${detector.name}',
+        );
+        expect(decision.announce, isFalse);
+        expect(decision.reason, AlertReason.suppressedNoCandidates);
+      }
+    });
+
+    test('invalid metric depth uses bounded approximate geometry only', () {
+      final raw = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
+      final invalidDepth = DetectionInfo(
+        detection: raw.detection,
+        position: raw.position,
+        priority: raw.priority,
+        proximity: raw.proximity,
+        estimatedMeters: double.nan,
+        distanceSource: DistanceSource.monocularDepth,
+        distanceLabel: 'about 1.0 m',
+      );
+      for (final detector in DetectorModelKind.values) {
+        final decision = policy.decide(
+          detections: [invalidDepth],
+          tracks: const [],
+          now: now,
+          audioEnabled: true,
+          detectorKind: detector,
+          detectorIdentity: 'detector-${detector.name}',
+        );
+        expect(decision.announce, isTrue);
+        expect(decision.metricMeters, isNull);
+        expect(decision.text, contains('approximately near'));
+        expect(decision.text, isNot(contains('1.0 m')));
+      }
+    });
+
+    test('fallback requires bounded near and center geometry', () {
+      final nearCenter = info(box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5));
+      expect(decide([nearCenter]).announce, isTrue);
+      final mediumCenter = info(box: const Rect.fromLTWH(0.4, 0.2, 0.2, 0.3));
+      expect(decide([mediumCenter]).announce, isFalse);
+      final nearSide = info(box: const Rect.fromLTWH(0.05, 0.2, 0.2, 0.5));
+      expect(decide([nearSide]).announce, isFalse);
+    });
+
     test('custom decisions do not inherit another detector identity state', () {
       final person = metricInfo(1.8);
       final first = policy.decide(
@@ -365,38 +408,111 @@ void main() {
       expect(switched.announce, isTrue);
     });
 
-    test('custom metric thresholds re-arm above threshold plus hysteresis', () {
-      final track = trackOf(metricInfo(2.5), id: 48);
-      final first = policy.decide(
-        detections: [metricInfo(2.5)],
-        tracks: [track],
-        now: now,
-        audioEnabled: true,
-        detectorKind: DetectorModelKind.custom,
-        detectorIdentity: 'custom-hyst',
-      );
-      policy.commitStarted(first, now);
-      now = now.add(const Duration(seconds: 1));
-      final atTwo = policy.decide(
-        detections: [metricInfo(1.9)],
-        tracks: [track],
-        now: now,
-        audioEnabled: true,
-        detectorKind: DetectorModelKind.custom,
-        detectorIdentity: 'custom-hyst',
-      );
-      expect(atTwo.announce, isTrue);
-      policy.commitStarted(atTwo, now);
-      now = now.add(const Duration(seconds: 1));
-      final oscillation = policy.decide(
-        detections: [metricInfo(2.1)],
-        tracks: [track],
-        now: now,
-        audioEnabled: true,
-        detectorKind: DetectorModelKind.custom,
-        detectorIdentity: 'custom-hyst',
-      );
-      expect(oscillation.announce, isFalse);
+    test(
+      'shared metric threshold escalates at 1.7 to 1.4 and rearms after retreat',
+      () {
+        final detector = DetectorModelKind.builtIn;
+        final first = policy.decide(
+          detections: [metricInfo(1.7, label: 'chair', classId: 56)],
+          tracks: const [],
+          now: now,
+          audioEnabled: true,
+          detectorKind: detector,
+          detectorIdentity: 'builtin-yolov8n-int8-metadata',
+        );
+        expect(first.announce, isTrue);
+        expect(first.priority, AlertPriority.normal);
+        policy.commitStarted(first, now);
+
+        now = now.add(const Duration(seconds: 1));
+        final urgent = policy.decide(
+          detections: [metricInfo(1.4, label: 'chair', classId: 56)],
+          tracks: const [],
+          now: now,
+          audioEnabled: true,
+          detectorKind: detector,
+          detectorIdentity: 'builtin-yolov8n-int8-metadata',
+        );
+        expect(urgent.announce, isTrue);
+        expect(urgent.priority, AlertPriority.imminent);
+        policy.commitStarted(urgent, now);
+
+        policy.observeDetections(
+          detections: [metricInfo(2.4, label: 'chair', classId: 56)],
+          tracks: const [],
+          detectorKind: detector,
+          detectorIdentity: 'builtin-yolov8n-int8-metadata',
+        );
+        now = now.add(const Duration(seconds: 1));
+        final rearmed = policy.decide(
+          detections: [metricInfo(1.9, label: 'chair', classId: 56)],
+          tracks: const [],
+          now: now,
+          audioEnabled: true,
+          detectorKind: detector,
+          detectorIdentity: 'builtin-yolov8n-int8-metadata',
+        );
+        expect(rearmed.announce, isTrue);
+      },
+    );
+
+    test(
+      'urgent metric band re-arms only after the 1.8 m hysteresis point',
+      () {
+        final first = policy.decide(
+          detections: [metricInfo(1.4, label: 'chair', classId: 56)],
+          tracks: const [],
+          now: now,
+          audioEnabled: true,
+        );
+        policy.commitStarted(first, now);
+
+        policy.observeDetections(
+          detections: [metricInfo(1.79, label: 'chair', classId: 56)],
+          tracks: const [],
+          detectorKind: DetectorModelKind.builtIn,
+        );
+        now = now.add(const Duration(seconds: 1));
+        expect(
+          policy
+              .decide(
+                detections: [metricInfo(1.4, label: 'chair', classId: 56)],
+                tracks: const [],
+                now: now,
+                audioEnabled: true,
+              )
+              .announce,
+          isFalse,
+        );
+
+        policy.observeDetections(
+          detections: [metricInfo(1.8, label: 'chair', classId: 56)],
+          tracks: const [],
+          detectorKind: DetectorModelKind.builtIn,
+        );
+        now = now.add(const Duration(seconds: 1));
+        expect(
+          policy
+              .decide(
+                detections: [metricInfo(1.4, label: 'chair', classId: 56)],
+                tracks: const [],
+                now: now,
+                audioEnabled: true,
+              )
+              .announce,
+          isTrue,
+        );
+      },
+    );
+
+    test('automatic candidate ties break by label then class ID', () {
+      final zebra = metricInfo(1.8, label: 'zebra', classId: 22);
+      final apple = metricInfo(1.8, label: 'apple', classId: 47);
+      expect(decide([zebra, apple]).target?.label, 'apple');
+
+      final laterClass = metricInfo(1.8, label: 'object', classId: 8);
+      final earlierClass = metricInfo(1.8, label: 'object', classId: 3);
+      expect(decide([laterClass, earlierClass]).target?.detection.classId, 3);
     });
 
     test('near person is imminent and preemption-eligible', () {
@@ -446,7 +562,7 @@ void main() {
       final bounded = AlertPolicy(maxKeys: 2);
       for (var id = 1; id <= 3; id++) {
         final primary = info(
-          box: Rect.fromLTWH(0.3 + id * 0.01, 0.2, 0.1, 0.2),
+          box: Rect.fromLTWH(0.3 + id * 0.01, 0.2, 0.4, 0.5),
         );
         final decision = bounded.decide(
           detections: [primary],

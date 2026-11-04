@@ -32,7 +32,7 @@ class SceneSummaryService {
         : '.';
     return _limit(
       'Alert. ${info.label}$priority, on your ${info.positionLabel}, '
-      '${info.distanceLabel ?? 'approximately ${info.proximityLabel}'}'
+      '${_distanceWording(info)}'
       '$movement.$count',
     );
   }
@@ -62,7 +62,7 @@ class SceneSummaryService {
         final movement = _confirmedMotion(candidate.track);
         labels.add(
           '${candidate.info.label}, '
-          '${candidate.info.distanceLabel ?? 'approximately ${candidate.info.proximityLabel}'}'
+          '${_distanceWording(candidate.info)}'
           '${movement == null ? '' : ', appears to be $movement'}',
         );
       }
@@ -81,17 +81,34 @@ class SceneSummaryService {
   /// Urgent speech must convey the hazard before the qualifiers, so it never
   /// begins with "Alert." or "high priority obstacle". Detailed wording stays
   /// available through [alert] and [quickScan].
-  String urgentAlert(DetectionInfo info, {TrackedDetection? track}) {
+  String urgentAlert(
+    DetectionInfo info, {
+    required double urgentBelowMeters,
+    TrackedDetection? track,
+  }) {
     final motion = _confirmedMotion(track);
     final position = info.position == RelativePosition.center
         ? ''
         : ', ${info.positionLabel}';
-    if (info.proximity == ProximityBand.near) {
-      return _limit('${info.label} very close$position.');
+    final meters = info.distanceSource == DistanceSource.monocularDepth
+        ? info.estimatedMeters
+        : null;
+    if (meters != null && meters.isFinite && meters >= 0.1 && meters <= 80) {
+      final distance =
+          info.distanceLabel ?? 'about ${meters.toStringAsFixed(1)} m';
+      if (meters < urgentBelowMeters) {
+        return _limit('${info.label} very close, $distance$position.');
+      }
+      return _limit('${info.label}, $distance$position.');
     }
-    if (motion == 'approaching') {
+    if (info.proximity == ProximityBand.near) {
+      final distance = _distanceWording(info);
+      return _limit('${info.label} very close, $distance$position.');
+    }
+    if (motion == 'getting closer') {
+      final distance = _distanceWording(info);
       return _limit(
-        '${info.label} approaching${position.isEmpty ? ' ahead' : position}.',
+        '${info.label} getting closer, $distance${position.isEmpty ? '' : position}.',
       );
     }
     return _limit('${info.label}${position.isEmpty ? ' ahead' : position}.');
@@ -139,6 +156,18 @@ class SceneSummaryService {
     return candidates;
   }
 
+  static String _distanceWording(DetectionInfo info) {
+    final meters = info.estimatedMeters;
+    if (info.distanceSource == DistanceSource.monocularDepth &&
+        meters != null &&
+        meters.isFinite &&
+        meters >= 0.1 &&
+        meters <= 80) {
+      return info.distanceLabel ?? 'about ${meters.toStringAsFixed(1)} m';
+    }
+    return 'approximately ${info.proximityLabel}';
+  }
+
   String _limit(String text) {
     if (text.length <= maxPhraseLength) return text;
     final cut = text.substring(0, maxPhraseLength).trimRight();
@@ -176,8 +205,8 @@ class SceneSummaryService {
   static String? _confirmedMotion(TrackedDetection? track) {
     if (track == null || !track.hasConfirmedMotion) return null;
     return track.motion == MotionState.approaching
-        ? 'approaching'
-        : 'moving away';
+        ? 'getting closer'
+        : 'getting farther away';
   }
 }
 
