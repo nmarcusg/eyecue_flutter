@@ -108,9 +108,18 @@ class DepthSmoother {
 
   final double alpha;
   final Map<int, double> _byTrack = {};
+  final Map<int, int> _revisions = {};
 
   /// Smoothed metres for [trackId]; the first sample is returned unchanged.
-  double smooth(int trackId, double meters) {
+  double smooth(int trackId, double meters, {int? observationRevision}) {
+    if (observationRevision != null &&
+        _revisions[trackId] == observationRevision &&
+        _byTrack.containsKey(trackId)) {
+      return _byTrack[trackId]!;
+    }
+    if (observationRevision != null) {
+      _revisions[trackId] = observationRevision;
+    }
     final previous = _byTrack[trackId];
     final next = previous == null
         ? meters
@@ -122,5 +131,15 @@ class DepthSmoother {
   /// Raw value kept for the last sample, or `null` if the track is unknown.
   double? rawFor(int trackId) => _byTrack[trackId];
 
-  void reset() => _byTrack.clear();
+  /// Bound presentation state to the identities still retained by the tracker.
+  void retainTracks(Iterable<int> trackIds) {
+    final retained = trackIds.toSet();
+    _byTrack.removeWhere((id, _) => !retained.contains(id));
+    _revisions.removeWhere((id, _) => !retained.contains(id));
+  }
+
+  void reset() {
+    _byTrack.clear();
+    _revisions.clear();
+  }
 }

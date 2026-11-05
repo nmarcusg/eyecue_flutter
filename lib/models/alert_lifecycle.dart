@@ -339,3 +339,34 @@ class AlertLatencySummary {
     return sorted[rank - 1];
   }
 }
+
+/// Bounded local decision diagnostics, using one app monotonic clock domain.
+/// No speech, model paths, credentials or device identifiers are retained.
+/// `started` is a platform callback, not a physical audible-time measurement.
+class AlertDecisionTrace {
+  final String stage;
+  final Duration at;
+  final Duration? firstObservedAt;
+  final Duration? firstEligibleAt;
+  final int? trackId;
+  final double? metricMeters;
+  final double? displayMeters;
+  final double normalMaxMeters;
+  final double urgentBelowMeters;
+  final String? reason;
+  final int configurationGeneration;
+
+  const AlertDecisionTrace({
+    required this.stage,
+    required this.at,
+    this.firstObservedAt,
+    this.firstEligibleAt,
+    this.trackId,
+    this.metricMeters,
+    this.displayMeters,
+    required this.normalMaxMeters,
+    required this.urgentBelowMeters,
+    this.reason,
+    required this.configurationGeneration,
+  });
+}

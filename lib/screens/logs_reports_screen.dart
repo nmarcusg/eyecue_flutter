@@ -243,6 +243,7 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
       participantCode: request.participantCode,
       trialLabel: request.trialLabel,
       detector: _detectorRef,
+      settings: widget.settings?.settings,
     );
     if (!mounted) return;
     if (error != null) {

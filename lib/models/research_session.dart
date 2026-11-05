@@ -1,3 +1,4 @@
+import 'app_settings.dart';
 import '../services/telemetry_service.dart';
 import 'alert_lifecycle.dart';
 import 'detection_correction.dart';
@@ -57,6 +58,9 @@ class ResearchSession implements TelemetrySource {
   final String id;
   final String participantCode;
   final String trialLabel;
+
+  /// Captured at Start; null means unknown in legacy trials.
+  final Map<String, dynamic>? alertConfiguration;
 
   /// The detector active at Start and at each later model boundary, in order.
   final List<DetectorModelRef> detectors;
@@ -123,8 +127,12 @@ class ResearchSession implements TelemetrySource {
     required List<AlertLifecycleRecord> alertRecords,
     required this.alertCounters,
     required this.appVersion,
+    Map<String, dynamic>? alertConfiguration,
     this.rowsIncomplete = false,
-  }) : detectors = List.unmodifiable(detectors),
+  }) : alertConfiguration = AppSettings.parseAlertConfiguration(
+         alertConfiguration,
+       ),
+       detectors = List.unmodifiable(detectors),
        intervals = List.unmodifiable(intervals),
        records = List.unmodifiable(records),
        samples = List.unmodifiable(samples),
@@ -176,6 +184,7 @@ class ResearchSession implements TelemetrySource {
     'id': id,
     'participantCode': participantCode,
     'trialLabel': trialLabel,
+    if (alertConfiguration != null) 'alertConfiguration': alertConfiguration,
     'detectors': [
       for (final detector in detectors)
         {
@@ -218,6 +227,9 @@ class ResearchSession implements TelemetrySource {
       id: json['id'] as String? ?? '',
       participantCode: json['participantCode'] as String? ?? '',
       trialLabel: json['trialLabel'] as String? ?? '',
+      alertConfiguration: json['alertConfiguration'] is Map
+          ? asMap(json['alertConfiguration'])
+          : null,
       detectors: [
         for (final entry in asMaps(json['detectors']))
           DetectorModelRef(

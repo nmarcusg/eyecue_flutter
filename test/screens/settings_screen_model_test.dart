@@ -90,6 +90,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // The distance controls above this card can push it beyond the viewport.
+    // Exercise normal scroll reachability instead of relying on a tall fixture.
+    await tester.scrollUntilVisible(
+      find.text('Detector Model'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
   }
 
   testWidgets('renders the built-in model from the service', (tester) async {

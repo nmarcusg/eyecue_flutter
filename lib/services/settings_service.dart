@@ -65,6 +65,28 @@ class SettingsService extends ChangeNotifier {
   final SettingsStore _store;
   AppSettings _settings = const AppSettings();
 
+  /// Installed by the shared trial owner; checked at the application boundary.
+  bool Function()? alertDistancesLocked;
+  double get alertDistanceMeters => _settings.alertDistanceMeters;
+  double get urgentDistanceMeters => _settings.urgentDistanceMeters;
+
+  Future<bool> setAlertDistances({
+    required double alertMeters,
+    required double urgentMeters,
+  }) async {
+    if (alertDistancesLocked?.call() == true ||
+        !AppSettings.validAlertDistances(alertMeters, urgentMeters)) {
+      return false;
+    }
+    await _update(
+      _settings.copyWith(
+        alertDistanceMeters: alertMeters,
+        urgentDistanceMeters: urgentMeters,
+      ),
+    );
+    return true;
+  }
+
   AppSettings get settings => _settings;
   bool get vibrationFeedback => _settings.vibrationFeedback;
   bool get autoStartDetection => _settings.autoStartDetection;

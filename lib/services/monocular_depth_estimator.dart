@@ -15,6 +15,7 @@ enum DepthRunState { idle, loading, ready, degraded }
 class DepthFrame {
   const DepthFrame({
     required this.grid,
+    this.observationRevision = 0,
     required this.heatmap,
     required this.timestampMs,
     required this.rotationDegrees,
@@ -27,6 +28,9 @@ class DepthFrame {
   /// It covers the same sensor/upright geometry the dense map covered, so
   /// [DepthDistanceService.sensorSpaceBox] mapping stays valid.
   final YOLODepthMap grid;
+
+  /// Local numerical observation identity; heatmap updates retain this value.
+  final int observationRevision;
 
   /// Colourised, alpha-baked heatmap image in SENSOR orientation.
   final ui.Image? heatmap;
@@ -215,9 +219,10 @@ class MonocularDepthEstimator {
   final Stopwatch _clock = Stopwatch()..start();
   bool _disposed = false;
 
-  /// One publish at a time: an overlapping event is dropped (latest-frame-wins), so an
-  /// older frame can never land after a newer one and dispose the newer heatmap.
-  bool _publishing = false;
+  int _observationRevision = 0;
+  int _visualEpoch = 0;
+  bool _buildingHeatmap = false;
+  DepthFrame? _pendingHeatmap;
 
   /// Wall-clock milliseconds of the last native depth inference. Survives [stop].
   int? get lastLatencyMs => _lastLatencyMs;
@@ -299,7 +304,6 @@ class MonocularDepthEstimator {
       _degrade();
       return;
     }
-    if (_publishing) return;
     _recordCompletion(event);
     final grid = YOLODepthMap(
       values: event.depthGrid,
@@ -308,55 +312,22 @@ class MonocularDepthEstimator {
       minDepth: event.minDepth,
       maxDepth: event.maxDepth,
     );
-    _publishing = true;
-    unawaited(
-      _publish(
-        grid,
-        timestampMs: event.timestampMs,
-        rotationDegrees: rotationDegrees,
-        uprightWidth: uprightWidth,
-        uprightHeight: uprightHeight,
-        releaseEpoch: _releaseEpoch,
-      ).whenComplete(() => _publishing = false),
-    );
-  }
-
-  Future<void> _publish(
-    YOLODepthMap grid, {
-    required int timestampMs,
-    required int rotationDegrees,
-    required int uprightWidth,
-    required int uprightHeight,
-    required int releaseEpoch,
-  }) async {
-    var heatmap = heatmapEnabled ? await _buildTimedHeatmap(grid) : null;
-    // A release landed while the builder ran: this frame belongs to a session
-    // that no longer exists, so publishing it would repopulate `frame` and
-    // report `ready` with no model behind it.
-    if (_disposed || releaseEpoch != _releaseEpoch) {
-      heatmap?.dispose();
-      // The builder just priced an image this session discards.
-      _lastHeatmapBuildMs = null;
-      return;
-    }
-    // Disabled while the builder ran: publish the grid without the image.
-    if (!heatmapEnabled) {
-      heatmap?.dispose();
-      heatmap = null;
-      // Same: a discarded image must not keep exporting a build cost.
-      _lastHeatmapBuildMs = null;
-    }
     final next = DepthFrame(
       grid: grid,
-      heatmap: heatmap,
-      timestampMs: timestampMs,
+      heatmap: null,
+      observationRevision: ++_observationRevision,
+      timestampMs: event.timestampMs,
       rotationDegrees: rotationDegrees,
       uprightWidth: uprightWidth,
       uprightHeight: uprightHeight,
     );
+    final visualEpoch = _visualEpoch;
     final previous = frame.value;
+    _lastHeatmapBuildMs = null;
     frame.value = next;
     previous?.heatmap?.dispose();
+    // Listeners may synchronously stop/release/dispose the estimator.
+    if (_disposed || visualEpoch != _visualEpoch) return;
     if (!_loggedFirstFrame) {
       _loggedFirstFrame = true;
       debugPrint(
@@ -366,22 +337,77 @@ class MonocularDepthEstimator {
         'in ${_lastLatencyMs ?? 0} ms (useGpu=$_useGpu)',
       );
     }
-    // A degrade that landed while this frame was in flight wins: publishing
-    // `ready` would re-arm the instance id and clear the native failure latch.
+    // A synchronous failure notification must not be overwritten by ready.
     if (state.value != DepthRunState.degraded) {
       state.value = DepthRunState.ready;
     }
+    if (_disposed || visualEpoch != _visualEpoch) return;
     onFrame?.call(next);
+    if (!_disposed &&
+        visualEpoch == _visualEpoch &&
+        heatmapEnabled &&
+        identical(frame.value, next)) {
+      _pendingHeatmap = next;
+      unawaited(_drainHeatmaps());
+    }
+  }
+
+  /// One active decode and one latest pending visualization. Numerical depth
+  /// never waits for either. An obsolete image is disposed on completion.
+  Future<void> _drainHeatmaps() async {
+    if (_buildingHeatmap) return;
+    _buildingHeatmap = true;
+    try {
+      while (!_disposed && heatmapEnabled && _pendingHeatmap != null) {
+        final source = _pendingHeatmap!;
+        _pendingHeatmap = null;
+        final epoch = _visualEpoch;
+        final started = _clock.elapsedMilliseconds;
+        ui.Image? image;
+        try {
+          image = await (heatmapBuilder ?? _buildHeatmap)(source.grid);
+        } catch (error) {
+          // Visualization failure cannot disable usable numerical depth.
+          debugPrint('[Depth] heatmap build failed: $error');
+        }
+        final current = _disposed ? null : frame.value;
+        if (_disposed ||
+            !heatmapEnabled ||
+            epoch != _visualEpoch ||
+            current?.observationRevision != source.observationRevision ||
+            state.value == DepthRunState.degraded) {
+          image?.dispose();
+          continue;
+        }
+        if (image == null) continue;
+        _lastHeatmapBuildMs = _clock.elapsedMilliseconds - started;
+        frame.value = DepthFrame(
+          grid: source.grid,
+          heatmap: image,
+          observationRevision: source.observationRevision,
+          timestampMs: source.timestampMs,
+          rotationDegrees: source.rotationDegrees,
+          uprightWidth: source.uprightWidth,
+          uprightHeight: source.uprightHeight,
+        );
+        current?.heatmap?.dispose();
+      }
+    } finally {
+      _buildingHeatmap = false;
+    }
   }
 
   /// Replaces the current frame with a heatmap-less copy and frees the texture.
   void _dropHeatmap() {
+    _visualEpoch++;
+    _pendingHeatmap = null;
     _lastHeatmapBuildMs = null;
     final previous = frame.value;
     final image = previous?.heatmap;
     if (previous == null || image == null) return;
     frame.value = DepthFrame(
       grid: previous.grid,
+      observationRevision: previous.observationRevision,
       heatmap: null,
       timestampMs: previous.timestampMs,
       rotationDegrees: previous.rotationDegrees,
@@ -466,6 +492,8 @@ class MonocularDepthEstimator {
   }
 
   void _degrade() {
+    _visualEpoch++;
+    _pendingHeatmap = null;
     state.value = DepthRunState.degraded;
   }
 
@@ -474,11 +502,15 @@ class MonocularDepthEstimator {
   /// Nothing is scheduled on the Dart side any more: the native tick stops as
   /// soon as the streaming config drops the instance id. The model stays loaded.
   void stop() {
+    _visualEpoch++;
+    _pendingHeatmap = null;
     _loggedFirstFrame = false;
   }
 
   /// Drops the current frame and heatmap image.
   void clearFrame() {
+    _visualEpoch++;
+    _pendingHeatmap = null;
     _lastHeatmapBuildMs = null;
     final previous = frame.value;
     frame.value = null;
@@ -584,17 +616,6 @@ class MonocularDepthEstimator {
       }
     }
     return (width: width, height: height, pixels: pixels);
-  }
-
-  Future<ui.Image?> _buildTimedHeatmap(YOLODepthMap map) async {
-    final started = _clock.elapsedMilliseconds;
-    final image = await (heatmapBuilder ?? _buildHeatmap)(map);
-    // Only a real image has a cost; a builder that produced nothing leaves the
-    // value absent instead of pricing a heatmap that does not exist.
-    _lastHeatmapBuildMs = image == null
-        ? null
-        : _clock.elapsedMilliseconds - started;
-    return image;
   }
 
   Future<ui.Image?> _buildHeatmap(YOLODepthMap map) async {

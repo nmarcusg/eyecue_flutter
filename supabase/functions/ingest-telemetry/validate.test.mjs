@@ -733,3 +733,24 @@ test('the ledger keeps only outcomes a real token can spend', () => {
   )
   assert.match(tokenSql, /delete from public\.research_ingest_attempts/)
 })
+
+test('schema 4 accepts frozen alert configuration without a backend migration', () => {
+  const body = validEnvelope()
+  body.telemetry.settings = {
+    alertConfiguration: {
+      version: 1,
+      normalMaxMeters: 3,
+      urgentBelowMeters: 1,
+      hysteresisMeters: 0.3,
+      evidencePolicy: 'freshSpatialMedian-v1',
+      wordingPolicy: 'compactObstacleFirst-v1',
+      distanceEstimationMode: 'monocularDepth',
+      requestedDetectionHz: null,
+      requestedDepthHz: 2,
+      lowPowerMode: false,
+    },
+  }
+  const verdict = validateEnvelope(body)
+  assert.equal(verdict.ok, true)
+  assert.deepEqual(verdict.envelope.telemetry.settings, body.telemetry.settings)
+})

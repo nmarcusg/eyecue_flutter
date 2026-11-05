@@ -14,7 +14,6 @@ import '../models/detection_runtime_state.dart';
 import '../models/detector_model.dart';
 import '../models/detector_stage_timings.dart';
 import '../models/model_config.dart';
-import '../models/tracked_detection.dart';
 import '../services/assistive_detection_controller.dart';
 import '../services/correction_service.dart';
 import '../services/depth_distance_service.dart';
@@ -419,14 +418,10 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
 
   /// Native depth events, on the same view event channel as zoom/lens/focus.
   StreamSubscription<YOLODepthEvent>? _depthEventSub;
-  final DepthSmoother _depthSmoother = DepthSmoother();
 
   /// Latest detection boxes, retained so the Flutter box layer and the depth
   /// sampler both read the same frame.
   List<Detection> _latestDetections = const [];
-
-  /// Tracks from the previous assistive frame, used to key EMA smoothing.
-  List<TrackedDetection> _lastTracks = const [];
 
   int _uprightWidth = 0;
   int _uprightHeight = 0;
@@ -611,9 +606,28 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     }
   }
 
-  /// A new depth map only changes presentation (heatmap + which box layer is
-  /// used); detection frames pick the map up on their own cadence.
+  /// Numerical depth may change eligibility before the next detector result.
+  /// The controller retains the original detector receipt and rejects stale data.
   void _handleDepthFrame() {
+    final frame = _depthFrame;
+    if (frame != null &&
+        _depthFresh &&
+        _mdeEnabled &&
+        _detectionActive &&
+        !_paused &&
+        _overlayEligible) {
+      final updated = _assistive.reevaluateDepth(
+        meters: _metersFor(_latestDetections),
+        depthRevision: frame.observationRevision,
+        session: '$_activeNativeEpoch:$_speechSessionGeneration',
+        model: widget.detectorModel?.current.ref.fingerprint ?? _modelPath,
+        camera: 'native-view-$_nativeViewEpoch',
+      );
+      if (updated) {
+        _detectionInfo = _assistive.detections;
+        _overlayInfos = _detectionInfo;
+      }
+    }
     _applyOverlayVisibility();
     if (mounted) setState(() {});
   }
@@ -722,12 +736,12 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
   void _handleSettingsChanged() {
     final modeChanged = _settings.distanceEstimationMode != _lastDistanceMode;
     _lastDistanceMode = _settings.distanceEstimationMode;
+    if (modeChanged) _assistive.reset(reason: 'distance mode changed');
     _syncHeatmapGate();
     if (modeChanged && !_mdeEnabled) {
       // Bounding-box mode stops depth inference entirely and releases the
       // interpreter, so its weights and delegate do not stay resident.
       // `releaseModel()` already stops the tick and clears the frame.
-      _depthSmoother.reset();
       unawaited(_depth.releaseModel());
     } else if (modeChanged) {
       _depth.retry();
@@ -771,7 +785,6 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
       _latestDetections = const [];
       _overlayInfos = const [];
       _detectionInfo = const [];
-      _lastTracks = const [];
       _modelChangeNotice = true;
     });
   }
@@ -878,7 +891,7 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     _pausedWhileLoading = false;
     _activeNativeEpoch++;
     _speechSessionGeneration++;
-    _assistive.tts.invalidateAutomaticDetection(reason: 'stop');
+    _assistive.reset(reason: 'stop');
     debugPrint(
       '[Ultralytics] Stop requested — coordinator=${widget.coordinator.state} '
       'local(active=$_detectionActive paused=$_paused epoch=$_nativeViewEpoch)',
@@ -896,14 +909,12 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     _freshnessTimer?.cancel();
     _depth.stop();
     _depth.clearFrame();
-    _depthSmoother.reset();
     if (!mounted) return;
     setState(() {
       _detectionActive = false;
       _paused = false;
       _detectionInfo = const [];
       _latestDetections = const [];
-      _lastTracks = const [];
       // PD3: clear the displayed overlay snapshot immediately on stop.
       _overlayInfos = const [];
       _inferenceMs = 0;
@@ -1000,8 +1011,15 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     final width = data['imageWidth'];
     final height = data['imageHeight'];
     if (width is num && height is num) {
-      _uprightWidth = width.toInt();
-      _uprightHeight = height.toInt();
+      final nextWidth = width.toInt();
+      final nextHeight = height.toInt();
+      if (_uprightWidth > 0 &&
+          _uprightHeight > 0 &&
+          (nextWidth != _uprightWidth || nextHeight != _uprightHeight)) {
+        _assistive.reset(reason: 'source geometry changed');
+      }
+      _uprightWidth = nextWidth;
+      _uprightHeight = nextHeight;
     }
     _latestDetections = detections;
     final meters = _metersFor(detections);
@@ -1014,9 +1032,10 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
       model: widget.detectorModel?.current.ref.fingerprint ?? _modelPath,
       camera: 'native-view-$_nativeViewEpoch',
       meters: meters,
+      depthRevision: _mdeEnabled && _depthFresh
+          ? _depthFrame?.observationRevision
+          : null,
     );
-    // Track identity for the next frame's EMA smoothing.
-    _lastTracks = _assistive.tracks;
     // PD3: accept a new overlay snapshot only while the currently observed
     // mapped coordinator outcome is Ready (healthy fallback maps to Ready).
     // This is a presentation-local gate; see the [_overlayInfos] doc comment
@@ -1041,8 +1060,7 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     final frame = _depthFrame;
     if (frame == null || !_depthFresh) return null;
     return [
-      for (final detection in detections)
-        _smoothedMeters(detection, _sampleMeters(frame.grid, detection)),
+      for (final detection in detections) _sampleMeters(frame.grid, detection),
     ];
   }
 
@@ -1059,32 +1077,6 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
       height: map.height,
       box: sensorBox,
     );
-  }
-
-  /// EMA smoothing keyed by the previous frame's tracker identity. Raw depth
-  /// values are never overwritten; only the reported estimate is smoothed.
-  double? _smoothedMeters(Detection detection, double? raw) {
-    if (raw == null) return null;
-    final trackId = _trackIdFor(detection);
-    if (trackId == null) return raw;
-    return _depthSmoother.smooth(trackId, raw);
-  }
-
-  int? _trackIdFor(Detection detection) {
-    final center = detection.box.center;
-    int? bestId;
-    var bestDistance = double.infinity;
-    for (final track in _lastTracks) {
-      if (track.classId != detection.classId) continue;
-      final delta = track.box.center - center;
-      final distance = delta.distanceSquared;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestId = track.trackId;
-      }
-    }
-    // 0.2 normalized distance (~20% of the frame) is the identity window.
-    return bestDistance <= 0.04 ? bestId : null;
   }
 
   /// Retry after a depth failure.

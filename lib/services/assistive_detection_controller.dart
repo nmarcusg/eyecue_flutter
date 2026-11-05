@@ -8,6 +8,7 @@ import '../models/detection.dart';
 import '../models/detector_model.dart';
 import '../models/tracked_detection.dart';
 import 'correction_service.dart';
+import 'depth_distance_service.dart';
 import 'object_tracker.dart';
 import 'spatial_analysis_service.dart';
 import 'telemetry_service.dart';
@@ -49,6 +50,10 @@ class AssistiveDetectionController extends ChangeNotifier {
   /// screen supplies it.
   DetectorModelRef? detectorModel;
 
+  final DepthSmoother _displaySmoother = DepthSmoother();
+  _DetectionContext? _context;
+  int? _depthRevision;
+  List<Detection> _rawDetections = const [];
   List<DetectionInfo> _detections = const [];
   List<TrackedDetection> _tracks = const [];
 
@@ -73,16 +78,29 @@ class AssistiveDetectionController extends ChangeNotifier {
     String? model,
     String? camera,
     List<double?>? meters,
+    int? depthRevision,
   }) {
     // Acceptance anchor: entry, before spatial analysis or tracking work.
     final acceptedAt = DateTime.now();
     final timing = frameLatency?.withDetectionAcceptedAt(acceptedAt);
-    _detections = SpatialAnalysisService.analyzeAll(
-      detections,
-      meters: meters,
-      priorityResolver: priorityResolver,
-    );
+    _rawDetections = List.unmodifiable(detections);
     _tracks = tracker.update(detections, timestamp);
+    _depthRevision = depthRevision;
+    _detections = _analyze(meters, depthRevision);
+    _context =
+        resultReceivedAt != null &&
+            monotonicReceivedAt != null &&
+            session != null &&
+            model != null &&
+            camera != null
+        ? _DetectionContext(
+            resultReceivedAt,
+            monotonicReceivedAt,
+            session,
+            model,
+            camera,
+          )
+        : null;
     if (resultReceivedAt != null &&
         monotonicReceivedAt != null &&
         session != null &&
@@ -159,6 +177,96 @@ class AssistiveDetectionController extends ChangeNotifier {
     return _detections;
   }
 
+  /// Consumes new numerical depth without creating a detector observation.
+  /// Original receipt/context and tracker hit counts remain unchanged.
+  bool reevaluateDepth({
+    required List<double?>? meters,
+    required int depthRevision,
+    required String session,
+    required String model,
+    required String camera,
+  }) {
+    final context = _context;
+    if (context == null ||
+        _rawDetections.isEmpty ||
+        _depthRevision == depthRevision ||
+        context.session != session ||
+        context.model != model ||
+        context.camera != camera) {
+      return false;
+    }
+    final age = tts.monotonicNow - context.monotonicReceivedAt;
+    if (age < Duration.zero || age > tts.maxDetectionAge) return false;
+    _depthRevision = depthRevision;
+    _detections = _analyze(meters, depthRevision);
+    tts.updateDetectionObservation(
+      detections: _detections,
+      receivedAt: context.receivedAt,
+      monotonicReceivedAt: context.monotonicReceivedAt,
+      session: context.session,
+      model: context.model,
+      camera: context.camera,
+      tracks: _tracks,
+      detectorKind: _detectorKind,
+      detectorIdentity: detectorModel?.fingerprint,
+    );
+    tts.announceDetections(
+      _detections,
+      tracks: _tracks,
+      engine: engine,
+      resultReceivedAt: context.receivedAt,
+      detectorKind: _detectorKind,
+      detectorIdentity: detectorModel?.fingerprint,
+      session: context.session,
+      model: context.model,
+      camera: context.camera,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  DetectorModelKind get _detectorKind =>
+      detectorModel == null || detectorModel?.id == 'builtin'
+      ? DetectorModelKind.builtIn
+      : DetectorModelKind.custom;
+
+  List<DetectionInfo> _analyze(List<double?>? meters, int? revision) {
+    _displaySmoother.retainTracks(tracker.activeTracks.map((t) => t.trackId));
+    final infos = SpatialAnalysisService.analyzeAll(
+      _rawDetections,
+      meters: meters,
+      priorityResolver: priorityResolver,
+    );
+    return [for (final info in infos) _withDisplayDistance(info, revision)];
+  }
+
+  DetectionInfo _withDisplayDistance(DetectionInfo info, int? revision) {
+    final raw = info.estimatedMeters;
+    if (raw == null || revision == null) return info;
+    TrackedDetection? matched;
+    for (final track in _tracks) {
+      if (_sameDetection(track.detection, info.detection)) {
+        matched = track;
+        break;
+      }
+    }
+    if (matched == null) return info;
+    return DetectionInfo(
+      detection: info.detection,
+      position: info.position,
+      priority: info.priority,
+      proximity: info.proximity,
+      estimatedMeters: raw,
+      distanceSource: info.distanceSource,
+      distanceLabel: info.distanceLabel,
+      displayMeters: _displaySmoother.smooth(
+        matched.trackId,
+        raw,
+        observationRevision: revision,
+      ),
+    );
+  }
+
   void recordMetrics({
     required double latencyMs,
     required double inferenceFps,
@@ -218,7 +326,12 @@ class AssistiveDetectionController extends ChangeNotifier {
 
   void reset({String reason = 'session reset'}) {
     tts.invalidateAutomaticDetection(reason: reason);
+    tts.policy.resetAutomaticHistory();
     tracker.reset();
+    _displaySmoother.reset();
+    _context = null;
+    _depthRevision = null;
+    _rawDetections = const [];
     _detections = const [];
     _tracks = const [];
     notifyListeners();
@@ -230,4 +343,19 @@ class AssistiveDetectionController extends ChangeNotifier {
       a.box.top == b.box.top &&
       a.box.width == b.box.width &&
       a.box.height == b.box.height;
+}
+
+class _DetectionContext {
+  const _DetectionContext(
+    this.receivedAt,
+    this.monotonicReceivedAt,
+    this.session,
+    this.model,
+    this.camera,
+  );
+  final DateTime receivedAt;
+  final Duration monotonicReceivedAt;
+  final String session;
+  final String model;
+  final String camera;
 }

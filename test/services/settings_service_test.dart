@@ -4,6 +4,49 @@ import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'alert distance pair migrates, validates atomically and persists',
+    () async {
+      final store = InMemorySettingsStore();
+      final service = SettingsService(store: store);
+      expect(service.alertDistanceMeters, 2);
+      expect(service.urgentDistanceMeters, 1.5);
+      expect(
+        await service.setAlertDistances(alertMeters: 3, urgentMeters: 2),
+        isTrue,
+      );
+      final restored = SettingsService(store: store);
+      await restored.load();
+      expect(restored.alertDistanceMeters, 3);
+      expect(restored.urgentDistanceMeters, 2);
+      expect(
+        await restored.setAlertDistances(alertMeters: 2, urgentMeters: 2),
+        isFalse,
+      );
+      expect(
+        await restored.setAlertDistances(
+          alertMeters: double.nan,
+          urgentMeters: 1,
+        ),
+        isFalse,
+      );
+      expect(restored.alertDistanceMeters, 3);
+      restored.alertDistancesLocked = () => true;
+      expect(
+        await restored.setAlertDistances(alertMeters: 2, urgentMeters: 1),
+        isFalse,
+      );
+      expect(restored.urgentDistanceMeters, 2);
+      final corrupt = AppSettings.fromJson({
+        'alertDistanceMeters': 3,
+        'urgentDistanceMeters': 4,
+      });
+      expect(corrupt.alertDistanceMeters, 2);
+      expect(corrupt.urgentDistanceMeters, 1.5);
+      expect(AppSettings.fromJson({}).alertDistanceMeters, 2);
+    },
+  );
+
   group('SettingsService', () {
     test('defaults are applied when no persisted settings exist', () async {
       final service = SettingsService(store: InMemorySettingsStore());
@@ -72,7 +115,7 @@ void main() {
       expect(service.detectionTargetHz, isNull);
       expect(service.depthTargetHz, AppSettings.defaultDepthTargetHz);
       // Bumped 6 -> 7 when the detector model selection was added.
-      expect(AppSettings.currentSchemaVersion, 7);
+      expect(AppSettings.currentSchemaVersion, 8);
     });
 
     test('detector selection defaults to the built-in model', () async {

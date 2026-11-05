@@ -118,6 +118,101 @@ TelemetryUploadService buildUploadService({
 );
 
 void main() {
+  test(
+    'trial configuration survives restart and export ignores later settings',
+    () async {
+      final clock = TestClock(DateTime.utc(2026, 11, 5));
+      final telemetry = buildTelemetry(clock);
+      final store = InMemoryResearchSessionStore();
+      final service = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: store,
+      );
+      await service.start(
+        participantCode: 'P-001',
+        trialLabel: 'distance',
+        detector: builtInRef,
+        settings: const AppSettings(
+          alertDistanceMeters: 3,
+          urgentDistanceMeters: 2,
+        ),
+      );
+      expect(service.hasOpenTrial, isTrue);
+      await service.pause();
+      final restored = buildService(
+        telemetry: telemetry,
+        clock: clock,
+        store: store,
+      );
+      await restored.load();
+      expect(restored.hasOpenTrial, isTrue);
+      expect(restored.openTrialAlertConfiguration?['normalMaxMeters'], 3);
+      final result = await restored.finish();
+      final session = result!.session;
+      final roundTrip = ResearchSession.fromJson(session.toJson());
+      expect(roundTrip.alertConfiguration?['urgentBelowMeters'], 2);
+      final exporter = TelemetryExportService();
+      final exported = exporter.snapshot(
+        telemetry: roundTrip,
+        settings: const AppSettings(),
+      );
+      expect(
+        (exported.settings['alertConfiguration'] as Map)['normalMaxMeters'],
+        3,
+      );
+      expect(exporter.toCsv(telemetry: roundTrip), contains('normalMaxMeters'));
+      final corrupt = Map<String, dynamic>.of(session.toJson())
+        ..['alertConfiguration'] = {
+          'version': 1,
+          'normalMaxMeters': 'bad',
+          'urgentBelowMeters': 1,
+        };
+      expect(ResearchSession.fromJson(corrupt).alertConfiguration, isNull);
+      final legacy = ResearchSession.fromJson(
+        Map.of(session.toJson())..remove('alertConfiguration'),
+      );
+      expect(
+        exporter
+            .snapshot(telemetry: legacy, settings: const AppSettings())
+            .settings,
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'partial or corrupt recorded cadence never acquires preference defaults',
+    () {
+      for (final entry in <String, Object?>{
+        'requestedDetectionHz': 'automatic',
+        'requestedDepthHz': 999,
+        'lowPowerMode': null,
+      }.entries) {
+        final snapshot = Map<String, dynamic>.of(
+          const AppSettings().alertConfiguration,
+        )..[entry.key] = entry.value;
+        expect(AppSettings.parseAlertConfiguration(snapshot), isNull);
+      }
+      for (final key in [
+        'requestedDetectionHz',
+        'requestedDepthHz',
+        'lowPowerMode',
+      ]) {
+        final snapshot = Map<String, dynamic>.of(
+          const AppSettings().alertConfiguration,
+        )..remove(key);
+        expect(AppSettings.parseAlertConfiguration(snapshot), isNull);
+      }
+      final valid = AppSettings.parseAlertConfiguration(
+        const AppSettings().alertConfiguration,
+      )!;
+      expect(valid['requestedDetectionHz'], isNull);
+      expect(valid['requestedDepthHz'], 2);
+      expect(valid['lowPowerMode'], false);
+    },
+  );
+
   group('1. Start is explicit; an interrupted draft restores paused', () {
     test(
       'nothing before Start reaches the trial, and a draft restores paused',

@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/alert_lifecycle.dart';
 import '../models/app_settings.dart';
+import '../models/research_session.dart';
 import '../models/detection_correction.dart';
 import '../models/telemetry_export.dart';
 import 'telemetry_service.dart';
@@ -193,7 +194,12 @@ class TelemetryExportService {
       sessionStart: telemetry.sessionStart,
       sessionDurationMs: telemetry.sessionDuration.inMilliseconds,
       rowsIncomplete: telemetry.rowsIncomplete,
-      settings: settings?.toJson() ?? const {},
+      settings: telemetry is ResearchSession
+          ? {
+              if (telemetry.alertConfiguration != null)
+                'alertConfiguration': telemetry.alertConfiguration,
+            }
+          : settings?.toJson() ?? const {},
       detectorModels: table.models,
       samples: samples,
       detections: detections,
@@ -303,6 +309,7 @@ class TelemetryExportService {
       'depth_dropped_ticks',
       'low_power_clamped',
       'source_limited',
+      'alert_configuration',
     ];
 
     List<Object?> row(Map<String, dynamic> values) => [
@@ -312,6 +319,9 @@ class TelemetryExportService {
     final rows = <List<Object?>>[
       row({
         'record_type': 'metadata',
+        'alert_configuration': export.settings['alertConfiguration'] == null
+            ? null
+            : jsonEncode(export.settings['alertConfiguration']),
         'schema_version': TelemetryExport.schemaVersion,
         'timestamp': export.exportedAt.toUtc().toIso8601String(),
         'app_version': export.appVersion,
