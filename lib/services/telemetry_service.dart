@@ -554,7 +554,10 @@ class TelemetryService extends ChangeNotifier implements TelemetrySource {
   TelemetryService({
     DateTime Function()? clock,
     String? sessionId,
-    this.appVersion = '1.0.0+1',
+    this.appVersion = const String.fromEnvironment(
+      'EYECUE_APP_VERSION',
+      defaultValue: '1.0.0+1',
+    ),
   }) : _clock = clock ?? DateTime.now,
        sessionId =
            sessionId ?? 'session-${DateTime.now().microsecondsSinceEpoch}';

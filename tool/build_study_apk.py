@@ -48,6 +48,7 @@ def main():
     subprocess.run([
         'flutter', 'build', 'apk', '--release', '--no-pub',
         '--build-name=1.0.0', f'--build-number={args.build_number}',
+        f'--dart-define=EYECUE_APP_VERSION=1.0.0-study+{args.build_number}',
         f'--dart-define=EYECUE_TELEMETRY_INGEST_URL={url}',
         f'--dart-define=EYECUE_SUPABASE_PUBLISHABLE_KEY={public_key}',
     ], cwd=root, env=env, check=True)

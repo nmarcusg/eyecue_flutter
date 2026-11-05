@@ -26,6 +26,8 @@ A failed destination may contain a partial file; it is not automatically deleted
 because it could be an existing user document. A cloud provider may manage its
 own later synchronization after acknowledging the write.
 
+The study build pipeline supplies the recorded app version (for example,
+`1.0.0-study+2`); previously recorded trial versions remain unchanged.
 JSON stays telemetry schema4, with detector attribution and the frozen trial's
 alert configuration. CSV includes the same available records and configuration.
 No images, upload tokens, device identifiers or new research-data thinning are
