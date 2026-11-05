@@ -33,6 +33,17 @@ val uploadKeyPassword = uploadSecret("keyPassword", "EYECUE_KEY_PASSWORD")
 val hasUploadSigning = uploadStoreFile != null && uploadStorePassword != null &&
     uploadKeyAlias != null && uploadKeyPassword != null
 
+// Opt-in research installation. The permanent Play identity stays unchanged.
+val studyBuild = providers.gradleProperty("eyecueStudyBuild")
+    .orElse(providers.environmentVariable("EYECUE_STUDY_BUILD"))
+    .getOrElse("false").toBooleanStrict()
+if (studyBuild && !hasUploadSigning) {
+    throw GradleException(
+        "EyeCue Study requires its retained signing keystore. " +
+            "Refusing a generated debug key that would break future updates.",
+    )
+}
+
 android {
     // Final Play Store identity: the owner approved app.eyecue.mobile, so both
     // applicationId and namespace are settled (gate D1 decided; see
@@ -48,7 +59,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "app.eyecue.mobile"
+        applicationId = if (studyBuild) "app.eyecue.mobile.study" else "app.eyecue.mobile"
+        manifestPlaceholders["eyecueAppLabel"] = if (studyBuild) "EyeCue Study" else "EyeCue"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -68,6 +80,7 @@ android {
 
     buildTypes {
         release {
+            if (studyBuild) versionNameSuffix = "-study"
             // Flutter's Gradle plugin does not enable shrinking; these are the
             // effective release values and R8 (including its consumer rules from
             // WorkManager/Room) runs on this build type.

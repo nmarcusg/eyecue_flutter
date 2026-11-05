@@ -59,3 +59,6 @@ app.*.map.json
 
 # Supabase CLI local state
 /supabase/.temp/
+
+# Local bytecode from Android build verification helpers.
+/tool/__pycache__/

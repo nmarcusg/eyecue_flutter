@@ -24,7 +24,7 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         tools:node="remove"/>
     <application
-        android:label="EyeCue"
+        android:label="${eyecueAppLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
