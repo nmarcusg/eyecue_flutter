@@ -62,6 +62,57 @@ TrackedDetection trackOf(
 }
 
 void main() {
+  test('configured distance boundaries apply to both detector kinds', () {
+    for (final kind in DetectorModelKind.values) {
+      final policy = AlertPolicy();
+      policy.configureDistance(
+        const AutomaticDistanceAlertConfig(
+          normalMaxMeters: 3,
+          urgentBelowMeters: 1,
+        ),
+      );
+      AlertDecision at(double meters) => policy.decide(
+        detections: [metricInfo(meters)],
+        tracks: const [],
+        now: DateTime(2026),
+        audioEnabled: true,
+        detectorKind: kind,
+        detectorIdentity: 'model',
+      );
+      expect(at(3.01).announce, false);
+      expect(at(3).announce, true);
+      expect(at(1).priority, AlertPriority.normal);
+      expect(at(0.99).priority, AlertPriority.imminent);
+    }
+  });
+
+  test('late old-configuration start cannot recreate cleared suppression', () {
+    final policy = AlertPolicy();
+    final now = DateTime(2026);
+    AlertDecision decide() => policy.decide(
+      detections: [metricInfo(1.8)],
+      tracks: const [],
+      now: now,
+      audioEnabled: true,
+    );
+    final old = decide();
+    policy.configureDistance(
+      const AutomaticDistanceAlertConfig(
+        normalMaxMeters: 3,
+        urgentBelowMeters: 1,
+      ),
+    );
+    policy.commitStarted(old, now);
+    expect(policy.shouldSpeakPending(old, now), false);
+    expect(decide().announce, true);
+    expect(policy.lastStartedUtterance, old.text);
+    final fresh = decide();
+    policy.commitStarted(fresh, now);
+    expect(decide().announce, false);
+    policy.resetAutomaticHistory();
+    expect(decide().announce, true);
+  });
+
   late DateTime now;
   late AlertPolicy policy;
 

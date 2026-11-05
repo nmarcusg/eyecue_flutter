@@ -58,6 +58,7 @@ class AlertDecision {
   final DateTime? basedOnStartedAt;
   final String? detectorIdentity;
   final double? metricMeters;
+  final int configurationGeneration;
 
   const AlertDecision({
     required this.announce,
@@ -78,6 +79,7 @@ class AlertDecision {
     this.basedOnStartedAt,
     this.detectorIdentity,
     this.metricMeters,
+    this.configurationGeneration = 0,
   });
 
   /// A pending request older than [validity] is no longer worth speaking.
@@ -102,6 +104,7 @@ class AlertDecision {
     basedOnStartedAt: basedOnStartedAt,
     detectorIdentity: detectorIdentity,
     metricMeters: metricMeters,
+    configurationGeneration: configurationGeneration,
   );
 }
 
@@ -141,7 +144,30 @@ class AlertPolicy {
 
   /// How long an accepted identity stays suppressed without being refreshed.
   final Duration stateTtl;
-  final AutomaticDistanceAlertConfig distanceConfig;
+  AutomaticDistanceAlertConfig distanceConfig;
+  int _configurationGeneration = 0;
+
+  /// A configuration boundary clears suppression without erasing Repeat history.
+  void configureDistance(AutomaticDistanceAlertConfig config) {
+    if (!config.normalMaxMeters.isFinite ||
+        !config.urgentBelowMeters.isFinite ||
+        config.normalMaxMeters < 1 ||
+        config.normalMaxMeters > 5 ||
+        config.urgentBelowMeters < 0.5 ||
+        config.urgentBelowMeters > config.normalMaxMeters - 0.25 ||
+        config.hysteresisMeters != 0.3) {
+      throw ArgumentError('Invalid automatic alert distance configuration');
+    }
+    distanceConfig = config;
+    resetAutomaticHistory();
+  }
+
+  void resetAutomaticHistory() {
+    _configurationGeneration++;
+    _states.clear();
+    _rearmedKeys.clear();
+    _urgentRearmedKeys.clear();
+  }
 
   final Map<String, _KeyState> _states = {};
   final Set<String> _rearmedKeys = {};
@@ -271,6 +297,8 @@ class AlertPolicy {
   /// Phase 2 (confirmed start): the only writer of suppression history.
   void commitStarted(AlertDecision decision, DateTime startedAt) {
     if (!decision.announce) return;
+    _lastStartedUtterance = decision.text;
+    if (decision.configurationGeneration != _configurationGeneration) return;
     _rearmedKeys.remove(decision.suppressionKey);
     _urgentRearmedKeys.remove(decision.suppressionKey);
     _states[decision.suppressionKey] = _KeyState(
@@ -294,7 +322,10 @@ class AlertPolicy {
   /// [stateTtl]), when the state is unchanged, or when it still represents a
   /// genuine escalation beyond that state. Forced decisions are always kept.
   bool shouldSpeakPending(AlertDecision decision, DateTime now) {
-    if (!decision.announce) return false;
+    if (!decision.announce ||
+        decision.configurationGeneration != _configurationGeneration) {
+      return false;
+    }
     if (decision.reason == AlertReason.forced) return true;
     if (_rearmedKeys.contains(decision.suppressionKey) ||
         (_urgentRearmedKeys.contains(decision.suppressionKey) &&
@@ -569,9 +600,7 @@ class AlertPolicy {
             urgentBelowMeters: distanceConfig.urgentBelowMeters,
             track: candidate.track,
           )
-        : summary.alert([
-            candidate.info,
-          ], tracks: candidate.track == null ? const [] : [candidate.track!]);
+        : summary.automaticAlert(candidate.info, track: candidate.track);
     return AlertDecision(
       announce: true,
       reason: reason,
@@ -591,6 +620,7 @@ class AlertPolicy {
       basedOnStartedAt: basedOnStartedAt,
       detectorIdentity: detectorIdentity,
       metricMeters: _validMetric(candidate.info),
+      configurationGeneration: _configurationGeneration,
     );
   }
 
@@ -614,6 +644,7 @@ class AlertPolicy {
     height: height,
     createdAt: now,
     validity: validity,
+    configurationGeneration: _configurationGeneration,
   );
 
   void _evictOldestIfNeeded() {

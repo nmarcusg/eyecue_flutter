@@ -228,32 +228,86 @@ void main() {
     estimator.dispose();
   });
 
-  test('an event arriving during a publish is dropped, not raced', () async {
-    final firstPublish = Completer<void>();
+  test(
+    'numerical depth publishes while heatmap is held and latest wins',
+    () async {
+      final firstBuild = Completer<ui.Image?>();
+      final oldImage = await _testImage();
+      final latestImage = await _testImage();
+      final published = <DepthFrame>[];
+      var builds = 0;
+      final estimator = MonocularDepthEstimator(
+        onFrame: published.add,
+        heatmapBuilder: (_) {
+          builds++;
+          return builds == 1 ? firstBuild.future : Future.value(latestImage);
+        },
+      );
+
+      _feed(estimator, _event(timestamp: 1000));
+      expect(estimator.frame.value!.timestampMs, 1000);
+      final firstRevision = estimator.frame.value!.observationRevision;
+      _feed(estimator, _event(timestamp: 2000));
+      _feed(estimator, _event(timestamp: 3000));
+      expect(estimator.frame.value!.timestampMs, 3000);
+      final latestRevision = estimator.frame.value!.observationRevision;
+      expect(latestRevision, greaterThan(firstRevision));
+      expect(builds, 1, reason: 'one active visualization only');
+      expect(
+        published,
+        hasLength(3),
+        reason: 'no numerical observation dropped',
+      );
+
+      firstBuild.complete(oldImage);
+      await pumpEventQueue();
+      expect(oldImage.debugDisposed, isTrue);
+      expect(builds, 2, reason: 'only latest pending visualization is built');
+      expect(estimator.frame.value!.timestampMs, 3000);
+      expect(estimator.frame.value!.observationRevision, latestRevision);
+      expect(estimator.frame.value!.heatmap, same(latestImage));
+      expect(published, hasLength(3), reason: 'image is not a new observation');
+      estimator.dispose();
+      expect(latestImage.debugDisposed, isTrue);
+    },
+  );
+
+  test(
+    'clear invalidates held visualization without resurrecting a frame',
+    () async {
+      final build = Completer<ui.Image?>();
+      final image = await _testImage();
+      final estimator = MonocularDepthEstimator(
+        heatmapBuilder: (_) => build.future,
+      );
+      _feed(estimator, _event());
+      estimator.clearFrame();
+      build.complete(image);
+      await pumpEventQueue();
+      expect(estimator.frame.value, isNull);
+      expect(image.debugDisposed, isTrue);
+      estimator.dispose();
+    },
+  );
+
+  test('heatmap failure leaves numerical depth usable', () async {
     final estimator = MonocularDepthEstimator(
-      heatmapBuilder: (_) async {
-        await firstPublish.future;
-        return null;
-      },
+      heatmapBuilder: (_) async => throw StateError('visualization failed'),
     );
-
-    _feed(estimator, _event(timestamp: 1000));
-    // Overlaps the first publish: skipped (latest-frame-wins), never queued.
-    _feed(estimator, _event(timestamp: 2000));
-    firstPublish.complete();
+    _feed(estimator, _event());
     await pumpEventQueue();
-
-    expect(
-      estimator.frame.value?.timestampMs,
-      1000,
-      reason: 'an older frame must not land after a newer one',
-    );
-
-    _feed(estimator, _event(timestamp: 3000));
-    await pumpEventQueue();
-    expect(estimator.frame.value?.timestampMs, 3000);
-
+    expect(estimator.frame.value!.grid.values[0], 1);
+    expect(estimator.state.value, DepthRunState.ready);
+    expect(estimator.frame.value!.heatmap, isNull);
     estimator.dispose();
+  });
+
+  test('a numerical listener may dispose without a late state write', () {
+    final estimator = _estimator();
+    estimator.frame.addListener(() {
+      if (estimator.frame.value != null) estimator.dispose();
+    });
+    expect(() => _feed(estimator, _event()), returnsNormally);
   });
 
   test('observed Hz is an EMA over the native event cadence', () async {

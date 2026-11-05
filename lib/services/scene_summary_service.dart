@@ -37,6 +37,18 @@ class SceneSummaryService {
     );
   }
 
+  /// Compact automatic warning; explicit Quick Scan retains scene detail.
+  String automaticAlert(DetectionInfo info, {TrackedDetection? track}) {
+    final position = info.position == RelativePosition.center
+        ? 'ahead'
+        : 'on your ${info.positionLabel}';
+    final movement = _confirmedMotion(track);
+    return _limit(
+      '${info.label} $position, ${_distanceWording(info)}'
+      '${movement == null ? '' : ', $movement'}.',
+    );
+  }
+
   String quickScan(
     Iterable<DetectionInfo> detections, {
     Iterable<TrackedDetection> tracks = const [],

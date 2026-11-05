@@ -79,11 +79,14 @@ class AppSettings {
   // `hideBottomNavigation` was added, 3 -> 4 when the distance/overlay fields
   // were added, 4 -> 5 when the inference cadence targets were added, 5 -> 6
   // when the first-use safety acknowledgement was added, and 6 -> 7 when the
-  // detector model selection was added: the established convention is that a
+  // detector model selection was added, then 7 -> 8 for alert distances: the established convention is that a
   // new persisted field bumps the schema version. The parser is field-tolerant
   // and has no migration branch, so this is a marker only; older JSON that
   // lacks the fields still parses with the safe default (built-in detector).
-  static const int currentSchemaVersion = 7;
+  static const int currentSchemaVersion = 8;
+  static const double defaultAlertDistanceMeters = 2.0;
+  static const double defaultUrgentDistanceMeters = 1.5;
+  static const double alertHysteresisMeters = 0.3;
   static const double defaultDetectionConfidence = 0.25;
   static const double minDetectionConfidence = 0.10;
   static const double maxDetectionConfidence = 0.75;
@@ -152,6 +155,9 @@ class AppSettings {
   /// here (settings reach exported study data); they live in the model sidecar.
   final int? customModelClassCount;
 
+  final double alertDistanceMeters;
+  final double urgentDistanceMeters;
+
   final int schemaVersion;
 
   const AppSettings({
@@ -172,6 +178,8 @@ class AppSettings {
     this.customModelName,
     this.customModelFingerprint,
     this.customModelClassCount,
+    this.alertDistanceMeters = defaultAlertDistanceMeters,
+    this.urgentDistanceMeters = defaultUrgentDistanceMeters,
     this.schemaVersion = currentSchemaVersion,
   });
 
@@ -180,6 +188,8 @@ class AppSettings {
   static const Object _unset = Object();
 
   AppSettings copyWith({
+    double? alertDistanceMeters,
+    double? urgentDistanceMeters,
     bool? vibrationFeedback,
     bool? autoStartDetection,
     bool? lowPowerMode,
@@ -198,7 +208,13 @@ class AppSettings {
     Object? customModelFingerprint = _unset,
     Object? customModelClassCount = _unset,
   }) {
+    final distances = normalizedAlertDistances(
+      alertDistanceMeters ?? this.alertDistanceMeters,
+      urgentDistanceMeters ?? this.urgentDistanceMeters,
+    );
     return AppSettings(
+      alertDistanceMeters: distances.$1,
+      urgentDistanceMeters: distances.$2,
       vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
       autoStartDetection: autoStartDetection ?? this.autoStartDetection,
       lowPowerMode: lowPowerMode ?? this.lowPowerMode,
@@ -234,6 +250,8 @@ class AppSettings {
 
   Map<String, dynamic> toJson() => {
     'schemaVersion': currentSchemaVersion,
+    'alertDistanceMeters': alertDistanceMeters,
+    'urgentDistanceMeters': urgentDistanceMeters,
     'vibrationFeedback': vibrationFeedback,
     'autoStartDetection': autoStartDetection,
     'lowPowerMode': lowPowerMode,
@@ -257,6 +275,10 @@ class AppSettings {
   /// field to discard every other valid preference. Missing or unknown engine
   /// values (including the removed Custom engine) use Ultralytics.
   factory AppSettings.fromJson(Map<String, dynamic> json) {
+    final distances = normalizedAlertDistances(
+      json['alertDistanceMeters'],
+      json['urgentDistanceMeters'],
+    );
     final engineName = json['inferenceEngine'];
     final engine = engineName is String
         ? InferenceEngine.values.firstWhere(
@@ -297,6 +319,8 @@ class AppSettings {
         ? DetectorModelKind.builtIn
         : parsedKind;
     return AppSettings(
+      alertDistanceMeters: distances.$1,
+      urgentDistanceMeters: distances.$2,
       vibrationFeedback: _boolOr(json['vibrationFeedback'], true),
       autoStartDetection: _boolOr(json['autoStartDetection'], true),
       lowPowerMode: _boolOr(json['lowPowerMode'], false),
@@ -370,9 +394,93 @@ class AppSettings {
     return value.round().clamp(minDepthTargetHz, maxDepthTargetHz);
   }
 
+  /// A malformed pair resets together; never combine a new normal threshold
+  /// with an unrelated urgent threshold. Values use the UI's quarter-metre grid.
+  static bool validAlertDistances(Object? normal, Object? urgent) =>
+      normal is num &&
+      urgent is num &&
+      normal.isFinite &&
+      urgent.isFinite &&
+      normal >= 1 &&
+      normal <= 5 &&
+      urgent >= 0.5 &&
+      urgent <= normal - 0.25 &&
+      (normal * 4 - (normal * 4).round()).abs() < 0.000001 &&
+      (urgent * 4 - (urgent * 4).round()).abs() < 0.000001;
+
+  static (double, double) normalizedAlertDistances(
+    Object? normal,
+    Object? urgent,
+  ) => validAlertDistances(normal, urgent)
+      ? ((normal as num).toDouble(), (urgent as num).toDouble())
+      : (defaultAlertDistanceMeters, defaultUrgentDistanceMeters);
+
+  /// Invalid/corrupt legacy snapshots remain unknown rather than acquiring
+  /// today's settings. Only the versioned flat, public policy fields survive.
+  static Map<String, dynamic>? parseAlertConfiguration(Object? value) {
+    if (value is! Map ||
+        value['version'] != 1 ||
+        !validAlertDistances(
+          value['normalMaxMeters'],
+          value['urgentBelowMeters'],
+        ) ||
+        value['hysteresisMeters'] != alertHysteresisMeters ||
+        value['evidencePolicy'] != 'freshSpatialMedian-v1' ||
+        value['wordingPolicy'] != 'compactObstacleFirst-v1') {
+      return null;
+    }
+    // Persisted research evidence must be validated, never repaired with the
+    // preferences parser's defaults or clamping. Version 1 writes every field.
+    final detectorHz = value['requestedDetectionHz'];
+    final depthHz = value['requestedDepthHz'];
+    if (!value.containsKey('requestedDetectionHz') ||
+        (detectorHz != null &&
+            (detectorHz is! int ||
+                detectorHz < minDetectionTargetHz ||
+                detectorHz > maxDetectionTargetHz)) ||
+        depthHz is! int ||
+        depthHz < minDepthTargetHz ||
+        depthHz > maxDepthTargetHz ||
+        value['lowPowerMode'] is! bool) {
+      return null;
+    }
+    final mode = value['distanceEstimationMode'];
+    if (!DistanceEstimationMode.values.any((entry) => entry.name == mode)) {
+      return null;
+    }
+    return Map.unmodifiable({
+      'version': 1,
+      'normalMaxMeters': (value['normalMaxMeters'] as num).toDouble(),
+      'urgentBelowMeters': (value['urgentBelowMeters'] as num).toDouble(),
+      'hysteresisMeters': alertHysteresisMeters,
+      'evidencePolicy': value['evidencePolicy'],
+      'wordingPolicy': value['wordingPolicy'],
+      'distanceEstimationMode': mode,
+      'requestedDetectionHz': detectorHz,
+      'requestedDepthHz': depthHz,
+      'lowPowerMode': value['lowPowerMode'],
+    });
+  }
+
+  /// Small record-time policy snapshot; it describes estimates, not calibration.
+  Map<String, dynamic> get alertConfiguration => {
+    'version': 1,
+    'normalMaxMeters': alertDistanceMeters,
+    'urgentBelowMeters': urgentDistanceMeters,
+    'hysteresisMeters': alertHysteresisMeters,
+    'evidencePolicy': 'freshSpatialMedian-v1',
+    'wordingPolicy': 'compactObstacleFirst-v1',
+    'distanceEstimationMode': distanceEstimationMode.name,
+    'requestedDetectionHz': detectionTargetHz,
+    'requestedDepthHz': depthTargetHz,
+    'lowPowerMode': lowPowerMode,
+  };
+
   @override
   bool operator ==(Object other) =>
       other is AppSettings &&
+      other.alertDistanceMeters == alertDistanceMeters &&
+      other.urgentDistanceMeters == urgentDistanceMeters &&
       other.vibrationFeedback == vibrationFeedback &&
       other.autoStartDetection == autoStartDetection &&
       other.lowPowerMode == lowPowerMode &&
@@ -393,6 +501,8 @@ class AppSettings {
 
   @override
   int get hashCode => Object.hash(
+    alertDistanceMeters,
+    urgentDistanceMeters,
     vibrationFeedback,
     autoStartDetection,
     lowPowerMode,

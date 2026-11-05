@@ -121,6 +121,23 @@ void main() {
     );
   });
 
+  test('automatic warning is obstacle-first and omits scene boilerplate', () {
+    final raw = Detection(
+      classId: 0,
+      label: 'person',
+      confidence: 0.9,
+      box: const Rect.fromLTWH(0.3, 0.2, 0.4, 0.5),
+    );
+    final info = SpatialAnalysisService.analyze(raw, meters: 1.8);
+    final phrase = service.automaticAlert(info);
+    expect(phrase, startsWith('person ahead, about '));
+    expect(phrase, isNot(contains('Alert.')));
+    expect(phrase, isNot(contains('priority')));
+    expect(phrase, isNot(contains('percent')));
+    expect(phrase.length, lessThan(service.alert([info]).length));
+    expect(service.quickScan([info]), startsWith('Quick scan.'));
+  });
+
   test('alert ordering is independent of input order', () {
     final person = detection(classId: 0, label: 'person');
     final car = detection(classId: 2, label: 'car');

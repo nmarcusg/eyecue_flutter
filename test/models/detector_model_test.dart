@@ -122,7 +122,7 @@ void main() {
       expect(settings.detectorModelKind, DetectorModelKind.builtIn);
       expect(settings.customModelName, isNull);
       expect(settings.customModelFingerprint, isNull);
-      expect(AppSettings.currentSchemaVersion, 7);
+      expect(AppSettings.currentSchemaVersion, 8);
     });
 
     test('a custom selection round-trips and clears as a unit', () {

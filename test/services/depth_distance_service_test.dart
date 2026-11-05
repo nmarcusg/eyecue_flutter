@@ -160,6 +160,33 @@ void main() {
       expect(smoother.smooth(1, 6.0), closeTo(5.28, 1e-9));
     });
 
+    test(
+      'same depth revision advances display smoothing only once per track',
+      () {
+        final smoother = DepthSmoother();
+        expect(smoother.smooth(1, 5, observationRevision: 1), 5);
+        expect(
+          smoother.smooth(1, 1, observationRevision: 2),
+          closeTo(3.4, 1e-9),
+        );
+        for (var i = 0; i < 20; i++) {
+          expect(
+            smoother.smooth(1, 1, observationRevision: 2),
+            closeTo(3.4, 1e-9),
+          );
+        }
+        expect(smoother.smooth(2, 1, observationRevision: 2), 1);
+        expect(
+          smoother.smooth(1, 1, observationRevision: 3),
+          closeTo(2.44, 1e-9),
+        );
+        smoother.retainTracks([2]);
+        expect(smoother.rawFor(1), isNull);
+        expect(smoother.rawFor(2), 1);
+        expect(smoother.smooth(1, 1, observationRevision: 3), 1);
+      },
+    );
+
     test('reset clears every track', () {
       final smoother = DepthSmoother();
       smoother.smooth(7, 5.0);

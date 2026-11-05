@@ -208,6 +208,7 @@ class _Draft {
     this.baselineFrames = 0,
     Map<String, dynamic> closedAlertCounters = const {},
     Map<String, dynamic> baselineAlertCounters = const {},
+    this.alertConfiguration,
     this.rowsIncomplete = false,
   }) : detectors = List.of(detectors),
        intervals = List.of(intervals),
@@ -217,6 +218,7 @@ class _Draft {
   final String id;
   final String participantCode;
   final String trialLabel;
+  final Map<String, dynamic>? alertConfiguration;
   final List<DetectorModelRef> detectors;
   final List<ResearchInterval> intervals;
   int closedDetections;
@@ -307,6 +309,7 @@ class _Draft {
       'id': id,
       'participantCode': participantCode,
       'trialLabel': trialLabel,
+      if (alertConfiguration != null) 'alertConfiguration': alertConfiguration,
       'savedAt': savedAt.toUtc().toIso8601String(),
       'detectors': [
         for (final detector in detectors)
@@ -383,6 +386,9 @@ class _Draft {
       id: id,
       participantCode: json['participantCode'] as String? ?? '',
       trialLabel: json['trialLabel'] as String? ?? '',
+      alertConfiguration: AppSettings.parseAlertConfiguration(
+        json['alertConfiguration'],
+      ),
       detectors: [
         for (final entry in maps(json['detectors']))
           DetectorModelRef(
@@ -495,6 +501,10 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
 
   static const Duration _checkpointInterval = Duration(seconds: 5);
   static const int _checkpointRows = 100;
+
+  bool get hasOpenTrial => _draft != null;
+  Map<String, dynamic>? get openTrialAlertConfiguration =>
+      _draft?.alertConfiguration;
 
   ResearchSessionState get state => _state;
 
@@ -706,6 +716,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
     required String participantCode,
     required String trialLabel,
     required DetectorModelRef detector,
+    AppSettings? settings,
   }) async {
     if (_state == ResearchSessionState.recording ||
         _state == ResearchSessionState.paused) {
@@ -746,6 +757,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
       id: id,
       participantCode: participant,
       trialLabel: effectiveLabel,
+      alertConfiguration: settings?.alertConfiguration,
       detectors: [detector],
       intervals: [ResearchInterval(now)],
     );
@@ -877,6 +889,7 @@ class ResearchSessionService extends ChangeNotifier implements TelemetrySink {
         id: draft.id,
         participantCode: draft.participantCode,
         trialLabel: draft.trialLabel,
+        alertConfiguration: draft.alertConfiguration,
         detectors: draft.detectors,
         wallClockStart: draft.intervals.first.start,
         wallClockEnd: now,

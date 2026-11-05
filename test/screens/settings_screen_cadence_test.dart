@@ -1,4 +1,7 @@
 import 'package:eyecue_flutter/models/app_settings.dart';
+import 'package:eyecue_flutter/models/detector_model.dart';
+import 'package:eyecue_flutter/services/research_session_service.dart';
+import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/screens/settings_screen.dart';
 import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +14,7 @@ void main() {
     WidgetTester tester,
     SettingsService settings, {
     double textScale = 1,
+    ResearchSessionService? researchSessions,
   }) async {
     // Tall surface so every card is built: ListView only builds what is in the
     // viewport. Larger text needs a taller surface for the same reason.
@@ -25,10 +29,115 @@ void main() {
           ).copyWith(textScaler: TextScaler.linear(textScale)),
           child: child!,
         ),
-        home: SettingsScreen(settings: settings, onOpenLogsReports: () {}),
+        home: SettingsScreen(
+          settings: settings,
+          researchSessions: researchSessions,
+          onOpenLogsReports: () {},
+        ),
       ),
     );
   }
+
+  testWidgets(
+    'alert controls preserve values when metric mode or trial lock disables edits',
+    (tester) async {
+      final settings = service();
+      await settings.setAlertDistances(alertMeters: 3, urgentMeters: 2);
+      await pumpSettings(tester, settings);
+      expect(find.text('Alert distance: 3.00 m'), findsOneWidget);
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const ValueKey('alert-distance')))
+            .onChanged,
+        isNotNull,
+      );
+      await settings.setDistanceEstimationMode(
+        DistanceEstimationMode.boundingBoxApproximation,
+      );
+      await tester.pump();
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const ValueKey('alert-distance')))
+            .onChanged,
+        isNull,
+      );
+      expect(settings.alertDistanceMeters, 3);
+      await settings.setDistanceEstimationMode(
+        DistanceEstimationMode.monocularDepth,
+      );
+      settings.alertDistancesLocked = () => true;
+      await tester.pumpWidget(const SizedBox());
+      await pumpSettings(tester, settings, textScale: 2);
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const ValueKey('urgent-distance')))
+            .onChanged,
+        isNull,
+      );
+      expect(find.textContaining('Finish the open trial'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'restored trial displays frozen effective distances instead of preferences',
+    (tester) async {
+      final telemetry = TelemetryService();
+      final store = InMemoryResearchSessionStore();
+      final initial = ResearchSessionService(
+        telemetry: telemetry,
+        store: store,
+      );
+      addTearDown(initial.dispose);
+      await initial.start(
+        participantCode: 'P-001',
+        trialLabel: 'frozen',
+        detector: const DetectorModelRef(
+          id: 'builtin',
+          name: 'Built-in YOLOv8n',
+          fingerprint: DetectorModel.builtInFingerprint,
+          classCount: 80,
+        ),
+        settings: const AppSettings(
+          alertDistanceMeters: 3,
+          urgentDistanceMeters: 1,
+        ),
+      );
+      await initial.pause();
+      final restored = ResearchSessionService(
+        telemetry: telemetry,
+        store: store,
+      );
+      addTearDown(restored.dispose);
+      await restored.load();
+      expect(restored.state, ResearchSessionState.paused);
+      expect(restored.openTrialAlertConfiguration?['normalMaxMeters'], 3);
+      expect(restored.openTrialAlertConfiguration?['urgentBelowMeters'], 1);
+      final settings = service();
+      expect(settings.alertDistanceMeters, 2);
+      expect(settings.urgentDistanceMeters, 1.5);
+      await pumpSettings(tester, settings, researchSessions: restored);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('alert-distance')),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Alert distance: 3.00 m'), findsOneWidget);
+      expect(find.text('Urgent distance: 1.00 m'), findsOneWidget);
+      final normal = tester.widget<Slider>(
+        find.byKey(const ValueKey('alert-distance')),
+      );
+      final urgent = tester.widget<Slider>(
+        find.byKey(const ValueKey('urgent-distance')),
+      );
+      expect(normal.value, 3);
+      expect(urgent.value, 1);
+      expect(normal.onChanged, isNull);
+      expect(urgent.onChanged, isNull);
+      expect(find.textContaining('Finish the open trial'), findsOneWidget);
+    },
+  );
 
   group('SettingsScreen inference cadence', () {
     testWidgets('renders both cadence targets with their units', (

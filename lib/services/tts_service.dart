@@ -158,6 +158,7 @@ class TtsService extends ChangeNotifier {
     Duration Function()? monotonicClock,
     this.onAlertLifecycle,
     this.onAlertCounters,
+    this.enableDecisionDiagnostics = false,
     this.announcementCooldown = const Duration(seconds: 3),
     this.sameLabelCooldown = const Duration(seconds: 6),
     this.wayfindingRepeatCooldown = const Duration(seconds: 2),
@@ -173,6 +174,46 @@ class TtsService extends ChangeNotifier {
   }) : _clock = clock ?? DateTime.now,
        _monotonicClock = monotonicClock ?? (() => _stopwatch.elapsed),
        policy = policy ?? AlertPolicy();
+
+  /// Local, opt-in diagnostic history. Never uploaded as respondent records.
+  final bool enableDecisionDiagnostics;
+  final List<AlertDecisionTrace> _decisionDiagnostics = [];
+  final Map<String, Duration> _firstObserved = {};
+  List<AlertDecisionTrace> get decisionDiagnostics =>
+      List.unmodifiable(_decisionDiagnostics);
+
+  void _trace(String stage, _SpeechRequest request, {String? reason}) {
+    if (!enableDecisionDiagnostics || request.decision == null) return;
+    final decision = request.decision!;
+    _decisionDiagnostics.add(
+      AlertDecisionTrace(
+        stage: stage,
+        at: _monotonicClock(),
+        firstObservedAt: request.firstObservedAt,
+        firstEligibleAt: request.firstEligibleAt,
+        trackId: decision.trackId,
+        metricMeters: decision.metricMeters ?? decision.target?.estimatedMeters,
+        displayMeters: decision.target?.displayMeters,
+        normalMaxMeters: request.distanceConfig.normalMaxMeters,
+        urgentBelowMeters: request.distanceConfig.urgentBelowMeters,
+        configurationGeneration: decision.configurationGeneration,
+        reason: reason,
+      ),
+    );
+    if (_decisionDiagnostics.length > 256) _decisionDiagnostics.removeAt(0);
+  }
+
+  /// Apply an atomic policy change without interrupting speech or Repeat.
+  void applyAutomaticDistanceConfig(AutomaticDistanceAlertConfig config) {
+    final previous = policy.distanceConfig;
+    if (previous.normalMaxMeters == config.normalMaxMeters &&
+        previous.urgentBelowMeters == config.urgentBelowMeters &&
+        previous.hysteresisMeters == config.hysteresisMeters) {
+      return;
+    }
+    invalidateAutomaticDetection(reason: 'alert distance changed');
+    policy.configureDistance(config);
+  }
 
   final TtsEngine engine;
   final AlertPolicy policy;
@@ -337,6 +378,18 @@ class TtsService extends ChangeNotifier {
     _latestTracks = List.unmodifiable(tracks);
     _visibleTrackIds = tracks.map((track) => track.trackId).toSet();
     _visibleDetectionKeys = detections.map(_targetKey).toSet();
+    if (enableDecisionDiagnostics) {
+      final keys = tracks.isEmpty
+          ? _visibleDetectionKeys.map((key) => 'label:$key').toSet()
+          : tracks.map((track) => 'track:${track.trackId}').toSet();
+      _firstObserved.removeWhere((key, _) => !keys.contains(key));
+      for (final key in keys.take(64)) {
+        _firstObserved.putIfAbsent(key, () => monotonicReceivedAt);
+      }
+      while (_firstObserved.length > 64) {
+        _firstObserved.remove(_firstObserved.keys.first);
+      }
+    }
     policy.observeDetections(
       detections: _latestDetections,
       tracks: _latestTracks,
@@ -353,6 +406,7 @@ class TtsService extends ChangeNotifier {
       if (!pending!.done.isCompleted) pending.done.complete(false);
       _recordRejection(AlertReason.suppressedNoCandidates);
       _automaticDiscardCount++;
+      _trace('discarded', pending, reason: 'not_visible');
     }
     // Let an active warning finish. A genuinely higher-priority hazard still
     // uses the serialized preemption path; detector flicker must not cut words.
@@ -367,12 +421,14 @@ class TtsService extends ChangeNotifier {
     _visibleTrackIds = const {};
     _latestDetections = const [];
     _latestTracks = const [];
+    _firstObserved.clear();
     final pending = _pending;
     if (pending != null && pending.origin == AlertOrigin.detection) {
       _pending = null;
       if (!pending.done.isCompleted) pending.done.complete(false);
       _recordRejection(AlertReason.suppressedNoCandidates);
       _automaticDiscardCount++;
+      _trace('discarded', pending, reason: reason);
       debugPrint('[Tts] Automatic detection request discarded: $reason');
     }
   }
@@ -418,6 +474,7 @@ class TtsService extends ChangeNotifier {
     if (!valid) {
       _recordRejection(AlertReason.suppressedNoCandidates);
       _automaticDiscardCount++;
+      _trace('discarded', request, reason: 'stale_unseen_or_context');
       debugPrint(
         '[Tts] Automatic detection request discarded: stale/unseen/provenance',
       );
@@ -556,6 +613,9 @@ class TtsService extends ChangeNotifier {
         session: session ?? 'direct-call',
         model: model ?? detectorIdentity ?? 'unknown-model',
         camera: camera ?? 'unknown-camera',
+        tracks: tracks,
+        detectorKind: detectorKind ?? DetectorModelKind.builtIn,
+        detectorIdentity: detectorIdentity,
       );
     }
     // Alert-request anchor: entry, before policy evaluation.
@@ -574,27 +634,53 @@ class TtsService extends ChangeNotifier {
       force: force,
     );
     if (!decision.announce) {
+      if (enableDecisionDiagnostics) {
+        _trace(
+          'rejected',
+          _SpeechRequest(
+            text: '',
+            priority: decision.priority,
+            createdAt: now,
+            validity: decision.validity,
+            decision: decision,
+            distanceConfig: policy.distanceConfig,
+          ),
+          reason: decision.reason.name,
+        );
+      }
       _recordRejection(decision.reason);
       return Future<bool>.value(false);
     }
-    return _submit(
-      _SpeechRequest(
-        text: decision.text,
-        priority: decision.priority,
-        createdAt: now,
-        validity: decision.validity,
-        decision: decision,
-        engine: engine,
-        origin: AlertOrigin.detection,
-        frameLatency: frameLatency,
-        resultReceivedAt: resultReceivedAt,
-        detectionAcceptedAt: detectionAcceptedAt,
-        session: session ?? _observationSession,
-        model: model ?? _observationModel,
-        camera: camera ?? _observationCamera,
-        observationGeneration: _observationGeneration,
-      ),
+    final request = _SpeechRequest(
+      text: decision.text,
+      distanceConfig: policy.distanceConfig,
+      priority: decision.priority,
+      createdAt: now,
+      validity: decision.validity,
+      decision: decision,
+      engine: engine,
+      origin: AlertOrigin.detection,
+      frameLatency: frameLatency,
+      resultReceivedAt: resultReceivedAt,
+      detectionAcceptedAt: detectionAcceptedAt,
+      session: session ?? _observationSession,
+      model: model ?? _observationModel,
+      camera: camera ?? _observationCamera,
+      observationGeneration: _observationGeneration,
+      firstEligibleAt: _monotonicClock(),
+      firstObservedAt:
+          _firstObserved[decision.trackId == null
+              ? 'label:${_targetKey(decision.target!)}'
+              : 'track:${decision.trackId}'],
     );
+    final pending = _pending;
+    if (pending?.decision?.suppressionKey == decision.suppressionKey) {
+      request.firstEligibleAt = pending!.firstEligibleAt;
+      request.firstObservedAt = pending.firstObservedAt;
+    } else {
+      _trace('eligible', request);
+    }
+    return _submit(request);
   }
 
   Future<bool> announceQuickScan(
@@ -752,12 +838,14 @@ class TtsService extends ChangeNotifier {
   void _offer(_SpeechRequest request) {
     final pending = _pending;
     if (pending == null) {
+      _trace('queued', request);
       _pending = request;
       return;
     }
     if (request.priority.index > pending.priority.index) {
       _superseded++;
       _publishCounters();
+      _trace('discarded', pending, reason: 'superseded');
       if (!pending.done.isCompleted) pending.done.complete(false);
       _pending = request;
       return;
@@ -765,12 +853,14 @@ class TtsService extends ChangeNotifier {
     if (request.priority.index == pending.priority.index) {
       _superseded++;
       _publishCounters();
+      _trace('discarded', pending, reason: 'superseded');
       if (!pending.done.isCompleted) pending.done.complete(false);
       _pending = request;
       return;
     }
     _superseded++;
     _publishCounters();
+    _trace('discarded', request, reason: 'lower_priority');
     if (!request.done.isCompleted) request.done.complete(false);
   }
 
@@ -807,6 +897,7 @@ class TtsService extends ChangeNotifier {
       _drain();
       return;
     }
+    _trace('submitted', request);
     final submission = _Submission(
       id: ++_nextId,
       request: request,
@@ -878,6 +969,7 @@ class TtsService extends ChangeNotifier {
     }
     if (active.didStart) return;
 
+    _trace('started', active.request);
     active.didStart = true;
     active.startedAt = _clock();
     if (active.request.origin == AlertOrigin.detection) {
@@ -1029,6 +1121,7 @@ class TtsService extends ChangeNotifier {
     bool drain = true,
   }) {
     if (submission.terminal != null) return;
+    _trace(terminal.name, submission.request, reason: cause?.name);
     submission.terminal = terminal;
     submission.finishedAt = _clock();
     _cancelTimers(submission);
@@ -1109,6 +1202,7 @@ class TtsService extends ChangeNotifier {
     }
     if (!_audioEnabled) {
       _recordRejection(AlertReason.muted);
+      _trace('discarded', next, reason: 'muted');
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
       return;
@@ -1121,6 +1215,7 @@ class TtsService extends ChangeNotifier {
       // now would double-announce the same object. A decision that still
       // represents an escalation is retained.
       _staleDecisions++;
+      _trace('discarded', next, reason: 'suppression_or_configuration');
       _publishCounters();
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
@@ -1129,6 +1224,7 @@ class TtsService extends ChangeNotifier {
     if (decision != null && !_refreshPendingTarget(next, decision)) {
       _recordRejection(AlertReason.suppressedNoCandidates);
       _automaticDiscardCount++;
+      _trace('discarded', next, reason: 'no_longer_eligible');
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
       return;
@@ -1137,6 +1233,7 @@ class TtsService extends ChangeNotifier {
     if (refreshedDecision != null &&
         !policy.shouldSpeakPending(refreshedDecision, _clock())) {
       _staleDecisions++;
+      _trace('discarded', next, reason: 'suppression_or_configuration');
       _publishCounters();
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
@@ -1144,6 +1241,7 @@ class TtsService extends ChangeNotifier {
     }
     if (!next.isCurrent(_clock())) {
       _superseded++;
+      _trace('discarded', next, reason: 'expired');
       _publishCounters();
       if (!next.done.isCompleted) next.done.complete(false);
       _drain();
@@ -1441,6 +1539,9 @@ class _SpeechRequest {
   final String? model;
   final String? camera;
   final int? observationGeneration;
+  final AutomaticDistanceAlertConfig distanceConfig;
+  Duration? firstObservedAt;
+  Duration? firstEligibleAt;
   final Completer<bool> done = Completer<bool>();
 
   _SpeechRequest({
@@ -1459,6 +1560,9 @@ class _SpeechRequest {
     this.model,
     this.camera,
     this.observationGeneration,
+    this.distanceConfig = const AutomaticDistanceAlertConfig(),
+    this.firstObservedAt,
+    this.firstEligibleAt,
   });
 
   bool isCurrent(DateTime now) => now.difference(createdAt) <= validity;

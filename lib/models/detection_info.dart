@@ -37,6 +37,14 @@ class DetectionInfo {
   /// bounding-box heuristic.
   final double? estimatedMeters;
 
+  /// Presentation EMA only. Automatic policy and speech use [estimatedMeters],
+  /// the latest validated spatial median, never this lagging display estimate.
+  final double? displayMeters;
+
+  String? get displayDistanceLabel => displayMeters == null
+      ? distanceLabel
+      : 'about ${displayMeters!.toStringAsFixed(1)} m';
+
   /// Which estimator produced [estimatedMeters].
   final DistanceSource distanceSource;
 
@@ -49,6 +57,7 @@ class DetectionInfo {
     required this.priority,
     required this.proximity,
     this.estimatedMeters,
+    this.displayMeters,
     this.distanceSource = DistanceSource.boundingBox,
     this.distanceLabel,
   });

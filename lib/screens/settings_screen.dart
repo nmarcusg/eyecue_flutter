@@ -5,6 +5,7 @@ import '../models/app_settings.dart';
 import '../services/detector_model_service.dart';
 import '../services/inference_cadence.dart';
 import '../services/settings_service.dart';
+import '../services/research_session_service.dart';
 import '../services/telemetry_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
@@ -25,6 +26,7 @@ import '../widgets/warning_banner.dart';
 /// is read-only and drives the System Performance card's retained averages.
 class SettingsScreen extends StatelessWidget {
   final SettingsService settings;
+  final ResearchSessionService? researchSessions;
   final VoidCallback onOpenLogsReports;
 
   /// Optional read-only telemetry source for the System Performance card.
@@ -40,6 +42,7 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({
     super.key,
     required this.settings,
+    this.researchSessions,
     required this.onOpenLogsReports,
     this.telemetry,
     this.detectorModel,
@@ -233,6 +236,10 @@ class SettingsScreen extends StatelessWidget {
                                         ),
                                     ],
                                   ),
+                                ),
+                                _AlertDistanceControls(
+                                  settings: settings,
+                                  researchSessions: researchSessions,
                                 ),
                                 SwitchListTile(
                                   contentPadding: const EdgeInsets.symmetric(
@@ -1082,6 +1089,118 @@ class _PerformanceMetric extends StatelessWidget {
           style: theme.textTheme.labelMedium?.copyWith(color: labelColor),
         ),
       ],
+    );
+  }
+}
+
+/// Two atomic distance controls, fixed for every open (including paused) trial.
+class _AlertDistanceControls extends StatelessWidget {
+  const _AlertDistanceControls({required this.settings, this.researchSessions});
+  final SettingsService settings;
+  final ResearchSessionService? researchSessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final sessions = researchSessions;
+    if (sessions == null) return _controls(context);
+    return ListenableBuilder(
+      listenable: sessions,
+      builder: (context, _) => _controls(context),
+    );
+  }
+
+  Widget _controls(BuildContext context) {
+    final locked =
+        researchSessions?.hasOpenTrial == true ||
+        settings.alertDistancesLocked?.call() == true;
+    final metric =
+        settings.distanceEstimationMode ==
+        DistanceEstimationMode.monocularDepth;
+    final enabled = metric && !locked;
+    // A restored paused trial can retain thresholds different from today's
+    // preferences. Display the same frozen pair the shell applies to speech.
+    final frozen = AppSettings.parseAlertConfiguration(
+      researchSessions?.openTrialAlertConfiguration,
+    );
+    final normal =
+        (frozen?['normalMaxMeters'] as num?)?.toDouble() ??
+        settings.alertDistanceMeters;
+    final urgent =
+        (frozen?['urgentBelowMeters'] as num?)?.toDouble() ??
+        settings.urgentDistanceMeters;
+    return Padding(
+      padding: const EdgeInsets.all(kSpace16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Alert distance: ${normal.toStringAsFixed(2)} m',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const Text(
+            'Announce centered obstacles within this estimated distance.',
+          ),
+          Slider(
+            key: const ValueKey('alert-distance'),
+            semanticFormatterCallback: (value) =>
+                'Alert distance ${value.toStringAsFixed(2)} metres',
+            value: normal,
+            min: 1,
+            max: 5,
+            divisions: 16,
+            label: '${normal.toStringAsFixed(2)} metres',
+            onChanged: enabled
+                ? (value) => settings.setAlertDistances(
+                    alertMeters: value,
+                    urgentMeters: urgent.clamp(0.5, value - 0.25),
+                  )
+                : null,
+          ),
+          Text(
+            'Urgent distance: ${urgent.toStringAsFixed(2)} m',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const Text(
+            'Allow urgent warnings within this closer estimated distance.',
+          ),
+          Slider(
+            key: const ValueKey('urgent-distance'),
+            semanticFormatterCallback: (value) =>
+                'Urgent distance ${value.toStringAsFixed(2)} metres',
+            value: urgent,
+            min: 0.5,
+            max: normal - 0.25,
+            divisions: ((normal - 0.75) * 4).round(),
+            label: '${urgent.toStringAsFixed(2)} metres',
+            onChanged: enabled
+                ? (value) => settings.setAlertDistances(
+                    alertMeters: normal,
+                    urgentMeters: value,
+                  )
+                : null,
+          ),
+          const Text(
+            'Depth distances are approximate, not calibrated measurements. These controls change speech eligibility, not what the model can detect.',
+          ),
+          if (!metric)
+            const Text(
+              'Metre thresholds require Depth estimate mode. Bounding-box alerts use approximate near/center cues.',
+            ),
+          if (locked)
+            const Text(
+              'Finish the open trial before changing alert distances, including when recording is paused.',
+            ),
+          TextButton(
+            onPressed: enabled
+                ? () => settings.setAlertDistances(
+                    alertMeters: AppSettings.defaultAlertDistanceMeters,
+                    urgentMeters: AppSettings.defaultUrgentDistanceMeters,
+                  )
+                : null,
+            child: const Text('Reset alert distances'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -7,6 +7,7 @@ import '../screens/home_screen.dart';
 import '../screens/logs_reports_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/correction_service.dart';
+import '../services/alert_policy.dart';
 import '../services/detector_model_service.dart';
 import '../services/engine_coordinator.dart';
 import '../services/haptics_service.dart';
@@ -198,6 +199,9 @@ class AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    widget.settings.alertDistancesLocked = _alertDistancesLocked;
+    widget.researchSessions?.addListener(_syncAlertDistances);
+    _syncAlertDistances();
     _syncAudio();
     widget.settings.addListener(_syncAudio);
     widget.settings.addListener(_handleSettingsChanged);
@@ -261,10 +265,30 @@ class AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    widget.researchSessions?.removeListener(_syncAlertDistances);
+    if (widget.settings.alertDistancesLocked == _alertDistancesLocked) {
+      widget.settings.alertDistancesLocked = null;
+    }
     widget.settings.removeListener(_syncAudio);
     widget.settings.removeListener(_handleSettingsChanged);
     _coordinator.disposeCoordinator();
     super.dispose();
+  }
+
+  bool _alertDistancesLocked() => widget.researchSessions?.hasOpenTrial == true;
+
+  void _syncAlertDistances() {
+    final frozen = widget.researchSessions?.openTrialAlertConfiguration;
+    widget.tts.applyAutomaticDistanceConfig(
+      AutomaticDistanceAlertConfig(
+        normalMaxMeters:
+            (frozen?['normalMaxMeters'] as num?)?.toDouble() ??
+            widget.settings.alertDistanceMeters,
+        urgentBelowMeters:
+            (frozen?['urgentBelowMeters'] as num?)?.toDouble() ??
+            widget.settings.urgentDistanceMeters,
+      ),
+    );
   }
 
   void _syncAudio() {
@@ -273,6 +297,7 @@ class AppShellState extends State<AppShell> {
 
   /// Rebuilds the shell when the persisted hide-bar preference changes.
   void _handleSettingsChanged() {
+    _syncAlertDistances();
     if (mounted) setState(() {});
   }
 
@@ -373,6 +398,7 @@ class AppShellState extends State<AppShell> {
         return SettingsScreen(
           settings: widget.settings,
           onOpenLogsReports: openLogsReports,
+          researchSessions: widget.researchSessions,
           telemetry: widget.telemetry,
           detectorModel: widget.detectorModel,
         );
