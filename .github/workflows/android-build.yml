@@ -165,8 +165,11 @@ jobs:
       - name: Build test APK
         if: env.SIGNED_RELEASE != 'true'
         run: |
+          suffix=testsigned
+          if [[ "$EYECUE_STUDY_BUILD" == true ]]; then suffix=study; fi
           flutter build apk --release --no-pub \
             --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+            --dart-define="EYECUE_APP_VERSION=$BUILD_NAME-$suffix+$BUILD_NUMBER" \
             --dart-define="EYECUE_TELEMETRY_INGEST_URL=$EYECUE_TELEMETRY_INGEST_URL" \
             --dart-define="EYECUE_SUPABASE_PUBLISHABLE_KEY=$EYECUE_SUPABASE_PUBLISHABLE_KEY"
           mkdir -p dist
@@ -188,6 +191,7 @@ jobs:
           EYECUE_KEY_PASSWORD: ${{ secrets.EYECUE_KEY_PASSWORD }}
         run: |
           build_args=(--release --no-pub "--build-name=$BUILD_NAME" "--build-number=$BUILD_NUMBER"
+            "--dart-define=EYECUE_APP_VERSION=$BUILD_NAME+$BUILD_NUMBER"
             "--dart-define=EYECUE_TELEMETRY_INGEST_URL=$EYECUE_TELEMETRY_INGEST_URL"
             "--dart-define=EYECUE_SUPABASE_PUBLISHABLE_KEY=$EYECUE_SUPABASE_PUBLISHABLE_KEY")
           flutter build apk "${build_args[@]}"
