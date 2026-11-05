@@ -10,12 +10,22 @@ import '../models/research_session.dart';
 import '../models/detection_correction.dart';
 import '../models/telemetry_export.dart';
 import 'telemetry_service.dart';
+import 'document_export_service.dart';
 
 /// Builds and writes explicit, offline telemetry exports.
 class TelemetryExportService {
-  TelemetryExportService({DateTime Function()? clock, this._directoryProvider})
-    : _clock = clock ?? DateTime.now;
+  TelemetryExportService({
+    DateTime Function()? clock,
+    this._directoryProvider,
+    DocumentExportService? documentExporter,
+    Future<Directory> Function()? temporaryDirectoryProvider,
+  }) : _clock = clock ?? DateTime.now,
+       _documentExporter = documentExporter ?? const DocumentExportService(),
+       _temporaryDirectoryProvider =
+           temporaryDirectoryProvider ?? getTemporaryDirectory;
 
+  final DocumentExportService _documentExporter;
+  final Future<Directory> Function() _temporaryDirectoryProvider;
   final DateTime Function() _clock;
   final Future<Directory> Function()? _directoryProvider;
 
@@ -539,6 +549,67 @@ class TelemetryExportService {
     );
     return file
       ..writeAsStringSync(toCsv(telemetry: telemetry, settings: settings));
+  }
+
+  /// Opens Save as for a complete snapshot. Internal research retention is
+  /// independent of this export, including picker cancellation/write failure.
+  Future<String?> saveJson({
+    required TelemetrySource telemetry,
+    AppSettings? settings,
+    String stemSuffix = '',
+  }) => _saveDocument(
+    telemetry: telemetry,
+    settings: settings,
+    stemSuffix: stemSuffix,
+    csv: false,
+  );
+
+  Future<String?> saveCsv({
+    required TelemetrySource telemetry,
+    AppSettings? settings,
+    String stemSuffix = '',
+  }) => _saveDocument(
+    telemetry: telemetry,
+    settings: settings,
+    stemSuffix: stemSuffix,
+    csv: true,
+  );
+
+  Future<String?> _saveDocument({
+    required TelemetrySource telemetry,
+    required AppSettings? settings,
+    required String stemSuffix,
+    required bool csv,
+  }) async {
+    final cache = await _temporaryDirectoryProvider();
+    final staging = await cache.createTemp('eyecue-export-');
+    try {
+      final file = csv
+          ? await writeCsv(
+              telemetry: telemetry,
+              settings: settings,
+              directory: staging,
+              stemSuffix: stemSuffix,
+            )
+          : await writeJson(
+              telemetry: telemetry,
+              settings: settings,
+              directory: staging,
+              stemSuffix: stemSuffix,
+            );
+      return await _documentExporter.save(
+        source: file,
+        mimeType: csv ? 'text/csv' : 'application/json',
+      );
+    } finally {
+      // Only this private temporary directory is removed, never a trial or a
+      // user-selected document (which might contain a provider-side partial).
+      try {
+        await staging.delete(recursive: true);
+      } on FileSystemException {
+        // Cleanup failure must not turn a successful provider write into error.
+      }
+    }
   }
 
   Future<Directory> _directory() =>

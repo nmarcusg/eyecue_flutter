@@ -51,6 +51,7 @@ Missing keys fail the study build. A different key fails artifact verification.
 The study flag and signed_release flag cannot both be enabled.
 
 The new study installation starts empty. It does not recover the old app's
-private logs. This packaging change also does not repair the existing 2MB
-upload limit or private-only export flow; those require subsequent changes.
+private logs. From Study version code 2, JSON/CSV export opens Android's
+Save as picker for local or installed cloud document providers. Internal trials
+remain saved independently. The existing 2MB Supabase upload limit is unchanged.
 Keep the original EyeCue installed while its study records need preservation.

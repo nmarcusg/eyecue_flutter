@@ -173,9 +173,13 @@ publishable key (client identity) and a study upload token (authorisation).
 
 ## 6. Retention and deletion
 
-* **In the app**: telemetry lives only in memory; it disappears when the process
-  ends. Export files live in the app's documents directory and are removed by
-  uninstalling the app (or by the user deleting them).
+* **In the app**: operational telemetry buffers live in memory. Recorded trial
+  drafts and finished trials are retained in private app storage and are removed
+  by uninstalling or clearing the app. Manual JSON/CSV exports are written to a
+  location selected through Android's document picker, which may be a local or
+  installed cloud provider. Those copies are managed separately by the user and
+  provider; uninstalling EyeCue does not remove them. Cancelling export or a
+  destination write failure does not delete the retained trial.
 * **In the study database**: uploaded session rows are never deleted
   automatically — no TTL, no scheduled job — and there is **no in-app deletion
   path** for an uploaded session. The one exception is the rate-limit ledger:
@@ -226,14 +230,14 @@ binding.
 | --- | --- | --- |
 | Does your app collect or share any of the required user data types? | **Yes — only when the researcher uploads a session** (App activity / "Other in-app actions": numeric detection & performance records) | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:327), §4 |
 | Is all data encrypted in transit? | **Yes — enforced by code for the upload path** | [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart:58) accepts `https` only and reports `insecureScheme` for everything else, and [the service refuses to send](../lib/services/telemetry_upload_service.dart:298) on any non-`valid` status. TLS itself comes from the platform trust store via `dart:io`'s `HttpClient`; no certificate pinning is implemented. Proven by the transport unit/service/widget cases — see §4 |
-| Is data collected ephemerally (in memory only)? | The local session is; the **uploaded** snapshot is stored in the study database | §3, §5 |
+| Is data collected ephemerally (in memory only)? | Operational buffers are memory-only; recorded trials, chosen exports and uploaded snapshots persist | §3, §5 |
 | Data type: **Location** | No | no location API anywhere in `lib/` |
 | Data type: **Personal info** (name, e-mail, phone, address, ID numbers) | No — the only identity field is a researcher code, validated to `^[A-Za-z0-9_-]{1,64}$`; the study upload token is a study credential, not an identifier of a person (§4.2) | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:152) |
 | Data type: **Device or other IDs** | **No** — no `ANDROID_ID`, advertising id, install id or device fingerprint is read (`grep -rn 'ANDROID_ID\|deviceInfo\|installationId' lib/` → no matches) | §1 |
 | `deviceModel` / `androidVersion` specifically | **Not collected** (no column, no code path). If the owner wants them for research, the Data Safety answer and the privacy policy must change **before** the code does — **OWNER DECISION** | §5 |
 | Data type: **Photos and videos** | No — camera frames are never stored or transmitted | §2 |
 | Data type: **Audio** | No — the microphone permission is removed from the manifest | §7 |
-| Data type: **Files and docs** | No — exports are written to the app's own directory and never uploaded automatically | §3 |
+| Data type: **Files and docs** | No arbitrary user documents are collected — generated telemetry exports go only to a user-selected local/cloud document provider; there is no automatic export | §3 |
 | Data type: **Contacts / Calendar / Messages / Health / Financial / Web browsing / App info & performance (crash logs)** | No — none of these are read, and no crash reporter is bundled | `pubspec.lock` inventory in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §4 |
 | Data type: **App activity — other in-app actions** | **Yes**, when a session is uploaded: detection counts, latencies, FPS, stage timings, alert lifecycle counters | [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md) |
 | Is this data **shared** with third parties? | **OWNER DECISION** — the Supabase project is operated by the owner/study; whether that counts as a processor or a third party depends on the deployment. No analytics SDK, ad SDK or crash reporter is bundled | [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §4 |
