@@ -98,7 +98,7 @@ WHAT IT DOES
 • Settings. Audio guidance, vibration, auto-start, low-power mode, bounding boxes,
   depth heatmap, detector and depth cadence.
 • Logs & Reports. On-device charts of detections, alert counts and performance,
-  with local CSV and JSON export to the app's own folder.
+  with CSV and JSON export to a location you choose through Android's file picker.
 • Optional research upload. A session can be sent to the study database manually,
   one session at a time, with a study participant code and a study token supplied
   by the study coordinator. The upload contains numeric detection and performance

@@ -10,8 +10,8 @@
          audio, so the permission is unused. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
     <!-- camera_android_camerax injects WRITE_EXTERNAL_STORAGE (maxSdkVersion 28)
-         for its shared-storage save path. Exports go to the app's own documents
-         directory, so nothing here writes shared storage. -->
+         for its shared-storage save path. Exports use Android's document picker
+         and URI grants, so no broad storage permission is needed. -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         tools:node="remove"/>

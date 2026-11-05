@@ -212,23 +212,28 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final file = csv
-          ? await _exportService.writeCsv(
+      final filename = csv
+          ? await _exportService.saveCsv(
               telemetry: widget.telemetry,
               settings: widget.settings?.settings,
             )
-          : await _exportService.writeJson(
+          : await _exportService.saveJson(
               telemetry: widget.telemetry,
               settings: widget.settings?.settings,
             );
       if (!mounted) return;
-      final filename = file.uri.pathSegments.isEmpty
-          ? 'telemetry export'
-          : file.uri.pathSegments.last;
-      _showMessage('Export saved: $filename');
+      _showMessage(
+        filename == null
+            ? 'Export cancelled.'
+            : 'Export saved to your chosen location: $filename',
+      );
     } catch (_) {
       if (!mounted) return;
-      _showMessage('Export could not be saved. Try again.', isError: true);
+      _showMessage(
+        'Export could not be saved. Try another location. '
+        'Your trial data remains in EyeCue.',
+        isError: true,
+      );
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -301,24 +306,37 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
     );
   }
 
-  Future<void> _exportStored(ResearchSession session) async {
+  Future<void> _exportStored(
+    ResearchSession session, {
+    bool csv = false,
+  }) async {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final file = await _exportService.writeJson(
-        telemetry: session,
-        settings: widget.settings?.settings,
-        // Two trials exported in the same second must not overwrite each other.
-        stemSuffix: '-${session.id}',
-      );
+      final filename = csv
+          ? await _exportService.saveCsv(
+              telemetry: session,
+              settings: widget.settings?.settings,
+              stemSuffix: '-${session.id}',
+            )
+          : await _exportService.saveJson(
+              telemetry: session,
+              settings: widget.settings?.settings,
+              stemSuffix: '-${session.id}',
+            );
       if (!mounted) return;
-      final filename = file.uri.pathSegments.isEmpty
-          ? 'trial export'
-          : file.uri.pathSegments.last;
-      _showMessage('Export saved: $filename');
+      _showMessage(
+        filename == null
+            ? 'Export cancelled.'
+            : 'Export saved to your chosen location: $filename',
+      );
     } catch (_) {
       if (!mounted) return;
-      _showMessage('Export could not be saved. Try again.', isError: true);
+      _showMessage(
+        'Export could not be saved. Try another location. '
+        'Your trial data remains in EyeCue.',
+        isError: true,
+      );
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -655,7 +673,7 @@ class _OverviewTab extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onFinish;
   final ValueChanged<ResearchSession> onUploadStored;
-  final ValueChanged<ResearchSession> onExportStored;
+  final void Function(ResearchSession, {bool csv}) onExportStored;
   final ValueChanged<ResearchSession> onDiscardStored;
 
   const _OverviewTab({
@@ -693,6 +711,7 @@ class _OverviewTab extends StatelessWidget {
             const _SectionHeading('Research Session'),
             const SizedBox(height: kSpace8),
             _SessionSection(
+              exporting: exporting,
               sessions: sessions,
               currentDetectorName: currentDetectorName,
               onStart: onStart,
@@ -1102,8 +1121,9 @@ class _ExportSection extends StatelessWidget {
             ),
             const SizedBox(height: kSpace4),
             Text(
-              'Save the current image-free session as a versioned JSON or '
-              'CSV file. Exports contain no camera frames or device IDs.',
+              'Choose where to save the current live buffer as JSON or CSV. '
+              'For a complete recorded trial, use Export trial below. '
+              'Exports contain no camera frames or device IDs.',
               style: theme.textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
             ),
             const SizedBox(height: kSpace12),
@@ -2053,6 +2073,7 @@ String _durationText(Duration duration) {
 /// The explicit Start → Pause/Resume → Finish → Upload controls plus the stored
 /// trial list. Study recording is independent of camera/detection playback.
 class _SessionSection extends StatelessWidget {
+  final bool exporting;
   final ResearchSessionService sessions;
   final String currentDetectorName;
   final VoidCallback onStart;
@@ -2060,10 +2081,11 @@ class _SessionSection extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onFinish;
   final ValueChanged<ResearchSession> onUploadStored;
-  final ValueChanged<ResearchSession> onExportStored;
+  final void Function(ResearchSession, {bool csv}) onExportStored;
   final ValueChanged<ResearchSession> onDiscardStored;
 
   const _SessionSection({
+    required this.exporting,
     required this.sessions,
     required this.currentDetectorName,
     required this.onStart,
@@ -2219,7 +2241,9 @@ class _SessionSection extends StatelessWidget {
               session: session,
               sessions: sessions,
               onUpload: () => onUploadStored(session),
+              exporting: exporting,
               onExport: () => onExportStored(session),
+              onExportCsv: () => onExportStored(session, csv: true),
               onDiscard: () => onDiscardStored(session),
             ),
             const SizedBox(height: kSpace8),
@@ -2231,17 +2255,21 @@ class _SessionSection extends StatelessWidget {
 
 /// One stored, immutable trial with its own Upload/Export/Discard controls.
 class _StoredTrialCard extends StatelessWidget {
+  final bool exporting;
   final ResearchSession session;
   final ResearchSessionService sessions;
   final VoidCallback onUpload;
   final VoidCallback onExport;
+  final VoidCallback onExportCsv;
   final VoidCallback onDiscard;
 
   const _StoredTrialCard({
+    required this.exporting,
     required this.session,
     required this.sessions,
     required this.onUpload,
     required this.onExport,
+    required this.onExportCsv,
     required this.onDiscard,
   });
 
@@ -2306,7 +2334,12 @@ class _StoredTrialCard extends StatelessWidget {
               AccessibleButton(
                 label: 'Export trial',
                 icon: Icons.data_object,
-                onPressed: onExport,
+                onPressed: exporting ? null : onExport,
+              ),
+              AccessibleButton(
+                label: 'Export CSV',
+                icon: Icons.table_chart_outlined,
+                onPressed: exporting ? null : onExportCsv,
               ),
               AccessibleButton(
                 label: 'Discard trial',

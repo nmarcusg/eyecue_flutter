@@ -279,7 +279,7 @@ uses, plus the storage permission the merger *implies* from them:
 | Removed | Injected by | Why unused | Residual risk |
 | --- | --- | --- | --- |
 | `RECORD_AUDIO` | `camera_android_camerax` — merged manifest `:10` | the app only reads the CameraX analysis stream; no audio is ever recorded | recording a **video with audio** would throw a `SecurityException`; that path is not used |
-| `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion='28'`) | `camera_android_camerax` — merged manifest `:11-13` | exports are written to the app's own documents directory ([`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:424)) | a CameraX capture that saves into shared storage would fail on API ≤ 28; not used |
+| `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion='28'`) | `camera_android_camerax` — merged manifest `:11-13` | exports use Android's document picker and URI grants without broad storage access ([`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:424)) | a CameraX capture that saves into shared storage would fail on API ≤ 28; not used |
 | `READ_EXTERNAL_STORAGE` | **implied by the manifest merger** — declared by no manifest | nothing reads shared storage | same as above — capture-from-gallery flows would fail; not used |
 
 `READ_EXTERNAL_STORAGE` needs its own rule. The merger derives it from camerax's

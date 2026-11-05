@@ -30,7 +30,13 @@ const String screenUploadToken = 'q3Yd0n4N0m8Lw2Xc9Vb6Tz1Rf5Jk7Hp0Sg4Da2Em6Ui8';
 /// busy guard, success SnackBar, and failure SnackBar can be exercised
 /// deterministically without touching the filesystem.
 class _FakeExportService extends TelemetryExportService {
-  _FakeExportService({this.completer, this.throwOnWrite = false});
+  _FakeExportService({
+    this.completer,
+    this.throwOnWrite = false,
+    this.cancel = false,
+  });
+
+  final bool cancel;
 
   /// When supplied, the write awaits this completer so the test can observe the
   /// in-flight busy state before completing it.
@@ -39,33 +45,34 @@ class _FakeExportService extends TelemetryExportService {
   /// When true, the write throws so the failure SnackBar path is exercised.
   final bool throwOnWrite;
 
+  TelemetrySource? lastTelemetry;
   int jsonWrites = 0;
   int csvWrites = 0;
 
   @override
-  Future<File> writeJson({
+  Future<String?> saveJson({
     required TelemetrySource telemetry,
     AppSettings? settings,
-    Directory? directory,
     String stemSuffix = '',
   }) async {
     jsonWrites++;
+    lastTelemetry = telemetry;
     if (completer != null) await completer!.future;
     if (throwOnWrite) throw const FileSystemException('write failed');
-    return File('/tmp/20260101120000-telemetry.json');
+    return cancel ? null : '20260101120000-telemetry.json';
   }
 
   @override
-  Future<File> writeCsv({
+  Future<String?> saveCsv({
     required TelemetrySource telemetry,
     AppSettings? settings,
-    Directory? directory,
     String stemSuffix = '',
   }) async {
     csvWrites++;
+    lastTelemetry = telemetry;
     if (completer != null) await completer!.future;
     if (throwOnWrite) throw const FileSystemException('write failed');
-    return File('/tmp/20260101120000-telemetry.csv');
+    return cancel ? null : '20260101120000-telemetry.csv';
   }
 }
 
@@ -794,9 +801,31 @@ void main() {
 
       expect(exporter.jsonWrites, 1);
       expect(
-        find.text('Export saved: 20260101120000-telemetry.json'),
+        find.text(
+          'Export saved to your chosen location: 20260101120000-telemetry.json',
+        ),
         findsOneWidget,
       );
+    });
+
+    testWidgets('picker cancellation never shows a saved message', (
+      tester,
+    ) async {
+      final exporter = _FakeExportService(cancel: true);
+      await pumpLogsScreen(
+        tester,
+        telemetry: buildTelemetry(),
+        exportService: exporter,
+      );
+      await scrollOverviewTo(tester, find.text('Save JSON export'));
+      await tester.ensureVisible(find.text('Save JSON export'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save JSON export'));
+      await tester.pumpAndSettle();
+      expect(exporter.jsonWrites, 1);
+      expect(find.text('Export cancelled.'), findsOneWidget);
+      expect(find.textContaining('Export saved'), findsNothing);
+      expect(find.text('Saving export…'), findsNothing);
     });
 
     testWidgets('failure shows the exact retry message', (tester) async {
@@ -815,7 +844,9 @@ void main() {
 
       expect(exporter.csvWrites, 1);
       expect(
-        find.text('Export could not be saved. Try again.'),
+        find.text(
+          'Export could not be saved. Try another location. Your trial data remains in EyeCue.',
+        ),
         findsOneWidget,
       );
     });
@@ -1974,6 +2005,55 @@ void main() {
       expect(find.text('Export trial'), findsOneWidget);
       expect(find.text('Discard trial'), findsOneWidget);
     });
+
+    for (final csv in [false, true]) {
+      testWidgets(
+        'stored trial ${csv ? 'CSV' : 'JSON'} uses destination save with frozen source',
+        (tester) async {
+          final telemetry = buildTelemetry();
+          final sessions = ResearchSessionService(
+            telemetry: telemetry,
+            store: InMemoryResearchSessionStore(),
+            clock: () => DateTime.utc(2026, 1, 1, 12),
+          );
+          await sessions.start(
+            participantCode: 'p1',
+            trialLabel: 'saved-trial',
+            detector: const DetectorModelRef(
+              id: 'builtin',
+              name: 'Built-in YOLOv8n',
+              fingerprint: DetectorModel.builtInFingerprint,
+              classCount: 80,
+            ),
+            settings: const AppSettings(
+              alertDistanceMeters: 3,
+              urgentDistanceMeters: 1,
+            ),
+          );
+          final finished = (await sessions.finish())!.session;
+          final exporter = _FakeExportService();
+          await pumpLogsScreen(
+            tester,
+            telemetry: telemetry,
+            researchSessions: sessions,
+            exportService: exporter,
+          );
+          final button = find.text(csv ? 'Export CSV' : 'Export trial');
+          await scrollOverviewTo(tester, button);
+          await tester.ensureVisible(button);
+          await tester.tap(button);
+          await tester.pumpAndSettle();
+          expect(exporter.lastTelemetry, same(finished));
+          expect(csv ? exporter.csvWrites : exporter.jsonWrites, 1);
+          expect(sessions.sessions, contains(same(finished)));
+          expect(sessions.isSaved(finished), true);
+          expect(
+            find.textContaining('Export saved to your chosen location:'),
+            findsOneWidget,
+          );
+        },
+      );
+    }
 
     testWidgets('finished upload freezes identity in wrapping summary text', (
       tester,
