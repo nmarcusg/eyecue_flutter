@@ -308,7 +308,7 @@ The app now exposes all five thesis screens via 4-tab bottom navigation + a Logs
 | Thesis screen | Exists? | Assessment |
 |---|---|---|
 | Home | ✅ | Branding, subtitle, Auto-Start status card, "Go to Live Camera", bottom nav |
-| Detection | ✅ | Blind-first assistive UI: live preview + boxes, status pill, audio mute, object cards with priority, warning banner, visible controls, gesture surface. Not yet validated on-device with a blind user; TalkBack semantics are minimal. |
+| Detection | ✅ | Blind-first assistive UI: live preview + boxes, status pill, audio mute, object cards with priority, warning banner, visible controls, gesture surface. Not yet validated on-device with a blind user; TalkBack semantics cover labels, roles, states, and operable Stop/Start (semantic long-press) and Repeat (custom action), with gesture-teaching hints removed and duplicate nodes de-duplicated, but full TalkBack compatibility is not claimed and on-device validation is pending. |
 | Settings | ✅ | Vibration, Auto-Start, Low Power, Audio, Logs & Reports — persisted |
 | Help | ✅ | Operations + gestures + confirmation + Android tips |
 | Logs & Reports | ✅ | Overview / Charts / Logs researcher dashboard, reached from Settings |
