@@ -118,6 +118,13 @@ verified only: `flutter analyze` reports no issues and the suites named in
 
 ## Current Blockers
 
+### 🟡 TalkBack Semantic Operability — Implemented, Device Verification Pending
+
+- **Description:** TalkBack operability is implemented and statically verified. The consolidated lifecycle card now exposes Stop/Start through a semantic long-press (identity in `label`, state-only `value`, no gesture-teaching `hint`, and no `onTap` when stopped), and the audio pill exposes `Repeat last alert` through a `CustomSemanticsAction`. `AccessibleButton` no longer injects `'Double tap to activate'` / `'Unavailable'` hints, the dead `DetectionStatePanel` `Use fallback` path is removed, Home exposes a single status node, the three Settings slider wrappers are removed with hertz/2-dp formatters, and Logs & Reports duplicate text nodes are excluded with section titles promoted to headings. A source guard forbids gesture-teaching semantic strings.
+- **Location:** [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`accessible_button.dart`](../lib/widgets/accessible_button.dart), [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), [`settings_screen.dart`](../lib/screens/settings_screen.dart), and [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart).
+- **Remaining — Needs physical-device verification:** long-press delivery on the target TalkBack build, `Repeat last alert` custom-action discoverability, single-node announcement, hint repetition, focus retention after Stop/Start, and TTS/live-region overlap. Automated tests cover the semantic tree and action dispatch but cannot prove real-world operability.
+- **Status:** **Implemented and statically verified (`flutter analyze` 0 issues, `flutter test` 847 passing); physical-device TalkBack verification pending.**
+
 ### 🟢 Detection Redesign (PD1–PD3) — Non-Blocking Notes
 
 The Detection redesign (PD1–PD3) is implemented and statically validated (`flutter analyze` 0 issues; `flutter test` **323 passing at the 2026-09-28 revision**), with three runtime repairs applied after physical-device validation (Custom `IntrinsicHeight` layout cascade, Custom post-frame start intent, Ultralytics native-session recreation on start-after-stop). The behavioral-deviation audit found **no unintended deviations** from baseline `f310e73`. That historical result does **not** verify the current Workstream 1 branch, which has not run Flutter tests or the analyzer. The following items are **non-blocking for the redesign** and are recorded for follow-up.

@@ -5,6 +5,76 @@
 
 ---
 
+## 2026-11-08 — TalkBack operability and semantic-tree simplification
+
+### Context
+Semantics-only accessibility change sourced from
+[`talkback-semantics-analysis.md`](frontend-workflow/talkback-semantics-analysis.md)
+and [`talkback-semantics-plan.md`](frontend-workflow/talkback-semantics-plan.md).
+No visual output was intentionally changed; no service, model, dependency,
+Android or asset change was made.
+
+### Objective
+Make Stop/Start and Repeat Last Alert reachable with TalkBack, remove
+EyeCue-taught gesture vocabulary from semantic properties, and de-duplicate
+semantic nodes without altering the three-second physical hold, the two-card
+composition, or application TTS.
+
+### Changed
+- [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart):
+  lifecycle node now carries action identity in `label` and state only in
+  `value`, has no `hint`, exposes `onLongPress` (`ready`/`paused` → stop,
+  `stopped` → start) through a pure `_dispatchSemanticHold()`, drops `onTap`
+  when stopped, and adds Android-only `onTapHint`/`onLongPressHint`. Hold
+  timing, progress cadence, `_consumed`, `ExcludeSemantics(Listener)`, and the
+  two-card row are unchanged.
+- [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart):
+  the audio pill is one `container` node with `onTap` and a
+  `CustomSemanticsAction('Repeat last alert')` reusing `_repeatAlert()`.
+- [`accessible_button.dart`](../lib/widgets/accessible_button.dart): removed the
+  fabricated `'Double tap to activate'` / `'Unavailable'` hints; `enabled` is
+  now the only disabled signal.
+- [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart):
+  removed the dead `onFallback` / `'Use fallback'` path; live region and
+  `Retry`/`Stop` labels unchanged.
+- [`home_screen.dart`](../lib/screens/home_screen.dart): instruction headline and
+  supporting text excluded; idle semantic meaning is now
+  `'Preparing. Detection begins immediately.'`; visible copy unchanged.
+- [`settings_screen.dart`](../lib/screens/settings_screen.dart): removed three
+  slider label wrappers and added `semanticFormatterCallback` (threshold 2 dp,
+  cadence `'N hertz'`); `SwitchListTile`/`RadioListTile` untouched.
+- [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart):
+  removed or child-excluded eight duplicate `Semantics(label:)` + `Text` pairs,
+  promoted section headings and the research-database-upload title to
+  `header: true`, excluded the snackbar child, and kept every live region.
+- Added the source guard
+  [`talkback_no_gesture_hints_test.dart`](../test/architecture/talkback_no_gesture_hints_test.dart)
+  forbidding `'Double tap`, `'Hold for three`, and the old
+  `'Swipe left to start! Detection` semantic-meaning form.
+- Documentation updated: accessibility semantic contract in
+  [`ui-conventions.md`](ui-conventions.md) and the frontend accessibility rule,
+  corrected claims in
+  [`app-only-implementation-plan.md`](app-only-implementation-plan.md),
+  [`testing-plan.md`](testing-plan.md), and
+  [`thesis-product-status-audit.md`](thesis-product-status-audit.md), plus this
+  log, [`changelog.md`](changelog.md),
+  [`implementation-progress.md`](implementation-progress.md), and
+  [`known-issues.md`](known-issues.md).
+
+### Verified
+- `flutter analyze`: **0 issues**.
+- `flutter test`: **847 passing, 0 failing**.
+- No Android build or device run was performed in this documentation stage.
+
+### Remains — physical-device TalkBack testing
+Long-press delivery on the target TalkBack build, `Repeat last alert`
+custom-action discoverability, single-node announcement, hint repetition,
+focus retention after Stop/Start, and TTS/live-region overlap are **not
+verified on hardware**. These are recorded as pending in
+[`known-issues.md`](known-issues.md).
+
+---
+
 ## 2026-10-23 — CADENCE-C7 documentation of configurable model cadence
 
 ### Context
