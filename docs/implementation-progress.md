@@ -20,6 +20,16 @@
 - ⚠️ **Remaining device gates:** real custom-model execution, the Android SAF picker and its content-provider permissions, accelerator behaviour for a custom graph, physical screen-reader access to the new card, and upload against the live research database are all unverified; every result in this round comes from the local test suite.
 - ✅ Current validation: static only. `flutter analyze --no-pub` reports no issues, `dart format --output=none --set-exit-if-changed` is clean on the touched files, `git diff --check` is empty, and `flutter test --no-pub --concurrency=1` passes over `test/services/ test/screens/ test/models/ test/widgets/ test/navigation/ test/accessibility/ test/architecture/ test/theme_test.dart test/widget_test.dart`. No Android build, device run, Play Console check or performance measurement was performed, and no test total is restated here: the dated totals elsewhere in this file describe older revisions.
 
+## Current Unreleased Candidate (2026-11-08) — TalkBack Operability and Semantic-Tree Simplification
+
+- ✅ Added a semantic long-press to the consolidated lifecycle card so Stop/Start are reachable with TalkBack without a new control: `ready`/`paused` dispatch Stop and `stopped` dispatches Start through a pure `_dispatchSemanticHold()` with no timer or `_consumed` writes; `onTap` is `null` when stopped; `label` carries identity and `value` carries state only; `hint` is removed and Android-only `onTapHint`/`onLongPressHint` supply the result wording.
+- ✅ Exposed `Repeat last alert` as a `CustomSemanticsAction` on the audio pill (one `container` node with `onTap`), reusing `_repeatAlert()` verbatim.
+- ✅ Removed `AccessibleButton`'s fabricated `'Double tap to activate'` / `'Unavailable'` hints and the dead `DetectionStatePanel` `Use fallback` path.
+- ✅ De-duplicated semantics on Home (single status node, idle meaning `'Preparing. Detection begins immediately.'`), Settings (three slider wrappers removed, hertz/2-dp `semanticFormatterCallback`), and Logs & Reports (eight duplicate pairs excluded, section titles `header: true`), while retaining every live region.
+- ✅ Added a source guard, [`talkback_no_gesture_hints_test.dart`](../test/architecture/talkback_no_gesture_hints_test.dart), forbidding gesture-teaching semantic strings.
+- ✅ Current validation: `flutter analyze` reports **0 issues** and `flutter test` reports **847 passing, 0 failing**.
+- ⚠️ **Remaining device gates:** TalkBack long-press delivery on the target build, custom-action discoverability, single-node announcement, hint repetition, focus retention after Stop/Start, and TTS/live-region overlap are unverified on physical Android hardware.
+
 ## Current Unreleased Candidate (2026-10-23) — Configurable Inference Cadence
 
 - ✅ Added persisted detector cadence (Automatic default, or 1–30 Hz) and depth cadence (2–10 Hz, default 2 Hz), settings schema `4 → 5`, with sliders in the Settings "Inference Cadence" card.

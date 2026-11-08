@@ -72,6 +72,29 @@ corrections land on top of `2779f9c`.
   custom-model execution, picker/provider permissions, accelerator behaviour and
   physical accessibility remain device gates.
 
+### Accessibility
+- TalkBack operability and semantic-tree simplification: Stop/Start are now
+  reachable through a semantic long-press on the consolidated lifecycle card
+  (no new control; the three-second physical hold is unchanged), and Repeat Last
+  Alert through a `Repeat last alert` custom semantic action on the audio pill.
+  `AccessibleButton` no longer injects `'Double tap to activate'` /
+  `'Unavailable'` hints, the dead `Use fallback` path was removed from
+  `DetectionStatePanel`, Home's instruction texts are excluded behind the single
+  status node (the idle semantic meaning is now `'Preparing. Detection begins
+  immediately.'`), the three Settings slider label wrappers were removed and
+  given hertz/2-dp semantic formatters, and Logs & Reports duplicate
+  `Semantics(label:)` + `Text` pairs were excluded with section titles promoted
+  to headings. The lifecycle card's `label` now carries identity and `value`
+  state only.
+- A source guard,
+  [`talkback_no_gesture_hints_test.dart`](../test/architecture/talkback_no_gesture_hints_test.dart),
+  forbids gesture-teaching semantic strings (`'Double tap`, `'Hold for three`,
+  and the old `'Swipe left to start! Detection` form).
+- **Device verification pending:** long-press delivery on the target TalkBack
+  build, custom-action discoverability, single-node announcement, hint
+  repetition, focus retention after Stop/Start, and TTS/live-region overlap are
+  not verified on hardware.
+
 ---
 
 ## Unreleased — Truthful Ultralytics readiness
