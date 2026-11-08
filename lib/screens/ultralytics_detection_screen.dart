@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:camera/camera.dart' show CameraLensDirection, availableCameras;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart' show rootBundle, SystemUiOverlayStyle;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:ultralytics_yolo/ultralytics_yolo.dart';
@@ -1466,6 +1467,9 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
                     tooltip: enabled
                         ? 'Mute audio guidance'
                         : 'Unmute audio guidance',
+                    // Repeat Last Alert is exposed as a labelled semantic
+                    // action; the callback is the existing swipeDown handler.
+                    onRepeatAlert: _repeatAlert,
                   );
                 },
               ),
@@ -1474,12 +1478,16 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
           // PD1: the visible developer metrics (FPS, inference latency, native
           // total time) are removed from the normal UI. Metric collection in
           // [_handleMetrics] is preserved so Logs & Reports is unaffected.
+          // The failure message is already announced by the state panel and
+          // the status pill; keep it visible without a second semantic stop.
           if (_modelError != null)
-            Text(
-              _modelError!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(color: kWarningRed),
+            ExcludeSemantics(
+              child: Text(
+                _modelError!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(color: kWarningRed),
+              ),
             ),
         ],
       ),
@@ -1747,19 +1755,32 @@ class _AudioPill extends StatelessWidget {
   final VoidCallback onPressed;
   final String tooltip;
 
+  /// Replays the last spoken alert; exposed as a labelled semantic action.
+  final VoidCallback? onRepeatAlert;
+
   const _AudioPill({
     required this.on,
     required this.onPressed,
     required this.tooltip,
+    this.onRepeatAlert,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final repeat = onRepeatAlert;
     return Semantics(
+      // One explicit node owns the label, the audio toggle and the repeat
+      // action; descendants (tooltip + ink response) add no semantics.
+      container: true,
+      excludeSemantics: true,
       button: true,
       enabled: true,
       label: 'Audio guidance, ${on ? 'on' : 'off'}',
+      onTap: onPressed,
+      customSemanticsActions: repeat == null
+          ? null
+          : {const CustomSemanticsAction(label: 'Repeat last alert'): repeat},
       child: Tooltip(
         message: tooltip,
         child: ConstrainedBox(
