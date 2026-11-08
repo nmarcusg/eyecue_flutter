@@ -64,8 +64,9 @@ of where values live, not a redesign.
 Every new interactive widget must be usable through Android TalkBack without
 relying on sight:
 
-- Expose TalkBack semantics: a label, role, state, value, hint, and enabled
-  status where applicable.
+- Expose TalkBack semantics: a label, role, state, value, and enabled status
+  where applicable, plus a hint only where it describes an action's outcome
+  (see the semantic contract below).
 - Respect large-text scaling. Widget tests must cover 200% text scale with no
   overflow on primary screens.
 - Never rely on color or motion alone to convey meaning. Any color-coded or
@@ -77,6 +78,18 @@ relying on sight:
   as live regions.
 - Exclude decorative icons, camera texture, and duplicate visual labels from
   the accessibility tree.
+
+**Semantic contract.** `label` carries the control's identity; `value` and
+state flags carry state and must never carry instructions. A `hint` describes
+the *outcome* of an action and must never teach screen-reader gestures — no
+"double tap", "hold", or "swipe" phrasing. Do not inject activation
+instructions the platform already supplies (for example "Double tap to
+activate"). Expose non-standard actions (a long press, an alternate audio
+action) through `onLongPress` / `customSemanticsActions` rather than describing
+them in prose. Prefer keeping correct framework semantics — `SwitchListTile`,
+`RadioListTile`, `Slider` — rather than wrapping them in a label-only
+`Semantics` container. Traversal order and role wording are platform-owned; do
+not force them with `sortKey`.
 
 Device TalkBack validation remains a manual step.
 

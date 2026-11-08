@@ -327,8 +327,14 @@ covered by widget tests. Device TalkBack validation remains manual.
 
 **Acceptance criteria:**
 
-- Every primary action is reachable and identifiable with TalkBack.
-- Engine, detection, pause, error, and fallback states are announced once.
+- Every primary action is reachable and identifiable with TalkBack: Stop/Start
+  are exposed through a semantic long-press on the lifecycle card, and Repeat
+  Last Alert through a custom semantic action on the audio pill. On-device
+  TalkBack delivery and discoverability verification is still pending.
+- Engine, detection, pause, error, and fallback states are surfaced through the
+  deliberate status live region, and the duplicated failure string in the
+  header is excluded from the semantics tree. On-device announcement behaviour
+  (including live-region/TTS overlap) is still pending.
 - TalkBack does not continuously repeat camera-frame changes.
 - No critical information exists only through color or position.
 

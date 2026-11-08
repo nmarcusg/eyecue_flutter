@@ -4,6 +4,8 @@
 
 > **Verification status (2026-10-23):** the totals in the next paragraph are **historical**, recorded before the Workstream 1 TTS relocation onto `origin/dev`. The current branch runs `flutter analyze --no-pub` (4 pre-existing issues) and `flutter test --no-pub` (527 passing, 1 known pre-existing `tts_service_test` failure); no Gradle, build, emulator or device command has been run. Treat every passing count below as dated evidence, not current verification.
 >
+> **Current suite (2026-11-08):** `flutter test` → **847 passing, 0 failing**; `flutter analyze` → **0 issues**.
+>
 > For the speech layer specifically: tests exist for the serialized scheduler, alert policy, escalation, semantic pending revalidation, preemption/anti-churn, and idle-only wayfinding, and they run in the current suite. Real Android callback ordering and cancellation latency are unverified on device. `flutter_tts` provides **no utterance identifier**, so callback correlation relies on serialization plus paired signals, with a bounded quiet-period mitigation. Alert-latency telemetry is implemented and its owning tests run in the current suite; the recorded intervals are app-side only (the Ultralytics interval is `app-side / post-inference`), so neither inference timing nor these summaries may be treated as physical audible-warning latency. Prompt, correct audible warnings are **not** proven for independent navigation.
 
 > **Historical suite (2026-09-29 — pre-relocation):** at that revision `flutter test` reported **343 passing, 0 failing** and `flutter analyze` reported **0 issues**; these figures do **not** describe the current branch. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows, and the Detection redesign's [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart)), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation that is still pending.
@@ -64,6 +66,7 @@ migration and the function's own TypeScript are still not executed anywhere
 | Charts | ✅ | Latency/FPS/frequency chart bounds incl. empty/very-high/constant data (implemented) |
 | Detection redesign controls (PD2) | ✅ | [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart): coordinator-outcome label/secondary-text/enabled mapping, physical Quick Scan gating, pointer-down 0% progress across the full three-second hold, `kLongPressTimeout` `KEEP HOLDING` classification without progress restart, early-release tap mapping, abandoned-hold suppression, single-dispatch lock, and cancellation (implemented) |
 | Detection redesign overlay (PD3) | ✅ | Compact two-row overlay selection (stable High promotion preserving source order, no Medium-over-Low ranking), non-live informational semantics, and hidden-outside-Ready behavior (implemented) |
+| TalkBack operability and de-duplication (2026-11-08) | ✅ | [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart): semantic long-press on the lifecycle card stops (ready/paused) or starts (stopped) exactly once, stopped exposes no tap action, and preparing/unavailable expose no long-press; real-screen coverage asserts the audio pill's single node, tap, and `Repeat last alert` custom action; [`semantics_test.dart`](../test/accessibility/semantics_test.dart): Home exposes one status node, each slider yields one name node plus an adjustable node announced in hertz, and `AccessibleButton` exposes no hint; [`logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart): section headings and de-duplicated rows produce one stop; [`talkback_no_gesture_hints_test.dart`](../test/architecture/talkback_no_gesture_hints_test.dart): source guard forbids `'Double tap`, `'Hold for three`, and the old `'Swipe left to start! Detection` form |
 
 ## Integration Testing Strategy
 
@@ -77,7 +80,7 @@ migration and the function's own TypeScript are still not executed anywhere
 | Engine switch | 🟡 P0 | One-device bidirectional smoke pass completed after fixing a late-result disposal race; repeated/rotated/background lifecycle coverage remains |
 | Ultralytics native path | 🟡 P0 | On-device camera → native preprocessing/inference/NMS → EyeCue adapter/cards ran on Snapdragon 695; controlled TTS/telemetry/delegate validation remains |
 | Custom worker lifecycle orchestration | ✅ | Deterministic coverage for respawn, stale generations, busy-gate release, delayed retry, terminal failure, disposal during backoff, and healthy recovery |
-| Accessibility semantics and large text | ✅ | Deterministic coverage for actionable labels, live regions, charts, correction controls, and 200% text scale |
+| Accessibility semantics and large text | ✅ | Deterministic coverage for actionable labels, live regions, charts, correction controls, 200% text scale, and TalkBack action operability (semantic long-press Stop/Start, Repeat custom action) |
 
 ## Manual Testing Checklist
 
@@ -102,7 +105,7 @@ migration and the function's own TypeScript are still not executed anywhere
 - [ ] TTS works with screen reader (TalkBack) active
 
 ### Accessibility
-- [x] All tested interactive elements have TalkBack labels — broad semantics coverage is automated; device TalkBack validation remains manual
+- [x] All tested interactive elements expose the intended TalkBack semantics (labels, roles, states, actions) — automated coverage exists for labels and for the added operability actions (lifecycle long-press Stop/Start, Repeat custom action), but automation does not prove real-world operability (long-press delivery, custom-action discoverability, live-region timing). Device TalkBack validation remains pending.
 - [ ] Gesture controls work (double-tap, swipe)
 - [ ] Primary gesture navigation works on-device — automated coverage is complete (`CONFIRMED-BY-TEST`, `6a0fe65`: commit-on-release, whole-main-area Detection region, second-pointer invalidation); this checkbox is the **device gate only** — the committed feel, haptic/TTS timing and TalkBack interaction still need one physical Android pass. See [`known-issues.md`](known-issues.md)
 - [x] Safety disclosure semantics are complete for TalkBack — automated only (`CONFIRMED-BY-TEST`): one heading node read before the five body nodes, in reading order, with no duplicate announcement at 200 % text scale, for both the Help section and the first-use acknowledgement
