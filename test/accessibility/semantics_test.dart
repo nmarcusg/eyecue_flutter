@@ -137,9 +137,10 @@ void main() {
       );
       await withSemantics(tester, () async {
         expectButtonSemantics(tester, 'Start detection');
+        // No injected gesture instruction; the platform supplies its own hint.
         expect(
           expectSemanticNode('Start detection').hint,
-          'Double tap to activate',
+          anyOf(isNull, isEmpty),
         );
       });
     });
@@ -154,7 +155,11 @@ void main() {
       );
       await withSemantics(tester, () async {
         expectButtonSemantics(tester, 'Pause detection', enabled: false);
-        expect(expectSemanticNode('Pause detection').hint, 'Unavailable');
+        // Disablement is conveyed by `enabled: false`, not a hint string.
+        expect(
+          expectSemanticNode('Pause detection').hint,
+          anyOf(isNull, isEmpty),
+        );
       });
     });
 
@@ -204,27 +209,9 @@ void main() {
       });
     });
 
-    testWidgets('audio pill exposes an enabled Audio guidance node', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        appWithBody(
-          Semantics(
-            button: true,
-            enabled: true,
-            label: 'Audio guidance, on',
-            child: GestureDetector(onTap: () {}, child: const Text('AUDIO ON')),
-          ),
-        ),
-      );
-      await withSemantics(tester, () async {
-        final node = expectSemanticNode(RegExp('Audio guidance, on'));
-        final data = node.getSemanticsData();
-        expect(data.flagsCollection.isButton, isTrue);
-        expect(data.flagsCollection.isEnabled, Tristate.isTrue);
-        expect(data.hasAction(SemanticsAction.tap), isTrue);
-      });
-    });
+    // The audio-pill semantics are covered against the real `_AudioPill` in
+    // test/screens/gesture_navigation_direction_test.dart; a hand-built
+    // stand-in here would only test a copy of the widget.
 
     testWidgets('Detection chrome has no overflow at 200% text scale', (
       tester,
@@ -271,7 +258,6 @@ void main() {
       'state panel exposes safe status and available recovery actions',
       (tester) async {
         var retryCount = 0;
-        var fallbackCount = 0;
         var stopCount = 0;
         final failure = DetectionFailure(
           category: DetectionFailureCategory.nativeInitialization,
@@ -286,7 +272,6 @@ void main() {
               state: DetectionRuntimeState.failed,
               failure: failure,
               onRetry: () => retryCount++,
-              onFallback: () => fallbackCount++,
               onStop: () => stopCount++,
             ),
           ),
@@ -299,14 +284,11 @@ void main() {
           );
           expect(panel.getSemanticsData().flagsCollection.isLiveRegion, isTrue);
           expectButtonSemantics(tester, 'Retry');
-          expectButtonSemantics(tester, 'Use fallback');
           expectButtonSemantics(tester, 'Stop');
 
           await tester.tap(find.text('Retry'));
-          await tester.tap(find.text('Use fallback'));
           await tester.tap(find.text('Stop'));
           expect(retryCount, 1);
-          expect(fallbackCount, 1);
           expect(stopCount, 1);
         });
       },
@@ -474,13 +456,36 @@ void main() {
     ) async {
       await tester.pumpWidget(homeApp(homeCoordinator()));
       await withSemantics(tester, () async {
-        expectSemanticNode(
-          'Preparing. Swipe left to start! Detection begins immediately.',
-        );
+        expectSemanticNode('Preparing. Detection begins immediately.');
         // The live wordmark is present exactly once (logo is decorative).
         expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
         // No CTA or substitute action is exposed.
         expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
+      });
+    });
+
+    testWidgets('the instruction region is not an independent stop', (
+      tester,
+    ) async {
+      await tester.pumpWidget(homeApp(homeCoordinator()));
+      await withSemantics(tester, () async {
+        // Exactly one status node carries the whole meaning.
+        expect(
+          find.semantics
+              .byLabel('Preparing. Detection begins immediately.')
+              .evaluate(),
+          hasLength(1),
+        );
+        // The visible copy is unchanged but no longer navigable.
+        expect(find.text('Swipe left to start!'), findsOneWidget);
+        expect(
+          find.semantics.byLabel('Swipe left to start!').evaluate(),
+          isEmpty,
+        );
+        expect(
+          find.semantics.byLabel('Detection begins immediately.').evaluate(),
+          isEmpty,
+        );
       });
     });
 
@@ -891,20 +896,71 @@ void main() {
       });
     });
 
-    testWidgets('advanced slider exposes its container label and value', (
+    testWidgets('advanced slider exposes a name node and an adjustable node', (
       tester,
     ) async {
       await pumpSettings(tester);
       await withSemantics(tester, () async {
-        // The preserved Semantics(container: true, label: ...) wrapper exposes
-        // the current threshold value in its label.
-        expectSemanticNode(
-          RegExp(r'^Advanced detection confidence threshold, 0\.25'),
+        // The old label-only wrapper is gone; the visible title is the name.
+        expect(
+          find.semantics
+              .byLabel(RegExp(r'^Advanced detection confidence threshold, '))
+              .evaluate(),
+          isEmpty,
         );
-        // The inner Slider node carries the adjustable value and the
-        // increase/decrease actions (the container wrapper does not).
+        // The visible title acts as the accessible name. Sibling text merges
+        // into the enclosing node, so match it as a prefix.
+        expect(
+          find.semantics
+              .byLabel(RegExp(r'^Advanced threshold: 0\.25'))
+              .evaluate(),
+          isNotEmpty,
+          reason: 'The advanced threshold name is missing',
+        );
+        // The Slider node carries the value, the slider flag, and the
+        // increase/decrease actions.
         final slider = expectSemanticNode('0.25');
         final data = slider.getSemanticsData();
+        expect(data.flagsCollection.isSlider, isTrue);
+        expect(data.hasAction(SemanticsAction.increase), isTrue);
+        expect(data.hasAction(SemanticsAction.decrease), isTrue);
+      });
+    });
+
+    testWidgets('cadence sliders announce hertz, not a percentage', (
+      tester,
+    ) async {
+      final service = SettingsService(store: InMemorySettingsStore());
+      await service.setDetectionTargetHz(15);
+      await pumpSettings(tester, service: service);
+      await withSemantics(tester, () async {
+        // The label-only wrapper is gone: no comma-form annotation remains.
+        expect(
+          find.semantics
+              .byLabel(RegExp('^Detector cadence target, '))
+              .evaluate(),
+          isEmpty,
+        );
+        // The visible title remains the accessible name (merged with sibling
+        // text, so match it as a prefix).
+        expect(
+          find.semantics
+              .byLabel(RegExp('Detector cadence target: 15 Hz'))
+              .evaluate(),
+          isNotEmpty,
+          reason: 'The cadence name is missing',
+        );
+        // The adjustable node announces the unit, not a percentage.
+        final cadence = find.semantics
+            .byValue(RegExp(r'^\d+ hertz$'))
+            .evaluate()
+            .toList();
+        expect(cadence, isNotEmpty);
+        final node = cadence.firstWhere(
+          (candidate) => candidate.value == '15 hertz',
+        );
+        final data = node.getSemanticsData();
+        expect(data.flagsCollection.isSlider, isTrue);
         expect(data.hasAction(SemanticsAction.increase), isTrue);
         expect(data.hasAction(SemanticsAction.decrease), isTrue);
       });

@@ -1,3 +1,5 @@
+import 'dart:ui' show SemanticsAction;
+
 import 'package:eyecue_flutter/models/app_settings.dart';
 import 'package:eyecue_flutter/models/detection_runtime_state.dart';
 import 'package:eyecue_flutter/screens/ultralytics_detection_screen.dart'
@@ -12,6 +14,7 @@ import 'package:eyecue_flutter/services/tts_service.dart';
 import 'package:eyecue_flutter/widgets/detection_action_controls.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -367,6 +370,48 @@ void main() {
       expect(directions, isEmpty);
       await swipe(tester, tester.getCenter(find.text('Open Settings')), 260);
       expect(directions, isEmpty);
+    });
+
+    testWidgets('the audio pill is one node with a Repeat last alert action', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpScreen(tester);
+        final pill = find.semantics.byLabel('Audio guidance, on');
+        final nodes = pill.evaluate().toList();
+        expect(nodes, hasLength(1), reason: 'the pill must be a single stop');
+        final data = nodes.single.getSemanticsData();
+        expect(data.flagsCollection.isButton, isTrue);
+        expect(data.hasAction(SemanticsAction.tap), isTrue);
+
+        // Only labelled custom actions are user-facing; hint overrides (if any)
+        // register anonymous entries.
+        final actionIds = data.customSemanticsActionIds ?? const <int>[];
+        final labelled = actionIds
+            .map(CustomSemanticsAction.getAction)
+            .whereType<CustomSemanticsAction>()
+            .map((action) => action.label)
+            .whereType<String>()
+            .toList();
+        expect(labelled, ['Repeat last alert']);
+
+        // Invoking the action replays through the existing repeat handler.
+        hapticCalls.clear();
+        final repeatId = actionIds.firstWhere(
+          (id) =>
+              CustomSemanticsAction.getAction(id)?.label == 'Repeat last alert',
+        );
+        tester.semantics.performAction(
+          pill,
+          SemanticsAction.customAction,
+          args: repeatId,
+        );
+        await tester.pump();
+        expect(hapticCalls, ['medium']);
+      } finally {
+        handle.dispose();
+      }
     });
   });
 }
