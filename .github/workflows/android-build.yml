@@ -123,6 +123,9 @@ jobs:
       - name: Backend validator tests
         run: node --test supabase/functions/ingest-telemetry/validate.test.mjs
 
+      - name: Prepare verified Gradle distribution
+        run: bash .github/scripts/prepare-gradle-distribution.sh
+
       - name: Prepare upload keystore
         if: env.SIGNED_RELEASE == 'true' || env.EYECUE_STUDY_BUILD == 'true'
         env:
