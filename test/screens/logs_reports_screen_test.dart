@@ -2206,4 +2206,73 @@ void main() {
       handle.dispose();
     });
   });
+
+  group('section semantics and de-duplication', () {
+    testWidgets('section titles are headings and are not read twice', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpLogsScreen(
+          tester,
+          telemetry: buildTelemetry(populated: true),
+        );
+
+        // Plain-title sections are promoted to real heading nodes.
+        for (final title in const [
+          'Session Summary',
+          'Alert Latency',
+          'Inference Cadence',
+        ]) {
+          await scrollOverviewTo(tester, find.text(title));
+          final nodes = find.semantics.byLabel(title).evaluate().toList();
+          expect(nodes, hasLength(1), reason: 'not exactly one node: $title');
+          expect(
+            nodes.single.getSemanticsData().flagsCollection.isHeader,
+            isTrue,
+            reason: 'not a heading: $title',
+          );
+        }
+
+        // The alert-latency card is one heading node, and each interval row
+        // collapses to a single stop whose label carries the percentiles.
+        await scrollOverviewTo(
+          tester,
+          find.text('Alert latency and scheduler health'),
+        );
+        final latency = find.semantics
+            .byLabel(RegExp(r'^Alert latency and scheduler health'))
+            .evaluate()
+            .toList();
+        expect(latency, hasLength(1));
+        expect(
+          latency.single.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
+        );
+        final intervalNodes = find.semantics
+            .byLabel(RegExp('p50'))
+            .evaluate()
+            .toList();
+        expect(intervalNodes, isNotEmpty);
+        for (final node in intervalNodes) {
+          expect(node.label, contains(': p50'));
+        }
+
+        // The export title is one heading node: the label is not repeated by a
+        // second navigable text stop.
+        await scrollOverviewTo(tester, find.text('Offline telemetry export'));
+        final export = find.semantics
+            .byLabel(RegExp('^Offline telemetry export'))
+            .evaluate()
+            .toList();
+        expect(export, hasLength(1));
+        expect(
+          export.single.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
+  });
 }

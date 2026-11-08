@@ -517,28 +517,8 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('renders the AUDIO ON pill', (tester) async {
-      await tester.pumpWidget(
-        detectionChrome(
-          Builder(
-            builder: (context) => Semantics(
-              button: true,
-              enabled: true,
-              label: 'Audio guidance, on',
-              child: Text(
-                'AUDIO ON',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: kHomeInk,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      expect(find.text('AUDIO ON'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
+    // The audio pill is covered against the real widget in
+    // test/screens/gesture_navigation_direction_test.dart; the previous
+    // hand-built stand-in exercised a copy rather than the shipped pill.
   });
 }
