@@ -359,7 +359,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
           container: true,
           liveRegion: true,
           label: message,
-          child: Text(message),
+          // The label already carries the message; the text is not a second stop.
+          child: ExcludeSemantics(child: Text(message)),
         ),
       ),
     );
@@ -906,22 +907,23 @@ class _AlertLatencySection extends StatelessWidget {
     final counters = telemetry.alertCounters;
     return Semantics(
       container: true,
+      header: true,
       label: 'Alert latency and scheduler health',
       child: _LightCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Alert latency and scheduler health',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            ExcludeSemantics(
+              child: Text(
+                'Alert latency and scheduler health',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(height: kSpace4),
-            Semantics(
-              label: 'Per-engine speech latency — all detector models',
-              child: Text('Per-engine speech latency — all detector models'),
-            ),
+            // The text already speaks; the annotation wrapper only duplicated it.
+            Text('Per-engine speech latency — all detector models'),
             for (final engine in InferenceEngine.values) ...[
               const SizedBox(height: kSpace12),
               Text(
@@ -1044,17 +1046,20 @@ class _AlertIntervalRow extends StatelessWidget {
       child: Semantics(
         container: true,
         label: '$label: $value',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: theme.textTheme.bodyMedium),
-            Text(
-              value,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w700,
+        // One row = one stop; the label already joins the two visible texts.
+        child: ExcludeSemantics(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: theme.textTheme.bodyMedium),
+              Text(
+                value,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1088,15 +1093,18 @@ class _ExportSection extends StatelessWidget {
     final theme = Theme.of(context);
     return Semantics(
       container: true,
+      header: true,
       label: 'Offline telemetry export',
       child: _LightCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Offline telemetry export',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            ExcludeSemantics(
+              child: Text(
+                'Offline telemetry export',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(height: kSpace4),
@@ -1134,10 +1142,17 @@ class _ExportSection extends StatelessWidget {
             const SizedBox(height: kSpace16),
             const Divider(),
             const SizedBox(height: kSpace12),
-            Text(
-              'Research database upload',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            Semantics(
+              container: true,
+              header: true,
+              label: 'Research database upload',
+              child: ExcludeSemantics(
+                child: Text(
+                  'Research database upload',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: kSpace4),
@@ -1196,15 +1211,18 @@ class _CorrectionSummary extends StatelessWidget {
     final theme = Theme.of(context);
     return Semantics(
       container: true,
+      header: true,
       label: 'Correction reports, ${corrections.length} recorded',
       child: _LightCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Correction reports',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            ExcludeSemantics(
+              child: Text(
+                'Correction reports',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(height: kSpace8),
@@ -1236,11 +1254,13 @@ class _CorrectionSummaryRow extends StatelessWidget {
             '${correction.detection.label}, $feedback, '
             '${correction.engine.label}, threshold '
             '${correction.confidenceThreshold.toStringAsFixed(2)}',
-        child: Text(
-          '${correction.detection.label}: $feedback · '
-          '${correction.engine.label} · threshold '
-          '${correction.confidenceThreshold.toStringAsFixed(2)}',
-          style: theme.textTheme.bodyMedium,
+        child: ExcludeSemantics(
+          child: Text(
+            '${correction.detection.label}: $feedback · '
+            '${correction.engine.label} · threshold '
+            '${correction.confidenceThreshold.toStringAsFixed(2)}',
+            style: theme.textTheme.bodyMedium,
+          ),
         ),
       ),
     );
@@ -1561,15 +1581,11 @@ class _MetricCard extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
             ),
             const SizedBox(height: kSpace4),
-            Semantics(
-              label: modelClaim,
-              child: Text(
-                modelClaim,
-                key: ValueKey('$label-model-claim'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: kHomeInkMuted,
-                ),
-              ),
+            // The text already speaks; the annotation only duplicated it.
+            Text(
+              modelClaim,
+              key: ValueKey('$label-model-claim'),
+              style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
             ),
           ],
         ),
@@ -1708,9 +1724,18 @@ class _SectionHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Text(
-      title,
-      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+    return Semantics(
+      container: true,
+      header: true,
+      label: title,
+      child: ExcludeSemantics(
+        child: Text(
+          title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2092,10 +2117,13 @@ class _SessionSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  sessions.stateLabel,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
+                // The card label already states the session state.
+                ExcludeSemantics(
+                  child: Text(
+                    sessions.stateLabel,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 const SizedBox(height: kSpace4),
