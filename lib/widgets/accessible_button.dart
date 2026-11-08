@@ -28,7 +28,6 @@ class AccessibleButton extends StatelessWidget {
       button: true,
       label: label,
       enabled: onPressed != null,
-      hint: onPressed == null ? 'Unavailable' : 'Double tap to activate',
       onTap: onPressed,
       child: ExcludeSemantics(
         child: ElevatedButton.icon(

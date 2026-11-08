@@ -17,7 +17,6 @@ class DetectionStatePanel extends StatelessWidget {
   final DetectionRuntimeState state;
   final DetectionFailure? failure;
   final VoidCallback? onRetry;
-  final VoidCallback? onFallback;
   final VoidCallback? onStop;
 
   const DetectionStatePanel({
@@ -25,7 +24,6 @@ class DetectionStatePanel extends StatelessWidget {
     required this.state,
     this.failure,
     this.onRetry,
-    this.onFallback,
     this.onStop,
   });
 
@@ -100,12 +98,6 @@ class DetectionStatePanel extends StatelessWidget {
                           icon: Icons.refresh,
                           prominent: !canOpenSettings,
                           onPressed: onRetry,
-                        ),
-                      if (onFallback != null)
-                        AccessibleButton(
-                          label: 'Use fallback',
-                          icon: Icons.alt_route,
-                          onPressed: onFallback,
                         ),
                       if (onStop != null)
                         AccessibleButton(
