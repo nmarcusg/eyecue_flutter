@@ -134,6 +134,50 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
     DetectionStatusOutcome.unavailable => 'UNAVAILABLE',
   };
 
+  /// The semantic identity of the lifecycle control: the action it performs or
+  /// the state it is in. Never the gesture instruction shown beside the title.
+  String get _semanticLabel => switch (widget.outcome) {
+    DetectionStatusOutcome.ready => 'Pause detection',
+    DetectionStatusOutcome.paused => 'Resume detection',
+    DetectionStatusOutcome.stopped => 'Start detection',
+    DetectionStatusOutcome.preparing => 'Detection is preparing',
+    DetectionStatusOutcome.unavailable => 'Detection is unavailable',
+  };
+
+  /// The semantic state only. Returns null for preparing/unavailable so the
+  /// state is not announced twice (label already carries it).
+  String? get _semanticValue => switch (widget.outcome) {
+    DetectionStatusOutcome.ready => 'Detection is running',
+    DetectionStatusOutcome.paused => 'Detection is paused',
+    DetectionStatusOutcome.stopped => 'Detection is stopped',
+    DetectionStatusOutcome.preparing ||
+    DetectionStatusOutcome.unavailable => null,
+  };
+
+  /// Android-only tap-result wording for the current outcome.
+  ///
+  /// Names the result of the action, never the gesture. Null when the outcome
+  /// exposes no tap action (stopped) or the control is not actionable.
+  String? get _semanticTapHint => switch (widget.outcome) {
+    DetectionStatusOutcome.ready => 'pause',
+    DetectionStatusOutcome.paused => 'resume',
+    DetectionStatusOutcome.stopped ||
+    DetectionStatusOutcome.preparing ||
+    DetectionStatusOutcome.unavailable => null,
+  };
+
+  /// Android-only long-press-result wording for the current outcome.
+  ///
+  /// Makes the second action discoverable without teaching the gesture in
+  /// EyeCue's own words; the platform supplies the gesture wording.
+  String? get _semanticLongPressHint => switch (widget.outcome) {
+    DetectionStatusOutcome.ready ||
+    DetectionStatusOutcome.paused => 'stop detection',
+    DetectionStatusOutcome.stopped => 'start detection',
+    DetectionStatusOutcome.preparing ||
+    DetectionStatusOutcome.unavailable => null,
+  };
+
   /// The built-in Material icon reflecting the current lifecycle outcome.
   ///
   /// Presentation only: the icon mirrors the already-derived outcome and never
@@ -247,6 +291,33 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
     }
   }
 
+  /// Dispatches the same lifecycle outcome mapping a completed physical hold
+  /// uses, for the TalkBack long-press action.
+  ///
+  /// This is a pure dispatch: it never starts, mutates, or cancels the physical
+  /// hold timers, progress, or the `_consumed` one-shot lock. A semantic
+  /// long-press is a discrete action whose timing the screen reader owns, so
+  /// EyeCue cannot and does not measure the three-second hold here. The
+  /// asymmetry is intended: the physical hold guards against accidental touch,
+  /// while a TalkBack double-tap-and-hold is not accidental.
+  ///
+  /// The leading guard prevents a second lifecycle call if a semantic action
+  /// arrives while a physical hold is counting down or after a completed hold
+  /// has locked the control.
+  void _dispatchSemanticHold() {
+    if (!_lifecycleEnabled || _holding || _consumed) return;
+    switch (widget.outcome) {
+      case DetectionStatusOutcome.ready:
+      case DetectionStatusOutcome.paused:
+        widget.onStop?.call();
+      case DetectionStatusOutcome.stopped:
+        widget.onStart?.call();
+      case DetectionStatusOutcome.preparing:
+      case DetectionStatusOutcome.unavailable:
+        break;
+    }
+  }
+
   void _cancelHold({bool notify = true}) {
     _progressTimer?.cancel();
     _holdAttemptTimer?.cancel();
@@ -279,17 +350,24 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
     final theme = Theme.of(context);
     final enabled = _lifecycleEnabled && !_consumed;
     final secondary = _secondaryLabel;
-    final hint = _lifecycleHint();
+    // Stopped has no usable tap action, so it must not advertise one.
+    final tapEnabled =
+        enabled && widget.outcome != DetectionStatusOutcome.stopped;
 
     return Semantics(
       button: true,
       enabled: enabled,
-      label: _primaryLabel,
-      value: secondary ?? _primaryLabel,
-      hint: hint,
+      label: _semanticLabel,
+      value: _semanticValue,
       // A TalkBack double-tap invokes this directly (no pointer-down), so it
       // must dispatch the mapped tap behavior rather than the pointer-up path.
-      onTap: enabled ? _dispatchTap : null,
+      onTap: tapEnabled ? _dispatchTap : null,
+      // Long-press mirrors the physical hold's outcome mapping (stop from
+      // ready/paused, start from stopped) as a discrete semantic action.
+      onLongPress: enabled ? _dispatchSemanticHold : null,
+      // Result-only wording for Android; the platform supplies the gesture.
+      onTapHint: tapEnabled ? _semanticTapHint : null,
+      onLongPressHint: enabled ? _semanticLongPressHint : null,
       child: ExcludeSemantics(
         child: Listener(
           behavior: HitTestBehavior.opaque,
@@ -376,24 +454,6 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
     );
   }
 
-  String _lifecycleHint() {
-    if (!_lifecycleEnabled) {
-      return widget.outcome == DetectionStatusOutcome.preparing
-          ? 'Detection is preparing'
-          : 'Detection is unavailable';
-    }
-    return switch (widget.outcome) {
-      DetectionStatusOutcome.ready =>
-        'Double tap to pause. Hold for three seconds to stop.',
-      DetectionStatusOutcome.paused =>
-        'Double tap to resume. Hold for three seconds to stop.',
-      DetectionStatusOutcome.stopped =>
-        'Hold for three seconds to start detection.',
-      DetectionStatusOutcome.preparing ||
-      DetectionStatusOutcome.unavailable => 'Unavailable',
-    };
-  }
-
   Widget _buildQuickScanControl(BuildContext context) {
     final theme = Theme.of(context);
     final enabled = _quickScanEnabled;
@@ -401,10 +461,8 @@ class _DetectionActionControlsState extends State<DetectionActionControls> {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: 'QUICK SCAN',
-      hint: enabled
-          ? 'Double tap to scan the scene'
-          : 'Quick Scan is available only while detection is ready',
+      label: 'Quick scan the scene',
+      hint: enabled ? null : 'Available only while detection is ready',
       onTap: enabled ? widget.onQuickScan : null,
       child: ExcludeSemantics(
         child: GestureDetector(
