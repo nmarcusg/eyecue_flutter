@@ -1,6 +1,6 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-11-09 (TalkBack accessibility programme completed and device-verified on the tested devices; the researcher-selectable detector models, L4 depth-accelerator and PD1–PD3/Custom-engine sections are historical)
+> **Last Updated:** 2026-11-09 (TalkBack accessibility programme and the Detection alignment / chart-and-Logs polish phases completed and device-verified on the tested devices; the researcher-selectable detector models, L4 depth-accelerator and PD1–PD3/Custom-engine sections are historical)
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
 
 ## Monocular depth estimation (MDE)
@@ -138,8 +138,30 @@ The Detection redesign (PD1–PD3) is implemented and statically validated (`flu
 - **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
 - **Native CameraX graph churn** during recreation is expected plugin settling, not a proven leak.
 - **Deferred — strict PD3 result provenance/freshness:** remains deferred under its existing scope boundary (see [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) §13/§18). The overlay's UI-only snapshot clearing prevents known historical values from remaining visible after a non-Ready transition, but does not prove that a delayed pre-transition result cannot arrive after a later Ready state. This is **non-blocking for the redesign** and is not claimed as resolved.
-- **Location:** [`detection_screen.dart`](../lib/screens/detection_screen.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart).
+- **Location:** [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (the only Detection screen since `detection_screen.dart` was removed with the Custom engine on 2026-10-21), [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart).
 - **Status:** **Redesign implemented and statically validated; the items above are non-blocking follow-ups.**
+
+### 🟢 Detection Alignment, Heatmap and Chart/Logs Polish — Device-Verified (No Open Gate)
+
+Two presentation-only phases, `detection-alignment-charts` and its follow-up
+`charts-logs-polish`, are implemented and **device-verified on the target Android
+device (2026-11-09)**. Every gate they previously carried as "Needs Verification"
+is now confirmed on hardware: the shared 16 dp gutter (header, camera viewport,
+action cards); heatmap-to-preview pixel correspondence with MDE enabled;
+`reservedSize` sufficiency and `Elapsed time (s)` legibility at 200 % text scale;
+`RotatedBox` inside `FittedBox` with real depth frames; the audio pill's ink ripple
+over its full 64 × 56 target; X-axis label legibility at 100 %/200 %; the clamped
+rightmost tick; `All models (mixed)` rendered whole; metadata-row single-line
+behaviour; and Logs/Charts filter-card visual parity.
+
+- **Status:** complete; no open device gate for either phase.
+- **Non-blocking polish notes (not defects):** `All models (mixed)` at 200 % text
+  scale on a 390 dp width was accepted as-is (no `FittedBox`, no type-role
+  change); the audio capsule / `StatusPill` height delta is ~3 dp and consists
+  entirely of `StatusPill`'s literal 1.5 dp border, which was deliberately not
+  tokenised; chart X ticks for very large elapsed domains (6+ character values)
+  still rely on the reserved 36 dp band and were not separately exercised.
+- **Location:** [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart), [`charts.dart`](../lib/widgets/charts.dart), [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart).
 
 ### 🟢 Primary Gesture Navigation — Device-Observed Issues (Resolved by test, device gate open)
 
@@ -163,7 +185,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 ### 🟡 Home/Detection Shared Lifecycle — Physical-Device Behavior (Needs Verification)
 
 - **Description:** The shared Home/Detection lifecycle state is implemented and statically validated: [`EngineCoordinator`](../lib/services/engine_coordinator.dart) is the single app-shell-owned, user-facing Detection lifecycle/status source; Home and both Detection implementations render Preparing/Ready/Paused/Stopped/Unavailable from the same snapshot; an explicit `stopped` state and a one-shot start-intent contract were added; Auto-start ON prepares Detection in the background while Home stays visible; Auto-start OFF starts on deliberate entry without writing the preference; manual pause/stop is session-scoped; and the Home `Go to Live Camera` CTA was removed without replacement.
-- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (coordinator ownership + entry/launch intent), [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), [`detection_screen.dart`](../lib/screens/detection_screen.dart), and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart).
+- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (coordinator ownership + entry/launch intent), [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (the only Detection screen since `detection_screen.dart` was removed with the Custom engine on 2026-10-21).
 - **Impact:** Offstage camera/native startup behavior on a physical device (Auto-start ON background preparation) has **not** been observed end-to-end. Whether an offstage cached `CameraPreview` or native `YOLOView` genuinely prepares at launch while Home is selected — including permission-dialog behavior and duplicate-open prevention — is unverified. Changing Auto-start while the app is already running, and Android background/foreground, process death, and camera pre-emption lifecycle behavior, are out of scope and unverified.
 - **Planned Fix:** Validate the Auto-start ON background-preparation and Auto-start OFF entry-start flows on a physical Android device, and confirm the shared status surfaces (Home + both Detection implementations) match on-device.
 - **Status:** **Implemented and statically validated; physical-device behavior Needs Verification.**

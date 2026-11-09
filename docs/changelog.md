@@ -5,6 +5,134 @@
 
 ---
 
+## Unreleased — Charts and Logs polish (2026-11-09)
+
+### Changed
+- **Chart X ticks are concise.** `_formatAxisTick` (interval-dependent precision)
+  is deleted; the X axis uses the new `_formatXAxisTick` — at most **one
+  decimal**, trailing `.0` stripped, no thousands separators. A wall-clock
+  dataset ending at 8.3 s used to print `4.15`; it now prints `4.2`. The Y
+  formatter (`_formatYAxisTick`) and the bar chart's integer `minuteLabels`
+  branch are untouched, and the existing `0` / `0.5` / `1` and `0` / `1.5` / `3`
+  labels are unchanged.
+- **The rightmost X tick no longer overhangs the plot.** `SideTitleWidget` now
+  receives `SideTitleFitInsideData(enabled: true, distanceFromEdge: 4,
+  parentAxisSize: meta.parentAxisSize, axisPosition: meta.axisPosition)`, so the
+  title centred on `maxX` is clamped inside the axis box. No domain headroom, no
+  right reserved gutter and no `maxIncluded: false` were added, so plot width,
+  `minX`/`maxX` and every spot x-value are unchanged.
+- **Bottom axis bands sized for the 14 sp tick.** `reservedSize` and
+  `axisNameSize` moved 22/22 → **36/36** so the `labelSmall` line box fits at
+  200 % text scale. The cost is paid inside the unchanged `kChartHeight` (180):
+  the plot drops from 136 dp to 108 dp and the card height does not change.
+- **Model filter label above a full-width dropdown.** `_ModelFilter` is now a
+  `Column` (`CrossAxisAlignment.stretch`) with the `Detector model` label above a
+  full-card-width `DropdownButton<String?>(isExpanded: true)`; every item `Text`
+  gained `maxLines: 1`, which is what makes truncation measurable. `MergeSemantics`
+  and the label-first order are preserved, so the merged node still starts with
+  `Detector model`.
+- **Logs metadata keeps `n ms` atomic.** The row subtitle is still one
+  `Text([...].join(' · '))`, but the number+unit pair now uses a non-breaking
+  space (`'${r.latencyMs.toStringAsFixed(0)}\u00A0ms'`). A long model name wraps
+  at a ` · ` boundary instead of splitting `58` / `ms`; nothing is ellipsised or
+  hidden, and no `maxLines`/`overflow` was added.
+- **Logs filter card shares the Charts gutter.** The populated
+  `ListView.builder` padding is now
+  `EdgeInsets.symmetric(horizontal: kSpace16, vertical: kSpace8)`, so at 390 dp
+  both tabs render the filter card at left 16 / right 374 / width 358 / inner
+  326. No `SafeArea` was added and the 8 dp vertical rhythm is unchanged.
+- **No new token.** `kSpace16`/`kSpace8` are the only values used; the axis
+  metrics (`36`/`36`/`4`) stay layout literals inside one private function, and
+  no theme file changed.
+
+### Verified
+`flutter analyze --no-pub` → 0 issues. `flutter test --no-pub` → **882 passing,
+0 failing** (baseline before this work: 876 passing, 0 failing), with
+`dart format` reporting 0 changes on the four touched Dart files. New assertions:
+`X ticks carry at most one decimal on a wall-clock interval`,
+`the rightmost X tick stays inside the chart box`,
+`X ticks fit the raised bottom band at 200 percent text scale`,
+`the model filter shows All models mixed whole`,
+`the Logs filter card shares the Charts gutter`, and
+`a log row keeps the latency number and unit together`. Device-only gates remain
+open: X label legibility at 100 %/200 %, the rightmost tick's appearance after
+clamping, `All models (mixed)` at 100 %/200 % on device, metadata-row single-line
+behaviour at 200 %, and cross-tab visual parity.
+
+### Device verification (2026-11-09)
+The five device-only gates recorded above were **confirmed on the target Android
+device**: X-axis label legibility at 100 %/200 % text scale, the clamped
+rightmost tick's appearance, `All models (mixed)` rendered whole, metadata-row
+single-line behaviour, and Logs/Charts filter-card visual parity. Remaining
+non-blocking polish (not defects): at 200 % text scale on a 390 dp width
+`All models (mixed)` was accepted **as-is** (no `FittedBox`, no type-role
+change), and X ticks for very large elapsed domains (6+ character values) still
+rely on the reserved 36 dp band and were not separately exercised.
+
+---
+
+## Unreleased — Detection alignment and chart readability (2026-11-09)
+
+### Changed
+- **One 16 dp Detection gutter.** The header, the dark camera viewport and the
+  bottom action cards now share the same left/right edge. The viewport gutter is
+  applied **inside** `GestureSurface` and inside the `Camera view` semantics
+  node, so the gesture region still covers the whole flexible area and
+  `Repeat last alert` keeps its bounds; the action-row horizontal inset moved
+  `kSpace12` → `kSpace16` while the `kSpace12` gap **between** the two cards and
+  the edge-to-edge `kHomeSurfaceBase` band are unchanged.
+- **Layout-aware depth heatmap.** [`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart)
+  now rotates with `RotatedBox(quarterTurns: rotation ~/ 90)` around a
+  sensor-sized `SizedBox` inside
+  `FittedBox(fit: BoxFit.cover, alignment: Alignment.center, clipBehavior:
+  Clip.hardEdge)` — the same centre-crop the bounding-box mapping uses. The
+  paint-only `Transform.rotate`, the upright-dimension locals and the now-unused
+  `dart:math` import are gone, so the heatmap is no longer stretched before
+  rotation or painted outside its measured bounds.
+- **`AUDIO ON` pill height.** The visible capsule is now content-sized (its own
+  padding and radius, matching `StatusPill`) while the accessible hit target
+  stays a 64 × 56 rectangle: a transparent `MaterialType.transparency` +
+  `InkWell` fills the target and a `Center` holds the capsule. Still one button
+  node, one tap action, zero custom semantics actions, tooltip and visible text
+  unchanged.
+- **Chart readability.** [`charts.dart`](../lib/widgets/charts.dart) drops the
+  rotated Y-axis names on all three charts (the card titles already name the
+  metric; left `axisNameSize` is 0), makes Y ticks single-line
+  (`maxLines: 1` + `softWrap: false`) with at most one decimal via the new
+  `_formatYAxisTick`, widens the left `reservedSize` 38 → **64**, unifies axis
+  strokes and tick glyphs on `kHomeInkMuted` (the `_axisColor` hex is deleted)
+  and takes the tick type from `labelSmall`. The X axis keeps
+  `_formatAxisTick` verbatim, so fractional elapsed ticks (`0.5`, `1.5`) are
+  unchanged. `_ChartCard`'s title-to-chart gap moved `kSpace8` → `kSpace16`.
+- **FPS chart.** The `(15 FPS target)` title wording, `_fpsBenchmark`, the FPS
+  `showBenchmark` local and its dashed `greenAccent` line are removed; the chart
+  keeps only its dynamic Y scaling. **The 300 ms latency benchmark and its red
+  dashed line are untouched**, as is the `(300 ms benchmark)` latency title.
+- **No new token.** Every value above comes from the existing design system
+  (`kSpace16`, `kSpace12`, `kSpace8`, `kSpace6`, `kMinTouchWidth`,
+  `kMinTouchHeight`, `kRadius20`, `kHomeSurfaceCard`, `kHomeSurfaceBase`,
+  `kHomeInk`, `kHomeInkMuted`, `kHomeAccentCyan`, `kHomeShadowSoft`,
+  `labelSmall`); no theme file changed.
+
+### Verified
+`flutter analyze --no-pub` → 0 issues. `flutter test --no-pub` → **876 passing,
+0 failing** (baseline before this work: 865 passing, 0 failing). Device-only
+gates remain open: the gutter's on-device appearance, heatmap-to-preview
+correspondence with MDE enabled, `reservedSize` sufficiency at 200 % text scale,
+`RotatedBox` under real depth frames, and the audio-pill ripple extent.
+
+### Device verification (2026-11-09)
+Those five gates were **confirmed on the target Android device**: the 16 dp
+gutter's visual result, heatmap-to-preview pixel correspondence with MDE enabled,
+`reservedSize` sufficiency and `Elapsed time (s)` legibility at 200 % text scale,
+`RotatedBox` behaviour with real depth frames, and the audio-pill ink ripple over
+the full 64 × 56 target. Remaining non-blocking polish (not a defect): the ~3 dp
+height delta between the content-sized audio capsule (measured 31 dp) and
+`StatusPill` (34 dp) is entirely `StatusPill`'s literal 1.5 dp border, which was
+deliberately not tokenised or restyled.
+
+---
+
 ## Unreleased — TalkBack speech ownership and semantic structure (2026-11-09)
 
 ### Changed
