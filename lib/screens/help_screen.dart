@@ -3,8 +3,8 @@ import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
-import '../theme/app_radii.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/help_section_card.dart';
 import '../widgets/safety_disclosure.dart';
 
 /// Help & Gestures — an auditory- and visual-friendly user manual explaining
@@ -64,29 +64,31 @@ class HelpScreen extends StatelessWidget {
                         // The permanent copy of the safety disclosure. The
                         // first-use acknowledgement renders the same wording.
                         SafetyDisclosureCard(),
-                        _HelpCard(
+                        HelpSectionCard(
                           title: 'How It Works',
                           body:
                               '1. Open EyeCue.\n'
-                              '2. Detection starts (or press Start).\n'
+                              '2. Detection starts automatically, or use the '
+                              'Start control.\n'
                               '3. Walk naturally with your phone.\n'
                               '4. Listen for audio cues about nearby objects.\n'
                               '5. Adjust your path safely.\n\n'
                               'EyeCue runs entirely on your device — no '
                               'internet needed.',
                         ),
-                        _HelpCard(
+                        // Per-item reading stops: one node per bullet.
+                        HelpSectionCard(
                           title: 'Gesture Controls',
-                          body:
-                              '• Two-finger double tap — start or exit '
-                              'detection mode.\n'
-                              '• Single tap — pause or resume detection.\n'
-                              '• Three-finger tap — quick environmental '
-                              'scan.\n'
-                              '• One-finger swipe down — repeat the most '
-                              'recent audio alert.',
+                          items: [
+                            'Two-finger double tap — start or exit '
+                                'detection mode.',
+                            'Single tap — pause or resume detection.',
+                            'Three-finger tap — quick environmental scan.',
+                            'One-finger swipe down — repeat the most recent '
+                                'audio alert.',
+                          ],
                         ),
-                        _HelpCard(
+                        HelpSectionCard(
                           title: 'Gesture Confirmation',
                           body:
                               'Every gesture gives instant feedback: an audio '
@@ -94,17 +96,17 @@ class HelpScreen extends StatelessWidget {
                               'you always know the action was recognized — no '
                               'need to look at the screen.',
                         ),
-                        _HelpCard(
+                        // Per-item reading stops: one node per bullet.
+                        HelpSectionCard(
                           title: 'Best Use Tip (Android)',
-                          body:
-                              '• Mount or carry the phone at chest height for '
-                              'the best view.\n'
-                              '• Use earphones so audio cues are easy to '
-                              'hear.\n'
-                              '• Keep the camera lens clean and pointed '
-                              'ahead.\n'
-                              '• In Low Power Mode detection runs at a slower '
-                              'rate to save battery.',
+                          items: [
+                            'Mount or carry the phone at chest height for '
+                                'the best view.',
+                            'Use earphones so audio cues are easy to hear.',
+                            'Keep the camera lens clean and pointed ahead.',
+                            'In Low Power Mode detection runs at a slower '
+                                'rate to save battery.',
+                          ],
                         ),
                       ],
                     ),
@@ -114,53 +116,6 @@ class HelpScreen extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// A light Help section card: a title header and the body copy, exposed as one
-/// coherent semantic group with the title as the heading. The decorative
-/// section icon was removed; the title alone carries the section meaning.
-class _HelpCard extends StatelessWidget {
-  final String title;
-  final String body;
-
-  const _HelpCard({required this.title, required this.body});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: kSpace16),
-      padding: const EdgeInsets.all(kSpace16),
-      decoration: BoxDecoration(
-        color: kHomeSurfaceCard,
-        borderRadius: BorderRadius.circular(kRadius24),
-        boxShadow: kHomeShadowSoft,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Semantics(
-            // The section title is the semantic heading for the group. The
-            // inner Text is excluded so the title is exposed exactly once (no
-            // duplicate label from the visual text).
-            container: true,
-            header: true,
-            label: title,
-            child: ExcludeSemantics(
-              child: Text(
-                title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: kSpace12),
-          Text(body, style: theme.textTheme.bodyLarge?.copyWith(height: 1.4)),
-        ],
       ),
     );
   }
