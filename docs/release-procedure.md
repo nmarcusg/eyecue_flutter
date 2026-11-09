@@ -5,6 +5,25 @@ configuration in this tree does and which decisions remain owner gates; measured
 build evidence lives in [`play-store-readiness.md`](play-store-readiness.md)
 (the L8/L9 rows).
 
+## Current distribution variants
+
+Build the public Play artifact explicitly with `--flavor public` and the default
+entrypoint (`lib/main.dart`): `flutter build appbundle --release --flavor public`.
+Its application ID is `app.eyecue.mobile`; the release manifest has no
+`INTERNET`; it contains no research recording, export or upload UI. The public
+release declares no `INTERNET` permission and never constructs an upload client;
+the uploader class may remain compiled-in but is unreachable.
+Public output paths use `app-public-release.apk` and
+`outputs/bundle/publicRelease/app-public-release.aab`; the debug-signed APK is
+renamed `app-public-release-testsigned.apk` by `markTestSignedApk`.
+
+Study APKs require `--flavor study -t lib/main_study.dart`, the retained Study
+signing key and telemetry configuration. They use `app.eyecue.mobile.study`,
+declare `INTERNET`, and have a `-study` version suffix. Study is APK-only; do not
+build or distribute a Study AAB. Builds without an explicit flavor are expected
+to fail. Historical measurements later in this document describe older
+single-variant artifacts and are not evidence for the current public flavor.
+
 ## 1. Application identity
 
 | Field | Value | Status |
@@ -52,32 +71,33 @@ Two sources are read at configuration time, properties first, then environment:
 keystore, a password, or `key.properties`. `storeFile` is resolved against
 `android/app/`, so use an absolute path unless the keystore really lives there.
 
-**No material present** → the release build falls back to the debug signing
+**No material present** → the public release build falls back to the debug signing
 config, sets `versionNameSuffix = "-testsigned"`, prints a Gradle warning and
-marks the outputs as `app-release-testsigned.aab` / `app-release-testsigned.apk`.
+marks public outputs as `app-public-release-testsigned.aab` /
+`app-public-release-testsigned.apk`.
 A `1.0.0-testsigned` APK or AAB is a **test artifact**: it is not installable
 from Play (a debug-signed bundle is refused at upload) and must never be
 described as a release candidate. The name is what makes that visible in a
 directory listing — the version name alone did not stop
-`build/app/outputs/bundle/release/app-release.aab` from looking exactly like a
+`build/app/outputs/bundle/publicRelease/app-public-release.aab` from looking exactly like a
 production artefact. Both rules live in
 [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) and are active
 only when `hasUploadSigning` is false: with a keystore the names stay
-`app-release.aab` / `app-release.apk`.
+`app-public-release.aab` / `app-public-release.apk`.
 
 The two artefacts are marked in different places, for a measured reason:
 
-* **AAB** — a `doLast` on `bundleRelease` renames
-  `outputs/bundle/release/app-release.aab`. `flutter build appbundle` then reports
+* **AAB** — a `doLast` on `bundlePublicRelease` renames
+  `outputs/bundle/publicRelease/app-public-release.aab`. `flutter build appbundle` then reports
   the renamed file.
 * **APK** — renaming inside `assembleRelease` does **not** work: Flutter's own
-  Gradle step copies `app-release.apk` into `outputs/flutter-apk/` *after*
+  Gradle step copies `app-public-release.apk` into `outputs/flutter-apk/` *after*
   `assembleRelease` finishes, so a rename there leaves a plain-named
-  `app-release.apk` behind (measured on this tree) and `flutter build apk` only
+  `app-public-release.apk` behind (measured on this tree) and `flutter build apk` only
   looks up the plain name. Mark it explicitly after the build:
 
   ```sh
-  flutter build apk --release          # writes outputs/flutter-apk/app-release.apk
+  flutter build apk --release --flavor public # writes outputs/flutter-apk/app-public-release.apk
   (cd android && ./gradlew markTestSignedApk)   # renames it (+ its .sha1) to -testsigned
   ```
 
@@ -113,11 +133,11 @@ every artifact produced here is debug-signed and test-only.
 
 ```sh
 cd /home/nico/repos/eyecue_flutter-playstore
-flutter build appbundle --release
+flutter build appbundle --release --flavor public
 ```
 
-Output: `build/app/outputs/bundle/release/app-release.aab` with production
-signing, or `app-release-testsigned.aab` on the debug-signed fallback (§3).
+Output: `build/app/outputs/bundle/publicRelease/app-public-release.aab` with production
+signing, or `app-public-release-testsigned.aab` on the debug-signed fallback (§3).
 Release shrinking is
 enabled (`isMinifyEnabled`, `isShrinkResources` in the release build type) with
 [`android/app/proguard-rules.pro`](../android/app/proguard-rules.pro) added on
@@ -126,9 +146,13 @@ top of the default optimized rules; R8 full mode is not forced.
 For inspection use a release APK as well — most tools cannot read an AAB:
 
 ```sh
-flutter build apk --release
-(cd android && ./gradlew markTestSignedApk)   # only on the debug-signed fallback (§3)
-unzip -p build/app/outputs/flutter-apk/app-release-testsigned.apk 'classes*.dex' | strings | grep -c 'androidx/work/impl/WorkDatabase'
+flutter build apk --release --no-pub --flavor public
+if [ ! -f build/app/outputs/flutter-apk/app-public-release.apk ]; then
+  (cd android && ./gradlew markTestSignedApk) # debug-signed fallback only (§3)
+fi
+APK=build/app/outputs/flutter-apk/app-public-release.apk
+[ -f "$APK" ] || APK=build/app/outputs/flutter-apk/app-public-release-testsigned.apk
+unzip -p "$APK" 'classes*.dex' | strings | grep -c 'androidx/work/impl/WorkDatabase'
 ```
 
 ## 5. Owner gates

@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Study only: the manual research upload is the only network client. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>
+<!-- The public flavor must never re-add INTERNET. -->

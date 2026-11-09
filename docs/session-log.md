@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-11-08 — Public / EyeCue Study variant remediation
+
+### Changed
+- Removed CI validation that rejected repository telemetry variables for public
+  builds; Study still requires both valid telemetry values. Public reports
+  `TELEMETRY_MODE=not-configured` and Study reports `configured`.
+- Corrected Settings spacing so the 16 px action gap exists only with the Study
+  Logs & Reports action; added callback-present and callback-null widget checks.
+- Narrowed public claims: release declares no `INTERNET` permission and never
+  constructs an upload client; the uploader class may remain compiled-in but is
+  unreachable. Added the debug/profile hot-reload permission caveat and TTS-engine
+  network caveat to privacy/store materials.
+- Documented flavor output names and Study APK-only distribution. Existing
+  user-owned `.gitignore` modifications were preserved and excluded from staging.
+
+### Verified
+- `node --test supabase/functions/ingest-telemetry/validate.test.mjs`: 56/56
+  passing.
+- Gradle variant configuration task listing succeeded and included public and
+  study variants; a no-signing `:app:assembleStudyRelease` failed at configuration
+  with the retained-key message and no Study APK was present.
+- `flutter analyze --no-pub` completed with no issues; the full
+  `flutter test --no-pub --concurrency=1` suite passed (876 tests); and the
+  Supabase validator suite passed (56 tests).
+- Local release APK/AAB builds were not run in this resumed round at the owner's
+  request because the local environment cannot handle them. The previous build
+  attempt failed on an app/plugin API mismatch (`YOLODepthEvent` and depth
+  streaming config symbols); plugin files remain untouched.
+- No release APK/AAB artifact was produced, so payload string probes, `aapt`
+  permission inspection, Study signing verification, manifest version metadata,
+  and device behavior remain unverified. The retained Study signing config is
+  readable, but local Study telemetry URL and public key are unset; the Study
+  build tool therefore could not be run.
+
+---
+
 ## 2026-10-23 — CADENCE-C7 documentation of configurable model cadence
 
 ### Context

@@ -55,8 +55,9 @@ Where a value was checked, the check date and source are recorded in §11.
 EyeCue: on-device detection
 ```
 
-27 characters. "On-device" is a factual property of the build (no frame leaves the
-phone; the app works offline), not a performance claim.
+27 characters. "On-device" is a factual property for detection/depth and bundled
+fonts/models (no frame leaves the phone); TTS depends on the installed Android
+speech engine, which may need network access to fetch voice data.
 
 ## 3. Short description
 
@@ -81,8 +82,9 @@ G's wording, not a second notice).
 ```text
 EyeCue is an experimental research and assistive Android app. It looks at what the
 camera sees, detects common objects on the device itself, and speaks what it finds.
-Nothing is analysed in the cloud: the models are bundled with the app, and
-detection works offline.
+Nothing is analysed in the cloud: the models and fonts are bundled, and detection
+and depth work offline. Speech is delegated to the installed Android TTS engine,
+which may fetch voice data using its own permissions and network access.
 
 WHAT IT DOES
 • Live detection. Camera frames are analysed on the phone and the names of
@@ -96,19 +98,8 @@ WHAT IT DOES
 • Gestures. Single tap, two-finger double-tap, three-finger tap and swipe down,
   so the app can be operated without looking at the screen.
 • Settings. Audio guidance, vibration, auto-start, low-power mode, bounding boxes,
-  depth heatmap, detector and depth cadence.
-• Logs & Reports. On-device charts of detections, alert counts and performance,
-  with CSV and JSON export to a location you choose through Android's file picker.
-• Optional research upload. A session can be sent to the study database manually,
-  one session at a time, with a study participant code and a study token supplied
-  by the study coordinator. The upload contains numeric detection and performance
-  records only — no camera frames, no name, no email address, no device ID. It is
-  opt-in and can be declined. Each app run sends one session: a repeated upload
-  from the same run may be treated as the same session rather than stored again,
-  so export locally to keep later data. *BLOCKED-EXTERNAL* — the duplicate-upload
-  behaviour is implemented in the ingest function but has never been executed
-  against a running database, so this description must be confirmed before it is
-  published.
+  depth heatmap, detector and depth cadence. The public Play build does not include
+  researcher logging, data export or online upload; those are Study-only surfaces.
 
 SAFETY AND LIMITATIONS
 The following is the wording the app itself shows, in Help → Safety and
@@ -133,8 +124,9 @@ does not replace the aids listed above and it is not certified as an accessibili
 or medical product.
 
 PRIVACY
-Camera frames never leave the device and are never stored. Research telemetry stays
-local unless the user uploads a session manually. The privacy policy is at:
+Camera frames never leave the device and are never stored. Public EyeCue does not
+include research recording or upload. EyeCue Study keeps research telemetry local
+unless the researcher uploads a session manually. The privacy policy is at:
 <privacy-policy URL — PLACEHOLDER — owner action>
 
 LICENCE AND SOURCE
@@ -162,8 +154,10 @@ First release (1.0.0).
 • Hands-off gestures: single tap, two-finger double-tap, three-finger tap,
   one-finger swipe down.
 • Settings for audio, vibration, auto-start, low power and detection cadence.
-• Logs & Reports with on-device charts and local CSV/JSON export.
-• Optional, manual research upload of image-free study data.
+The public Play build has no Logs & Reports, export or research-upload UI. The
+public release declares no `INTERNET` permission and never constructs an upload
+client; the uploader class may remain compiled-in but is unreachable. Those
+research surfaces are available only in the separate EyeCue Study variant.
 
 EyeCue is an experimental research and assistive app, not a medical device. Read
 Help → Safety and Limitations before relying on it.
@@ -212,8 +206,10 @@ What the app **does** contain:
 - a live camera preview of the user's surroundings, shown on screen;
 - spoken object names and haptic alerts;
 - an optional depth heatmap (a colour overlay of estimated distance);
-- charts and logs of the app's own detection/performance counters;
-- an optional manual upload of numeric session records to a research database.
+- the public Play build has no researcher logs, export or upload flow; research
+  data collection is confined to the separate Study variant. Its release declares
+  no `INTERNET` permission and never constructs an upload client, though the
+  uploader class may remain compiled-in but unreachable.
 
 What the app **does not** contain:
 
@@ -249,7 +245,7 @@ Required screens, in this order:
 | 2 | Detection — live | camera preview with bounding boxes **and** the depth heatmap overlay |
 | 3 | Detection — MDE off / bounding box mode | the same scene with the heatmap off, boxes only (the depth layer is optional and the difference must be visible) |
 | 4 | Settings | preferences, audio guidance, overlays and cadence controls |
-| 5 | Logs & Reports | on-device charts and the export actions |
+| 5 | Help | safety disclosure and limitations |
 | 6 | Help — Safety and Limitations section | the disclosure text, readable at screenshot scale |
 | 7 | First-use disclosure | the acknowledgement shown before first use |
 

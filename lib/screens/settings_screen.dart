@@ -27,7 +27,7 @@ import '../widgets/warning_banner.dart';
 class SettingsScreen extends StatelessWidget {
   final SettingsService settings;
   final ResearchSessionService? researchSessions;
-  final VoidCallback onOpenLogsReports;
+  final VoidCallback? onOpenLogsReports;
 
   /// Optional read-only telemetry source for the System Performance card.
   ///
@@ -919,7 +919,7 @@ class _SettingsCard extends StatelessWidget {
 /// precision, recall, F1, or mAP value is displayed.
 class _SystemPerformanceCard extends StatelessWidget {
   final TelemetryService? telemetry;
-  final VoidCallback onOpenLogsReports;
+  final VoidCallback? onOpenLogsReports;
 
   const _SystemPerformanceCard({
     required this.telemetry,
@@ -1017,36 +1017,38 @@ class _SystemPerformanceCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: kSpace16),
-              // The action area uses the tokenized overlay-white-11 inner
-              // surface; the retained chevron uses the cyan accent. The
-              // ListTile is wrapped in its own Material so its ink splash
-              // paints on the overlay surface rather than being hidden by the
-              // intermediate DecoratedBox.
-              Material(
-                color: kHomeOverlayWhite11,
-                borderRadius: BorderRadius.circular(kRadius14),
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: kSpace12,
-                  ),
-                  // The chevron is relocated to the trailing (right) side of
-                  // the tile; the subtitle was removed so only the title
-                  // remains. The title/chevron colors and the navigation
-                  // callback are unchanged.
-                  trailing: ExcludeSemantics(
-                    child: Icon(Icons.chevron_right, color: chevronAccent),
-                  ),
-                  title: Text(
-                    'View Logs & Reports',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: foreground,
+              if (onOpenLogsReports != null) ...[
+                const SizedBox(height: kSpace16),
+                // The action area uses the tokenized overlay-white-11 inner
+                // surface; the retained chevron uses the cyan accent. The
+                // ListTile is wrapped in its own Material so its ink splash
+                // paints on the overlay surface rather than being hidden by the
+                // intermediate DecoratedBox.
+                Material(
+                  color: kHomeOverlayWhite11,
+                  borderRadius: BorderRadius.circular(kRadius14),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: kSpace12,
                     ),
+                    // The chevron is relocated to the trailing (right) side of
+                    // the tile; the subtitle was removed so only the title
+                    // remains. The title/chevron colors and the navigation
+                    // callback are unchanged.
+                    trailing: ExcludeSemantics(
+                      child: Icon(Icons.chevron_right, color: chevronAccent),
+                    ),
+                    title: Text(
+                      'View Logs & Reports',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: foreground,
+                      ),
+                    ),
+                    onTap: onOpenLogsReports,
                   ),
-                  onTap: onOpenLogsReports,
                 ),
-              ),
+              ],
             ],
           ),
         ),

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../screens/engine_detection_screen.dart';
 import '../screens/help_screen.dart';
 import '../screens/home_screen.dart';
-import '../screens/logs_reports_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/correction_service.dart';
 import '../services/alert_policy.dart';
@@ -141,6 +140,8 @@ class AppShell extends StatefulWidget {
   /// channels; production always supplies the loaded instance.
   final ResearchSessionService? researchSessions;
 
+  final Widget Function()? logsReportsBuilder;
+
   /// Test hook — supply your own page widgets instead of the real screens.
   final List<Widget> Function(BuildContext context, AppShellState shell)?
   pagesOverride;
@@ -159,6 +160,7 @@ class AppShell extends StatefulWidget {
     required this.haptics,
     this.detectorModel,
     this.researchSessions,
+    this.logsReportsBuilder,
     this.pagesOverride,
     this.coordinatorOverride,
   });
@@ -362,17 +364,11 @@ class AppShellState extends State<AppShell> {
 
   /// Opens the researcher-facing Logs & Reports screen (from Settings).
   void openLogsReports() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => LogsReportsScreen(
-          telemetry: widget.telemetry,
-          settings: widget.settings,
-          corrections: widget.corrections,
-          researchSessions: widget.researchSessions,
-          detectorModel: widget.detectorModel,
-        ),
-      ),
-    );
+    final builder = widget.logsReportsBuilder;
+    if (builder == null) return;
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => builder()));
   }
 
   Widget _buildPage(int index) {
@@ -397,7 +393,9 @@ class AppShellState extends State<AppShell> {
       case 2:
         return SettingsScreen(
           settings: widget.settings,
-          onOpenLogsReports: openLogsReports,
+          onOpenLogsReports: widget.logsReportsBuilder == null
+              ? null
+              : openLogsReports,
           researchSessions: widget.researchSessions,
           telemetry: widget.telemetry,
           detectorModel: widget.detectorModel,

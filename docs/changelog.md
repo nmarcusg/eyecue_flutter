@@ -5,6 +5,23 @@
 
 ---
 
+## Unreleased — Public / EyeCue Study build separation (2026-11-08)
+
+- Added `public` and `study` Android flavors with separate Dart entrypoints.
+  Public omits research recording, researcher controls, export and upload UI,
+  and does not declare `INTERNET`; Study retains the existing research workflows,
+  Study package identity and retained signing-certificate pin.
+- Research data from an older `app.eyecue.mobile` install is not deleted or
+  migrated by a public update, but the public UI no longer reads or exposes it.
+  Keep the old build installable or export those trials first if needed.
+- Verification is limited to repository source/tests and release-artifact checks
+  recorded in the implementation session; no device, Play Console or live upload
+  claim is implied.
+- The public release declares no `INTERNET` permission and never constructs an
+  upload client; the uploader class may remain compiled-in but is unreachable.
+  Release-artifact string probing is pending because the local YOLO plugin API
+  does not match the app sources and blocks compilation.
+
 ## Unreleased — Speech continuity (2026-11-04)
 
 - Active obstacle warnings finish through detector misses instead of being

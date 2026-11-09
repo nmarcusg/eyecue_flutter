@@ -49,10 +49,12 @@ depending on the resolved task, so a metadata regression cannot silently change
 the task.
 
 Both runtime models are bundled assets, so detection and depth load offline on
-the first run. Release manifests declare `CAMERA` and `INTERNET`; the latter was
-added only for the optional manual research-telemetry upload. No model, label,
-or metadata is fetched at runtime — depth works offline and the earlier
-download-on-first-use path is gone.
+the first run. The public release declares `CAMERA` and no `INTERNET`; only the
+Study release adds `INTERNET` for manual researcher upload. No model, label, or
+metadata is fetched at runtime — depth works offline and the earlier
+download-on-first-use path is gone. `url_launcher` remains a vendored-plugin
+dependency used by its unused showcase export; the app does not instantiate
+`YOLOShowcase`.
 
 Depth values are metres as produced by the model; they are **uncalibrated**.
 See [`mde-integration.md`](mde-integration.md).

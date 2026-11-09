@@ -33,11 +33,12 @@ val uploadKeyPassword = uploadSecret("keyPassword", "EYECUE_KEY_PASSWORD")
 val hasUploadSigning = uploadStoreFile != null && uploadStorePassword != null &&
     uploadKeyAlias != null && uploadKeyPassword != null
 
-// Opt-in research installation. The permanent Play identity stays unchanged.
-val studyBuild = providers.gradleProperty("eyecueStudyBuild")
-    .orElse(providers.environmentVariable("EYECUE_STUDY_BUILD"))
-    .getOrElse("false").toBooleanStrict()
-if (studyBuild && !hasUploadSigning) {
+// A study artifact that fell back to the debug keystore could never update an
+// existing Study install, so refuse it outright.
+val studyTaskRequested = gradle.startParameter.taskNames.any {
+    it.contains("study", ignoreCase = true)
+}
+if (studyTaskRequested && !hasUploadSigning) {
     throw GradleException(
         "EyeCue Study requires its retained signing keystore. " +
             "Refusing a generated debug key that would break future updates.",
@@ -52,6 +53,20 @@ android {
     namespace = "app.eyecue.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+    flavorDimensions += "distribution"
+
+    productFlavors {
+        create("public") {
+            dimension = "distribution"
+            applicationId = "app.eyecue.mobile"
+            manifestPlaceholders["eyecueAppLabel"] = "EyeCue"
+        }
+        create("study") {
+            dimension = "distribution"
+            applicationId = "app.eyecue.mobile.study"
+            manifestPlaceholders["eyecueAppLabel"] = "EyeCue Study"
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -59,8 +74,6 @@ android {
     }
 
     defaultConfig {
-        applicationId = if (studyBuild) "app.eyecue.mobile.study" else "app.eyecue.mobile"
-        manifestPlaceholders["eyecueAppLabel"] = if (studyBuild) "EyeCue Study" else "EyeCue"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -80,7 +93,6 @@ android {
 
     buildTypes {
         release {
-            if (studyBuild) versionNameSuffix = "-study"
             // Flutter's Gradle plugin does not enable shrinking; these are the
             // effective release values and R8 (including its consumer rules from
             // WorkManager/Room) runs on this build type.
@@ -108,6 +120,13 @@ android {
     }
 }
 
+// Keep the retained Study identity's version line separate from Play releases.
+androidComponents.onVariants { variant ->
+    if (variant.name == "studyRelease") {
+        variant.outputs.forEach { it.versionName.set("${flutter.versionName}-study") }
+    }
+}
+
 // A debug-signed bundle is refused by Play, yet it used to be written as
 // `app-release.aab` / `app-release.apk` — a filename indistinguishable from a
 // production artefact. On the no-keystore fallback only, rename the outputs so
@@ -122,7 +141,7 @@ if (!hasUploadSigning) {
         val artefact = layout.buildDirectory.file(path).get().asFile
         if (artefact.exists()) {
             val renamed = artefact.resolveSibling(
-                artefact.name.replace("app-release", "app-release-testsigned"),
+                artefact.name.replace("app-public-release", "app-public-release-testsigned"),
             )
             check(artefact.renameTo(renamed)) {
                 "EyeCue: could not mark ${artefact.name} as test-signed"
@@ -139,8 +158,8 @@ if (!hasUploadSigning) {
     // The bundle is renamed by the task that writes it. `flutter build
     // appbundle` then reports the renamed file.
     afterEvaluate {
-        tasks.matching { it.name == "bundleRelease" }.configureEach {
-            doLast { markTestSigned("outputs/bundle/release/app-release.aab", true) }
+        tasks.matching { it.name == "bundlePublicRelease" }.configureEach {
+            doLast { markTestSigned("outputs/bundle/publicRelease/app-public-release.aab", true) }
         }
     }
 
@@ -151,10 +170,10 @@ if (!hasUploadSigning) {
     // `./gradlew markTestSignedApk`.
     tasks.register("markTestSignedApk") {
         doLast {
-            markTestSigned("outputs/flutter-apk/app-release.apk", true)
+            markTestSigned("outputs/flutter-apk/app-public-release.apk", true)
             // The tool also writes the APK's sha1 sidecar; keep the pair together.
             // Not required: absent sidecar leaves nothing misleadingly named.
-            markTestSigned("outputs/flutter-apk/app-release.apk.sha1", false)
+            markTestSigned("outputs/flutter-apk/app-public-release.apk.sha1", false)
         }
     }
 }

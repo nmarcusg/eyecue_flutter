@@ -38,7 +38,7 @@ jobs:
     env:
       FLUTTER_VERSION: '3.44.2'
       SIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}
-      EYECUE_STUDY_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.study_build }}
+      STUDY_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.study_build }}
       BUILD_NAME: ${{ inputs.build_name || '1.0.0' }}
       BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
       EYECUE_TELEMETRY_INGEST_URL: ${{ vars.EYECUE_TELEMETRY_INGEST_URL }}
@@ -53,7 +53,7 @@ jobs:
         env:
           BUILD_REF: ${{ github.ref }}
         run: |
-          if [[ "$SIGNED_RELEASE" == true && "$EYECUE_STUDY_BUILD" == true ]]; then
+          if [[ "$SIGNED_RELEASE" == true && "$STUDY_BUILD" == true ]]; then
             echo '::error::Study installations are separate from Play releases.'; exit 1
           fi
           if [[ "$SIGNED_RELEASE" == true && "$BUILD_REF" != refs/heads/main ]]; then
@@ -66,7 +66,7 @@ jobs:
           [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]] || {
             echo '::error::Version code must be a positive integer of at most nine digits.'; exit 1;
           }
-          if [[ -n "$EYECUE_TELEMETRY_INGEST_URL" || -n "$EYECUE_SUPABASE_PUBLISHABLE_KEY" ]]; then
+          if [[ "$STUDY_BUILD" == true && ( -n "$EYECUE_TELEMETRY_INGEST_URL" || -n "$EYECUE_SUPABASE_PUBLISHABLE_KEY" ) ]]; then
             python3 - <<'PY'
           import os
           from urllib.parse import urlsplit
@@ -80,11 +80,11 @@ jobs:
           PY
             echo 'TELEMETRY_MODE=configured' >> "$GITHUB_ENV"
           else
-            if [[ "$SIGNED_RELEASE" == true || "$EYECUE_STUDY_BUILD" == true ]]; then
+            if [[ "$STUDY_BUILD" == true ]]; then
               echo '::error::Configure both telemetry repository variables before building a signed release.'
               exit 1
             fi
-            echo '::notice::Telemetry variables are unset; this test APK will save/export locally but cannot upload.'
+            echo '::notice::Study telemetry variables are unset; Study builds require both variables.'
             echo 'TELEMETRY_MODE=not-configured' >> "$GITHUB_ENV"
           fi
 
@@ -127,7 +127,7 @@ jobs:
         run: bash .github/scripts/prepare-gradle-distribution.sh
 
       - name: Prepare upload keystore
-        if: env.SIGNED_RELEASE == 'true' || env.EYECUE_STUDY_BUILD == 'true'
+        if: env.SIGNED_RELEASE == 'true' || env.STUDY_BUILD == 'true'
         env:
           STUDY_KEYSTORE_BASE64: ${{ secrets.EYECUE_STUDY_KEYSTORE_BASE64 }}
           STUDY_KEYSTORE_PASSWORD: ${{ secrets.EYECUE_STUDY_KEYSTORE_PASSWORD }}
@@ -142,7 +142,7 @@ jobs:
           import base64
           import os
           from pathlib import Path
-          if os.environ['EYECUE_STUDY_BUILD'] == 'true':
+          if os.environ['STUDY_BUILD'] == 'true':
               for target, source in {
                   'KEYSTORE_BASE64': 'STUDY_KEYSTORE_BASE64',
                   'EYECUE_KEYSTORE_PASSWORD': 'STUDY_KEYSTORE_PASSWORD',
@@ -168,21 +168,25 @@ jobs:
       - name: Build test APK
         if: env.SIGNED_RELEASE != 'true'
         run: |
-          suffix=testsigned
-          if [[ "$EYECUE_STUDY_BUILD" == true ]]; then suffix=study; fi
-          flutter build apk --release --no-pub \
-            --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
-            --dart-define="EYECUE_APP_VERSION=$BUILD_NAME-$suffix+$BUILD_NUMBER" \
-            --dart-define="EYECUE_TELEMETRY_INGEST_URL=$EYECUE_TELEMETRY_INGEST_URL" \
-            --dart-define="EYECUE_SUPABASE_PUBLISHABLE_KEY=$EYECUE_SUPABASE_PUBLISHABLE_KEY"
           mkdir -p dist
-          if [[ "$EYECUE_STUDY_BUILD" == true ]]; then
-            cp build/app/outputs/flutter-apk/app-release.apk dist/eyecue-study.apk
+          if [[ "$STUDY_BUILD" == true ]]; then
+            flutter build apk --release --no-pub --flavor study -t lib/main_study.dart \
+              --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+              --dart-define="EYECUE_APP_VERSION=$BUILD_NAME-study+$BUILD_NUMBER" \
+              --dart-define="EYECUE_TELEMETRY_INGEST_URL=$EYECUE_TELEMETRY_INGEST_URL" \
+              --dart-define="EYECUE_SUPABASE_PUBLISHABLE_KEY=$EYECUE_SUPABASE_PUBLISHABLE_KEY"
+            cp build/app/outputs/flutter-apk/app-study-release.apk dist/eyecue-study.apk
             python3 tool/verify_study_apk.py dist/eyecue-study.apk
           else
-            # This task is specific to the original fallback-signed test APK.
+            flutter build apk --release --no-pub --flavor public \
+              --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+              --dart-define="EYECUE_APP_VERSION=$BUILD_NAME-testsigned+$BUILD_NUMBER"
             (cd android && ./gradlew markTestSignedApk)
-            cp build/app/outputs/flutter-apk/app-release-testsigned.apk dist/eyecue-testsigned.apk
+            cp build/app/outputs/flutter-apk/app-public-release-testsigned.apk dist/eyecue-public-testsigned.apk
+            AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+            if "$AAPT" dump permissions dist/eyecue-public-testsigned.apk | grep -q 'android.permission.INTERNET'; then
+              echo '::error::Public release APK unexpectedly declares INTERNET.'; exit 1
+            fi
           fi
 
       - name: Build signed APK and AAB
@@ -193,15 +197,17 @@ jobs:
           EYECUE_KEY_ALIAS: ${{ secrets.EYECUE_KEY_ALIAS }}
           EYECUE_KEY_PASSWORD: ${{ secrets.EYECUE_KEY_PASSWORD }}
         run: |
-          build_args=(--release --no-pub "--build-name=$BUILD_NAME" "--build-number=$BUILD_NUMBER"
-            "--dart-define=EYECUE_APP_VERSION=$BUILD_NAME+$BUILD_NUMBER"
-            "--dart-define=EYECUE_TELEMETRY_INGEST_URL=$EYECUE_TELEMETRY_INGEST_URL"
-            "--dart-define=EYECUE_SUPABASE_PUBLISHABLE_KEY=$EYECUE_SUPABASE_PUBLISHABLE_KEY")
+          build_args=(--release --no-pub --flavor public "--build-name=$BUILD_NAME" "--build-number=$BUILD_NUMBER"
+            "--dart-define=EYECUE_APP_VERSION=$BUILD_NAME+$BUILD_NUMBER")
           flutter build apk "${build_args[@]}"
           flutter build appbundle "${build_args[@]}"
           mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-release.apk dist/eyecue-release.apk
-          cp build/app/outputs/bundle/release/app-release.aab dist/eyecue-release.aab
+          cp build/app/outputs/flutter-apk/app-public-release.apk dist/eyecue-public-release.apk
+          cp build/app/outputs/bundle/publicRelease/app-public-release.aab dist/eyecue-public-release.aab
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          if "$AAPT" dump permissions dist/eyecue-public-release.apk | grep -q 'android.permission.INTERNET'; then
+            echo '::error::Public release APK unexpectedly declares INTERNET.'; exit 1
+          fi
 
       - name: Record build provenance and checksums
         env:
@@ -210,7 +216,7 @@ jobs:
         run: |
           {
             printf 'commit=%s\n' "$(git rev-parse HEAD)"
-            printf 'study_build=%s\n' "$EYECUE_STUDY_BUILD"
+            printf 'variant=%s\nentrypoint=%s\n' "$([[ "$STUDY_BUILD" == true ]] && echo study || echo public)" "$([[ "$STUDY_BUILD" == true ]] && echo lib/main_study.dart || echo lib/main.dart)"
             printf 'flutter=%s\nversion=%s+%s\n' "$FLUTTER_VERSION" "$BUILD_NAME" "$BUILD_NUMBER"
             printf 'signed_release=%s\ntelemetry=%s\nrun=%s\nattempt=%s\n' \
               "$SIGNED_RELEASE" "$TELEMETRY_MODE" "$RUN_ID" "$RUN_ATTEMPT"

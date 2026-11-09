@@ -1,4 +1,7 @@
-# User-selected log exports
+# User-selected log exports (EyeCue Study only)
+
+JSON/CSV exports and the Logs & Reports screen are compiled into the Study
+variant only. The public EyeCue build has no researcher controls or export UI.
 
 From EyeCue Study version code 2, JSON and CSV export actions open Android's
 Save as document picker. The user can choose a filename and any writable location
