@@ -5,6 +5,62 @@
 
 ---
 
+## Unreleased — TalkBack speech ownership and semantic structure (2026-11-09)
+
+### Changed
+- **Speech ownership (Option A).** Under `MediaQuery.accessibleNavigationOf`
+  only the four lifecycle utterances (`Detection started/stopped/paused/resumed`)
+  are suppressed, through the pure `shouldSpeakLifecycleUtterance()` helper and
+  `kLifecycleUtterances`. Object, distance/approximation, Quick Scan, Repeat, and
+  audio-state speech are untouched, and ownership is not arbitrated with audio
+  focus, `focus: true`, `setAudioAttributesForNavigation`, or
+  `SemanticsService.announce`.
+- **Single failure announcer.** `StatusPill` gained an optional `liveRegion`
+  (default `true`); Detection passes `false` only while the failure panel is
+  mounted, so the panel is the single automatic failure announcement and the
+  status node stays navigable.
+- **Home identity.** The status label now reads `Home. ` plus its meaning, and
+  the `EyeCue` wordmark is a `Semantics(container, header: true)` node behind
+  `ExcludeSemantics`; visible text is unchanged.
+- **Detection identity.** `Detection Mode` is wrapped as
+  `Semantics(container: true, header: true, label: 'Detection')` with unchanged
+  visible text.
+- **Repeat relocation.** `Repeat last alert` moved from the Audio Guidance pill
+  to a `Semantics(container: true, explicitChildNodes: true, label: 'Camera
+  view')` wrapper around the viewport (no live region, no exclusion); the pill is
+  mute/unmute only.
+- **Failed Repeat feedback.** A rejected repeat raises a distinct heavy haptic
+  and a transient live-region status (`Audio guidance is off` /
+  `Nothing to repeat yet`), never TTS, cleared after 4 s and on state change.
+- **Help granularity.** Added [`help_section_card.dart`](../lib/widgets/help_section_card.dart):
+  Gesture Controls and Best Use Tip are read per item, while How It Works and
+  Gesture Confirmation stay grouped; Safety and Limitations are unchanged.
+- **Copy and labels.** Stale `custom EyeCue mode` and `press Start` copy fixed;
+  `Retry` is context-specific (`Retry detection` / `Retry camera access`),
+  `Stop` reads `Stop detection`, and `Open Settings` reads
+  `Open app permission settings`. The detector-model filter is merged into one
+  node with `MergeSemantics` (zero visual change), and the safety dialog gained a
+  non-duplicating title with its lead banner no longer a live region.
+
+### Verified
+- `flutter analyze`: **0 issues**; `flutter test`: **865 passing, 0 failing**.
+- No Android build or device run was performed **during that documentation stage**; physical device verification was **completed separately afterwards** (see the 2026-11-09 device verification line below).
+- Shell horizontal navigation was left untouched: device evidence shows it does
+  not activate while TalkBack is enabled, so no gate or disable was added to
+  `app_shell.dart`.
+- **Device verification (2026-11-09):** the previously pending checks —
+  zero-size/transient live-region announcement after a failed Repeat, repeated
+  identical failure label, overlay rows staying separate non-live nodes under
+  `explicitChildNodes`, `Repeat last alert` reachability above the native
+  platform view, the merged detector-filter node exposing tap and re-announcing
+  selection, single safety-dialog entry announcement, and Help per-item spacing
+  parity — plus long-press delivery, single-node announcement, hint repetition,
+  focus retention after Stop/Start, and TTS/live-region overlap were **all
+  confirmed on the tested devices**. One non-blocking refinement remains:
+  `Camera view` / `Repeat last alert` interaction and discoverability polish.
+
+---
+
 ## Unreleased — Researcher-selectable detector models and research logging sessions
 
 Branch `feat/researcher-detector-models`, commit range `5ba1b38..2779f9c`:
@@ -76,7 +132,8 @@ corrections land on top of `2779f9c`.
 - TalkBack operability and semantic-tree simplification: Stop/Start are now
   reachable through a semantic long-press on the consolidated lifecycle card
   (no new control; the three-second physical hold is unchanged), and Repeat Last
-  Alert through a `Repeat last alert` custom semantic action on the audio pill.
+  Alert through a `Repeat last alert` custom semantic action (then hosted on the
+  audio pill; superseded on 2026-11-09, when it moved to the `Camera view` node).
   `AccessibleButton` no longer injects `'Double tap to activate'` /
   `'Unavailable'` hints, the dead `Use fallback` path was removed from
   `DetectionStatePanel`, Home's instruction texts are excluded behind the single
@@ -90,10 +147,9 @@ corrections land on top of `2779f9c`.
   [`talkback_no_gesture_hints_test.dart`](../test/architecture/talkback_no_gesture_hints_test.dart),
   forbids gesture-teaching semantic strings (`'Double tap`, `'Hold for three`,
   and the old `'Swipe left to start! Detection` form).
-- **Device verification pending:** long-press delivery on the target TalkBack
-  build, custom-action discoverability, single-node announcement, hint
-  repetition, focus retention after Stop/Start, and TTS/live-region overlap are
-  not verified on hardware.
+- **Device verification (added later):** the items in this entry were confirmed
+  on the tested devices in the 2026-11-09 TalkBack pass; see the TalkBack speech
+  ownership and semantic structure entry above.
 
 ---
 

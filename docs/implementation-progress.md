@@ -6,7 +6,7 @@
 >
 > **Workstream 2 (unreleased):** alert-latency instrumentation and reporting are implemented — bounded lifecycle records (500), replace-only cumulative scheduler counters, Ultralytics app-side anchors (the Custom engine was removed on 2026-10-21), four detection-origin Ultralytics summaries with nearest-rank p50/p95/max/count, schema-3 JSON/CSV export, and a Logs & Reports section. **Verification status: static suite run** — `flutter analyze --no-pub` shows 4 pre-existing issues and `flutter test --no-pub` gives 527 passing / 1 known pre-existing failure; no build, device, or physical audible-latency validation ran. The Ultralytics interval is `app-side / post-inference`, never full inference or end-to-end latency. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 
-> **Last Updated:** 2026-10-27 (researcher-selectable detector models and explicit research logging sessions; the Workstream and milestone dates below are historical)
+> **Last Updated:** 2026-11-09 (researcher-selectable detector models and explicit research logging sessions; the Workstream and milestone dates below are historical)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
 ## Current Unreleased Candidate (2026-10-27) — Researcher-Selectable Detector Models
@@ -20,6 +20,17 @@
 - ⚠️ **Remaining device gates:** real custom-model execution, the Android SAF picker and its content-provider permissions, accelerator behaviour for a custom graph, physical screen-reader access to the new card, and upload against the live research database are all unverified; every result in this round comes from the local test suite.
 - ✅ Current validation: static only. `flutter analyze --no-pub` reports no issues, `dart format --output=none --set-exit-if-changed` is clean on the touched files, `git diff --check` is empty, and `flutter test --no-pub --concurrency=1` passes over `test/services/ test/screens/ test/models/ test/widgets/ test/navigation/ test/accessibility/ test/architecture/ test/theme_test.dart test/widget_test.dart`. No Android build, device run, Play Console check or performance measurement was performed, and no test total is restated here: the dated totals elsewhere in this file describe older revisions.
 
+## Implemented (2026-11-09) — TalkBack Speech Ownership and Semantic Structure (Complete, Device-Verified)
+
+- ✅ Speech ownership (Option A) is explicit: TalkBack owns application UI, navigation, control state, lifecycle state, and failures, while EyeCue TTS owns detected objects, distance/approach alerts, Quick Scan, and Repeat Last Alert. Under `MediaQuery.accessibleNavigationOf` only the four lifecycle utterances are suppressed, via the pure `shouldSpeakLifecycleUtterance()` helper and `kLifecycleUtterances`; no audio focus, `focus: true`, `setAudioAttributesForNavigation`, or `SemanticsService.announce` is used.
+- ✅ A failure has exactly one automatic live-region owner: `StatusPill` gained an optional `liveRegion` (default `true`) and Detection passes `false` only while the failure panel is mounted, so the status node stays navigable without a duplicate announcement.
+- ✅ Screen identity sits on the first semantic node TalkBack reaches: Home announces `Home. ` plus its status meaning and exposes the `EyeCue` wordmark as a `container` + `header` node behind `ExcludeSemantics`; the `Detection Mode` title is a `container` + `header` node labelled `Detection` with unchanged visible text. No `sortKey` or forced focus.
+- ✅ `Repeat last alert` moved from the Audio Guidance pill to a `Semantics(container: true, explicitChildNodes: true, label: 'Camera view')` viewport wrapper (no live region, no exclusion); the pill is mute/unmute only. A rejected repeat raises a distinct heavy haptic plus a transient live-region status (`Audio guidance is off` / `Nothing to repeat yet`), never TTS, cleared after 4 s and on state change.
+- ✅ Help reads per item through [`help_section_card.dart`](../lib/widgets/help_section_card.dart): Gesture Controls and Best Use Tip are itemised, How It Works and Gesture Confirmation stay grouped, and Safety and Limitations are unchanged.
+- ✅ Copy and label corrections: stale `custom EyeCue mode` / `press Start` copy fixed, `Retry` made context-specific (`Retry detection` / `Retry camera access`), `Stop` reads `Stop detection`, `Open Settings` reads `Open app permission settings`, the detector-model filter is one `MergeSemantics` node with zero visual change, and the safety dialog has a non-duplicating title with its lead banner no longer a live region.
+- ✅ Current validation: `flutter analyze` reports **0 issues** and `flutter test` reports **865 passing, 0 failing**.
+- ✅ **Device-verified on the tested devices:** zero-size/transient live-region announcement after a failed Repeat, repeated identical failure label, overlay rows staying separate non-live nodes under `explicitChildNodes`, `Repeat last alert` reachability above the native platform view, the merged detector-filter node still exposing tap and re-announcing the selection, single safety-dialog entry announcement, and Help per-item spacing parity were all confirmed. Shell horizontal navigation needs no gate: device evidence shows it does not activate while TalkBack is enabled, and `app_shell.dart` gesture behaviour was not touched. (Non-blocking polish: `Camera view` / `Repeat last alert` interaction and discoverability.)
+
 ## Current Unreleased Candidate (2026-11-08) — TalkBack Operability and Semantic-Tree Simplification
 
 - ✅ Added a semantic long-press to the consolidated lifecycle card so Stop/Start are reachable with TalkBack without a new control: `ready`/`paused` dispatch Stop and `stopped` dispatches Start through a pure `_dispatchSemanticHold()` with no timer or `_consumed` writes; `onTap` is `null` when stopped; `label` carries identity and `value` carries state only; `hint` is removed and Android-only `onTapHint`/`onLongPressHint` supply the result wording.
@@ -28,7 +39,7 @@
 - ✅ De-duplicated semantics on Home (single status node, idle meaning `'Preparing. Detection begins immediately.'`), Settings (three slider wrappers removed, hertz/2-dp `semanticFormatterCallback`), and Logs & Reports (eight duplicate pairs excluded, section titles `header: true`), while retaining every live region.
 - ✅ Added a source guard, [`talkback_no_gesture_hints_test.dart`](../test/architecture/talkback_no_gesture_hints_test.dart), forbidding gesture-teaching semantic strings.
 - ✅ Current validation: `flutter analyze` reports **0 issues** and `flutter test` reports **847 passing, 0 failing**.
-- ⚠️ **Remaining device gates:** TalkBack long-press delivery on the target build, custom-action discoverability, single-node announcement, hint repetition, focus retention after Stop/Start, and TTS/live-region overlap are unverified on physical Android hardware.
+- ✅ **Device-verified on the tested devices:** TalkBack long-press delivery on the target build, custom-action discoverability, single-node announcement, hint repetition, focus retention after Stop/Start, and TTS/live-region overlap were all confirmed.
 
 ## Current Unreleased Candidate (2026-10-23) — Configurable Inference Cadence
 
@@ -204,6 +215,9 @@ sections below remain historical release records.
 - ✅ [`gesture_controller.dart`](../lib/services/gesture_controller.dart): two-finger double tap (start/stop), single tap (pause/resume), three-finger tap (scan), swipe down (repeat)
 - ✅ [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart): transparent capture layer over the viewport
 - ✅ Haptic + TTS confirmation per gesture; visible high-contrast fallback controls (`AccessibleButton`)
+- ✅ TalkBack speech ownership: TalkBack owns UI, navigation, control state, lifecycle state, and failures; EyeCue TTS owns objects, distance/approximate proximity, Quick Scan, and Repeat Last Alert. Only the four lifecycle utterances are suppressed under `MediaQuery.accessibleNavigationOf`.
+- ✅ Screen identity on the first semantic node, Repeat Last Alert on the `Camera view` container, one automatic failure announcer, per-item Help granularity, and a merged detector-model filter node — implemented and device-verified on the tested devices.
+- ✅ Physical-device TalkBack verification was completed on the tested devices (announcement timing, custom-action reachability above the native view, merged-node tap, and per-item spacing parity). One non-blocking refinement remains: `Camera view` / `Repeat last alert` interaction and discoverability polish — not an open core accessibility defect.
 
 ### Settings Persistence (100%)
 

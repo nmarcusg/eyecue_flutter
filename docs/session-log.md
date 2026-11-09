@@ -5,6 +5,106 @@
 
 ---
 
+## 2026-11-09 — TalkBack accessibility programme: device verification complete
+
+### Context
+Documentation-only final pass. The TalkBack accessibility programme was confirmed
+on-device by the user across the tested devices (Samsung S-series, Vivo, and a
+third device). No per-check device logs, TalkBack build numbers, or OS versions
+are recorded here. No `lib/`, `test/`, `android/`, `pubspec.yaml`, asset or
+stage-record change was made, and no analyzer or test command was run.
+
+### Objective
+Record the programme as complete and device-verified, and remove the stale
+"pending device verification" / "unresolved" wording from the current-status
+sections of the documentation.
+
+### Changed
+- [`known-issues.md`](known-issues.md),
+  [`implementation-progress.md`](implementation-progress.md),
+  [`project-status.md`](project-status.md),
+  [`testing-plan.md`](testing-plan.md),
+  [`app-only-implementation-plan.md`](app-only-implementation-plan.md),
+  [`thesis-product-status-audit.md`](thesis-product-status-audit.md),
+  [`architecture.md`](architecture.md), [`ui-conventions.md`](ui-conventions.md),
+  the frontend accessibility rule
+  ([`.roo/rules/rules-frontend/04-accessibility.md`](../.roo/rules/rules-frontend/04-accessibility.md)),
+  [`changelog.md`](changelog.md) and this log now state the shipped behaviour:
+  explicit speech ownership, screen identity on the first semantic node with no
+  forced focus, a single automatic live-region failure owner
+  (`DetectionStatePanel`), per-item Help granularity, `Repeat last alert` as a
+  custom action on the `Camera view` node, a mute-only audio pill, and a
+  non-silent failed Repeat.
+- The previously open `Needs physical-device verification` list was replaced by a
+  single device-verified statement; allow-listed mirrors in `.roo/rules/docs/`
+  were re-copied for the files that changed.
+
+### Remaining
+- One non-blocking refinement: `Camera view` / `Repeat last alert` interaction
+  and discoverability still needs minor UX polish. It is not an open core
+  accessibility defect and blocks nothing.
+
+---
+
+## 2026-11-09 — TalkBack speech ownership and semantic structure
+
+### Context
+Documentation-only stage for the speech-ownership round, sourced from
+[`talkback-ownership-analysis.md`](frontend-workflow/talkback-ownership-analysis.md)
+and [`talkback-ownership-plan.md`](frontend-workflow/talkback-ownership-plan.md).
+No `lib/`, `test/`, `android/`, `pubspec.yaml` or asset change was made in this
+stage, and the stage-record files were not touched.
+
+### Objective
+Record the ownership model (TalkBack versus EyeCue TTS), the single failure
+announcer, screen identity, Help granularity, the Repeat relocation, the
+failed-Repeat feedback, and the copy/label corrections in the project
+documentation without overstating device verification.
+
+### Changed
+- [`ui-conventions.md`](ui-conventions.md) and the frontend accessibility rule
+  ([`.roo/rules/rules-frontend/04-accessibility.md`](../.roo/rules/rules-frontend/04-accessibility.md))
+  now state the speech-ownership rule (TalkBack owns UI/navigation/control/
+  lifecycle/failure; EyeCue TTS owns objects, distance/approach, Quick Scan, and
+  Repeat Last Alert; only the four lifecycle utterances are suppressed under
+  accessible navigation), the single automatic failure announcer, and
+  screen-identity placement on the first semantic node without `sortKey` or
+  forced focus — plus the shell-swipe device note.
+- [`app-only-implementation-plan.md`](app-only-implementation-plan.md) §6.4
+  acceptance criteria, [`testing-plan.md`](testing-plan.md) (865-passing suite
+  figure and the new accessibility coverage),
+  [`thesis-product-status-audit.md`](thesis-product-status-audit.md),
+  [`known-issues.md`](known-issues.md) and
+  [`implementation-progress.md`](implementation-progress.md) were updated to the
+  new truth; [`changelog.md`](changelog.md) gained this batch's entry.
+- Allow-listed mirrors were re-copied into `.roo/rules/docs/`:
+  `ui-conventions.md`, `known-issues.md`, and the re-reviewed
+  `testing-plan.md` condensed summary.
+
+### Verified
+- `flutter analyze`: **0 issues**.
+- `flutter test`: **865 passing, 0 failing**.
+- No Android build, device run or TalkBack pass was performed in this
+  documentation stage.
+
+### Note
+- `pubspec.lock` shows toolchain-produced transitive re-pins from the
+  `flutter test` / `flutter analyze` runs. It was intentionally left untouched;
+  this session makes no code or dependency change.
+
+### Remains — physical-device TalkBack testing
+Zero-size/transient live-region announcement after a failed Repeat, repeated
+identical failure label, overlay rows staying separate non-live nodes under
+`explicitChildNodes`, `Repeat last alert` reachability above the native platform
+view, the merged detector-filter node still exposing tap and re-announcing the
+selection, single safety-dialog entry announcement, Help per-item spacing
+parity, and the previously listed long-press/custom-action/focus-retention items
+are **not verified on hardware**. They are recorded as pending in
+[`known-issues.md`](known-issues.md). Shell horizontal navigation needs no
+gate: device evidence shows it does not activate while TalkBack is enabled.
+
+---
+
 ## 2026-11-08 — TalkBack operability and semantic-tree simplification
 
 ### Context
