@@ -2020,34 +2020,41 @@ class _ModelFilter extends StatelessWidget {
     // A selection whose rows are gone must not crash the dropdown.
     final selected = models.any((model) => model.key == value) ? value : null;
     return _LightCard(
-      child: Row(
-        children: [
-          Text('Detector model', style: theme.textTheme.bodyLarge),
-          const SizedBox(width: kSpace12),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String?>(
-                isExpanded: true,
-                value: selected,
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text(
-                      _allModelsLabel,
-                      overflow: TextOverflow.ellipsis,
+      // The sibling label and the dropdown's own button/expanded annotation
+      // merge into a single labelled control node; layout is unchanged.
+      child: MergeSemantics(
+        child: Row(
+          children: [
+            Text('Detector model', style: theme.textTheme.bodyLarge),
+            const SizedBox(width: kSpace12),
+            Expanded(
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String?>(
+                  isExpanded: true,
+                  value: selected,
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        _allModelsLabel,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  for (final model in models)
-                    DropdownMenuItem<String?>(
-                      value: model.key,
-                      child: Text(model.label, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: onChanged,
+                    for (final model in models)
+                      DropdownMenuItem<String?>(
+                        value: model.key,
+                        child: Text(
+                          model.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: onChanged,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
