@@ -727,8 +727,8 @@ class _DetectorModelCardState extends State<_DetectorModelCard> {
                 0,
               ),
               child: Text(
-                'Changing the detector stops detection. Press Start on the '
-                'Detection screen to run the selected model.',
+                'Changing the detector stops detection. Start detection again '
+                'on the Detection screen to run the selected model.',
                 style: caption,
               ),
             ),
