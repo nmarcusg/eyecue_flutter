@@ -1653,6 +1653,8 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     // heatmap so labels stay legible.
     final callbackEpoch = _nativeViewEpoch;
     final viewport = Container(
+      // Stable, semantics-free anchor for the shared-gutter invariant.
+      key: const ValueKey('detection-viewport'),
       decoration: BoxDecoration(
         color: kHomeInk,
         borderRadius: BorderRadius.circular(kRadius24),
@@ -1773,7 +1775,14 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
           const CustomSemanticsAction(label: 'Repeat last alert'):
               _repeatAlertFromSemantics,
         },
-        child: viewport,
+        // The gutter lives here, inside `Semantics` and inside `GestureSurface`:
+        // the gesture region stays the whole flexible area (this narrows the
+        // painted viewport only) and the `Camera view` node keeps its bounds, so
+        // `Repeat last alert` stays reachable.
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: kSpace16),
+          child: viewport,
+        ),
       ),
     );
   }
@@ -1859,10 +1868,13 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
       child: SafeArea(
         top: false,
         child: Padding(
+          // One shared screen gutter: the cards line up with the header and the
+          // viewport. The band behind them stays edge-to-edge (its Container
+          // colour is unchanged) and the vertical insets are untouched.
           padding: const EdgeInsets.fromLTRB(
-            kSpace12,
+            kSpace16,
             kSpace8,
-            kSpace12,
+            kSpace16,
             kSpace12,
           ),
           // IntrinsicHeight bounds the row's cross-axis height so the shared
@@ -1915,51 +1927,62 @@ class _AudioPill extends StatelessWidget {
       onTap: onPressed,
       child: Tooltip(
         message: tooltip,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minWidth: kMinTouchWidth,
-            minHeight: kMinTouchHeight,
-          ),
-          child: Material(
-            color: kHomeSurfaceCard,
-            elevation: 0,
-            borderRadius: BorderRadius.circular(kRadius20),
-            child: InkWell(
-              onTap: onPressed,
-              borderRadius: BorderRadius.circular(kRadius20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: kSpace12,
-                  vertical: kSpace6,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(kRadius20),
-                  boxShadow: kHomeShadowSoft,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ExcludeSemantics(
-                      child: Container(
-                        width: kSpace8,
-                        height: kSpace8,
-                        decoration: BoxDecoration(
-                          color: on ? kHomeAccentCyan : kHomeInkMuted,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
+        child: SizedBox(
+          // The hit area: a fixed 56 dp tall, >= 64 dp wide rectangle.
+          key: const ValueKey('audio-pill-target'),
+          height: kMinTouchHeight,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: kMinTouchWidth),
+            child: Material(
+              // Transparent at target level: the ink layer still paints the
+              // splash, but no surface is forced to the 56 dp height.
+              // Deliberately no `color` and no `borderRadius` here.
+              type: MaterialType.transparency,
+              child: InkWell(
+                // The only tap handler besides the semantics action.
+                onTap: onPressed,
+                borderRadius: BorderRadius.circular(kRadius20),
+                child: Center(
+                  // Centres the content-sized capsule inside the target.
+                  child: Container(
+                    key: const ValueKey('audio-pill-capsule'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: kSpace12,
+                      vertical: kSpace6,
                     ),
-                    const SizedBox(width: kSpace8),
-                    ExcludeSemantics(
-                      child: Text(
-                        on ? 'AUDIO ON' : 'AUDIO OFF',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: kHomeInk,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
+                    decoration: BoxDecoration(
+                      // The visible capsule: content-sized, same padding and
+                      // radius as StatusPill, so its height matches the pill's.
+                      color: kHomeSurfaceCard,
+                      borderRadius: BorderRadius.circular(kRadius20),
+                      boxShadow: kHomeShadowSoft,
                     ),
-                  ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ExcludeSemantics(
+                          child: Container(
+                            width: kSpace8,
+                            height: kSpace8,
+                            decoration: BoxDecoration(
+                              color: on ? kHomeAccentCyan : kHomeInkMuted,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: kSpace8),
+                        ExcludeSemantics(
+                          child: Text(
+                            on ? 'AUDIO ON' : 'AUDIO OFF',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: kHomeInk,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
