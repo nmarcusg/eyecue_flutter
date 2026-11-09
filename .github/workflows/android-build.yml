@@ -204,6 +204,23 @@ jobs:
             if "$AAPT" dump permissions dist/eyecue-public-testsigned.apk | grep -q 'android.permission.INTERNET'; then
               echo '::error::Public release APK unexpectedly declares INTERNET.'; exit 1
             fi
+            flutter build appbundle --release --no-pub --flavor public \
+              --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" \
+              --dart-define="EYECUE_APP_VERSION=$BUILD_NAME-testsigned+$BUILD_NUMBER"
+            cp build/app/outputs/bundle/publicRelease/app-public-release-testsigned.aab dist/eyecue-public-testsigned.aab
+            python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          bundle = Path('dist/eyecue-public-testsigned.aab')
+          with zipfile.ZipFile(bundle) as archive:
+              manifest = archive.read('base/manifest/AndroidManifest.xml')
+          if b'app.eyecue.mobile' not in manifest:
+              raise SystemExit('Public AAB manifest is missing the expected application ID')
+          if b'android.permission.INTERNET' in manifest:
+              raise SystemExit('Public AAB manifest unexpectedly references INTERNET')
+          print('Public AAB manifest string check: expected package; no INTERNET reference.')
+          PY
           fi
 
       - name: Build signed APK and AAB
