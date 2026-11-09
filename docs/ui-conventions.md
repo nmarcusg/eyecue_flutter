@@ -91,7 +91,50 @@ them in prose. Prefer keeping correct framework semantics — `SwitchListTile`,
 `Semantics` container. Traversal order and role wording are platform-owned; do
 not force them with `sortKey`.
 
-Device TalkBack validation remains a manual step.
+**Speech ownership (settled).** This is the implemented rule, not an
+aspiration. TalkBack owns application UI, navigation, control state, lifecycle
+state, and failures. EyeCue TTS owns environmental/assistive output: detected
+objects, distance/approach alerts, Quick Scan, and Repeat Last Alert. Lifecycle
+TTS — the four utterances started/stopped/paused/resumed, defined by
+`kLifecycleUtterances` and gated by the pure `shouldSpeakLifecycleUtterance()`
+helper — is suppressed only while `MediaQuery.accessibleNavigationOf` is active.
+Object, distance/approximation, Quick Scan, Repeat, and audio-state speech are
+untouched by that condition. Ownership is never arbitrated with audio focus,
+`focus: true`, `setAudioAttributesForNavigation`, or
+`SemanticsService.announce`.
+
+**Failure announcer.** A failure has exactly one automatic live-region owner:
+`DetectionStatePanel`. `StatusPill.liveRegion` is `false` only while that panel
+is mounted; the status pill stays navigable and informational throughout, so
+the panel announces without both speaking.
+
+**Screen identity and focus.** A screen's identity is carried by the first
+semantic node TalkBack reaches, not by a forced focus request. Home folds its
+identity into the first status announcement (`'Home. '` plus the status
+meaning), and its `EyeCue` wordmark is a `container` + `header: true` node
+behind `ExcludeSemantics`. Detection carries a `container` + `header: true`
+node labelled `Detection` with unchanged visible text. Do not force focus or
+traversal order (`sortKey`, focus requests) to achieve identity.
+
+**Assistive actions and the audio pill.** `Repeat last alert` is a
+`CustomSemanticsAction` on the `Camera view` semantic node — one stable,
+non-live `Semantics(container: true, explicitChildNodes: true)` container so the
+overlay rows remain separate non-live nodes. The Audio Guidance pill is
+mute/unmute only and does not host Repeat.
+
+**Failed Repeat.** A rejected Repeat is never silent and never uses TTS: it
+gives a distinct heavy haptic plus a transient live-region status
+(`Nothing to repeat yet` / `Audio guidance is off`) that clears after 4 s or on
+state change.
+
+Device TalkBack validation on the tested devices is **complete**; the tested
+paths — ownership, screen identity, the single failure announcer, per-item Help
+granularity, and the `Camera view` + `Repeat last alert` custom action — were
+confirmed there. Shell horizontal swipe navigation does not activate while
+TalkBack is enabled (touch exploration consumes the pointer sequence), so no
+accessibility gate was added to the `app_shell.dart` gesture behaviour.
+Discoverability/polish of the `Camera view` + Repeat custom action is a future
+refinement, not an open core accessibility defect.
 
 ## Animation
 

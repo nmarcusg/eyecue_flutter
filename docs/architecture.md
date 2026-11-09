@@ -299,15 +299,16 @@ eyecue_flutter/
 │   │   └── forensic_log.dart              # File-based structured diagnostics (debug/profile; release-disabled)
 │   └── widgets/
 │       ├── bounding_box_painter.dart      # Detection overlay CustomPainter
-│       ├── gesture_surface.dart           # Transparent gesture capture layer
+│       ├── gesture_surface.dart           # Transparent gesture capture layer; the viewport wrapper is the stable non-live `Camera view` semantics node that hosts the `Repeat last alert` custom action
 │       ├── detection_action_controls.dart # PD2 consolidated lifecycle control + Quick Scan row
 │       ├── detection_information_overlay.dart # PD3 compact two-row in-viewport overlay
 │       ├── detection_card.dart            # Object card (class/conf/position/priority; retained, removed from normal Detection UI)
 │       ├── priority_badge.dart            # HIGH/MEDIUM/LOW badge
+│       ├── help_section_card.dart         # Help section card; Gesture Controls and Best Use Tip read one focus node per item, How It Works and Gesture Confirmation stay grouped
 │       ├── warning_banner.dart            # High-priority obstacle banner (retained, removed from normal Detection UI)
-│       ├── status_pill.dart               # Detecting/Paused/Stopped indicator
+│       ├── status_pill.dart               # Detecting/Paused/Stopped indicator; live region off only while DetectionStatePanel announces, while the pill stays navigable
 │       ├── accessible_button.dart         # Large high-contrast button (48dp+)
-│       ├── detection_state_panel.dart     # Runtime/loading/recovery/error panel
+│       ├── detection_state_panel.dart     # Runtime/loading/recovery/error panel; the single automatic failure live-region owner
 │       ├── detection_correction_sheet.dart # Correction capture sheet
 │       └── charts.dart                    # fl_chart latency/FPS/frequency charts
 │   └── theme/                             # Design tokens + theme (UI-owned)
