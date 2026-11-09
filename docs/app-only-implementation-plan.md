@@ -285,7 +285,14 @@ Android TalkBack without relying on sight.
 charts, correction flows, and deliberate live regions have a systematic
 semantics pass. Decorative camera/drawing descendants are excluded, detection
 frames are not per-frame TalkBack live regions, and 200% text-scale layouts are
-covered by widget tests. Device TalkBack validation remains manual.
+covered by widget tests. Screen identity is carried by the first semantic node
+TalkBack reaches (Home status, `EyeCue` wordmark, Detection heading), speech
+ownership between TalkBack and EyeCue TTS is explicit (only the four lifecycle
+utterances are suppressed under accessible navigation), failures have exactly
+one automatic live-region owner, Help is itemised through
+[`help_section_card.dart`](../lib/widgets/help_section_card.dart), and Repeat
+Last Alert lives on the `Camera view` viewport container instead of the audio
+pill. TalkBack validation is complete on the tested devices.
 
 **Design:**
 
@@ -325,17 +332,38 @@ covered by widget tests. Device TalkBack validation remains manual.
 - Charts expose a meaningful text summary.
 - 200% text-scale widget tests show no overflow on primary screens.
 
-**Acceptance criteria:**
+**Acceptance criteria (completed and device-verified on the tested devices, 2026-11-09):**
 
 - Every primary action is reachable and identifiable with TalkBack: Stop/Start
-  are exposed through a semantic long-press on the lifecycle card, and Repeat
-  Last Alert through a custom semantic action on the audio pill. On-device
-  TalkBack delivery and discoverability verification is still pending.
+  are exposed through a semantic long-press on the lifecycle card, Quick Scan is
+  a physical control, and Repeat Last Alert is a custom semantic action on the
+  `Semantics(container: true, explicitChildNodes: true, label: 'Camera view')`
+  viewport wrapper; the Audio Guidance pill is mute/unmute only. On-device
+  TalkBack delivery was confirmed on the tested devices; discoverability polish
+  of the Repeat action remains a non-blocking refinement.
+- Screen identity belongs to the first semantic node TalkBack reaches: Home
+  announces `Home. ` plus its status meaning and exposes the `EyeCue` wordmark as
+  a `container` + `header` node behind `ExcludeSemantics`; Detection's
+  `Detection Mode` title is a `container` + `header` node labelled `Detection`
+  with the visible text unchanged. No `sortKey` and no forced focus.
+- Speech ownership is explicit: TalkBack owns UI, navigation, control state,
+  lifecycle state, and failures; EyeCue TTS owns detected objects,
+  distance/approach alerts, Quick Scan, and Repeat Last Alert. Only the four
+  lifecycle utterances are suppressed while `MediaQuery.accessibleNavigationOf`
+  is active (`shouldSpeakLifecycleUtterance()` / `kLifecycleUtterances`), and
+  ownership is not arbitrated through audio focus, `focus: true`,
+  `setAudioAttributesForNavigation`, or `SemanticsService.announce`.
 - Engine, detection, pause, error, and fallback states are surfaced through the
-  deliberate status live region, and the duplicated failure string in the
-  header is excluded from the semantics tree. On-device announcement behaviour
-  (including live-region/TTS overlap) is still pending.
-- TalkBack does not continuously repeat camera-frame changes.
+  deliberate status live region, and a failure has exactly one automatic
+  live-region owner: `StatusPill.liveRegion` is `false` only while the failure
+  panel is mounted, so the status node stays navigable without a duplicate
+  announcement. On-device announcement behaviour (including live-region/TTS
+  overlap) was confirmed on the tested devices.
+- Help is granular: Gesture Controls and Best Use Tip are per-item nodes, while
+  How It Works and Gesture Confirmation stay grouped and Safety and Limitations
+  are unchanged.
+- TalkBack does not continuously repeat camera-frame changes: the information
+  overlay rows stay separate, non-live nodes under the `Camera view` container.
 - No critical information exists only through color or position.
 
 ### 6.5 Correction interface
