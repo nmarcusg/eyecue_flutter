@@ -1,6 +1,7 @@
 import 'package:eyecue_flutter/screens/help_screen.dart';
 import 'package:eyecue_flutter/widgets/safety_disclosure.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 
 /// Help-screen safety disclosure: permanent copy, wording, and large-text
@@ -116,6 +117,152 @@ void main() {
         expect(find.textContaining(point), findsOneWidget);
       }
       expect(find.text('I understand'), findsOneWidget);
+    });
+  });
+
+  group('reading granularity', () {
+    testWidgets('Gesture Controls exposes one node per bullet', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpHelp(tester);
+        const bullets = [
+          '• Two-finger double tap — start or exit detection mode.',
+          '• Single tap — pause or resume detection.',
+          '• Three-finger tap — quick environmental scan.',
+          '• One-finger swipe down — repeat the most recent audio alert.',
+        ];
+        for (final bullet in bullets) {
+          expect(
+            find.semantics.byLabel(bullet).evaluate(),
+            hasLength(1),
+            reason: 'Missing or duplicated item node: $bullet',
+          );
+        }
+        // The title remains the group's single header.
+        final title = find.semantics.byLabel('Gesture Controls').evaluate();
+        expect(title, hasLength(1));
+        expect(
+          title.single.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('Best Use Tip exposes one node per bullet', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpHelp(tester);
+        const bullets = [
+          '• Mount or carry the phone at chest height for the best view.',
+          '• Use earphones so audio cues are easy to hear.',
+          '• Keep the camera lens clean and pointed ahead.',
+          '• In Low Power Mode detection runs at a slower rate to save '
+              'battery.',
+        ];
+        for (final bullet in bullets) {
+          expect(
+            find.semantics.byLabel(bullet).evaluate(),
+            hasLength(1),
+            reason: 'Missing or duplicated item node: $bullet',
+          );
+        }
+        final title = find.semantics
+            .byLabel('Best Use Tip (Android)')
+            .evaluate();
+        expect(title, hasLength(1));
+        expect(
+          title.single.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('How It Works stays one grouped node', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpHelp(tester);
+        final grouped = find.semantics
+            .byLabel(RegExp(r'1\. Open EyeCue\.'))
+            .evaluate()
+            .toList();
+        expect(grouped, hasLength(1));
+        final label = grouped.single.getSemanticsData().label;
+        expect(label, contains('1. Open EyeCue.'));
+        expect(label, contains('2. Detection starts automatically'));
+        expect(label, contains('EyeCue runs entirely on your device'));
+      } finally {
+        handle.dispose();
+      }
+    });
+  });
+
+  group('first-use dialog identity', () {
+    testWidgets('names the dialog without competing live regions', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => Center(
+                  child: TextButton(
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) =>
+                          SafetyDisclosureDialog(onAcknowledge: () {}),
+                    ),
+                    child: const Text('show'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('show'));
+        await tester.pumpAndSettle();
+
+        // The dialog title is its own header node and is not the disclosure
+        // heading.
+        final title = find.semantics.byLabel(kSafetyDialogTitle).evaluate();
+        expect(title, hasLength(1));
+        expect(
+          title.single.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
+        );
+        expect(find.text(kSafetyDisclosureTitle), findsOneWidget);
+
+        // No live region remains in the dialog on entry.
+        final root = tester
+            .binding
+            .renderViews
+            .first
+            .owner!
+            .semanticsOwner!
+            .rootSemanticsNode!;
+        final live = <String>[];
+        void walk(SemanticsNode node) {
+          final data = node.getSemanticsData();
+          if (data.flagsCollection.isLiveRegion && data.label.isNotEmpty) {
+            live.add(data.label);
+          }
+          node.visitChildren((child) {
+            walk(child);
+            return true;
+          });
+        }
+
+        walk(root);
+        expect(live, isEmpty, reason: 'the disclosure heading announces once');
+      } finally {
+        handle.dispose();
+      }
     });
   });
 

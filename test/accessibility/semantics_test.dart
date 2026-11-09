@@ -283,16 +283,60 @@ void main() {
             ),
           );
           expect(panel.getSemanticsData().flagsCollection.isLiveRegion, isTrue);
-          expectButtonSemantics(tester, 'Retry');
-          expectButtonSemantics(tester, 'Stop');
+          expectButtonSemantics(tester, 'Retry detection');
+          expectButtonSemantics(tester, 'Stop detection');
 
-          await tester.tap(find.text('Retry'));
-          await tester.tap(find.text('Stop'));
+          await tester.tap(find.text('Retry detection'));
+          await tester.tap(find.text('Stop detection'));
           expect(retryCount, 1);
           expect(stopCount, 1);
         });
       },
     );
+
+    testWidgets('the failure panel is the single automatic announcer', (
+      tester,
+    ) async {
+      // Detection passes `liveRegion: false` to the pill exactly while the
+      // failure panel is mounted, so only the panel announces the failure. The
+      // pill stays a navigable, labelled node.
+      final failure = DetectionFailure(
+        category: DetectionFailureCategory.modelLoading,
+        safeMessage: 'The detection engine could not start.',
+        recoverable: true,
+        timestamp: DateTime(2026, 1, 1),
+      );
+      await tester.pumpWidget(
+        appWithBody(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const StatusPill(
+                label: 'Unavailable',
+                color: kWarningRed,
+                liveRegion: false,
+              ),
+              DetectionStatePanel(
+                state: DetectionRuntimeState.failed,
+                failure: failure,
+                onRetry: () {},
+                onStop: () {},
+              ),
+            ],
+          ),
+        ),
+      );
+      await withSemantics(tester, () async {
+        final pill = expectSemanticNode('Detection status: Unavailable');
+        expect(pill.getSemanticsData().flagsCollection.isLiveRegion, isFalse);
+        final panel = expectSemanticNode(
+          RegExp(r'^Model loading\. The detection engine could not start\.'),
+        );
+        expect(panel.getSemanticsData().flagsCollection.isLiveRegion, isTrue);
+        expectButtonSemantics(tester, 'Retry detection');
+        expectButtonSemantics(tester, 'Stop detection');
+      });
+    });
   });
 
   group('chart semantics', () {
@@ -451,14 +495,79 @@ void main() {
       );
     }
 
+    testWidgets('the wordmark is a header and the status node carries the '
+        'screen identity', (tester) async {
+      await tester.pumpWidget(homeApp(homeCoordinator()));
+      await withSemantics(tester, () async {
+        final wordmark = find.semantics.byLabel('EyeCue').evaluate().toList();
+        expect(wordmark, hasLength(1));
+        expect(
+          wordmark.single.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
+        );
+        expect(
+          find.semantics
+              .byLabel('Home. Preparing. Detection begins immediately.')
+              .evaluate(),
+          hasLength(1),
+        );
+        expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
+      });
+    });
+
+    testWidgets('every lifecycle outcome carries the Home identity prefix', (
+      tester,
+    ) async {
+      final cases = <void Function(EngineCoordinator), String>{
+        (c) {}: 'Home. Preparing. Detection begins immediately.',
+        (c) => c.reportReady():
+            'Home. Ready. Ready when you are. Detection is ready.',
+        (c) => c.reportPaused():
+            'Home. Paused. Detection is paused. Open Detect to resume.',
+        (c) => c.reportStopped():
+            'Home. Stopped. Detection is stopped. Open Detect to start again.',
+        (c) => c.reportFailure(
+          DetectionFailure(
+            category: DetectionFailureCategory.permissionDenied,
+            safeMessage: 'Camera permission is required to detect objects.',
+            timestamp: DateTime(2026, 1, 1),
+          ),
+        ): 'Home. Unavailable. Detection needs attention. '
+            'Camera permission is required to detect objects.',
+      };
+      for (final entry in cases.entries) {
+        final c = homeCoordinator();
+        entry.key(c);
+        await tester.pumpWidget(homeApp(c));
+        await withSemantics(tester, () async {
+          expect(
+            find.semantics.byLabel(entry.value).evaluate(),
+            hasLength(1),
+            reason: 'Missing or duplicated node for ${entry.value}',
+          );
+        });
+      }
+    });
+
     testWidgets('initial Preparing state exposes the full meaning', (
       tester,
     ) async {
       await tester.pumpWidget(homeApp(homeCoordinator()));
       await withSemantics(tester, () async {
-        expectSemanticNode('Preparing. Detection begins immediately.');
-        // The live wordmark is present exactly once (logo is decorative).
+        expectSemanticNode('Home. Preparing. Detection begins immediately.');
+        // The wordmark is present exactly once (logo is decorative) and is the
+        // screen's semantic header.
         expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
+        expect(
+          find.semantics
+              .byLabel('EyeCue')
+              .evaluate()
+              .single
+              .getSemanticsData()
+              .flagsCollection
+              .isHeader,
+          isTrue,
+        );
         // No CTA or substitute action is exposed.
         expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
       });
@@ -472,7 +581,7 @@ void main() {
         // Exactly one status node carries the whole meaning.
         expect(
           find.semantics
-              .byLabel('Preparing. Detection begins immediately.')
+              .byLabel('Home. Preparing. Detection begins immediately.')
               .evaluate(),
           hasLength(1),
         );
@@ -494,7 +603,9 @@ void main() {
       c.reportReady();
       await tester.pumpWidget(homeApp(c));
       await withSemantics(tester, () async {
-        expectSemanticNode('Ready. Ready when you are. Detection is ready.');
+        expectSemanticNode(
+          'Home. Ready. Ready when you are. Detection is ready.',
+        );
         expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
         expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
       });
@@ -508,7 +619,7 @@ void main() {
       await tester.pumpWidget(homeApp(paused));
       await withSemantics(tester, () async {
         expectSemanticNode(
-          'Paused. Detection is paused. Open Detect to resume.',
+          'Home. Paused. Detection is paused. Open Detect to resume.',
         );
       });
 
@@ -517,7 +628,7 @@ void main() {
       await tester.pumpWidget(homeApp(stopped));
       await withSemantics(tester, () async {
         expectSemanticNode(
-          'Stopped. Detection is stopped. Open Detect to start again.',
+          'Home. Stopped. Detection is stopped. Open Detect to start again.',
         );
       });
     });
@@ -536,7 +647,7 @@ void main() {
       await tester.pumpWidget(homeApp(c));
       await withSemantics(tester, () async {
         expectSemanticNode(
-          'Unavailable. Detection needs attention. '
+          'Home. Unavailable. Detection needs attention. '
           'Camera permission is required to detect objects.',
         );
       });
@@ -550,6 +661,16 @@ void main() {
         // Only the live wordmark carries the 'EyeCue' label; the logo image is
         // excluded and must not add a second one.
         expect(find.semantics.byLabel('EyeCue').evaluate(), hasLength(1));
+        expect(
+          find.semantics
+              .byLabel('EyeCue')
+              .evaluate()
+              .single
+              .getSemanticsData()
+              .flagsCollection
+              .isHeader,
+          isTrue,
+        );
         // No replacement action is exposed.
         expect(find.semantics.byLabel('Go to Live Camera').evaluate(), isEmpty);
       });
