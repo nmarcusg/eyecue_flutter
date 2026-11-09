@@ -8,13 +8,24 @@ import '../theme/app_spacing.dart';
 class WarningBanner extends StatelessWidget {
   final String message;
 
-  const WarningBanner({super.key, required this.message});
+  /// Whether this banner announces itself as a live region.
+  ///
+  /// Defaults to `true` so every existing call site keeps today's behaviour.
+  /// The safety dialog passes `false` so its lead line does not compete with
+  /// the disclosure on entry.
+  final bool liveRegion;
+
+  const WarningBanner({
+    super.key,
+    required this.message,
+    this.liveRegion = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       container: true,
-      liveRegion: true,
+      liveRegion: liveRegion,
       label: 'Warning. $message',
       child: Container(
         width: double.infinity,

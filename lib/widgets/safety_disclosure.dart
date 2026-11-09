@@ -14,6 +14,12 @@ import 'warning_banner.dart';
 /// listing's safety/accessibility statement (item K) must mirror this wording.
 const String kSafetyDisclosureTitle = 'Safety and Limitations';
 
+/// The first-use dialog's own title.
+///
+/// Deliberately different from [kSafetyDisclosureTitle] so the dialog identity
+/// and the disclosure heading are never the same announcement.
+const String kSafetyDialogTitle = 'Before you use EyeCue';
+
 /// The five disclosure points, in reading order.
 const List<String> kSafetyDisclosurePoints = [
   'EyeCue is an experimental research and assistive application. Treat it as a '
@@ -106,19 +112,35 @@ class SafetyDisclosureDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return PopScope(
       canPop: false,
       child: AlertDialog(
+        title: Semantics(
+          container: true,
+          header: true,
+          label: kSafetyDialogTitle,
+          child: ExcludeSemantics(
+            child: Text(
+              kSafetyDialogTitle,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
         // Scrolls at large text scales instead of clipping the points.
         scrollable: true,
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Announces the surface on open; the lead line is not one of the
-            // five points, so nothing is read twice.
+            // Names the surface without competing with the disclosure on
+            // entry; the lead line is not one of the five points, so nothing
+            // is read twice.
             const WarningBanner(
               message: 'Read this before you rely on EyeCue.',
+              liveRegion: false,
             ),
             const SizedBox(height: kSpace8),
             const SafetyDisclosureBody(),
