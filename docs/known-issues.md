@@ -1,6 +1,6 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-10-27 (researcher-selectable detector models and explicit research logging sessions; the L4 depth-accelerator entry and the PD1–PD3/Custom-engine sections below are historical)
+> **Last Updated:** 2026-11-09 (TalkBack accessibility programme and the Detection alignment / chart-and-Logs polish phases completed and device-verified on the tested devices; the researcher-selectable detector models, L4 depth-accelerator and PD1–PD3/Custom-engine sections are historical)
 > See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
 
 ## Monocular depth estimation (MDE)
@@ -118,6 +118,16 @@ verified only: `flutter analyze` reports no issues and the suites named in
 
 ## Current Blockers
 
+### ✅ TalkBack Semantic Operability and Speech Ownership — Implemented and Device-Verified (Complete)
+
+- **Description:** TalkBack operability, speech ownership, and semantic structure are implemented and device-verified on the tested devices. Ownership is explicit: TalkBack owns application UI, navigation, control state, lifecycle state, and failures, while EyeCue TTS owns detected objects, distance/approach alerts, Quick Scan, and Repeat Last Alert. Only the four lifecycle utterances are suppressed while `MediaQuery.accessibleNavigationOf` is active, through the pure `shouldSpeakLifecycleUtterance()` helper and `kLifecycleUtterances`; no audio focus, `focus: true`, `setAudioAttributesForNavigation`, or `SemanticsService.announce` is used. Screen identity is carried by the first semantic node TalkBack reaches — Home announces `Home. ` plus its status meaning with the `EyeCue` wordmark as a `container` + `header` node behind `ExcludeSemantics`, and `Detection Mode` is a `container` + `header` node labelled `Detection` with unchanged visible text (no `sortKey`, no forced focus). The consolidated lifecycle card exposes Stop/Start through a semantic long-press (identity in `label`, state-only `value`, no gesture-teaching `hint`, and no `onTap` when stopped). `Repeat last alert` is a `CustomSemanticsAction` on a `Semantics(container: true, explicitChildNodes: true, label: 'Camera view')` viewport wrapper (no live region, no exclusion), and the Audio Guidance pill is mute/unmute only; a rejected repeat gives a distinct heavy haptic plus a transient live-region status (`Audio guidance is off` / `Nothing to repeat yet`) that never uses TTS and clears after 4 s or on state change. Failures have exactly one automatic live-region owner: `StatusPill.liveRegion` is `false` only while the failure panel is mounted. Help reads per item via [`help_section_card.dart`](../lib/widgets/help_section_card.dart) for Gesture Controls and Best Use Tip while How It Works and Gesture Confirmation stay grouped. A source guard forbids gesture-teaching semantic strings, `AccessibleButton` injects no activation/unavailable hints, Home exposes a single status node, the Settings slider wrappers are removed with hertz/2-dp formatters, the detector-model filter is one `MergeSemantics` node, the safety dialog title does not duplicate its body, and Logs & Reports duplicate text nodes are excluded with section titles promoted to headings.
+- **Location:** [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`status_pill.dart`](../lib/widgets/status_pill.dart), [`help_section_card.dart`](../lib/widgets/help_section_card.dart), [`help_screen.dart`](../lib/screens/help_screen.dart), [`accessible_button.dart`](../lib/widgets/accessible_button.dart), [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), [`settings_screen.dart`](../lib/screens/settings_screen.dart), [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart), and [`tts_service.dart`](../lib/services/tts_service.dart).
+- **Verified on device:** the previously open checks — transient live-region announcement after a failed Repeat, the repeated identical failure label, overlay rows staying separate non-live nodes under `explicitChildNodes`, `Repeat last alert` reachability above the native platform view, the merged detector-filter node exposing tap and re-announcing the selection, the single safety-dialog entry announcement, and Help per-item spacing parity — plus long-press delivery on the target TalkBack build, single-node announcement, hint repetition, focus retention after Stop/Start, and TTS/live-region overlap. All were confirmed on the tested devices.
+- **Preserved behaviour:** direct-touch gestures, the 3-second hold and its timers, detection logic, telemetry, research logging, saved data/settings, haptics, and the two-card Detection layout were not changed by this work.
+- **Non-blocking future refinement:** `Camera view` / `Repeat last alert` works and is verified, but its interaction model and discoverability still need minor UX polish. This is **not** an open core accessibility defect and is **not** blocking.
+- **Shell gesture needs no gating:** device evidence confirms horizontal shell navigation does not activate while TalkBack is enabled (touch exploration consumes the pointer sequence), so no accessibility gate or disable was added and [`app_shell.dart`](../lib/navigation/app_shell.dart) gesture behaviour was not touched.
+- **Status:** **Complete and device-verified on the tested devices** (`flutter analyze` 0 issues, `flutter test` 865 passing, 0 failing). One non-blocking polish item remains (Repeat discoverability).
+
 ### 🟢 Detection Redesign (PD1–PD3) — Non-Blocking Notes
 
 The Detection redesign (PD1–PD3) is implemented and statically validated (`flutter analyze` 0 issues; `flutter test` **323 passing at the 2026-09-28 revision**), with three runtime repairs applied after physical-device validation (Custom `IntrinsicHeight` layout cascade, Custom post-frame start intent, Ultralytics native-session recreation on start-after-stop). The behavioral-deviation audit found **no unintended deviations** from baseline `f310e73`. That historical result does **not** verify the current Workstream 1 branch, which has not run Flutter tests or the analyzer. The following items are **non-blocking for the redesign** and are recorded for follow-up.
@@ -128,8 +138,30 @@ The Detection redesign (PD1–PD3) is implemented and statically validated (`flu
 - **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
 - **Native CameraX graph churn** during recreation is expected plugin settling, not a proven leak.
 - **Deferred — strict PD3 result provenance/freshness:** remains deferred under its existing scope boundary (see [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) §13/§18). The overlay's UI-only snapshot clearing prevents known historical values from remaining visible after a non-Ready transition, but does not prove that a delayed pre-transition result cannot arrive after a later Ready state. This is **non-blocking for the redesign** and is not claimed as resolved.
-- **Location:** [`detection_screen.dart`](../lib/screens/detection_screen.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart).
+- **Location:** [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (the only Detection screen since `detection_screen.dart` was removed with the Custom engine on 2026-10-21), [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart).
 - **Status:** **Redesign implemented and statically validated; the items above are non-blocking follow-ups.**
+
+### 🟢 Detection Alignment, Heatmap and Chart/Logs Polish — Device-Verified (No Open Gate)
+
+Two presentation-only phases, `detection-alignment-charts` and its follow-up
+`charts-logs-polish`, are implemented and **device-verified on the target Android
+device (2026-11-09)**. Every gate they previously carried as "Needs Verification"
+is now confirmed on hardware: the shared 16 dp gutter (header, camera viewport,
+action cards); heatmap-to-preview pixel correspondence with MDE enabled;
+`reservedSize` sufficiency and `Elapsed time (s)` legibility at 200 % text scale;
+`RotatedBox` inside `FittedBox` with real depth frames; the audio pill's ink ripple
+over its full 64 × 56 target; X-axis label legibility at 100 %/200 %; the clamped
+rightmost tick; `All models (mixed)` rendered whole; metadata-row single-line
+behaviour; and Logs/Charts filter-card visual parity.
+
+- **Status:** complete; no open device gate for either phase.
+- **Non-blocking polish notes (not defects):** `All models (mixed)` at 200 % text
+  scale on a 390 dp width was accepted as-is (no `FittedBox`, no type-role
+  change); the audio capsule / `StatusPill` height delta is ~3 dp and consists
+  entirely of `StatusPill`'s literal 1.5 dp border, which was deliberately not
+  tokenised; chart X ticks for very large elapsed domains (6+ character values)
+  still rely on the reserved 36 dp band and were not separately exercised.
+- **Location:** [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart), [`charts.dart`](../lib/widgets/charts.dart), [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart).
 
 ### 🟢 Primary Gesture Navigation — Device-Observed Issues (Resolved by test, device gate open)
 
@@ -153,7 +185,7 @@ The primary gesture navigation feature is implemented (persisted `hideBottomNavi
 ### 🟡 Home/Detection Shared Lifecycle — Physical-Device Behavior (Needs Verification)
 
 - **Description:** The shared Home/Detection lifecycle state is implemented and statically validated: [`EngineCoordinator`](../lib/services/engine_coordinator.dart) is the single app-shell-owned, user-facing Detection lifecycle/status source; Home and both Detection implementations render Preparing/Ready/Paused/Stopped/Unavailable from the same snapshot; an explicit `stopped` state and a one-shot start-intent contract were added; Auto-start ON prepares Detection in the background while Home stays visible; Auto-start OFF starts on deliberate entry without writing the preference; manual pause/stop is session-scoped; and the Home `Go to Live Camera` CTA was removed without replacement.
-- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (coordinator ownership + entry/launch intent), [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), [`detection_screen.dart`](../lib/screens/detection_screen.dart), and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart).
+- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (coordinator ownership + entry/launch intent), [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (the only Detection screen since `detection_screen.dart` was removed with the Custom engine on 2026-10-21).
 - **Impact:** Offstage camera/native startup behavior on a physical device (Auto-start ON background preparation) has **not** been observed end-to-end. Whether an offstage cached `CameraPreview` or native `YOLOView` genuinely prepares at launch while Home is selected — including permission-dialog behavior and duplicate-open prevention — is unverified. Changing Auto-start while the app is already running, and Android background/foreground, process death, and camera pre-emption lifecycle behavior, are out of scope and unverified.
 - **Planned Fix:** Validate the Auto-start ON background-preparation and Auto-start OFF entry-start flows on a physical Android device, and confirm the shared status surfaces (Home + both Detection implementations) match on-device.
 - **Status:** **Implemented and statically validated; physical-device behavior Needs Verification.**

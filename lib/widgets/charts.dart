@@ -7,7 +7,10 @@ import '../services/telemetry_service.dart';
 import '../theme/app_colors.dart';
 
 /// Shared chart styling so all charts stay high-contrast and consistent.
-const Color _axisColor = Color(0xFFBDBDBD);
+///
+/// Axis strokes reuse the muted ink token that the tick glyphs already use:
+/// one grey instead of two, and no raw hex. `_lineColor` is the series colour,
+/// not text/axis contrast, so it is deliberately unchanged.
 const Color _lineColor = Color(0xFFFFC107);
 
 /// Maximum latency considered "reasonable" to still draw the 300 ms
@@ -15,7 +18,6 @@ const Color _lineColor = Color(0xFFFFC107);
 /// normal data would be crushed. When the data is much smaller than 300 ms
 /// the benchmark line is simply omitted (it would be off-scale anyway).
 const double _latencyBenchmarkMs = 300.0;
-const double _fpsBenchmark = 15.0;
 
 /// Inference latency over time. The Y scale adapts to the actual data
 /// (with headroom, never clamped above), so every point stays inside the
@@ -73,13 +75,13 @@ class LatencyChart extends StatelessWidget {
             borderData: FlBorderData(
               show: true,
               border: const Border(
-                left: BorderSide(color: _axisColor),
-                bottom: BorderSide(color: _axisColor),
+                left: BorderSide(color: kHomeInkMuted),
+                bottom: BorderSide(color: kHomeInkMuted),
               ),
             ),
             titlesData: _chartTitles(
+              context: context,
               xName: 'Elapsed time (s)',
-              yName: 'Latency (ms)',
               xInterval: maxX / 2,
               yInterval: maxY / 4,
             ),
@@ -112,8 +114,10 @@ class LatencyChart extends StatelessWidget {
   }
 }
 
-/// Effective inference FPS over time. Same dynamic-scaling approach; the
-/// 15 FPS target line is drawn only when it fits the computed scale.
+/// Effective inference FPS over time. The Y scale adapts to the actual data
+/// (with headroom, never clamped above) so every point stays inside the
+/// allocated chart. No benchmark line is drawn: a fixed FPS target is not a
+/// property of this build's measured throughput.
 class FpsChart extends StatelessWidget {
   final List<RuntimeSample> samples;
 
@@ -143,7 +147,6 @@ class FpsChart extends StatelessWidget {
         .map((s) => s.inferenceFps)
         .reduce((a, b) => a > b ? a : b);
     final maxY = math.max(dataMax * 1.2 + 2.0, 2.0);
-    final showBenchmark = maxY >= _fpsBenchmark;
     final summary = _sampleSummary(
       samples.map((sample) => sample.inferenceFps),
       unit: 'frames per second',
@@ -163,27 +166,15 @@ class FpsChart extends StatelessWidget {
             borderData: FlBorderData(
               show: true,
               border: const Border(
-                left: BorderSide(color: _axisColor),
-                bottom: BorderSide(color: _axisColor),
+                left: BorderSide(color: kHomeInkMuted),
+                bottom: BorderSide(color: kHomeInkMuted),
               ),
             ),
             titlesData: _chartTitles(
+              context: context,
               xName: 'Elapsed time (s)',
-              yName: 'FPS',
               xInterval: maxX / 2,
               yInterval: maxY / 4,
-            ),
-            extraLinesData: ExtraLinesData(
-              horizontalLines: showBenchmark
-                  ? [
-                      HorizontalLine(
-                        y: _fpsBenchmark,
-                        color: Colors.greenAccent,
-                        strokeWidth: 1.5,
-                        dashArray: [6, 4],
-                      ),
-                    ]
-                  : const [],
             ),
             lineBarsData: [
               LineChartBarData(
@@ -250,13 +241,13 @@ class DetectionFrequencyChart extends StatelessWidget {
             borderData: FlBorderData(
               show: true,
               border: const Border(
-                left: BorderSide(color: _axisColor),
-                bottom: BorderSide(color: _axisColor),
+                left: BorderSide(color: kHomeInkMuted),
+                bottom: BorderSide(color: kHomeInkMuted),
               ),
             ),
             titlesData: _chartTitles(
+              context: context,
               xName: 'Minute',
-              yName: 'Detections',
               xInterval: math.max((buckets.length / 4).ceilToDouble(), 1),
               yInterval: math.max(maxY / 4, 1),
               minuteLabels: true,
@@ -270,49 +261,84 @@ class DetectionFrequencyChart extends StatelessWidget {
   }
 }
 
+/// Builds the shared axis titles for every chart.
+///
+/// The Y axis deliberately carries **no** name: each card title already names
+/// the metric (for example `Inference Latency`), so a rotated `Latency (ms)`
+/// label was pure duplication and it consumed 24 dp of an already narrow left
+/// gutter. Only the X axis keeps a name, because the X unit is not implied.
 FlTitlesData _chartTitles({
+  required BuildContext context,
   required String xName,
-  required String yName,
   required double xInterval,
   required double yInterval,
   bool minuteLabels = false,
 }) {
-  TextStyle tickStyle() => const TextStyle(color: kHomeInkMuted, fontSize: 10);
+  // Theme-derived so the tick type scales with the app typography instead of a
+  // hardcoded 10 sp; recoloured to the muted ink the axis stroke now shares.
+  final TextStyle tickStyle =
+      (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
+        color: kHomeInkMuted,
+      );
   return FlTitlesData(
     topTitles: const AxisTitles(sideTitles: SideTitles()),
     rightTitles: const AxisTitles(sideTitles: SideTitles()),
     leftTitles: AxisTitles(
-      axisNameWidget: RotatedBox(
-        quarterTurns: 3,
-        child: Text(yName, style: tickStyle(), maxLines: 1),
-      ),
-      axisNameSize: 24,
+      // No `axisNameWidget`: the card title names the metric, and
+      // `axisNameSize: 0` guarantees fl_chart reserves no name band.
+      axisNameSize: 0,
       sideTitles: SideTitles(
         showTitles: true,
         interval: yInterval,
-        reservedSize: 38,
-        getTitlesWidget: (value, meta) => SideTitleWidget(
-          meta: meta,
-          space: 4,
-          child: Text(_formatAxisTick(value, yInterval), style: tickStyle()),
-        ),
-      ),
-    ),
-    bottomTitles: AxisTitles(
-      axisNameWidget: Text(xName, style: tickStyle(), maxLines: 1),
-      axisNameSize: 22,
-      sideTitles: SideTitles(
-        showTitles: true,
-        interval: xInterval,
-        reservedSize: 22,
+        // Layout metric, not a design token. Budget: the widest Y tick this app
+        // produces is four glyphs with one decimal (for example `43.5`); at
+        // labelSmall (14 sp) x 2.0 text scale that is roughly 57 dp, plus
+        // SideTitleWidget's 4 dp `space`, so 64 dp fits with slack. See the
+        // plan's arithmetic table before changing this number.
+        reservedSize: 64,
         getTitlesWidget: (value, meta) => SideTitleWidget(
           meta: meta,
           space: 4,
           child: Text(
-            minuteLabels
-                ? '${value.round() + 1}'
-                : _formatAxisTick(value, xInterval),
-            style: tickStyle(),
+            _formatYAxisTick(value, yInterval),
+            style: tickStyle,
+            // Structurally prevents the two-line wrap the old reserve allowed.
+            maxLines: 1,
+            softWrap: false,
+          ),
+        ),
+      ),
+    ),
+    bottomTitles: AxisTitles(
+      axisNameWidget: Text(xName, style: tickStyle, maxLines: 1),
+      // Both bands are layout metrics, not tokens. `labelSmall` is 14 sp; at
+      // 2.0 text scale one line box is ~33.6 dp, so the 22 dp fl_chart default
+      // could not hold it. 36 gives ~2.4 dp of slack. The cost comes out of the
+      // fixed kChartHeight (180): the plot drops from 136 dp to 108 dp and the
+      // card height does not change.
+      axisNameSize: 36,
+      sideTitles: SideTitles(
+        showTitles: true,
+        interval: xInterval,
+        reservedSize: 36,
+        getTitlesWidget: (value, meta) => SideTitleWidget(
+          meta: meta,
+          space: 4,
+          // The maximum-value title is centred on maxX, which is the plot's
+          // right edge, so half of it used to sit outside the chart box. No
+          // right gutter is reserved: `fitInside` clamps only a tick whose box
+          // would cross the axis edge, so the plot width is unchanged.
+          fitInside: SideTitleFitInsideData(
+            enabled: true,
+            distanceFromEdge: 4,
+            parentAxisSize: meta.parentAxisSize,
+            axisPosition: meta.axisPosition,
+          ),
+          child: Text(
+            minuteLabels ? '${value.round() + 1}' : _formatXAxisTick(value),
+            style: tickStyle,
+            maxLines: 1,
+            softWrap: false,
           ),
         ),
       ),
@@ -320,22 +346,32 @@ FlTitlesData _chartTitles({
   );
 }
 
-String _formatAxisTick(double value, double interval) {
-  var precision = 0;
-  var scaledValue = value;
-  var scaledInterval = interval;
-  while (precision < 6 &&
-      ((scaledValue - scaledValue.round()).abs() > 1e-8 ||
-          (scaledInterval - scaledInterval.round()).abs() > 1e-8)) {
-    scaledValue *= 10;
-    scaledInterval *= 10;
-    precision++;
-  }
-  if (precision == 0) return value.toStringAsFixed(0);
-  return value
-      .toStringAsFixed(precision)
-      .replaceFirst(RegExp(r'0+$'), '')
-      .replaceFirst(RegExp(r'\.$'), '');
+/// X ticks read at most one decimal.
+///
+/// Precision belongs to the axis, not to the interval: the elapsed-time axis
+/// carries at most three ticks and the line charts floor `maxX` at 1.0, so the
+/// interval is never below 0.5 and one decimal can never merge two labels.
+/// `toStringAsFixed` never emits thousands separators, and a trailing `.0` is
+/// stripped so `3.0` reads `3`. Integer minute labels never reach here: the
+/// bucket chart takes the `minuteLabels` branch.
+String _formatXAxisTick(double value) {
+  final text = value.toStringAsFixed(1);
+  return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+}
+
+/// Y ticks read at most one decimal.
+///
+/// An integral value on an integral interval prints as an integer; anything
+/// else keeps exactly one decimal so the scale stays honest and `.0` is
+/// stripped. `toStringAsFixed` never emits thousands separators.
+/// The X axis uses [_formatXAxisTick]: fractional elapsed-time ticks (`0.5`,
+/// `1.5`) carry meaning and are asserted at 200% text scale.
+String _formatYAxisTick(double value, double interval) {
+  final intervalIsIntegral = (interval - interval.roundToDouble()).abs() < 1e-6;
+  final valueIsIntegral = (value - value.roundToDouble()).abs() < 1e-6;
+  if (intervalIsIntegral && valueIsIntegral) return value.round().toString();
+  final text = value.toStringAsFixed(1);
+  return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
 }
 
 String _engineSummary(List<RuntimeSample> samples) {
