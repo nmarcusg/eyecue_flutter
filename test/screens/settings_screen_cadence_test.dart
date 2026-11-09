@@ -237,13 +237,20 @@ void main() {
         find.bySemanticsLabel(RegExp('Automatic detector cadence')),
         findsOneWidget,
       );
+      // The label-only wrapper was removed: the visible title is the name node
+      // and the slider announces its hertz value separately.
       expect(
-        find.bySemanticsLabel(RegExp('Detector cadence target, 15 Hz')),
-        findsWidgets,
+        find.bySemanticsLabel(RegExp('Detector cadence target: 15 Hz')),
+        findsOneWidget,
       );
       expect(
-        find.bySemanticsLabel(RegExp('Depth cadence target, 2 Hz')),
-        findsWidgets,
+        find.bySemanticsLabel(RegExp('Depth cadence target: 2 Hz')),
+        findsOneWidget,
+      );
+      // No wrapper label duplicates the title in comma form.
+      expect(
+        find.bySemanticsLabel(RegExp('Detector cadence target, ')),
+        findsNothing,
       );
       handle.dispose();
     });

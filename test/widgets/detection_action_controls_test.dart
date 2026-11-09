@@ -416,69 +416,78 @@ void main() {
       return nodes.first;
     }
 
-    testWidgets('ready lifecycle control is an enabled button with hold hint', (
+    testWidgets('ready lifecycle control exposes pause and stop actions', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         buildControls(DetectionStatusOutcome.ready, Recorder()),
       );
-      final node = nodeFor(tester, 'PAUSE');
+      final node = nodeFor(tester, 'Pause detection');
       final data = node.getSemanticsData();
       expect(data.flagsCollection.isButton, isTrue);
       expect(data.flagsCollection.isEnabled, Tristate.isTrue);
       expect(data.hasAction(SemanticsAction.tap), isTrue);
-      expect(node.hint, contains('Hold for three seconds to stop'));
+      expect(data.hasAction(SemanticsAction.longPress), isTrue);
+      // Identity lives in the label, state in the value; no gesture teaching.
+      expect(node.value, 'Detection is running');
+      expect(node.hint, anyOf(isNull, isEmpty));
       handle.dispose();
     });
 
-    testWidgets('stopped control stays actionable with a hold-only hint', (
+    testWidgets('stopped control is a long-press-only start action', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         buildControls(DetectionStatusOutcome.stopped, Recorder()),
       );
-      final node = nodeFor(tester, 'START');
+      final node = nodeFor(tester, 'Start detection');
       final data = node.getSemanticsData();
-      // The stopped tap is a no-op, but the control must remain semantically
-      // actionable because the three-second hold starts detection.
+      // The stopped tap is a no-op, so the node must not advertise tap; the
+      // long-press action is the only operable start path.
       expect(data.flagsCollection.isButton, isTrue);
       expect(data.flagsCollection.isEnabled, Tristate.isTrue);
-      expect(data.hasAction(SemanticsAction.tap), isTrue);
-      expect(node.hint, contains('Hold for three seconds to start'));
+      expect(data.hasAction(SemanticsAction.tap), isFalse);
+      expect(data.hasAction(SemanticsAction.longPress), isTrue);
+      expect(node.value, 'Detection is stopped');
+      expect(node.hint, anyOf(isNull, isEmpty));
       handle.dispose();
     });
 
-    testWidgets('preparing control is a disabled button with a reason', (
+    testWidgets('preparing control is a disabled, non-actionable node', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         buildControls(DetectionStatusOutcome.preparing, Recorder()),
       );
-      final node = nodeFor(tester, 'PREPARING');
+      final node = nodeFor(tester, 'Detection is preparing');
       final data = node.getSemanticsData();
       expect(data.flagsCollection.isButton, isTrue);
       expect(data.flagsCollection.isEnabled, Tristate.isFalse);
       expect(data.hasAction(SemanticsAction.tap), isFalse);
-      expect(node.hint, 'Detection is preparing');
+      expect(data.hasAction(SemanticsAction.longPress), isFalse);
+      expect(node.hint, anyOf(isNull, isEmpty));
+      expect(node.value, anyOf(isNull, isEmpty));
       handle.dispose();
     });
 
-    testWidgets('unavailable control is a disabled button with a reason', (
+    testWidgets('unavailable control is a disabled, non-actionable node', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         buildControls(DetectionStatusOutcome.unavailable, Recorder()),
       );
-      final node = nodeFor(tester, 'UNAVAILABLE');
+      final node = nodeFor(tester, 'Detection is unavailable');
       final data = node.getSemanticsData();
       expect(data.flagsCollection.isButton, isTrue);
       expect(data.flagsCollection.isEnabled, Tristate.isFalse);
       expect(data.hasAction(SemanticsAction.tap), isFalse);
-      expect(node.hint, 'Detection is unavailable');
+      expect(data.hasAction(SemanticsAction.longPress), isFalse);
+      expect(node.hint, anyOf(isNull, isEmpty));
+      expect(node.value, anyOf(isNull, isEmpty));
       handle.dispose();
     });
 
@@ -489,11 +498,12 @@ void main() {
       await tester.pumpWidget(
         buildControls(DetectionStatusOutcome.ready, Recorder()),
       );
-      final node = nodeFor(tester, 'QUICK SCAN');
+      final node = nodeFor(tester, 'Quick scan the scene');
       final data = node.getSemanticsData();
       expect(data.flagsCollection.isButton, isTrue);
       expect(data.flagsCollection.isEnabled, Tristate.isTrue);
       expect(data.hasAction(SemanticsAction.tap), isTrue);
+      expect(node.hint, anyOf(isNull, isEmpty));
       handle.dispose();
     });
 
@@ -504,13 +514,14 @@ void main() {
       await tester.pumpWidget(
         buildControls(DetectionStatusOutcome.paused, Recorder()),
       );
-      final node = nodeFor(tester, 'QUICK SCAN');
+      final node = nodeFor(tester, 'Quick scan the scene');
       final data = node.getSemanticsData();
       expect(data.flagsCollection.isButton, isTrue);
       expect(data.flagsCollection.isEnabled, Tristate.isFalse);
       expect(data.hasAction(SemanticsAction.tap), isFalse);
-      // The disabled state is not conveyed by color alone.
-      expect(node.hint, contains('available only while detection is ready'));
+      // The disabled state is not conveyed by color alone, and the reason
+      // carries no gesture vocabulary.
+      expect(node.hint, 'Available only while detection is ready');
       handle.dispose();
     });
 
@@ -526,7 +537,7 @@ void main() {
         buildControls(DetectionStatusOutcome.ready, recorder),
       );
       tester.semantics.performAction(
-        find.semantics.byLabel('PAUSE'),
+        find.semantics.byLabel('Pause detection'),
         SemanticsAction.tap,
       );
       await tester.pump();
@@ -544,7 +555,7 @@ void main() {
         buildControls(DetectionStatusOutcome.paused, recorder),
       );
       tester.semantics.performAction(
-        find.semantics.byLabel('RESUME'),
+        find.semantics.byLabel('Resume detection'),
         SemanticsAction.tap,
       );
       await tester.pump();
@@ -553,21 +564,113 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('TalkBack semantic tap on stopped is a no-op', (tester) async {
+    testWidgets('stopped control advertises no tap action at all', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
       final recorder = Recorder();
       await tester.pumpWidget(
         buildControls(DetectionStatusOutcome.stopped, recorder),
       );
-      tester.semantics.performAction(
-        find.semantics.byLabel('START'),
-        SemanticsAction.tap,
-      );
-      await tester.pump();
+      final data = nodeFor(tester, 'Start detection').getSemanticsData();
+      expect(data.hasAction(SemanticsAction.tap), isFalse);
       expect(recorder.start, 0);
       expect(recorder.pause, 0);
       expect(recorder.resume, 0);
       expect(recorder.stop, 0);
+      handle.dispose();
+    });
+  });
+
+  group('TalkBack long press', () {
+    SemanticsNode nodeFor(WidgetTester tester, String label) {
+      final nodes = find.semantics.byLabel(label).evaluate().toList();
+      expect(nodes, isNotEmpty, reason: 'No semantic node labelled: $label');
+      return nodes.first;
+    }
+
+    testWidgets('ready long-press stops once and never pauses', (tester) async {
+      final handle = tester.ensureSemantics();
+      final recorder = Recorder();
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.ready, recorder),
+      );
+      tester.semantics.longPress(find.semantics.byLabel('Pause detection'));
+      await tester.pump();
+      expect(recorder.stop, 1);
+      expect(recorder.pause, 0);
+      expect(recorder.resume, 0);
+      expect(recorder.start, 0);
+      handle.dispose();
+    });
+
+    testWidgets('paused long-press stops once and never resumes', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final recorder = Recorder();
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.paused, recorder),
+      );
+      tester.semantics.longPress(find.semantics.byLabel('Resume detection'));
+      await tester.pump();
+      expect(recorder.stop, 1);
+      expect(recorder.pause, 0);
+      expect(recorder.resume, 0);
+      expect(recorder.start, 0);
+      handle.dispose();
+    });
+
+    testWidgets('stopped long-press starts once', (tester) async {
+      final handle = tester.ensureSemantics();
+      final recorder = Recorder();
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.stopped, recorder),
+      );
+      tester.semantics.longPress(find.semantics.byLabel('Start detection'));
+      await tester.pump();
+      expect(recorder.start, 1);
+      expect(recorder.stop, 0);
+      expect(recorder.pause, 0);
+      expect(recorder.resume, 0);
+      handle.dispose();
+    });
+
+    testWidgets('preparing and unavailable expose no long-press action', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      for (final entry in const [
+        (DetectionStatusOutcome.preparing, 'Detection is preparing'),
+        (DetectionStatusOutcome.unavailable, 'Detection is unavailable'),
+      ]) {
+        await tester.pumpWidget(buildControls(entry.$1, Recorder()));
+        final data = nodeFor(tester, entry.$2).getSemanticsData();
+        expect(
+          data.hasAction(SemanticsAction.longPress),
+          isFalse,
+          reason: 'Unexpected long-press action for ${entry.$1}',
+        );
+      }
+      handle.dispose();
+    });
+
+    testWidgets('a semantic long-press never mutates the physical hold state', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final recorder = Recorder();
+      await tester.pumpWidget(
+        buildControls(DetectionStatusOutcome.ready, recorder),
+      );
+      expect(find.byType(FractionallySizedBox), findsNothing);
+      tester.semantics.longPress(find.semantics.byLabel('Pause detection'));
+      await tester.pump(const Duration(milliseconds: 0));
+      // No progress fill and no one-shot lock: the node stays enabled.
+      expect(find.byType(FractionallySizedBox), findsNothing);
+      final data = nodeFor(tester, 'Pause detection').getSemanticsData();
+      expect(data.flagsCollection.isEnabled, Tristate.isTrue);
+      expect(data.hasAction(SemanticsAction.longPress), isTrue);
       handle.dispose();
     });
   });

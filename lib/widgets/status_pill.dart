@@ -9,13 +9,25 @@ class StatusPill extends StatelessWidget {
   final String label;
   final Color color;
 
-  const StatusPill({super.key, required this.label, required this.color});
+  /// Whether this pill announces itself as a live region.
+  ///
+  /// Defaults to `true` so every existing call site keeps today's behaviour.
+  /// Callers turn it off only when another surface is the single automatic
+  /// announcer for the same transition (for example the failure panel).
+  final bool liveRegion;
+
+  const StatusPill({
+    super.key,
+    required this.label,
+    required this.color,
+    this.liveRegion = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       container: true,
-      liveRegion: true,
+      liveRegion: liveRegion,
       label: 'Detection status: $label',
       child: Container(
         padding: const EdgeInsets.symmetric(

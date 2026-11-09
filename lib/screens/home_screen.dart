@@ -101,10 +101,19 @@ class HomeScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: kSpace12),
-                              Text(
-                                'EyeCue',
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.displayLarge,
+                              Semantics(
+                                container: true,
+                                header: true,
+                                label: 'EyeCue',
+                                child: ExcludeSemantics(
+                                  child: Text(
+                                    'EyeCue',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.displayLarge,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -154,7 +163,7 @@ class _StatusBadge extends StatelessWidget {
         );
         return Semantics(
           container: true,
-          label: presentation.meaning,
+          label: 'Home. ${presentation.meaning}',
           child: ExcludeSemantics(
             child: Container(
               padding: const EdgeInsets.symmetric(
@@ -218,23 +227,29 @@ class _InstructionRegion extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // The status badge node already announces the full meaning, so the
+            // visible instruction text is not a second semantic stop.
             Flexible(
-              child: Text(
-                presentation.headline,
-                textAlign: TextAlign.left,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.headlineLarge,
+              child: ExcludeSemantics(
+                child: Text(
+                  presentation.headline,
+                  textAlign: TextAlign.left,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.headlineLarge,
+                ),
               ),
             ),
             const SizedBox(height: kSpace8),
             Flexible(
-              child: Text(
-                presentation.supporting,
-                textAlign: TextAlign.left,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+              child: ExcludeSemantics(
+                child: Text(
+                  presentation.supporting,
+                  textAlign: TextAlign.left,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: kHomeInkMuted),
+                ),
               ),
             ),
             const SizedBox(height: kSpace24),
@@ -294,8 +309,10 @@ _HomeStatusPresentation _homeStatusPresentation(
         supporting: isInitialIdle
             ? 'Detection begins immediately.'
             : 'Detection is preparing.',
+        // Gesture-only wording is removed from the semantic meaning only; the
+        // visible headline keeps its approved copy.
         meaning: isInitialIdle
-            ? 'Preparing. Swipe left to start! Detection begins immediately.'
+            ? 'Preparing. Detection begins immediately.'
             : 'Preparing. Getting things ready. Detection is preparing.',
         dotColor: kHomeWarningAmber,
       );

@@ -308,12 +308,12 @@ The app now exposes all five thesis screens via 4-tab bottom navigation + a Logs
 | Thesis screen | Exists? | Assessment |
 |---|---|---|
 | Home | ✅ | Branding, subtitle, Auto-Start status card, "Go to Live Camera", bottom nav |
-| Detection | ✅ | Blind-first assistive UI: live preview + boxes, status pill, audio mute, object cards with priority, warning banner, visible controls, gesture surface. Not yet validated on-device with a blind user; TalkBack semantics are minimal. |
+| Detection | ✅ | Blind-first assistive UI: live preview + boxes, status pill, audio mute, object cards with priority, warning banner, visible controls, gesture surface. Not yet validated on-device with a blind user. TalkBack speech ownership is explicit: TalkBack owns application UI, navigation, control state, lifecycle state, and failures, while EyeCue TTS owns detected objects, distance/approach alerts, Quick Scan, and Repeat Last Alert — only the four lifecycle utterances are suppressed under accessible navigation. Screen identity sits on the first semantic node (Home status, `EyeCue` wordmark, `Detection Mode` heading), Stop/Start is a semantic long-press, Repeat Last Alert is a custom action on the `Camera view` viewport container, a failure has exactly one automatic live-region owner, and Help is itemised. Full TalkBack compatibility is not claimed and on-device validation is pending. |
 | Settings | ✅ | Vibration, Auto-Start, Low Power, Audio, Logs & Reports — persisted |
 | Help | ✅ | Operations + gestures + confirmation + Android tips |
 | Logs & Reports | ✅ | Overview / Charts / Logs researcher dashboard, reached from Settings |
 
-**Overall screen verdict:** the thesis screen set is **implemented**. The remaining UI work is refinement — TalkBack/Semantics polish, detection-sensitivity setting, and a blind-user usability pass — rather than screen construction.
+**Overall screen verdict:** the thesis screen set is **implemented**. TalkBack semantics and speech ownership are implemented and **device-verified on the tested devices**; the one remaining item there is a non-blocking UX refinement of the `Camera view` / Repeat action's interaction and discoverability. The remaining UI work is refinement — detection-sensitivity setting and a blind-user usability pass — rather than screen construction.
 
 ---
 
@@ -331,7 +331,7 @@ Implemented as a pure layer over `Detection.box`: left/center/right classificati
 `flutter_tts` wired with cooldown, same-label de-duplication, urgent (high-priority) bypass, mute, repeat-last-alert, and quick-scan summaries; phrasing includes relative position + approximate proximity. Missing: calibrated distance phrasing, speech-latency tuning, formal on-device TTS validation, and full-scene vs alert-mode distinction.
 
 ### Domain D — Accessibility / interaction 🟡 (~60%)
-The four thesis gestures (two-finger double tap, single tap, three-finger tap, swipe down) with haptic + TTS confirmation; high-contrast 48dp+ fallback controls. Missing: comprehensive TalkBack/Semantics labels, the thesis's in-app correction interface, and on-device gesture validation.
+The four thesis gestures (two-finger double tap, single tap, three-finger tap, swipe down) with haptic + TTS confirmation; high-contrast 48dp+ fallback controls. TalkBack semantics and speech ownership are implemented and **device-verified on the tested devices** (no formal WCAG conformance claim and no blind-participant evaluation is made here). Missing: on-device gesture validation and the blind-user study.
 
 ---
 
@@ -379,7 +379,7 @@ What the code now computes:
 | Crash / error recovery | 🟡 | Isolate errors reported + camera-error UI; **no isolate restart** |
 | Release configuration | ❌ | Release build signs with **debug keystore** ([`build.gradle.kts`](../android/app/build.gradle.kts)); package `com.example.eyecue_flutter`; `minSdk` default 24 (thesis: Android 10 / API 29) |
 | Play Store readiness | ❌ | No privacy policy, content rating, app icon/branding, release signing, package rename |
-| Accessibility validation | 🟡 | Gestures + high-contrast controls done; TalkBack semantics partial; no blind-user study yet |
+| Accessibility validation | 🟡 | Gestures + high-contrast controls done; TalkBack semantics and speech-ownership model implemented and device-verified on the tested devices (one non-blocking Repeat-discoverability refinement); no blind-user study yet |
 | Device testing | 🟡 | One Snapdragon 695 device; XNNPACK crash; front-camera/landscape re-validation pending |
 | Battery / low-power | ✅ | Low Power Mode setting + dispatch throttle (battery optimization), camera pause deactivates inference |
 | iOS / other platforms | ⚪ | Thesis is Android-only; scaffolding removed |
@@ -445,7 +445,7 @@ Percentages are **weighted by thesis emphasis**, not counted by files. The thesi
 | A | Vision / ML engine | 30% | ~80% | Camera, YUV, orientation, TFLite, parsing, NMS, confidence, stream, boxes all verified in code; open items = hardware acceleration + formal FPS/latency |
 | B | Spatial interpretation | 15% | ~65% | left/center/right + priority + approximate proximity implemented (pure layer, heuristic); no calibrated distance / movement tracking |
 | C | Audio guidance | 20% | ~70% | `flutter_tts` wired (cooldown, de-dup, urgent, repeat, scan, mute); phrasing includes position + proximity; needs calibration + latency tuning |
-| D | Accessibility / interaction | 12% | ~60% | all four thesis gestures + haptics + high-contrast controls; TalkBack semantics + correction interface + on-device validation pending |
+| D | Accessibility / interaction | 12% | ~60% | all four thesis gestures + haptics + high-contrast controls; TalkBack semantics and speech-ownership model implemented and device-verified on the tested devices; correction interface remains pending |
 | E | Application UI | 10% | ~80% | all five screens + navigation + settings implemented; blind-first polish + semantics remaining |
 | F | Research instrumentation | 8% | ~75% | telemetry + charts + logs done; structured export + accuracy computation missing |
 | G | Research evaluation | 3% | ~10% | metrics measured informally in-app; no formal accuracy/precision/recall/F1/mAP/SUS/t-test data |
@@ -495,7 +495,7 @@ H:  2% × 0.25 =  0.5
 2. **XNNPACK/NNAPI/GPU acceleration** — without it, CPU-only throughput may fail the ≥15 FPS hypothesis on the target device.
 3. **Production/release hardening** — release signing, package rename (`com.eyecue`), minSdk alignment, Play Store artifacts, privacy policy.
 4. **Isolate restart recovery** — a crash during a supervised study must self-heal.
-5. **Accessibility polish + controlled usability study** — TalkBack semantics, on-device gesture validation, then the ≥30-visually-impaired-participant SUS + navigation study.
+5. **Accessibility polish + controlled usability study** — on-device gesture validation plus the one remaining Repeat-discoverability refinement (non-blocking), then the ≥30-visually-impaired-participant SUS + navigation study.
 
 ---
 
@@ -510,7 +510,7 @@ H:  2% × 0.25 =  0.5
 - **TTS service** (`flutter_tts`) wired to the detection stream with cooldown/de-dup/urgent/repeat; **spatial service** (left/center/right + approximate proximity); **priority tiers** + high-priority warning/urgent audio. Calibration refinement remains.
 
 ### Phase C — Accessibility / interaction 🟡 mostly done (v0.2.0)
-- Gesture controller (four thesis gestures), pause/resume, quick environmental scan, repeat-last-alert, haptics, high-contrast theme. Remaining: TalkBack/Semantics polish, in-app correction interface, on-device gesture validation.
+- Gesture controller (four thesis gestures), pause/resume, quick environmental scan, repeat-last-alert, haptics, high-contrast theme. TalkBack/Semantics work is implemented and device-verified on the tested devices. Remaining: in-app correction interface, on-device gesture validation, and the non-blocking Repeat-discoverability refinement.
 
 ### Phase D — Application UI ✅ done (v0.2.0–v0.2.2)
 - Home (status card, "Go to Live Camera"), bottom navigation (Home/Detect/Settings/Help), Settings (vibration, auto-start, low-power, audio) with persistence, Help, and the Logs & Reports screen (charts), plus layout/theme fixes. Remaining: detection-sensitivity setting.
@@ -563,7 +563,7 @@ Verified in code:
 - **Research evaluation execution:** formal FPS/latency results, accuracy/precision/recall/F1/mAP computation, SUS collection, one-sample t-test, ≥30-participant controlled navigation study.
 - **Structured telemetry export:** CSV/JSON export of session/detection data for offline analysis.
 - **Detection-sensitivity setting** (thesis §2.4 — runtime-configurable confidence threshold).
-- **Accessibility polish:** comprehensive TalkBack/Semantics labels, in-app correction interface.
+- **Accessibility polish:** in-app correction interface (TalkBack/Semantics labels are implemented and device-verified).
 - **Production hardening:** isolate restart recovery, release signing, package rename (`com.eyecue`), minSdk alignment (API 29), Play Store artifacts (privacy policy, content rating), device-matrix testing.
 - **Hardware acceleration:** comparative XNNPACK/NNAPI/GPU validation. The committed candidate has initial XNNPACK device evidence, but selection of a release backend remains open.
 - **On-device validation:** gestures, TTS, settings persistence, Logs & Reports on the Snapdragon 695 device; candidate back-landscape and front-camera orientation re-validation.
@@ -574,8 +574,8 @@ Verified in code:
 
 > **If we froze development today, what genuinely works:** a complete thesis-aligned assistive application — real-time on-device YOLOv8/TFLite detection (camera → isolate → preprocessing → inference → NMS → bounding boxes), **spoken audio guidance with relative position and priority**, **gesture-based nonvisual interaction**, **all five application screens with persisted settings**, and a **research telemetry/charts dashboard** — running offline on Android. This is roughly **80% of the computer-vision engine** and, after the v0.2.x phase, a **substantial majority of the usable product** (~70% weighted overall).
 
-> **What is still missing:** the evidence and polish that make a thesis defensible — formal FPS/latency/accuracy/mAP evaluation, the SUS/participant study, production release hardening (signing, package rename, isolate restart recovery), and refinement of the heuristic layers (calibrated distance, TalkBack semantics).
+> **What is still missing:** the evidence and polish that make a thesis defensible — formal FPS/latency/accuracy/mAP evaluation, the SUS/participant study, production release hardening (signing, package rename, isolate restart recovery), and refinement of the heuristic layers (calibrated distance, on-device gesture validation).
 
-> **What must be completed before we can honestly call this the final EyeCue product:** (1) resolve the thesis metric definitions and measure FPS/latency formally (XNNPACK/NNAPI/GPU if possible), (2) run the accuracy/mAP + SUS/participant study, (3) production-release hardening, and (4) accessibility + on-device validation polish.
+> **What must be completed before we can honestly call this the final EyeCue product:** (1) resolve the thesis metric definitions and measure FPS/latency formally (XNNPACK/NNAPI/GPU if possible), (2) run the accuracy/mAP + SUS/participant study, (3) production-release hardening, and (4) on-device gesture validation plus the remaining non-blocking accessibility UX polish.
 
 In short: **the eyes of EyeCue were already nearly complete; the voice, the hands, the screens, and the data dashboard — its entire reason to exist — are now built.** The honest thesis-product completion today is approximately **70%**, with the remaining ~30% concentrated in evaluation, hardening, and refinement rather than core product construction.

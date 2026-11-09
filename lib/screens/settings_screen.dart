@@ -379,54 +379,48 @@ class _SensitivityControlsState extends State<_SensitivityControls> {
             ],
           ),
         ),
-        Semantics(
-          container: true,
-          label:
-              'Advanced detection confidence threshold, '
-              '${_draft.toStringAsFixed(2)}',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                  'Advanced threshold: ${_draft.toStringAsFixed(2)}',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(
+                'Advanced threshold: ${_draft.toStringAsFixed(2)}',
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-              Slider(
-                min: AppSettings.minDetectionConfidence,
-                max: AppSettings.maxDetectionConfidence,
-                divisions:
-                    ((AppSettings.maxDetectionConfidence -
-                                AppSettings.minDetectionConfidence) /
-                            0.05)
-                        .round(),
-                value: _draft,
-                label: _draft.toStringAsFixed(2),
-                onChanged: (value) {
-                  setState(
-                    () => _draft = AppSettings.normalizeDetectionConfidence(
-                      value,
-                    ),
-                  );
-                },
-                onChangeEnd: (value) {
-                  final normalized = AppSettings.normalizeDetectionConfidence(
-                    value,
-                  );
-                  setState(() => _draft = normalized);
-                  widget.settings.setDetectionConfidence(normalized);
-                },
+            ),
+            Slider(
+              min: AppSettings.minDetectionConfidence,
+              max: AppSettings.maxDetectionConfidence,
+              divisions:
+                  ((AppSettings.maxDetectionConfidence -
+                              AppSettings.minDetectionConfidence) /
+                          0.05)
+                      .round(),
+              value: _draft,
+              label: _draft.toStringAsFixed(2),
+              semanticFormatterCallback: (v) => v.toStringAsFixed(2),
+              onChanged: (value) {
+                setState(
+                  () =>
+                      _draft = AppSettings.normalizeDetectionConfidence(value),
+                );
+              },
+              onChangeEnd: (value) {
+                final normalized = AppSettings.normalizeDetectionConfidence(
+                  value,
+                );
+                setState(() => _draft = normalized);
+                widget.settings.setDetectionConfidence(normalized);
+              },
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Lower values find more objects. Higher values reduce false alerts. Changes apply after detection restarts.',
               ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Lower values find more objects. Higher values reduce false alerts. Changes apply after detection restarts.',
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
@@ -528,85 +522,77 @@ class _InferenceCadenceControlsState extends State<_InferenceCadenceControls> {
           onChanged: (value) =>
               settings.setDetectionTargetHz(value ? null : _manualDetectionHz),
         ),
-        Semantics(
-          container: true,
-          label: 'Detector cadence target, $detectionHz Hz',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, 0),
+              child: Text(
+                'Detector cadence target: $detectionHz Hz',
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            Slider(
+              key: const ValueKey('cadenceDetectionSlider'),
+              min: AppSettings.minDetectionTargetHz.toDouble(),
+              max: AppSettings.maxDetectionTargetHz.toDouble(),
+              divisions:
+                  AppSettings.maxDetectionTargetHz -
+                  AppSettings.minDetectionTargetHz,
+              value: _detectionDraft,
+              label: '$detectionHz Hz',
+              semanticFormatterCallback: (v) => '${v.round()} hertz',
+              onChanged: automatic
+                  ? null
+                  : (value) => setState(() => _detectionDraft = value),
+              onChangeEnd: automatic
+                  ? null
+                  : (value) => settings.setDetectionTargetHz(value.round()),
+            ),
+          ],
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace8,
+                kSpace16,
+                0,
+              ),
+              child: Text(
+                'Depth cadence target: $depthHz Hz',
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            Slider(
+              key: const ValueKey('cadenceDepthSlider'),
+              min: AppSettings.minDepthTargetHz.toDouble(),
+              max: AppSettings.maxDepthTargetHz.toDouble(),
+              divisions:
+                  AppSettings.maxDepthTargetHz - AppSettings.minDepthTargetHz,
+              value: _depthDraft,
+              label: '$depthHz Hz',
+              semanticFormatterCallback: (v) => '${v.round()} hertz',
+              onChanged: depthDisabled
+                  ? null
+                  : (value) => setState(() => _depthDraft = value),
+              onChangeEnd: depthDisabled
+                  ? null
+                  : (value) => settings.setDepthTargetHz(value.round()),
+            ),
+            // The visible caption is where the disabled reason belongs.
+            if (depthDisabled)
               Padding(
                 padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, 0),
                 child: Text(
-                  'Detector cadence target: $detectionHz Hz',
-                  style: theme.textTheme.titleSmall,
+                  'Depth inference is off in Bounding box mode. The target is '
+                  'kept for when Depth estimate is selected again.',
+                  style: captionStyle,
                 ),
               ),
-              Slider(
-                key: const ValueKey('cadenceDetectionSlider'),
-                min: AppSettings.minDetectionTargetHz.toDouble(),
-                max: AppSettings.maxDetectionTargetHz.toDouble(),
-                divisions:
-                    AppSettings.maxDetectionTargetHz -
-                    AppSettings.minDetectionTargetHz,
-                value: _detectionDraft,
-                label: '$detectionHz Hz',
-                onChanged: automatic
-                    ? null
-                    : (value) => setState(() => _detectionDraft = value),
-                onChangeEnd: automatic
-                    ? null
-                    : (value) => settings.setDetectionTargetHz(value.round()),
-              ),
-            ],
-          ),
-        ),
-        Semantics(
-          container: true,
-          // The value is preserved while Bounding box mode disables the control.
-          label:
-              'Depth cadence target, $depthHz Hz'
-              '${depthDisabled ? ', disabled in bounding box mode' : ''}',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  kSpace16,
-                  kSpace8,
-                  kSpace16,
-                  0,
-                ),
-                child: Text(
-                  'Depth cadence target: $depthHz Hz',
-                  style: theme.textTheme.titleSmall,
-                ),
-              ),
-              Slider(
-                key: const ValueKey('cadenceDepthSlider'),
-                min: AppSettings.minDepthTargetHz.toDouble(),
-                max: AppSettings.maxDepthTargetHz.toDouble(),
-                divisions:
-                    AppSettings.maxDepthTargetHz - AppSettings.minDepthTargetHz,
-                value: _depthDraft,
-                label: '$depthHz Hz',
-                onChanged: depthDisabled
-                    ? null
-                    : (value) => setState(() => _depthDraft = value),
-                onChangeEnd: depthDisabled
-                    ? null
-                    : (value) => settings.setDepthTargetHz(value.round()),
-              ),
-              if (depthDisabled)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, 0),
-                  child: Text(
-                    'Depth inference is off in Bounding box mode. The target is '
-                    'kept for when Depth estimate is selected again.',
-                    style: captionStyle,
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(kSpace16, kSpace8, kSpace16, 0),
@@ -748,8 +734,8 @@ class _DetectorModelCardState extends State<_DetectorModelCard> {
                 0,
               ),
               child: Text(
-                'Changing the detector stops detection. Press Start on the '
-                'Detection screen to run the selected model.',
+                'Changing the detector stops detection. Start detection again '
+                'on the Detection screen to run the selected model.',
                 style: caption,
               ),
             ),

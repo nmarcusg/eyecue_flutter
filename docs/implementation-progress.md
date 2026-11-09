@@ -6,7 +6,7 @@
 >
 > **Workstream 2 (unreleased):** alert-latency instrumentation and reporting are implemented — bounded lifecycle records (500), replace-only cumulative scheduler counters, Ultralytics app-side anchors (the Custom engine was removed on 2026-10-21), four detection-origin Ultralytics summaries with nearest-rank p50/p95/max/count, schema-3 JSON/CSV export, and a Logs & Reports section. **Verification status: static suite run** — `flutter analyze --no-pub` shows 4 pre-existing issues and `flutter test --no-pub` gives 527 passing / 1 known pre-existing failure; no build, device, or physical audible-latency validation ran. The Ultralytics interval is `app-side / post-inference`, never full inference or end-to-end latency. See [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 
-> **Last Updated:** 2026-10-27 (researcher-selectable detector models and explicit research logging sessions; the Workstream and milestone dates below are historical)
+> **Last Updated:** 2026-11-09 (researcher-selectable detector models and explicit research logging sessions; the Workstream and milestone dates below are historical)
 > See also: [`implementation-plan.md`](implementation-plan.md) (roadmap), [`project-status.md`](project-status.md) (summary).
 
 ## Current Unreleased Candidate (2026-10-27) — Researcher-Selectable Detector Models
@@ -19,6 +19,95 @@
 - ✅ Detector attribution in rows and exports: `detectorModelId` on sample/detection rows, a top-level `detectorModels` dictionary keyed `<id>` then `<id>~2`, `<id>~3`, and the CSV columns `model_id`, `model_name`, `model_fingerprint`. The `~n` suffix is **per export** — the app's model filter walks records then samples while the export table walks samples then records — so a key must not be joined across exports. No path, file name or URI is exported.
 - ⚠️ **Remaining device gates:** real custom-model execution, the Android SAF picker and its content-provider permissions, accelerator behaviour for a custom graph, physical screen-reader access to the new card, and upload against the live research database are all unverified; every result in this round comes from the local test suite.
 - ✅ Current validation: static only. `flutter analyze --no-pub` reports no issues, `dart format --output=none --set-exit-if-changed` is clean on the touched files, `git diff --check` is empty, and `flutter test --no-pub --concurrency=1` passes over `test/services/ test/screens/ test/models/ test/widgets/ test/navigation/ test/accessibility/ test/architecture/ test/theme_test.dart test/widget_test.dart`. No Android build, device run, Play Console check or performance measurement was performed, and no test total is restated here: the dated totals elsewhere in this file describe older revisions.
+
+## Current Unreleased Candidate (2026-11-09) — Detection Alignment and Chart Readability
+
+- ✅ One 16 dp horizontal Detection gutter: the camera viewport is padded **inside** `GestureSurface` and inside the `Camera view` semantics node (so the gesture region still covers the whole flexible area and `Repeat last alert` keeps its bounds), the action-row horizontal inset moved `kSpace12` → `kSpace16`, the `kSpace12` gap between the two cards is untouched, and the `kHomeSurfaceBase` band stays edge-to-edge. A new `ValueKey('detection-viewport')` anchors the invariant.
+- ✅ Layout-aware depth heatmap: `RotatedBox(quarterTurns: rotation ~/ 90)` around a sensor-sized `SizedBox` inside `FittedBox(fit: BoxFit.cover, alignment: Alignment.center, clipBehavior: Clip.hardEdge)` — the same centre-crop the bounding-box mapping uses. The paint-only `Transform.rotate`, the upright-dimension locals and the unused `dart:math` import are gone, so the sensor aspect is never stretched before rotation.
+- ✅ `AUDIO ON` pill: the visible capsule is content-sized (its own padding/radius, matching `StatusPill`) while the accessible target stays 64 × 56 through `SizedBox(height: kMinTouchHeight)` + `ConstrainedBox(minWidth: kMinTouchWidth)` + transparent `Material` + `InkWell` + `Center`. Still one button node, one tap action, zero custom semantics actions, unchanged tooltip and visible text. Measured capsule-vs-pill height delta is 3.0 dp — exactly `StatusPill`'s `Border.all(width: 1.5)` — recorded rather than fixed by restyling the device-verified pill.
+- ✅ Chart readability: rotated Y-axis names dropped on all three charts (left `axisNameSize: 0`; card titles already name the metric), Y ticks single-line (`maxLines: 1`, `softWrap: false`) with at most one decimal through the new `_formatYAxisTick`, left `reservedSize` 38 → **64**, axis strokes and tick glyphs unified on `kHomeInkMuted` (`_axisColor` deleted), tick type from `labelSmall`, and `_ChartCard`'s title gap `kSpace8` → `kSpace16`. At the time of this phase the X axis kept `_formatAxisTick` verbatim, so `0.5` / `1.5` at 200 % text scale were unchanged — **superseded by the 2026-11-09 Charts and Logs Polish section below**, where the X formatter became `_formatXAxisTick` and the Y formatter/bucket labels stayed untouched.
+- ✅ FPS chart: the `(15 FPS target)` wording, `_fpsBenchmark`, the FPS `showBenchmark` local and its dashed `greenAccent` line are removed; the chart keeps only dynamic Y scaling. The 300 ms latency benchmark, its red dashed line and its `(300 ms benchmark)` title are untouched.
+- ✅ No new token was added and no theme file changed; no navigation, service, model, backend or accessibility behaviour changed.
+- ✅ Current validation: `flutter analyze --no-pub` reports **0 issues** and `flutter test --no-pub` reports **876 passing, 0 failing** (baseline before this work: 865 passing, 0 failing). New coverage: `test/screens/detection_screen_alignment_test.dart` (gutter geometry, 64 × 56 target with a content-sized capsule, target-margin tap is not a gesture), plus new chart tick/no-benchmark tests and heatmap layout/centring tests.
+- ✅ **Device-verified on the target Android device (2026-11-09):** the five gates this phase left open are confirmed on hardware — the 16 dp gutter's visual result, heatmap-to-preview pixel correspondence with MDE enabled, `reservedSize` sufficiency and `Elapsed time (s)` legibility at 200 % text scale, `RotatedBox` behaviour with real depth frames, and the audio-pill ripple extent over the full 64 × 56 target.
+- ⚠️ Non-blocking polish note (not a defect): the ~3 dp height delta between the audio capsule (measured 31 dp) and `StatusPill` (34 dp) is entirely `StatusPill`'s literal 1.5 dp `Border.all` width, which was deliberately not tokenised or restyled.
+
+## Current Unreleased Candidate (2026-11-09) — Charts and Logs Polish
+
+- ✅ Chart X ticks carry at most **one decimal**, X axis only: `_formatAxisTick`
+  (interval-dependent precision) is deleted and `_formatXAxisTick` produces
+  `.0`-stripped, separator-free labels, so a wall-clock dataset ending at 8.3 s
+  renders `4.2` instead of `4.15`. `_formatYAxisTick`, the bar chart's integer
+  `minuteLabels` branch, `minX`/`maxX` and every spot x-value are unchanged.
+- ✅ The rightmost X tick is clamped inside the plot with
+  `SideTitleFitInsideData(enabled: true, distanceFromEdge: 4,
+  parentAxisSize: meta.parentAxisSize, axisPosition: meta.axisPosition)`. No
+  domain headroom, no right reserved gutter and no `maxIncluded: false`, so the
+  plot width is identical at 320/360/390 dp.
+- ✅ Bottom axis bands moved 22/22 → **36/36** (`reservedSize`/`axisNameSize`)
+  for the 14 sp `labelSmall` tick at 200 % text scale; the cost is paid inside the
+  unchanged `kChartHeight` (180), dropping the plot from 136 dp to 108 dp.
+- ✅ `_ModelFilter` is a `Column` with the `Detector model` label above a
+  full-card-width `DropdownButton<String?>(isExpanded: true)` and `maxLines: 1`
+  on every item, so `All models (mixed)` renders whole. `MergeSemantics`, the
+  label-first order, the widget type/generic and the filtering behaviour are
+  unchanged.
+- ✅ The Logs row subtitle keeps one `Text` and keeps ` · ` breakable, but the
+  number+unit pair uses a non-breaking space
+  (`'${r.latencyMs.toStringAsFixed(0)}\u00A0ms'`), so a long model name wraps at
+  a field boundary instead of splitting `58` / `ms`. No ellipsis, no `maxLines`,
+  no per-field `Wrap`.
+- ✅ The populated Logs list padding is
+  `EdgeInsets.symmetric(horizontal: kSpace16, vertical: kSpace8)`, so the Logs and
+  Charts filter cards share one gutter (390 dp: left 16 / right 374 / width 358 /
+  inner 326). `SafeArea` is deliberately not added and the vertical rhythm is
+  unchanged.
+- ✅ No new token and no theme/`kChartHeight` edit; the axis metrics stay layout
+  literals inside one private function.
+- ✅ Current validation: `flutter analyze --no-pub` reports **0 issues**,
+  `dart format` reports 0 changes on the four touched Dart files, and
+  `flutter test --no-pub` reports **882 passing, 0 failing** (baseline before this
+  work: 876 passing, 0 failing). New coverage: T1–T3 in
+  [`test/widgets/charts_test.dart`](../test/widgets/charts_test.dart) (one-decimal
+  X labels on a 0/4150/8300 ms dataset, rightmost-tick containment, 200 % bottom
+  band) and T5–T7 in
+  [`test/screens/logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart)
+  (whole `All models (mixed)` on both tabs, shared filter-card gutter, atomic
+  `n\u00A0ms` and a single-line row). The previous phase's preservation suites
+  (Detection alignment, depth heatmap, gesture navigation direction, Detection
+  redesign parity, chart semantics) still pass.
+- ✅ **Device-verified on the target Android device (2026-11-09):** all five gates
+  this phase left open are confirmed on hardware — X-axis label legibility at
+  100 % and 200 % text scale, the clamped rightmost tick's appearance,
+  `All models (mixed)` rendered whole, metadata-row single-line behaviour, and
+  Logs/Charts filter-card visual parity.
+- ⚠️ Non-blocking polish notes (not defects): at 200 % text scale on a 390 dp
+  width, `All models (mixed)` was accepted **as-is** (no `FittedBox`, no
+  type-role change); chart X ticks for very large elapsed domains (6+
+  characters) still rely on the reserved 36 dp band and were not separately
+  exercised; and this phase supersedes the previous phase's note that the X
+  formatter stayed byte-identical.
+
+## Implemented (2026-11-09) — TalkBack Speech Ownership and Semantic Structure (Complete, Device-Verified)
+
+- ✅ Speech ownership (Option A) is explicit: TalkBack owns application UI, navigation, control state, lifecycle state, and failures, while EyeCue TTS owns detected objects, distance/approach alerts, Quick Scan, and Repeat Last Alert. Under `MediaQuery.accessibleNavigationOf` only the four lifecycle utterances are suppressed, via the pure `shouldSpeakLifecycleUtterance()` helper and `kLifecycleUtterances`; no audio focus, `focus: true`, `setAudioAttributesForNavigation`, or `SemanticsService.announce` is used.
+- ✅ A failure has exactly one automatic live-region owner: `StatusPill` gained an optional `liveRegion` (default `true`) and Detection passes `false` only while the failure panel is mounted, so the status node stays navigable without a duplicate announcement.
+- ✅ Screen identity sits on the first semantic node TalkBack reaches: Home announces `Home. ` plus its status meaning and exposes the `EyeCue` wordmark as a `container` + `header` node behind `ExcludeSemantics`; the `Detection Mode` title is a `container` + `header` node labelled `Detection` with unchanged visible text. No `sortKey` or forced focus.
+- ✅ `Repeat last alert` moved from the Audio Guidance pill to a `Semantics(container: true, explicitChildNodes: true, label: 'Camera view')` viewport wrapper (no live region, no exclusion); the pill is mute/unmute only. A rejected repeat raises a distinct heavy haptic plus a transient live-region status (`Audio guidance is off` / `Nothing to repeat yet`), never TTS, cleared after 4 s and on state change.
+- ✅ Help reads per item through [`help_section_card.dart`](../lib/widgets/help_section_card.dart): Gesture Controls and Best Use Tip are itemised, How It Works and Gesture Confirmation stay grouped, and Safety and Limitations are unchanged.
+- ✅ Copy and label corrections: stale `custom EyeCue mode` / `press Start` copy fixed, `Retry` made context-specific (`Retry detection` / `Retry camera access`), `Stop` reads `Stop detection`, `Open Settings` reads `Open app permission settings`, the detector-model filter is one `MergeSemantics` node with zero visual change, and the safety dialog has a non-duplicating title with its lead banner no longer a live region.
+- ✅ Current validation: `flutter analyze` reports **0 issues** and `flutter test` reports **865 passing, 0 failing**.
+- ✅ **Device-verified on the tested devices:** zero-size/transient live-region announcement after a failed Repeat, repeated identical failure label, overlay rows staying separate non-live nodes under `explicitChildNodes`, `Repeat last alert` reachability above the native platform view, the merged detector-filter node still exposing tap and re-announcing the selection, single safety-dialog entry announcement, and Help per-item spacing parity were all confirmed. Shell horizontal navigation needs no gate: device evidence shows it does not activate while TalkBack is enabled, and `app_shell.dart` gesture behaviour was not touched. (Non-blocking polish: `Camera view` / `Repeat last alert` interaction and discoverability.)
+
+## Current Unreleased Candidate (2026-11-08) — TalkBack Operability and Semantic-Tree Simplification
+
+- ✅ Added a semantic long-press to the consolidated lifecycle card so Stop/Start are reachable with TalkBack without a new control: `ready`/`paused` dispatch Stop and `stopped` dispatches Start through a pure `_dispatchSemanticHold()` with no timer or `_consumed` writes; `onTap` is `null` when stopped; `label` carries identity and `value` carries state only; `hint` is removed and Android-only `onTapHint`/`onLongPressHint` supply the result wording.
+- ✅ Exposed `Repeat last alert` as a `CustomSemanticsAction` on the audio pill (one `container` node with `onTap`), reusing `_repeatAlert()` verbatim.
+- ✅ Removed `AccessibleButton`'s fabricated `'Double tap to activate'` / `'Unavailable'` hints and the dead `DetectionStatePanel` `Use fallback` path.
+- ✅ De-duplicated semantics on Home (single status node, idle meaning `'Preparing. Detection begins immediately.'`), Settings (three slider wrappers removed, hertz/2-dp `semanticFormatterCallback`), and Logs & Reports (eight duplicate pairs excluded, section titles `header: true`), while retaining every live region.
+- ✅ Added a source guard, [`talkback_no_gesture_hints_test.dart`](../test/architecture/talkback_no_gesture_hints_test.dart), forbidding gesture-teaching semantic strings.
+- ✅ Current validation: `flutter analyze` reports **0 issues** and `flutter test` reports **847 passing, 0 failing**.
+- ✅ **Device-verified on the tested devices:** TalkBack long-press delivery on the target build, custom-action discoverability, single-node announcement, hint repetition, focus retention after Stop/Start, and TTS/live-region overlap were all confirmed.
 
 ## Current Unreleased Candidate (2026-10-23) — Configurable Inference Cadence
 
@@ -194,6 +283,9 @@ sections below remain historical release records.
 - ✅ [`gesture_controller.dart`](../lib/services/gesture_controller.dart): two-finger double tap (start/stop), single tap (pause/resume), three-finger tap (scan), swipe down (repeat)
 - ✅ [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart): transparent capture layer over the viewport
 - ✅ Haptic + TTS confirmation per gesture; visible high-contrast fallback controls (`AccessibleButton`)
+- ✅ TalkBack speech ownership: TalkBack owns UI, navigation, control state, lifecycle state, and failures; EyeCue TTS owns objects, distance/approximate proximity, Quick Scan, and Repeat Last Alert. Only the four lifecycle utterances are suppressed under `MediaQuery.accessibleNavigationOf`.
+- ✅ Screen identity on the first semantic node, Repeat Last Alert on the `Camera view` container, one automatic failure announcer, per-item Help granularity, and a merged detector-model filter node — implemented and device-verified on the tested devices.
+- ✅ Physical-device TalkBack verification was completed on the tested devices (announcement timing, custom-action reachability above the native view, merged-node tap, and per-item spacing parity). One non-blocking refinement remains: `Camera view` / `Repeat last alert` interaction and discoverability polish — not an open core accessibility defect.
 
 ### Settings Persistence (100%)
 

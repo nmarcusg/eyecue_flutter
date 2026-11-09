@@ -74,6 +74,12 @@ YOLOView (detect)  ──onStreamingData──▶ detections + upright dims + JP
 
 - The heatmap is a decorative `ui.Image` drawn above the native preview and
   below the Flutter box layer; native overlays are disabled while it is shown.
+  [`DepthHeatmapView`](../lib/widgets/depth_heatmap_view.dart) rotates the
+  sensor-oriented image with a layout-aware `RotatedBox` (a quarter turn happens
+  before layout, so the sensor aspect is never stretched) inside
+  `FittedBox(BoxFit.cover, Alignment.center, Clip.hardEdge)`: the same
+  centre-crop `BoundingBoxPainter` applies with `applyBoxFit` and the same fill
+  as the native preview's `FILL_CENTER`.
 - Metres feed the existing band vocabulary, so alert policy, ranking, telemetry
   and speech keep their shapes.
 - Every failure path (model load, offline, stale map, geometry change, GPU) is
@@ -241,12 +247,14 @@ are out of scope and unverified.
 
 ## Folder Structure
 
-> **Historical entries:** the tree and component table below still list the files
-> of the removed Custom engine (`detection_screen.dart`,
-> `inference_isolate.dart`, `inference_worker_lifecycle.dart`,
-> `model_metadata.dart`, `tensor_rotation.dart`, `png_encoder.dart`,
-> `forensic_log.dart`) and the dependencies that served it. The current runtime
-> is the single Ultralytics pipeline described in
+> **Historical entries:** the tree and component table below still list files of
+> the removed Custom engine (`inference_isolate.dart`,
+> `inference_worker_lifecycle.dart`, `model_metadata.dart`, `tensor_rotation.dart`,
+> `png_encoder.dart`, `forensic_log.dart`) and the dependencies that served it.
+> `lib/screens/detection_screen.dart` was removed with that engine on 2026-10-21
+> and is no longer listed as a current file: the only Detection screen is
+> [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart).
+> The current runtime is the single Ultralytics pipeline described in
 > [Inference cadence](#inference-cadence); `lib/` is authoritative.
 
 ```
@@ -272,7 +280,6 @@ eyecue_flutter/
 │   │   └── png_encoder.dart               # Pure-Dart PNG encoder (forensic dumps)
 │   ├── screens/
 │   │   ├── home_screen.dart               # Home: branding, coordinator-derived status, wordmark
-│   │   ├── detection_screen.dart          # Detection: assistive UI + Custom pipeline
 │   │   ├── engine_detection_screen.dart   # Engine-selected detection wrapper
 │   │   ├── ultralytics_detection_screen.dart # Native Ultralytics detection screen
 │   │   ├── settings_screen.dart           # Settings: light Home-theme cards + telemetry metrics
@@ -299,17 +306,20 @@ eyecue_flutter/
 │   │   └── forensic_log.dart              # File-based structured diagnostics (debug/profile; release-disabled)
 │   └── widgets/
 │       ├── bounding_box_painter.dart      # Detection overlay CustomPainter
-│       ├── gesture_surface.dart           # Transparent gesture capture layer
+│       ├── gesture_surface.dart           # Transparent gesture capture layer; the viewport wrapper is the stable non-live `Camera view` semantics node that hosts the `Repeat last alert` custom action
 │       ├── detection_action_controls.dart # PD2 consolidated lifecycle control + Quick Scan row
 │       ├── detection_information_overlay.dart # PD3 compact two-row in-viewport overlay
 │       ├── detection_card.dart            # Object card (class/conf/position/priority; retained, removed from normal Detection UI)
 │       ├── priority_badge.dart            # HIGH/MEDIUM/LOW badge
+│       ├── help_section_card.dart         # Help section card; Gesture Controls and Best Use Tip read one focus node per item, How It Works and Gesture Confirmation stay grouped
 │       ├── warning_banner.dart            # High-priority obstacle banner (retained, removed from normal Detection UI)
-│       ├── status_pill.dart               # Detecting/Paused/Stopped indicator
+│       ├── status_pill.dart               # Detecting/Paused/Stopped indicator; live region off only while DetectionStatePanel announces, while the pill stays navigable
 │       ├── accessible_button.dart         # Large high-contrast button (48dp+)
-│       ├── detection_state_panel.dart     # Runtime/loading/recovery/error panel
+│       ├── detection_state_panel.dart     # Runtime/loading/recovery/error panel; the single automatic failure live-region owner
 │       ├── detection_correction_sheet.dart # Correction capture sheet
-│       └── charts.dart                    # fl_chart latency/FPS/frequency charts
+│       ├── depth_heatmap_view.dart        # Decorative depth heatmap; RotatedBox + FittedBox(cover) centre-crop matching the box mapping
+│       ├── safety_disclosure.dart         # Single source of the safety disclosure (Help card, first-use dialog, wording)
+│       └── charts.dart                    # fl_chart latency/FPS/frequency charts; no rotated Y names, X one decimal + fitInside, Y integer-or-1-decimal, kHomeInkMuted axis, labelSmall ticks, 300 ms line only
 │   └── theme/                             # Design tokens + theme (UI-owned)
 │       ├── app_colors.dart                # Semantic color tokens
 │       ├── app_spacing.dart               # Spacing scale
@@ -338,7 +348,7 @@ eyecue_flutter/
 | Home Theme | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) | Home-local light `ThemeData` (`buildHomeTheme()`), IBM Plex Sans typography, Home shadow tokens, and light component presentation for app bars, navigation, and active Settings controls; scoped to the Home, Help, Settings, Logs & Reports, and Detection subtrees only |
 | Navigation Shell | [`app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab light/Home-theme bottom nav (Home/Detect/Settings/Help), lazy pages, system back, Logs & Reports route; one-finger linear non-wrapping primary gesture navigation with effective bar visibility derived from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf`; owns the single app-shell-lifetime [`EngineCoordinator`](../lib/services/engine_coordinator.dart) and injects it into Home and Engine Detection. Bar presentation is refreshed only; order, callbacks, selection, cache, and visibility behavior are retained |
 | Home Screen | [`home_screen.dart`](../lib/screens/home_screen.dart) | Fixed, non-scrollable normal light Home composition: coordinator-derived status (Preparing/Ready/Paused/Stopped/Unavailable), enlarged fixed decorative logo + live `EyeCue` wordmark, lower instruction region, cyan rail. The `Go to Live Camera` CTA was removed without replacement; Home renders status only and performs no lifecycle action |
-| Detection Screen | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | Camera lifecycle, permission UI, frame dispatch, assistive UI (gestures, TTS, priority); light Home-theme chrome (`Theme(buildHomeTheme())` + dark status-bar icons) with a dominant rounded dark `kHomeInk` camera viewport, higher-contrast `Detection Mode` title, and an inline `AUDIO ON` pill; renders visible lifecycle/status from the injected coordinator snapshot. PD1–PD3 redesign: the normal screen is a compact header, the dominant viewport (preview + boxes + edge-inset, left-aligned [`DetectionInformationOverlay`](../lib/widgets/detection_information_overlay.dart) + [`GestureSurface`](../lib/widgets/gesture_surface.dart)), and one non-scrolling row of exactly two state-icon, left-aligned physical action cards ([`DetectionActionControls`](../lib/widgets/detection_action_controls.dart)). The normal card list, empty-state copy, gesture hint, visual warning banner, visible Repeat, standalone Start/Stop/Pause/Resume, visible correction/report actions, and Ultralytics developer metrics were removed from the normal UI while their underlying systems remain |
+| ~~Detection Screen (Custom engine)~~ | ~~`detection_screen.dart`~~ | **Removed with the Custom engine on 2026-10-21; the file no longer exists.** There is exactly one Detection screen, [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) — see the next row for its normal composition (compact header, dominant viewport, two-card action row) |
 | Ultralytics Detection Screen | [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | Native `YOLOView` camera/inference pipeline, native controller actions, labels, and native result/metric callbacks; renders the same Detection presentation ownership as Custom (compact header, dominant viewport with the shared edge-inset overlay and gesture surface, one two-card action row). Ready requires the first valid inference payload (empty detections are valid); model-path resolution remains Preparing, and no payload within 30 seconds fails to Unavailable/Retry. Developer metrics were removed from the normal UI while telemetry collection is retained; the stopped viewport shell and gesture surface are retained. Start-after-stop recreates the native session (native-view epoch in the `YOLOView` key, captured callback-epoch guard, `_startInFlight` duplicate-start guard) because native `stop()` permanently destroys the predictor |
 | Settings Screen | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | Light Home-theme composition (`Theme(buildHomeTheme())` + dark status-bar icons) with aligned card typography and active controls, icon-free section presentation, Engine & Sensitivity hierarchy with indented sub-options, and a dark `kHomeInk` System Performance card; optional `TelemetryService? telemetry` renders `Avg FPS` / `Avg latency (MS)` / `Avg confidence` (showing `—` when empty/null) with no fabricated accuracy metrics. Its `View Logs & Reports` action uses [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146) without changing the existing callback |
 | Help Screen | [`help_screen.dart`](../lib/screens/help_screen.dart) | Light, responsive operations + gesture manual with icon-free `kRadius24` cards, `kHomeShadowSoft` shadows, and the shared fixed light app-bar/body surface while scrolling |
@@ -370,6 +380,10 @@ eyecue_flutter/
 | Bounding Box Painter | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Draws detection boxes, labels, and confidence on the camera preview (unchanged by the PD1–PD3 redesign) |
 | Detection Action Controls | [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) | Shared presentation widget: one coordinator-driven consolidated lifecycle control (Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing/Unavailable disabled) plus a physical Quick Scan control, in one non-scrolling row. Both presentation cards use state icons and left-aligned content. It owns local pointer hold tracking and horizontal progress from 0% at pointer down through the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; completion dispatches exactly once with a duplicate-dispatch lock. Imports no camera/inference/native/service internals |
 | Detection Information Overlay | [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) | Shared presentation widget: compact, bottom edge-inset, left-aligned in-viewport informational overlay of at most two rows with stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, and pointer transparency; hidden outside Ready/healthy fallback |
+| Detection Chrome Geometry | [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | One shared 16 dp horizontal gutter for the header, the dark camera viewport (padded **inside** `GestureSurface` and inside the `Camera view` semantics node, so the gesture region still spans the whole flexible area) and the two-card action row, anchored by `ValueKey('detection-viewport')`. The `AUDIO ON` / `AUDIO OFF` capsule is content-sized and centred inside a preserved 64 × 56 accessible target (`kMinTouchWidth` × `kMinTouchHeight`), so the ink ripple covers the target rather than only the capsule |
+| Depth Heatmap View | [`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart) | Decorative depth overlay drawn above the native preview and below the Flutter box layer: the sensor-oriented `ui.Image` is rotated by a layout-aware `RotatedBox(quarterTurns: rotation ~/ 90)` inside `FittedBox(BoxFit.cover, Alignment.center, Clip.hardEdge)` — the same centre-crop the bounding-box mapping uses and the native preview's `FILL_CENTER` — with pointer inertness and semantics exclusion |
+| Safety Disclosure | [`safety_disclosure.dart`](../lib/widgets/safety_disclosure.dart) | Single source of the user-facing safety disclosure: the `kSafetyDisclosure*` strings plus `SafetyDisclosureBody`, `SafetyDisclosureCard` (permanent Help section) and `SafetyDisclosureDialog` (first-use acknowledgement, not barrier-dismissible), exposed as one container + header node read before the five points |
+| Charts | [`charts.dart`](../lib/widgets/charts.dart) | `fl_chart` latency / FPS / detection-frequency charts. Settled axis behaviour: no rotated Y-axis names (the card titles name the metric; left `axisNameSize: 0`, left `reservedSize: 64` for the widest tick at 200 % text scale), Y ticks integer-or-one-decimal, X ticks at most one decimal with a trailing `.0` stripped and the rightmost tick clamped by `SideTitleFitInsideData`, bottom bands 36 / 36 inside the unchanged fixed `kChartHeight` (180), axis strokes and `labelSmall` tick glyphs both `kHomeInkMuted`, and only the 300 ms latency benchmark line — the 15 FPS wording and its dashed line are gone |
 
 ## External Dependencies
 

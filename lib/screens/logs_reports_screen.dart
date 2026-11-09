@@ -378,7 +378,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
           container: true,
           liveRegion: true,
           label: message,
-          child: Text(message),
+          // The label already carries the message; the text is not a second stop.
+          child: ExcludeSemantics(child: Text(message)),
         ),
       ),
     );
@@ -926,22 +927,23 @@ class _AlertLatencySection extends StatelessWidget {
     final counters = telemetry.alertCounters;
     return Semantics(
       container: true,
+      header: true,
       label: 'Alert latency and scheduler health',
       child: _LightCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Alert latency and scheduler health',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            ExcludeSemantics(
+              child: Text(
+                'Alert latency and scheduler health',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(height: kSpace4),
-            Semantics(
-              label: 'Per-engine speech latency — all detector models',
-              child: Text('Per-engine speech latency — all detector models'),
-            ),
+            // The text already speaks; the annotation wrapper only duplicated it.
+            Text('Per-engine speech latency — all detector models'),
             for (final engine in InferenceEngine.values) ...[
               const SizedBox(height: kSpace12),
               Text(
@@ -1064,17 +1066,20 @@ class _AlertIntervalRow extends StatelessWidget {
       child: Semantics(
         container: true,
         label: '$label: $value',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: theme.textTheme.bodyMedium),
-            Text(
-              value,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w700,
+        // One row = one stop; the label already joins the two visible texts.
+        child: ExcludeSemantics(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: theme.textTheme.bodyMedium),
+              Text(
+                value,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1108,15 +1113,18 @@ class _ExportSection extends StatelessWidget {
     final theme = Theme.of(context);
     return Semantics(
       container: true,
+      header: true,
       label: 'Offline telemetry export',
       child: _LightCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Offline telemetry export',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            ExcludeSemantics(
+              child: Text(
+                'Offline telemetry export',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(height: kSpace4),
@@ -1155,10 +1163,17 @@ class _ExportSection extends StatelessWidget {
             const SizedBox(height: kSpace16),
             const Divider(),
             const SizedBox(height: kSpace12),
-            Text(
-              'Research database upload',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            Semantics(
+              container: true,
+              header: true,
+              label: 'Research database upload',
+              child: ExcludeSemantics(
+                child: Text(
+                  'Research database upload',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: kSpace4),
@@ -1217,15 +1232,18 @@ class _CorrectionSummary extends StatelessWidget {
     final theme = Theme.of(context);
     return Semantics(
       container: true,
+      header: true,
       label: 'Correction reports, ${corrections.length} recorded',
       child: _LightCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Correction reports',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+            ExcludeSemantics(
+              child: Text(
+                'Correction reports',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(height: kSpace8),
@@ -1257,11 +1275,13 @@ class _CorrectionSummaryRow extends StatelessWidget {
             '${correction.detection.label}, $feedback, '
             '${correction.engine.label}, threshold '
             '${correction.confidenceThreshold.toStringAsFixed(2)}',
-        child: Text(
-          '${correction.detection.label}: $feedback · '
-          '${correction.engine.label} · threshold '
-          '${correction.confidenceThreshold.toStringAsFixed(2)}',
-          style: theme.textTheme.bodyMedium,
+        child: ExcludeSemantics(
+          child: Text(
+            '${correction.detection.label}: $feedback · '
+            '${correction.engine.label} · threshold '
+            '${correction.confidenceThreshold.toStringAsFixed(2)}',
+            style: theme.textTheme.bodyMedium,
+          ),
         ),
       ),
     );
@@ -1303,7 +1323,7 @@ class _ChartsTab extends StatelessWidget {
             ),
             const SizedBox(height: kSpace24),
             _ChartCard(
-              title: 'Frames Per Second$claim (15 FPS target)',
+              title: 'Frames Per Second$claim',
               child: FpsChart(samples: samples),
             ),
             const SizedBox(height: kSpace24),
@@ -1393,7 +1413,12 @@ class _LogsTab extends StatelessWidget {
                 child: ListView.builder(
                   // One extra row carries the model filter above the list.
                   itemCount: records.length + 1,
-                  padding: const EdgeInsets.symmetric(vertical: kSpace8),
+                  // Horizontal inset matches every Charts card so both tabs
+                  // share one gutter; the vertical rhythm is unchanged.
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kSpace16,
+                    vertical: kSpace8,
+                  ),
                   itemBuilder: (context, index) {
                     if (index == 0) {
                       return Padding(
@@ -1423,7 +1448,11 @@ class _LogsTab extends StatelessWidget {
                           if (r.detectorModelName != null) r.detectorModelName!,
                           r.engine.label,
                           r.position,
-                          '${r.latencyMs.toStringAsFixed(0)} ms',
+                          // Non-breaking space keeps the number and its unit on
+                          // one line. The ` · ` separators stay breakable so a
+                          // long model name wraps between fields, never inside a
+                          // value.
+                          '${r.latencyMs.toStringAsFixed(0)}\u00A0ms',
                         ].join(' · '),
                       ),
                       trailing: Text(
@@ -1582,15 +1611,11 @@ class _MetricCard extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
             ),
             const SizedBox(height: kSpace4),
-            Semantics(
-              label: modelClaim,
-              child: Text(
-                modelClaim,
-                key: ValueKey('$label-model-claim'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: kHomeInkMuted,
-                ),
-              ),
+            // The text already speaks; the annotation only duplicated it.
+            Text(
+              modelClaim,
+              key: ValueKey('$label-model-claim'),
+              style: theme.textTheme.bodySmall?.copyWith(color: kHomeInkMuted),
             ),
           ],
         ),
@@ -1729,9 +1754,18 @@ class _SectionHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Text(
-      title,
-      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+    return Semantics(
+      container: true,
+      header: true,
+      label: title,
+      child: ExcludeSemantics(
+        child: Text(
+          title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1794,7 +1828,9 @@ class _ChartCard extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: kSpace8),
+          // Breathing room between the card title and the plot; the title style
+          // and kChartHeight are unchanged.
+          const SizedBox(height: kSpace16),
           SizedBox(height: kChartHeight, child: child),
         ],
       ),
@@ -2016,12 +2052,17 @@ class _ModelFilter extends StatelessWidget {
     // A selection whose rows are gone must not crash the dropdown.
     final selected = models.any((model) => model.key == value) ? value : null;
     return _LightCard(
-      child: Row(
-        children: [
-          Text('Detector model', style: theme.textTheme.bodyLarge),
-          const SizedBox(width: kSpace12),
-          Expanded(
-            child: DropdownButtonHideUnderline(
+      // The label and the dropdown still merge into one labelled control node,
+      // and the label is still first so the merged label starts with it. The
+      // label sits above the control so the selected value no longer competes
+      // with an 18 sp label plus a 12 dp gap inside one row.
+      child: MergeSemantics(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Detector model', style: theme.textTheme.bodyLarge),
+            const SizedBox(height: kSpace8),
+            DropdownButtonHideUnderline(
               child: DropdownButton<String?>(
                 isExpanded: true,
                 value: selected,
@@ -2030,20 +2071,27 @@ class _ModelFilter extends StatelessWidget {
                     value: null,
                     child: Text(
                       _allModelsLabel,
+                      // `maxLines: 1` makes truncation measurable: with an
+                      // unbounded line count the ellipsis path is ambiguous.
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   for (final model in models)
                     DropdownMenuItem<String?>(
                       value: model.key,
-                      child: Text(model.label, overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        model.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                 ],
                 onChanged: onChanged,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2115,10 +2163,13 @@ class _SessionSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  sessions.stateLabel,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
+                // The card label already states the session state.
+                ExcludeSemantics(
+                  child: Text(
+                    sessions.stateLabel,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 const SizedBox(height: kSpace4),
