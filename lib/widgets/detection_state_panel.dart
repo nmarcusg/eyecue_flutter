@@ -87,21 +87,21 @@ class DetectionStatePanel extends StatelessWidget {
                     children: [
                       if (canOpenSettings)
                         AccessibleButton(
-                          label: 'Open Settings',
+                          label: 'Open app permission settings',
                           icon: Icons.settings,
                           prominent: true,
                           onPressed: openAppSettings,
                         ),
                       if (onRetry != null)
                         AccessibleButton(
-                          label: 'Retry',
+                          label: 'Retry detection',
                           icon: Icons.refresh,
                           prominent: !canOpenSettings,
                           onPressed: onRetry,
                         ),
                       if (onStop != null)
                         AccessibleButton(
-                          label: 'Stop',
+                          label: 'Stop detection',
                           icon: Icons.stop_circle,
                           onPressed: onStop,
                         ),
