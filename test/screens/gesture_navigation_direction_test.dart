@@ -12,9 +12,11 @@ import 'package:eyecue_flutter/services/settings_service.dart';
 import 'package:eyecue_flutter/services/telemetry_service.dart';
 import 'package:eyecue_flutter/services/tts_service.dart';
 import 'package:eyecue_flutter/widgets/detection_action_controls.dart';
+import 'package:eyecue_flutter/widgets/detection_information_overlay.dart';
 import 'package:eyecue_flutter/widgets/gesture_surface.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart' show CustomSemanticsAction;
+import 'package:flutter/semantics.dart'
+    show CustomSemanticsAction, SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -57,6 +59,38 @@ class _FakeTtsEngine implements TtsEngine {
 
   @override
   void setErrorHandler(void Function(dynamic error)? handler) {}
+}
+
+/// Every user-facing (labelled) custom semantic action in the whole tree.
+///
+/// `hintOverrides` registers anonymous overriding actions, so only entries with
+/// a non-null label are user-facing.
+List<String> labelledCustomActions(WidgetTester tester) {
+  // Walk from the test view's own pipeline owner: the deprecated single
+  // `RendererBinding.pipelineOwner` is not the semantics host in multi-view
+  // tests, and the root owner has no semantics owner of its own.
+  final root = tester
+      .binding
+      .renderViews
+      .first
+      .owner!
+      .semanticsOwner!
+      .rootSemanticsNode!;
+  final labels = <String>[];
+  void walk(SemanticsNode node) {
+    final data = node.getSemanticsData();
+    for (final id in data.customSemanticsActionIds ?? const <int>[]) {
+      final label = CustomSemanticsAction.getAction(id)?.label;
+      if (label != null) labels.add(label);
+    }
+    node.visitChildren((child) {
+      walk(child);
+      return true;
+    });
+  }
+
+  walk(root);
+  return labels;
 }
 
 /// Locks in Product Decision 2 for the Detection engine:
@@ -150,9 +184,12 @@ void main() {
     }
 
     /// Pumps the real screen on a phone-sized surface.
+    ///
+    /// [accessibleNavigation] mirrors TalkBack owning lifecycle announcements.
     Future<void> pumpScreen(
       WidgetTester tester, {
       bool permissionGranted = true,
+      bool accessibleNavigation = false,
     }) async {
       mockPlatformChannels(permissionGranted: permissionGranted);
       tester.view.physicalSize = const Size(390 * 3, 844 * 3);
@@ -160,13 +197,24 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
-          home: UltralyticsDetectionScreen(
-            settings: settings,
-            tts: tts,
-            telemetry: TelemetryService(),
-            haptics: haptics,
-            coordinator: coordinator,
-            onNavigateRelative: directions.add,
+          home: Builder(
+            builder: (context) {
+              final screen = UltralyticsDetectionScreen(
+                settings: settings,
+                tts: tts,
+                telemetry: TelemetryService(),
+                haptics: haptics,
+                coordinator: coordinator,
+                onNavigateRelative: directions.add,
+              );
+              if (!accessibleNavigation) return screen;
+              return MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(accessibleNavigation: true),
+                child: screen,
+              );
+            },
           ),
         ),
       );
@@ -355,7 +403,10 @@ void main() {
       expect(find.byType(GestureSurface), findsNothing);
       expect(ttsEngine.spoken, isEmpty); // no start, and no pause announcement
 
-      for (final label in ['Open Settings', 'Retry']) {
+      for (final label in [
+        'Open app permission settings',
+        'Retry camera access',
+      ]) {
         await tester.tap(find.text(label));
         await tester.pump(const Duration(milliseconds: 400));
         expect(directions, isEmpty, reason: '$label tap is not a swipe');
@@ -366,18 +417,27 @@ void main() {
         );
       }
 
-      await swipe(tester, tester.getCenter(find.text('Retry')), -260);
+      await swipe(
+        tester,
+        tester.getCenter(find.text('Retry camera access')),
+        -260,
+      );
       expect(directions, isEmpty);
-      await swipe(tester, tester.getCenter(find.text('Open Settings')), 260);
+      await swipe(
+        tester,
+        tester.getCenter(find.text('Open app permission settings')),
+        260,
+      );
       expect(directions, isEmpty);
     });
 
-    testWidgets('the audio pill is one node with a Repeat last alert action', (
+    testWidgets('the audio pill is one mute node with no custom action', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
       try {
         await pumpScreen(tester);
+        await startSession(tester);
         final pill = find.semantics.byLabel('Audio guidance, on');
         final nodes = pill.evaluate().toList();
         expect(nodes, hasLength(1), reason: 'the pill must be a single stop');
@@ -385,33 +445,279 @@ void main() {
         expect(data.flagsCollection.isButton, isTrue);
         expect(data.hasAction(SemanticsAction.tap), isTrue);
 
-        // Only labelled custom actions are user-facing; hint overrides (if any)
-        // register anonymous entries.
-        final actionIds = data.customSemanticsActionIds ?? const <int>[];
-        final labelled = actionIds
+        // Repeat moved to the camera view, so the pill exposes no labelled
+        // custom action of its own while the camera-view action exists.
+        final pillLabels = (data.customSemanticsActionIds ?? const <int>[])
             .map(CustomSemanticsAction.getAction)
             .whereType<CustomSemanticsAction>()
             .map((action) => action.label)
             .whereType<String>()
             .toList();
-        expect(labelled, ['Repeat last alert']);
+        expect(pillLabels, isEmpty);
+        expect(labelledCustomActions(tester), ['Repeat last alert']);
+      } finally {
+        handle.dispose();
+      }
+    });
 
-        // Invoking the action replays through the existing repeat handler.
-        hapticCalls.clear();
-        final repeatId = actionIds.firstWhere(
-          (id) =>
-              CustomSemanticsAction.getAction(id)?.label == 'Repeat last alert',
+    testWidgets('the header exposes one Detection heading node', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpScreen(tester);
+        final heading = find.semantics.byLabel('Detection').evaluate().toList();
+        expect(heading, hasLength(1));
+        expect(
+          heading.single.getSemanticsData().flagsCollection.isHeader,
+          isTrue,
         );
+        // The visible string is unchanged.
+        expect(find.text('Detection Mode'), findsOneWidget);
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('accessibility navigation owns the start announcement', (
+      tester,
+    ) async {
+      await pumpScreen(tester, accessibleNavigation: true);
+      await tester.tap(find.text('Start Detection'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(ttsEngine.spoken, isEmpty);
+      // The transition itself still happened.
+      expect(hapticCalls, ['medium']);
+      expect(find.byType(GestureSurface), findsOneWidget);
+    });
+
+    testWidgets('accessibility navigation owns pause and resume '
+        'announcements', (tester) async {
+      await pumpScreen(tester, accessibleNavigation: true);
+      await tester.tap(find.text('Start Detection'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(ttsEngine.spoken, isEmpty);
+
+      // A single tap on the live viewport pauses, past the confirmation window.
+      await tester.tapAt(tester.getCenter(find.byType(GestureSurface)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(ttsEngine.spoken, isEmpty, reason: 'no lifecycle pause speech');
+
+      // A second single tap resumes.
+      await tester.tapAt(tester.getCenter(find.byType(GestureSurface)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(ttsEngine.spoken, isEmpty, reason: 'no lifecycle resume speech');
+    });
+
+    test('only the four lifecycle utterances are gated', () {
+      // The pure gate covers start/stop/pause/resume and nothing else.
+      expect(kLifecycleUtterances, [
+        'Detection started',
+        'Detection stopped',
+        'Detection paused',
+        'Detection resumed',
+      ]);
+      for (final utterance in kLifecycleUtterances) {
+        expect(
+          shouldSpeakLifecycleUtterance(utterance, accessibleNavigation: true),
+          isFalse,
+          reason: '$utterance must stay silent under TalkBack',
+        );
+        expect(
+          shouldSpeakLifecycleUtterance(utterance, accessibleNavigation: false),
+          isTrue,
+          reason: '$utterance speaks when EyeCue owns the announcement',
+        );
+      }
+      // Domain speech is never gated.
+      for (final utterance in const [
+        'Audio on',
+        'Quick scan. Nothing detected.',
+        'Person ahead, close.',
+      ]) {
+        expect(
+          shouldSpeakLifecycleUtterance(utterance, accessibleNavigation: true),
+          isTrue,
+          reason: '$utterance is domain speech and must still speak',
+        );
+      }
+    });
+
+    testWidgets('domain speech still plays under accessibility navigation', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpScreen(tester, accessibleNavigation: true);
+        await tester.tap(find.text('Start Detection'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(ttsEngine.spoken, isEmpty);
+
+        // Unmuting is not lifecycle speech and must still be spoken: the first
+        // tap mutes silently, the second tap unmutes with `Audio on`.
         tester.semantics.performAction(
-          pill,
-          SemanticsAction.customAction,
-          args: repeatId,
+          find.semantics.byLabel('Audio guidance, on'),
+          SemanticsAction.tap,
         );
         await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        tester.semantics.performAction(
+          find.semantics.byLabel('Audio guidance, off'),
+          SemanticsAction.tap,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(ttsEngine.spoken, contains('Audio on'));
+        expect(ttsEngine.spoken, isNot(contains('Detection started')));
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('the camera view is one non-live node hosting Repeat', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpScreen(tester);
+        await startSession(tester);
+
+        final nodes = find.semantics.byLabel('Camera view').evaluate().toList();
+        expect(nodes, hasLength(1));
+        final data = nodes.single.getSemanticsData();
+        expect(data.flagsCollection.isLiveRegion, isFalse);
+        // The label is exactly the static container label: nothing from the
+        // overlay or the native preview merged into it, so the overlay rows
+        // stay their own nodes under `explicitChildNodes`.
+        expect(data.label, 'Camera view');
+        expect(find.byType(DetectionInformationOverlay), findsOneWidget);
+
+        // Exactly one user-facing custom action exists on the whole screen.
+        expect(labelledCustomActions(tester), ['Repeat last alert']);
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('a successful Repeat still replays the last alert', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpScreen(tester);
+        await startSession(tester);
+        await tts.speak('Obstacle ahead');
+        expect(tts.lastUtterance, 'Obstacle ahead');
+
+        final spokenBefore = ttsEngine.spoken.length;
+        hapticCalls.clear();
+        tester.semantics.performAction(
+          find.semantics.byLabel('Camera view'),
+          SemanticsAction.customAction,
+          args: _repeatActionId(tester),
+        );
+        await tester.pump();
+
         expect(hapticCalls, ['medium']);
+        expect(ttsEngine.spoken, hasLength(spokenBefore + 1));
+        expect(ttsEngine.spoken.last, 'Obstacle ahead');
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('a Repeat with audio off reports a distinct failure', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpScreen(tester);
+        await startSession(tester);
+        tts.setAudioEnabled(false);
+        final spokenBefore = ttsEngine.spoken.length;
+        hapticCalls.clear();
+
+        tester.semantics.performAction(
+          find.semantics.byLabel('Camera view'),
+          SemanticsAction.customAction,
+          args: _repeatActionId(tester),
+        );
+        await tester.pump();
+
+        expect(hapticCalls, [
+          'heavy',
+        ], reason: 'distinct from the success tick');
+        expect(
+          ttsEngine.spoken,
+          hasLength(spokenBefore),
+          reason: 'never speaks',
+        );
+        final notice = find.semantics.byLabel('Audio guidance is off');
+        expect(notice.evaluate(), hasLength(1));
+        expect(
+          notice
+              .evaluate()
+              .single
+              .getSemanticsData()
+              .flagsCollection
+              .isLiveRegion,
+          isTrue,
+        );
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('a Repeat with nothing cached reports a generic failure', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        // Accessibility navigation keeps the lifecycle silent, so no utterance
+        // has ever started.
+        await pumpScreen(tester, accessibleNavigation: true);
+        await tester.tap(find.text('Start Detection'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tts.lastUtterance, isNull);
+        hapticCalls.clear();
+
+        tester.semantics.performAction(
+          find.semantics.byLabel('Camera view'),
+          SemanticsAction.customAction,
+          args: _repeatActionId(tester),
+        );
+        await tester.pump();
+
+        expect(hapticCalls, ['heavy']);
+        expect(ttsEngine.spoken, isEmpty);
+        expect(
+          find.semantics.byLabel('Nothing to repeat yet').evaluate(),
+          hasLength(1),
+        );
       } finally {
         handle.dispose();
       }
     });
   });
+}
+
+/// The custom-action id of `Repeat last alert` on the camera-view node.
+int _repeatActionId(WidgetTester tester) {
+  final data = find.semantics
+      .byLabel('Camera view')
+      .evaluate()
+      .single
+      .getSemanticsData();
+  return (data.customSemanticsActionIds ?? const <int>[]).firstWhere(
+    (id) => CustomSemanticsAction.getAction(id)?.label == 'Repeat last alert',
+  );
 }

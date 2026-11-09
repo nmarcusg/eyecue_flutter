@@ -43,4 +43,29 @@ void main() {
     }
     expect(hits, isEmpty, reason: hits.join('\n'));
   });
+
+  // Single-engine, hold/semantic-start wording only: the retired
+  // multi-engine/`press Start` copy must not come back.
+  //
+  // `press Start logging` is excluded deliberately: that Start is the research
+  // logging control inside Logs & Reports and the sentence is accurate. Only
+  // detection-start instructions are stale.
+  final staleCopy = <RegExp>[
+    RegExp('custom EyeCue mode'),
+    RegExp(r'press Start(?! logging)'),
+    RegExp('Press Start on the'),
+  ];
+
+  test('no stale multi-engine or press-Start copy remains', () {
+    final hits = <String>[];
+    for (final file in libSources()) {
+      final text = file.readAsStringSync();
+      for (final pattern in staleCopy) {
+        if (pattern.hasMatch(text)) {
+          hits.add('${file.path}: ${pattern.pattern}');
+        }
+      }
+    }
+    expect(hits, isEmpty, reason: hits.join('\n'));
+  });
 }

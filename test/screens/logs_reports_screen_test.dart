@@ -2205,6 +2205,64 @@ void main() {
       );
       handle.dispose();
     });
+
+    testWidgets('the model filter is one labelled control node', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        const builtIn = DetectorModelRef(
+          id: 'builtin',
+          name: 'Built-in YOLOv8n',
+          fingerprint: DetectorModel.builtInFingerprint,
+          classCount: 80,
+        );
+        final telemetry = TelemetryService(
+          clock: () => DateTime.utc(2026, 1, 1, 12, 0, 0),
+          sessionId: 'session-n17',
+        );
+        telemetry.startSession();
+        addTearDown(telemetry.dispose);
+        telemetry.recordDetection(
+          DetectionInfo(
+            detection: const Detection(
+              classId: 0,
+              label: 'cone',
+              confidence: 0.8,
+              box: Rect.fromLTWH(0.1, 0.2, 0.3, 0.4),
+            ),
+            position: RelativePosition.center,
+            priority: ObjectPriority.medium,
+            proximity: ProximityBand.near,
+          ),
+          100,
+          engine: InferenceEngine.ultralytics,
+          detectorModel: builtIn,
+        );
+        await pumpLogsScreen(tester, telemetry: telemetry);
+        await selectTab(tester, 'Charts');
+
+        await tester.tap(find.byType(DropdownButton<String?>).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Built-in YOLOv8n').last);
+        await tester.pumpAndSettle();
+
+        // The sibling label and the dropdown merge into one control node that
+        // carries the label, the selected value and the button role.
+        final nodes = find.semantics
+            .byLabel(RegExp(r'^Detector model'))
+            .evaluate()
+            .toList();
+        expect(nodes, hasLength(1));
+        final data = nodes.single.getSemanticsData();
+        expect(data.label, contains('Detector model'));
+        expect(data.label, contains('Built-in YOLOv8n'));
+        expect(data.flagsCollection.isButton, isTrue);
+        expect(data.hasAction(SemanticsAction.tap), isTrue);
+      } finally {
+        handle.dispose();
+      }
+    });
   });
 
   group('section semantics and de-duplication', () {
