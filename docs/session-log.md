@@ -5,6 +5,239 @@
 
 ---
 
+## 2026-11-09 — Detection alignment, heatmap and chart/Logs polish: device verification complete
+
+### Context
+Documentation-only final pass. The user confirmed both presentation phases on the
+target Android device: `detection-alignment-charts` (16 dp gutter, layout-aware
+heatmap rotation plus cover fit, content-sized `AUDIO ON` capsule on a 64 × 56
+target, the chart readability set, and removal of the 15 FPS wording **and** its
+dashed line while keeping the 300 ms latency benchmark) and its follow-up
+`charts-logs-polish` (X ticks at most one decimal, clamped rightmost tick, 36 dp
+bottom bands, label-above full-width model filter, atomic `n ms` metadata, and
+Logs/Charts filter-card parity). No per-check device logs, OS build or TalkBack
+build numbers are recorded here. No `lib/`, `test/`, `android/`, asset or
+`pubspec` change was made, and no analyzer or test command was run in this pass.
+
+### Objective
+Record both phases as implemented and device-verified, close the device-only
+gates they carried, and leave every genuinely open item untouched.
+
+### Confirmed on the target Android device
+- The 16 dp gutter (header, camera viewport, action cards) renders as intended.
+- Depth heatmap pixels correspond to the preview with MDE enabled.
+- `reservedSize: 64` is sufficient, and `Elapsed time (s)` plus the axis ticks
+  stay legible at 200 % text scale.
+- `RotatedBox` inside `FittedBox` behaves correctly with real depth frames.
+- The audio pill's ink ripple covers the full 64 × 56 target.
+- X-axis labels stay legible at 100 %/200 %, and the clamped rightmost tick
+  renders inside the plot.
+- `All models (mixed)` renders whole, and the metadata row keeps `n ms` together
+  on one line.
+- The Logs and Charts filter cards are visually aligned.
+
+### Non-blocking polish notes (kept, not defects)
+- `All models (mixed)` at 200 % text scale on a 390 dp width was accepted as-is;
+  no `FittedBox` and no type-role change was made.
+- The audio capsule / `StatusPill` height delta is ~3 dp and consists entirely of
+  `StatusPill`'s literal 1.5 dp border, which was deliberately not tokenised.
+- Chart X ticks for very large elapsed domains (6+ character values) still rely
+  on the reserved 36 dp band and were not separately exercised.
+- The phase-one note that the X formatter stayed byte-identical is superseded by
+  phase two (`_formatXAxisTick`).
+
+### Documentation
+Root `/docs` updated (`architecture.md`, `implementation-progress.md`,
+`testing-plan.md`, `known-issues.md`, `project-status.md`, `changelog.md`, this
+file, and the two pipeline doc sets' device gates), then the allow-listed
+`.roo/rules/docs/` mirrors re-synced and the `.roo/rules/` stale claims corrected.
+No new token, convention or workflow stage was introduced: the 16 dp gutter and
+the chart axis metrics remain implementation detail in `architecture.md` and were
+deliberately **not** added to `ui-conventions.md`.
+
+---
+
+## 2026-11-09 — Charts and Logs polish (implementation stage)
+
+### Context
+Stage 4 (implementation) of the 4-stage pipeline for `charts-logs-polish`,
+executed against [`charts-logs-polish-plan.md`](frontend-workflow/charts-logs-polish-plan.md)
+(change list P1–P8), whose design source is
+[`charts-logs-polish-design-spec.md`](frontend-workflow/charts-logs-polish-design-spec.md)
+and [`charts-logs-polish-analysis.md`](frontend-workflow/charts-logs-polish-analysis.md).
+Four settled user decisions: X ticks at most one decimal, X axis only; the model
+selector label above a full-width dropdown; the Logs metadata number+unit kept
+together without hiding anything; and the populated Logs list sharing the Charts
+gutter.
+
+### Objective
+Apply P1–P8 with no scope expansion, then leave `flutter analyze` at 0 issues and
+the full suite green without weakening any pre-existing assertion.
+
+### Changed
+- [`lib/widgets/charts.dart`](../lib/widgets/charts.dart): deleted
+  `_formatAxisTick` and added `_formatXAxisTick` (one decimal, `.0` stripped, no
+  thousands separators) plus its doc comment; the X call site now uses it while
+  the `minuteLabels` branch is untouched; the `_formatYAxisTick` doc comment was
+  rewritten because the symbol it referenced no longer exists; the bottom axis
+  gained `SideTitleFitInsideData(enabled: true, distanceFromEdge: 4,
+  parentAxisSize: meta.parentAxisSize, axisPosition: meta.axisPosition)` and
+  moved `reservedSize`/`axisNameSize` 22/22 → **36/36**.
+- [`lib/screens/logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart):
+  the populated `ListView.builder` padding gained `horizontal: kSpace16` (D5,
+  applied first so D3 was measured against the narrower card); `_ModelFilter`
+  became a `Column` with the label above a full-width dropdown and `maxLines: 1`
+  on every item `Text`; the Logs row subtitle's number+unit pair uses
+  `\u00A0` (`'${r.latencyMs.toStringAsFixed(0)}\u00A0ms'`) with the ` · `
+  separators still breakable.
+- Tests: [`test/widgets/charts_test.dart`](../test/widgets/charts_test.dart)
+  (new `wallClockSamples()` helper and T1–T3),
+  [`test/screens/logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart)
+  (four NBSP subtitle strings inside the existing finders, plus T5–T7 inside the
+  group that defines the local `paintedParagraph` helper).
+
+### Verification (commands run, actual results)
+- Baseline, before any edit: `flutter analyze --no-pub` → 0 issues;
+  `flutter test --no-pub` → 876 passing, 0 failing.
+- `flutter test --no-pub test/widgets/charts_test.dart` → **22 passing** (was 19).
+- `flutter test --no-pub test/screens/logs_reports_screen_test.dart` → **73
+  passing** (was 70).
+- `flutter test --no-pub test/accessibility/semantics_test.dart
+  test/screens/detection_screen_alignment_test.dart
+  test/widgets/depth_heatmap_view_test.dart
+  test/screens/gesture_navigation_direction_test.dart
+  test/screens/detection_redesign_parity_test.dart` → **77 passing** (the
+  previously shipped Detection gutter, heatmap geometry, audio pill and chart
+  semantics contracts are unchanged).
+- `dart format` on the four touched Dart files → `Formatted 4 files (0 changed)`.
+- Final: `flutter analyze --no-pub` → **0 issues**; `flutter test --no-pub` →
+  **882 passing, 0 failing**.
+
+### Recorded deviations (diagnosed, not silent)
+- **NV-7 is a real gap: `RenderParagraph.computeLineMetrics()` does not exist in
+  this SDK** (the analyzer rejected it, and `paragraph.dart` only reaches
+  `TextPainter.computeLineMetrics()` internally). T7 uses the plan's documented
+  fallback, `getSize(subtitle).height <= 24.0`, with a comment naming the reason.
+- **T2 needs a second `pump()`.** `SideTitleWidget` captures the child size in a
+  post-frame callback and applies the clamp in `build` only once that size
+  exists, so the settled frame is the frame after first layout (observed:
+  `lastRect.right` 577.25 > `chartRect.right` 560.0 on the first frame). The
+  assertion itself was not relaxed — it is the same containment check on the
+  settled frame, and the reason is recorded in the test.
+- **The X ternary stays on one line.** The plan's snippets quote
+  `minuteLabels ? … : …` across three lines; at the shipped indentation it fits
+  in 80 columns, so `dart format` keeps it on one line. Behaviour is identical.
+
+### Next
+The five device-only gates in the design-spec's NV-9 stay open and are
+**Needs Verification**: X label legibility at 100 %/200 %, the rightmost tick's
+appearance after clamping, `All models (mixed)` at 100 %/200 % on device,
+metadata-row single-line behaviour at 200 %, and cross-tab visual parity. No
+device run happened in this session and no test result substitutes for them.
+
+---
+
+## 2026-11-09 — Detection alignment and chart readability (implementation stage)
+
+### Context
+Stage 4 (implementation) of the 4-stage pipeline for `detection-alignment-charts`,
+executed against [`detection-alignment-charts-plan.md`](frontend-workflow/detection-alignment-charts-plan.md)
+(change list C1–C11), whose design source is
+[`detection-alignment-charts-design-spec.md`](frontend-workflow/detection-alignment-charts-design-spec.md)
+and [`detection-alignment-charts-analysis.md`](frontend-workflow/detection-alignment-charts-analysis.md).
+Five settled user decisions: one 16 dp Detection gutter, layout-aware heatmap
+rotation with bounding-box fit geometry, a content-sized `AUDIO ON` capsule on a
+preserved 64 × 56 target, the chart readability set, and removal of the 15 FPS
+wording **and** its dashed line while keeping the 300 ms latency benchmark.
+
+### Objective
+Apply C1–C11 with no scope expansion, then leave `flutter analyze` at 0 issues and
+the full suite green.
+
+### Changed
+- [`lib/widgets/charts.dart`](../lib/widgets/charts.dart): dropped the rotated Y
+  names (left `axisNameSize: 0`), single-line Y ticks with at most one decimal via
+  the new `_formatYAxisTick`, left `reservedSize` 38 → **64**, axis strokes and
+  tick glyphs unified on `kHomeInkMuted` (`_axisColor` deleted), tick type from
+  `labelSmall`, X `_formatAxisTick` byte-identical; deleted `_fpsBenchmark`, the
+  FPS `showBenchmark` local, its `extraLinesData` and the stale doc comment, while
+  `_latencyBenchmarkMs` and its `Colors.redAccent` line stay untouched.
+- [`lib/screens/logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart):
+  FPS card title `'Frames Per Second$claim'` (no `15 FPS target`); `_ChartCard`
+  title-to-chart gap `kSpace8` → `kSpace16`.
+- [`lib/widgets/depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart):
+  `RotatedBox(quarterTurns: rotation ~/ 90)` + sensor-sized `SizedBox` inside
+  `FittedBox(fit: cover, alignment: center, clipBehavior: hardEdge)`; upright-dim
+  locals and `import 'dart:math'` removed.
+- [`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart):
+  viewport padded `kSpace16` horizontally **inside** `Semantics`/`GestureSurface`,
+  a new `ValueKey('detection-viewport')`, action-row inset `kSpace12` →
+  `kSpace16`; `_AudioPill` restructured to `SizedBox(56)` +
+  `ConstrainedBox(minWidth: 64)` + transparent `Material` + `InkWell` + `Center`
+  + content-sized capsule.
+- Tests: [`test/widgets/charts_test.dart`](../test/widgets/charts_test.dart)
+  (5 edited assertions, themed `wrapThemed()` helper, 6 new tests),
+  [`test/screens/logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart)
+  (2 FPS title strings),
+  [`test/widgets/depth_heatmap_view_test.dart`](../test/widgets/depth_heatmap_view_test.dart)
+  (rewritten geometry test + 2 new tests), and the new
+  [`test/screens/detection_screen_alignment_test.dart`](../test/screens/detection_screen_alignment_test.dart)
+  (3 tests: gutter, 64 × 56 target, target-margin tap).
+
+### Verification (commands run, actual results)
+- Baseline, before any edit: `flutter analyze --no-pub` → 0 issues;
+  `flutter test --no-pub` → 865 passing, 0 failing.
+- `flutter analyze --no-pub` after each file group → 0 issues every time.
+- `flutter test --no-pub test/widgets/charts_test.dart` → 19 passing.
+- `flutter test --no-pub test/screens/logs_reports_screen_test.dart` → 71 passing.
+- `flutter test --no-pub test/widgets/depth_heatmap_view_test.dart` → 5 passing.
+- `flutter test --no-pub test/screens/gesture_navigation_direction_test.dart
+  test/accessibility/semantics_test.dart` → 61 passing (unchanged contracts).
+- `flutter test --no-pub test/screens/detection_screen_alignment_test.dart` →
+  3 passing.
+- Final: `flutter analyze --no-pub` → 0 issues; `flutter test --no-pub` →
+  **876 passing, 0 failing**.
+
+### Recorded deviations (diagnosed, not silent)
+- **`reservedSize` is 64, not the design-spec's 56** (plan §1.3/§5.1). The new
+  fit assertion (`the widest Y tick fits the reserved gutter at 200 percent text
+  scale`) measures the rendered `39.8` tick and passes with 64; 56 would clip a
+  4-character tick at 200 %.
+- **The `labelSmall` 14 sp tick was kept** — the width-320 / 200 % fit assertion
+  and the width-260 X-tick overlap assertions both pass, so the approved 10 sp
+  fallback was **not** needed.
+- **Audio-pill height parity measures 3.0 dp, not ≤ 2 dp**
+  (`capsule = 31.0`, `StatusPill = 34.0`). The whole delta is `StatusPill`'s
+  `Border.all(width: 1.5)`, which the deliberately borderless capsule does not
+  add (design-spec §3.3.3/OQ12). Per plan §7.3 the delta is recorded and the
+  device-verified status pill was not restyled; the assertion tolerance is the
+  border width.
+- **The `Transform` absence assertion is scoped to the heatmap subtree.** A bare
+  `find.byType(Transform)` also matches framework widgets the `MaterialApp`
+  harness introduces; the scoped finder still proves the paint-only rotation is
+  gone from this widget.
+
+### Needs physical-device verification
+- **NV1** — the 16 dp gutter's visual result on the physical Android device
+  (Snapdragon 695 / API 33). Screenshots are excluded, so it must be a live check.
+- **NV2** — heatmap-to-preview pixel correspondence with MDE enabled.
+- **NV3** — `reservedSize: 64` sufficiency and the X-axis name legibility at
+  200 % text scale on device (approved fallback: bottom `axisNameSize` 22 → 36).
+- **NV4** — `RotatedBox` inside `FittedBox` under real depth frames; the layout
+  contract is test-pinned, the device behaviour is not.
+- **NV7** — the audio-pill ripple now spans the whole 64 × 56 target rather than
+  the capsule; whether that reads acceptably is a device/TalkBack judgment.
+
+### Flagged, not changed
+- [`implementation-progress.md`](implementation-progress.md):234 and
+  [`changelog.md`](changelog.md):664 (historical v0.2.0 entries) and
+  `thesis-product-status-audit.md`:282 still describe the FPS chart as having a
+  "15 FPS line". They are historical records outside this task's authorised edit
+  list, so they were left untouched; the new changelog section above states the
+  line's removal.
+
+---
+
 ## 2026-11-09 — TalkBack accessibility programme: device verification complete
 
 ### Context

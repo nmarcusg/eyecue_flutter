@@ -14,8 +14,7 @@
 | Screen name | Figma screenshot path (blank until exported) | Corresponding widget file | Status (placeholder/real/not started) |
 |---|---|---|---|
 | Home |  | [`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart) | real |
-| Detect (Custom EyeCue) |  | [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart) | real |
-| Detect (Ultralytics) |  | [`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | real |
+| Detect (Ultralytics) — the only Detection screen since the Custom engine was removed on 2026-10-21 |  | [`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | real |
 | Engine Detection wrapper |  | [`lib/screens/engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) | real |
 | Settings |  | [`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart) | real |
 | Help |  | [`lib/screens/help_screen.dart`](../lib/screens/help_screen.dart) | real |
@@ -36,6 +35,8 @@
 | Detection State Panel |  | [`lib/widgets/detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart) | real |
 | Detection Correction Sheet |  | [`lib/widgets/detection_correction_sheet.dart`](../lib/widgets/detection_correction_sheet.dart) | real |
 | Charts |  | [`lib/widgets/charts.dart`](../lib/widgets/charts.dart) | real |
+| Depth Heatmap View |  | [`lib/widgets/depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart) | real |
+| Safety Disclosure |  | [`lib/widgets/safety_disclosure.dart`](../lib/widgets/safety_disclosure.dart) | real |
 | Bounding Box Painter |  | [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | real |
 | Gesture Surface |  | [`lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart) | real |
 
