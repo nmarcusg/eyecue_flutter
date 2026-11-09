@@ -2,7 +2,7 @@ name: Android cloud build
 
 on:
   push:
-    branches: [main, dev, codex/android-cloud-build, codex/tts-speech-continuity]
+    branches: [main, dev, codex/android-cloud-build, codex/tts-speech-continuity, codex/study-ci-probe]
   pull_request:
     branches: [main, dev]
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
     env:
       FLUTTER_VERSION: '3.44.2'
       SIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}
-      STUDY_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.study_build }}
+      STUDY_BUILD: ${{ (github.event_name == 'workflow_dispatch' && inputs.study_build) || (github.event_name == 'push' && github.ref == 'refs/heads/codex/study-ci-probe') }}
       BUILD_NAME: ${{ inputs.build_name || '1.0.0' }}
       BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
       EYECUE_TELEMETRY_INGEST_URL: ${{ vars.EYECUE_TELEMETRY_INGEST_URL }}
@@ -87,6 +87,23 @@ jobs:
             echo '::notice::Study telemetry variables are unset; Study builds require both variables.'
             echo 'TELEMETRY_MODE=not-configured' >> "$GITHUB_ENV"
           fi
+
+      - name: Check Study signing configuration
+        if: env.STUDY_BUILD == 'true'
+        env:
+          STUDY_KEYSTORE_BASE64: ${{ secrets.EYECUE_STUDY_KEYSTORE_BASE64 }}
+          STUDY_KEYSTORE_PASSWORD: ${{ secrets.EYECUE_STUDY_KEYSTORE_PASSWORD }}
+          STUDY_KEY_ALIAS: ${{ secrets.EYECUE_STUDY_KEY_ALIAS }}
+          STUDY_KEY_PASSWORD: ${{ secrets.EYECUE_STUDY_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os
+          names = ('STUDY_KEYSTORE_BASE64', 'STUDY_KEYSTORE_PASSWORD', 'STUDY_KEY_ALIAS', 'STUDY_KEY_PASSWORD')
+          missing = [name for name in names if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Study signing secrets not configured: ' + ', '.join(missing))
+          print('Study signing secrets are configured.')
+          PY
 
       - name: Set up Java 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -231,6 +248,7 @@ jobs:
           printf '\nDownload the Android artifact below. No Play upload was performed.\n' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Android artifacts
+        if: env.STUDY_BUILD != 'true'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: eyecue-android-${{ github.run_number }}-${{ github.run_attempt }}
