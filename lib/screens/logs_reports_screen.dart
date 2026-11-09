@@ -1302,7 +1302,7 @@ class _ChartsTab extends StatelessWidget {
             ),
             const SizedBox(height: kSpace24),
             _ChartCard(
-              title: 'Frames Per Second$claim (15 FPS target)',
+              title: 'Frames Per Second$claim',
               child: FpsChart(samples: samples),
             ),
             const SizedBox(height: kSpace24),
@@ -1392,7 +1392,12 @@ class _LogsTab extends StatelessWidget {
                 child: ListView.builder(
                   // One extra row carries the model filter above the list.
                   itemCount: records.length + 1,
-                  padding: const EdgeInsets.symmetric(vertical: kSpace8),
+                  // Horizontal inset matches every Charts card so both tabs
+                  // share one gutter; the vertical rhythm is unchanged.
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kSpace16,
+                    vertical: kSpace8,
+                  ),
                   itemBuilder: (context, index) {
                     if (index == 0) {
                       return Padding(
@@ -1422,7 +1427,11 @@ class _LogsTab extends StatelessWidget {
                           if (r.detectorModelName != null) r.detectorModelName!,
                           r.engine.label,
                           r.position,
-                          '${r.latencyMs.toStringAsFixed(0)} ms',
+                          // Non-breaking space keeps the number and its unit on
+                          // one line. The ` · ` separators stay breakable so a
+                          // long model name wraps between fields, never inside a
+                          // value.
+                          '${r.latencyMs.toStringAsFixed(0)}\u00A0ms',
                         ].join(' · '),
                       ),
                       trailing: Text(
@@ -1798,7 +1807,9 @@ class _ChartCard extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: kSpace8),
+          // Breathing room between the card title and the plot; the title style
+          // and kChartHeight are unchanged.
+          const SizedBox(height: kSpace16),
           SizedBox(height: kChartHeight, child: child),
         ],
       ),
@@ -2020,37 +2031,42 @@ class _ModelFilter extends StatelessWidget {
     // A selection whose rows are gone must not crash the dropdown.
     final selected = models.any((model) => model.key == value) ? value : null;
     return _LightCard(
-      // The sibling label and the dropdown's own button/expanded annotation
-      // merge into a single labelled control node; layout is unchanged.
+      // The label and the dropdown still merge into one labelled control node,
+      // and the label is still first so the merged label starts with it. The
+      // label sits above the control so the selected value no longer competes
+      // with an 18 sp label plus a 12 dp gap inside one row.
       child: MergeSemantics(
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text('Detector model', style: theme.textTheme.bodyLarge),
-            const SizedBox(width: kSpace12),
-            Expanded(
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String?>(
-                  isExpanded: true,
-                  value: selected,
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
+            const SizedBox(height: kSpace8),
+            DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                isExpanded: true,
+                value: selected,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text(
+                      _allModelsLabel,
+                      // `maxLines: 1` makes truncation measurable: with an
+                      // unbounded line count the ellipsis path is ambiguous.
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  for (final model in models)
+                    DropdownMenuItem<String?>(
+                      value: model.key,
                       child: Text(
-                        _allModelsLabel,
+                        model.label,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    for (final model in models)
-                      DropdownMenuItem<String?>(
-                        value: model.key,
-                        child: Text(
-                          model.label,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  onChanged: onChanged,
-                ),
+                ],
+                onChanged: onChanged,
               ),
             ),
           ],

@@ -370,7 +370,7 @@ void main() {
       await selectTab(tester, 'Charts');
 
       expect(find.text('Inference Latency (300 ms benchmark)'), findsOneWidget);
-      expect(find.text('Frames Per Second (15 FPS target)'), findsOneWidget);
+      expect(find.text('Frames Per Second'), findsOneWidget);
       expect(find.text('Detection Frequency'), findsOneWidget);
     });
 
@@ -711,7 +711,7 @@ void main() {
       expect(find.text('person — 82%'), findsOneWidget);
       // Row subtitle: engine · position · latency.
       expect(
-        find.textContaining('Ultralytics · center · 120 ms'),
+        find.textContaining('Ultralytics · center · 120\u00A0ms'),
         findsOneWidget,
       );
     });
@@ -1527,12 +1527,14 @@ void main() {
       await selectTab(tester, 'Logs');
 
       expect(
-        find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms'),
+        find.textContaining(
+          'Built-in YOLOv8n · Ultralytics · center · 100\u00A0ms',
+        ),
         findsOneWidget,
       );
       expect(
         find.textContaining(
-          'Obstacle Detector v2 · Ultralytics · center · 100 ms',
+          'Obstacle Detector v2 · Ultralytics · center · 100\u00A0ms',
         ),
         findsOneWidget,
       );
@@ -1581,7 +1583,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('Frames Per Second — Obstacle Detector v2 (15 FPS target)'),
+        find.text('Frames Per Second — Obstacle Detector v2'),
         findsOneWidget,
       );
       expect(
@@ -1829,10 +1831,78 @@ void main() {
       // Only the built-in rows remain, and the model name still shows.
       expect(find.text('cone — 80%'), findsOneWidget);
       expect(
-        find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms'),
+        find.textContaining(
+          'Built-in YOLOv8n · Ultralytics · center · 100\u00A0ms',
+        ),
         findsOneWidget,
       );
       expect(find.textContaining('Obstacle Detector v2 · '), findsNothing);
+    });
+
+    testWidgets('the model filter shows All models mixed whole', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
+
+      // Charts first, then the narrower post-gutter Logs card.
+      await selectTab(tester, 'Charts');
+      expect(
+        paintedParagraph(
+          tester,
+          find.text('All models (mixed)'),
+        ).didExceedMaxLines,
+        isFalse,
+      );
+
+      await selectTab(tester, 'Logs');
+      expect(
+        paintedParagraph(
+          tester,
+          find.text('All models (mixed)'),
+        ).didExceedMaxLines,
+        isFalse,
+      );
+    });
+
+    testWidgets('the Logs filter card shares the Charts gutter', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTwoModelTelemetry());
+
+      await selectTab(tester, 'Charts');
+      final chartsLeft = tester
+          .getTopLeft(find.textContaining('Inference Latency'))
+          .dx;
+      await selectTab(tester, 'Logs');
+      final logsLeft = tester.getTopLeft(find.text('Detector model')).dx;
+
+      // Both are the first child of a 16 dp `_LightCard` inside a list whose
+      // padding is also 16 dp, so equal left edges prove one shared gutter
+      // without reaching into private widgets.
+      expect(logsLeft, chartsLeft);
+    });
+
+    testWidgets('a log row keeps the latency number and unit together', (
+      tester,
+    ) async {
+      await pumpLogsScreen(tester, telemetry: buildTelemetry(populated: true));
+      await selectTab(tester, 'Logs');
+
+      final subtitle = find.textContaining(
+        'Ultralytics · center · 120\u00A0ms',
+      );
+      expect(subtitle, findsOneWidget);
+      // Structural guard: no breakable space between the digits and `ms`.
+      expect(
+        tester.widget<Text>(subtitle).data,
+        isNot(contains(RegExp(r'\d ms'))),
+      );
+      // The shortest real fixture occupies one laid-out line, so the row does
+      // not wrap unnecessarily. `RenderParagraph.computeLineMetrics()` is not
+      // public in this SDK (see the plan's NV-7), so this is the documented
+      // height fallback: a wrapped paragraph would need at least two line
+      // boxes, and one box of the 16 sp subtitle is well under 24 dp.
+      expect(tester.getSize(subtitle).height, lessThanOrEqualTo(24.0));
     });
   });
 
