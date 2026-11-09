@@ -51,8 +51,32 @@ const String kDepthDegradedMessage =
 
 /// Shown after the selected detector changed, until the next Start.
 const String kModelChangedMessage =
-    'Detector model changed. Detection is stopped — press Start to use the '
+    'Detector model changed. Detection is stopped. Start detection to use the '
     'new model.';
+
+/// Lifecycle utterances EyeCue speaks only when it owns speech.
+///
+/// While accessibility navigation (TalkBack) is active the platform owns these
+/// announcements through the semantic status surfaces, so EyeCue stays silent
+/// for exactly these strings. Domain speech — object names, distances, Quick
+/// Scan summaries and repeats — is never in this list.
+const List<String> kLifecycleUtterances = [
+  'Detection started',
+  'Detection stopped',
+  'Detection paused',
+  'Detection resumed',
+];
+
+/// Pure speech-ownership gate for [utterance].
+///
+/// Returns whether EyeCue should speak [utterance]: `false` only when
+/// accessibility navigation is active **and** the utterance is one of the
+/// lifecycle transitions in [kLifecycleUtterances]. Kept free of widget state
+/// so the ownership rule is unit-testable on its own.
+bool shouldSpeakLifecycleUtterance(
+  String utterance, {
+  required bool accessibleNavigation,
+}) => !(accessibleNavigation && kLifecycleUtterances.contains(utterance));
 
 /// Presentation flags for the viewport overlay layers.
 ///
@@ -439,6 +463,17 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
   bool _overlaysShown = true;
   Timer? _freshnessTimer;
 
+  /// Transient status for a failed semantic Repeat, rendered as a zero-size
+  /// live region and cleared by [_repeatFailureTimer] or a state change.
+  String? _repeatFailureNotice;
+  Timer? _repeatFailureTimer;
+
+  /// Whether accessibility navigation (TalkBack) currently owns lifecycle
+  /// announcements. Read before any `await` so no post-await `context` use is
+  /// needed.
+  bool get _talkBackActive =>
+      mounted && MediaQuery.accessibleNavigationOf(context);
+
   bool get _mdeEnabled =>
       _settings.distanceEstimationMode == DistanceEstimationMode.monocularDepth;
 
@@ -589,6 +624,7 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     _pausedWhileLoading = false;
     _settings.removeListener(_handleSettingsChanged);
     widget.detectorModel?.removeListener(_handleDetectorModelChanged);
+    _repeatFailureTimer?.cancel();
     _freshnessTimer?.cancel();
     _depthEventSub?.cancel();
     _depth.frame.removeListener(_handleDepthFrame);
@@ -813,6 +849,8 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     // while the first is still being established.
     if (_startInFlight || _starting || _detectionActive) return;
     _startInFlight = true;
+    // Capture speech ownership before the first `await`.
+    final talkBackActive = _talkBackActive;
     debugPrint(
       '[Ultralytics] Start requested — coordinator=${widget.coordinator.state} '
       'local(active=$_detectionActive paused=$_paused '
@@ -868,13 +906,21 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
       _armDepth();
       _startFreshnessTimer();
       _applyOverlayVisibility();
-      if (announce) await _tts.speak('Detection started', urgent: true);
+      if (announce &&
+          shouldSpeakLifecycleUtterance(
+            'Detection started',
+            accessibleNavigation: talkBackActive,
+          )) {
+        await _tts.speak('Detection started', urgent: true);
+      }
     } finally {
       _startInFlight = false;
     }
   }
 
   Future<void> _stopDetection() async {
+    // Capture speech ownership before the first `await`.
+    final talkBackActive = _talkBackActive;
     _readinessTimer?.cancel();
     _pausedWhileLoading = false;
     _activeNativeEpoch++;
@@ -913,7 +959,12 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     // tab leave/return does not auto-restart.
     _setRuntimeState(DetectionRuntimeState.stopped);
     debugPrint('[Ultralytics] Stop teardown complete — coordinator=stopped');
-    await _tts.speak('Detection stopped', urgent: true);
+    if (shouldSpeakLifecycleUtterance(
+      'Detection stopped',
+      accessibleNavigation: talkBackActive,
+    )) {
+      await _tts.speak('Detection stopped', urgent: true);
+    }
   }
 
   void _toggleDetectionActive() {
@@ -926,6 +977,8 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
 
   Future<void> _pauseDetection() async {
     if (!_detectionActive || _paused) return;
+    // Capture speech ownership before the first `await`.
+    final talkBackActive = _talkBackActive;
     _pausedWhileLoading = _runtimeState == DetectionRuntimeState.loadingModel;
     _speechSessionGeneration++;
     _assistive.tts.invalidateAutomaticDetection(reason: 'pause');
@@ -938,11 +991,18 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     if (mounted) setState(() => _paused = true);
     _startFreshnessTimer();
     _setRuntimeState(DetectionRuntimeState.paused);
-    await _tts.speak('Detection paused', urgent: true);
+    if (shouldSpeakLifecycleUtterance(
+      'Detection paused',
+      accessibleNavigation: talkBackActive,
+    )) {
+      await _tts.speak('Detection paused', urgent: true);
+    }
   }
 
   Future<void> _resumeDetection() async {
     if (!_detectionActive || !_paused) return;
+    // Capture speech ownership before the first `await`.
+    final talkBackActive = _talkBackActive;
     await _haptics.lightTick();
     await _controller.resume();
     if (mounted) setState(() => _paused = false);
@@ -954,7 +1014,12 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     } else {
       _setRuntimeState(DetectionRuntimeState.ready);
     }
-    await _tts.speak('Detection resumed', urgent: true);
+    if (shouldSpeakLifecycleUtterance(
+      'Detection resumed',
+      accessibleNavigation: talkBackActive,
+    )) {
+      await _tts.speak('Detection resumed', urgent: true);
+    }
   }
 
   void _togglePaused() {
@@ -1167,6 +1232,42 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     await _tts.repeatLast();
   }
 
+  /// Semantic-action entry point for `Repeat last alert`.
+  ///
+  /// The swipe gesture keeps [ _repeatAlert ]'s silent-failure behaviour; a
+  /// screen-reader invocation additionally reports failure so the user is not
+  /// left without feedback. Failures are never routed through TTS: a spoken
+  /// failure would become the new `lastUtterance` and be replayed by the next
+  /// Repeat.
+  Future<void> _repeatAlertFromSemantics() async {
+    if (!_tts.audioEnabled) {
+      return _announceRepeatFailure('Audio guidance is off');
+    }
+    if (_tts.lastUtterance == null) {
+      return _announceRepeatFailure('Nothing to repeat yet');
+    }
+    final replayed = await _tts.repeatLast();
+    if (replayed) {
+      await _haptics.mediumTick();
+      return;
+    }
+    // A cached utterance can still be refused (validity window or superseded).
+    // That cause is indistinguishable outside the service, so the wording stays
+    // generic rather than guessing.
+    _announceRepeatFailure('Nothing to repeat yet');
+  }
+
+  /// Distinct failure cue plus a transient live-region status. Never speaks.
+  void _announceRepeatFailure(String message) {
+    _haptics.heavyTick();
+    _repeatFailureTimer?.cancel();
+    if (mounted) setState(() => _repeatFailureNotice = message);
+    _repeatFailureTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      setState(() => _repeatFailureNotice = null);
+    });
+  }
+
   /// Retained correction-capture path.
   ///
   /// PD1 removes the normal visible correction/report affordance, but the
@@ -1244,8 +1345,11 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
 
   void _setRuntimeState(DetectionRuntimeState state) {
     if (!mounted || _runtimeState == state) return;
+    // A Repeat failure notice belongs to the state it was produced in.
+    _repeatFailureTimer?.cancel();
     setState(() {
       _runtimeState = state;
+      _repeatFailureNotice = null;
       // PD3: clear the displayed overlay snapshot synchronously whenever the
       // mapped outcome leaves Ready. The coordinator snapshot is the single
       // source of the visible lifecycle, so this uses the same mapping.
@@ -1447,15 +1551,30 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
         children: [
           // The header uses the ink token so it stays legible against the
           // light Detection surface. No other header element or behavior
-          // changes.
-          Text(
-            'Detection Mode',
-            style: theme.textTheme.titleLarge?.copyWith(color: kHomeInk),
+          // changes. The semantic node carries the screen identity while the
+          // visible string stays `Detection Mode`.
+          Semantics(
+            container: true,
+            header: true,
+            label: 'Detection',
+            child: ExcludeSemantics(
+              child: Text(
+                'Detection Mode',
+                style: theme.textTheme.titleLarge?.copyWith(color: kHomeInk),
+              ),
+            ),
           ),
           const SizedBox(height: kSpace4),
           Row(
             children: [
-              StatusPill(label: label, color: color),
+              // The failure panel is the single automatic announcer while it
+              // is mounted, so the pill stops being live in exactly that state.
+              StatusPill(
+                label: label,
+                color: color,
+                liveRegion:
+                    widget.coordinator.state != DetectionRuntimeState.failed,
+              ),
               const Spacer(),
               ListenableBuilder(
                 listenable: Listenable.merge([_settings, _tts]),
@@ -1467,9 +1586,6 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
                     tooltip: enabled
                         ? 'Mute audio guidance'
                         : 'Unmute audio guidance',
-                    // Repeat Last Alert is exposed as a labelled semantic
-                    // action; the callback is the existing swipeDown handler.
-                    onRepeatAlert: _repeatAlert,
                   );
                 },
               ),
@@ -1630,13 +1746,36 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
             infos: _overlayInfos,
             eligible: _overlayEligible,
           ),
+          // Transient failed-Repeat status: a live region with no visual
+          // footprint, cleared by [_repeatFailureTimer] or a state change.
+          if (_repeatFailureNotice != null)
+            Semantics(
+              container: true,
+              liveRegion: true,
+              label: _repeatFailureNotice!,
+              child: const SizedBox.shrink(),
+            ),
         ],
       ),
     );
     // Only the live branch is inside the gesture surface. A swipe works over
     // the live viewport only; the non-live panels and the depth notice are
     // outside it.
-    return GestureSurface(controller: _gestureController, child: viewport);
+    return GestureSurface(
+      controller: _gestureController,
+      // The camera view owns the `Repeat last alert` semantic action; the
+      // overlay rows stay separate, non-live child nodes.
+      child: Semantics(
+        container: true,
+        explicitChildNodes: true,
+        label: 'Camera view',
+        customSemanticsActions: {
+          const CustomSemanticsAction(label: 'Repeat last alert'):
+              _repeatAlertFromSemantics,
+        },
+        child: viewport,
+      ),
+    );
   }
 
   Widget _buildPermissionDenied(BuildContext context) {
@@ -1658,14 +1797,14 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
             ),
             const SizedBox(height: 20),
             AccessibleButton(
-              label: 'Open Settings',
+              label: 'Open app permission settings',
               icon: Icons.settings,
               prominent: true,
               onPressed: openAppSettings,
             ),
             const SizedBox(height: 12),
             AccessibleButton(
-              label: 'Retry',
+              label: 'Retry camera access',
               icon: Icons.refresh,
               onPressed: _startDetection,
             ),
@@ -1691,8 +1830,8 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
             ),
             const SizedBox(height: 8),
             const Text(
-              'Ultralytics mode uses the same model and thresholds as the '
-              'custom EyeCue mode.',
+              'EyeCue uses one bundled detection model and one set of '
+              'detection thresholds.',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
@@ -1755,32 +1894,25 @@ class _AudioPill extends StatelessWidget {
   final VoidCallback onPressed;
   final String tooltip;
 
-  /// Replays the last spoken alert; exposed as a labelled semantic action.
-  final VoidCallback? onRepeatAlert;
-
   const _AudioPill({
     required this.on,
     required this.onPressed,
     required this.tooltip,
-    this.onRepeatAlert,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final repeat = onRepeatAlert;
     return Semantics(
-      // One explicit node owns the label, the audio toggle and the repeat
-      // action; descendants (tooltip + ink response) add no semantics.
+      // One explicit node owns the label and the audio toggle; descendants
+      // (tooltip + ink response) add no semantics. `Repeat last alert` lives on
+      // the camera view node, not here.
       container: true,
       excludeSemantics: true,
       button: true,
       enabled: true,
       label: 'Audio guidance, ${on ? 'on' : 'off'}',
       onTap: onPressed,
-      customSemanticsActions: repeat == null
-          ? null
-          : {const CustomSemanticsAction(label: 'Repeat last alert'): repeat},
       child: Tooltip(
         message: tooltip,
         child: ConstrainedBox(
