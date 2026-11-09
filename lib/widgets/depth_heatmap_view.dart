@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -25,26 +24,30 @@ class DepthHeatmapView extends StatelessWidget {
     final current = image;
     if (current == null) return const SizedBox.shrink();
     final rotation = ((rotationDegrees % 360) + 360) % 360;
-    final swapped = rotation == 90 || rotation == 270;
-    final uprightWidth = (swapped ? current.height : current.width).toDouble();
-    final uprightHeight = (swapped ? current.width : current.height).toDouble();
 
     return IgnorePointer(
       child: ExcludeSemantics(
         child: ClipRect(
           child: FittedBox(
+            // `BoxFit.cover` scaled and centred is the same mapping
+            // `BoundingBoxPainter` applies with
+            // `applyBoxFit(BoxFit.cover, uprightDims, previewSize)`, and the
+            // native preview is `PreviewView.ScaleType.FILL_CENTER` (cover).
+            // Alignment is stated explicitly rather than defaulted.
             fit: BoxFit.cover,
+            alignment: Alignment.center,
             clipBehavior: Clip.hardEdge,
-            child: SizedBox(
-              width: uprightWidth,
-              height: uprightHeight,
-              child: Transform.rotate(
-                angle: rotation * math.pi / 180,
-                child: SizedBox(
-                  width: current.width.toDouble(),
-                  height: current.height.toDouble(),
-                  child: RawImage(image: current, fit: BoxFit.fill),
-                ),
+            child: RotatedBox(
+              // Layout-aware rotation: the quarter turn happens BEFORE layout,
+              // so the sensor-sized child keeps its true aspect instead of
+              // being stretched into an upright box and then painted outside
+              // its measured bounds (`Transform.rotate` did exactly that).
+              quarterTurns: rotation ~/ 90,
+              child: SizedBox(
+                // Sensor dimensions, laid out exactly: never the upright dims.
+                width: current.width.toDouble(),
+                height: current.height.toDouble(),
+                child: RawImage(image: current, fit: BoxFit.fill),
               ),
             ),
           ),
