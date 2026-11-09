@@ -101,10 +101,19 @@ class HomeScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: kSpace12),
-                              Text(
-                                'EyeCue',
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.displayLarge,
+                              Semantics(
+                                container: true,
+                                header: true,
+                                label: 'EyeCue',
+                                child: ExcludeSemantics(
+                                  child: Text(
+                                    'EyeCue',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.displayLarge,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -154,7 +163,7 @@ class _StatusBadge extends StatelessWidget {
         );
         return Semantics(
           container: true,
-          label: presentation.meaning,
+          label: 'Home. ${presentation.meaning}',
           child: ExcludeSemantics(
             child: Container(
               padding: const EdgeInsets.symmetric(
