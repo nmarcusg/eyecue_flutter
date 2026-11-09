@@ -39,9 +39,10 @@ The whole `telemetry` object is stored in a JSONB `payload` column, so a new
 telemetry schema version requires **no migration**: schema-4 sample data is
 stored exactly as sent and older schema-3 rows keep their original payload.
 Every schema-4 key is optional, so a schema-3 row still reads as unknown rather
-than `0`. Release
-builds request `android.permission.INTERNET` solely for this optional manual
-upload; detection and depth stay bundled and work offline.
+than `0`. Only the Study release declares `android.permission.INTERNET` for this
+manual upload. The public release declares no `INTERNET` permission and never
+constructs an upload client; the uploader class may remain compiled-in but is
+unreachable. Detection and depth stay bundled and work offline.
 
 ## Ingestion contract (L6)
 

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import zipfile
 
 STUDY_PACKAGE = 'app.eyecue.mobile.study'
 STUDY_LABEL = 'EyeCue Study'
@@ -38,12 +39,32 @@ def verify(apk):
         raise RuntimeError('APK would not install under the separate study identity')
     if f"application-label:'{STUDY_LABEL}'" not in badging:
         raise RuntimeError('Study launcher label is missing')
+    permissions = subprocess.check_output(
+        [str(sdk_tool('aapt')), 'dump', 'permissions', str(apk)], text=True)
+    if 'android.permission.INTERNET' not in permissions:
+        raise RuntimeError('Study APK is missing INTERNET permission')
+    if not package[3].endswith('-study'):
+        raise RuntimeError('Study APK version name is missing the -study suffix')
+    research_string_found = False
+    with zipfile.ZipFile(apk) as archive:
+        for name in archive.namelist():
+            if name.startswith('lib/') and name.endswith('/libapp.so'):
+                binary = archive.read(name)
+                if b'Upload trial' in binary or b'Study upload token' in binary:
+                    research_string_found = True
+                    break
+    warning = None if research_string_found else (
+        'Research-only string was not found in lib/*/libapp.so; verify the study entrypoint manually.'
+    )
     return {
         'applicationId': package[1], 'versionCode': int(package[2]),
         'versionName': package[3], 'label': STUDY_LABEL,
         'certificateSha256': certificates[0],
         'apkSha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
         'apkBytes': apk.stat().st_size,
+        'internetPermission': True,
+        'researchStringFound': research_string_found,
+        'warning': warning,
     }
 
 

@@ -25,7 +25,6 @@ def main():
     root = Path(__file__).resolve().parents[1]
     config = json.loads(args.signing_config.read_text())
     env = os.environ.copy()
-    env['EYECUE_STUDY_BUILD'] = 'true'
     for key, variable in {
         'storeFile': 'EYECUE_KEYSTORE_PATH',
         'storePassword': 'EYECUE_KEYSTORE_PASSWORD',
@@ -47,12 +46,13 @@ def main():
     )
     subprocess.run([
         'flutter', 'build', 'apk', '--release', '--no-pub',
+        '--flavor', 'study', '-t', 'lib/main_study.dart',
         '--build-name=1.0.0', f'--build-number={args.build_number}',
         f'--dart-define=EYECUE_APP_VERSION=1.0.0-study+{args.build_number}',
         f'--dart-define=EYECUE_TELEMETRY_INGEST_URL={url}',
         f'--dart-define=EYECUE_SUPABASE_PUBLISHABLE_KEY={public_key}',
     ], cwd=root, env=env, check=True)
-    apk = root / 'build/app/outputs/flutter-apk/app-release.apk'
+    apk = root / 'build/app/outputs/flutter-apk/app-study-release.apk'
     info = verify(apk)
     info['commit'] = subprocess.check_output(
         ['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()

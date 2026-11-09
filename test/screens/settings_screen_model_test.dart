@@ -75,8 +75,9 @@ void main() {
 
   Future<void> pumpSettings(
     WidgetTester tester,
-    DetectorModelService service,
-  ) async {
+    DetectorModelService service, {
+    bool showLogsReports = true,
+  }) async {
     tester.view.physicalSize = const Size(900, 3200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -85,7 +86,7 @@ void main() {
         home: SettingsScreen(
           settings: settings,
           detectorModel: service,
-          onOpenLogsReports: () {},
+          onOpenLogsReports: showLogsReports ? () {} : null,
         ),
       ),
     );
@@ -113,6 +114,22 @@ void main() {
     expect(find.text('Detector Model'), findsOneWidget);
     expect(find.text('Built-in YOLOv8n · 80 classes'), findsOneWidget);
     expect(find.text('Built-in detector'), findsOneWidget);
+    expect(find.text('View Logs & Reports'), findsOneWidget);
+  });
+
+  testWidgets('public settings omit the logs tile and its spacer', (
+    tester,
+  ) async {
+    late DetectorModelService service;
+    await tester.runAsync(() async {
+      await settings.load();
+      service = buildService();
+      await service.load();
+    });
+
+    await pumpSettings(tester, service, showLogsReports: false);
+
+    expect(find.text('View Logs & Reports'), findsNothing);
   });
 
   testWidgets('renders a selected custom model from the service', (

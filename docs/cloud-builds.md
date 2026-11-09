@@ -15,8 +15,10 @@ unchecked to build a testing APK from the selected branch.
 Open the finished run and download `eyecue-android-<run>-<attempt>` under
 **Artifacts**. Unzip it to obtain:
 
-- `eyecue-testsigned.apk` — optimized universal APK, with the repository's
-  `-testsigned` version suffix. It is not a Play submission artifact.
+- `eyecue-public-testsigned.apk` — optimized public APK, with the repository's
+  `-testsigned` version suffix. It has no `INTERNET` permission or upload client.
+- If `study_build` is selected: `eyecue-study.apk`, built with the retained Study
+  key and research entrypoint. Study never produces an AAB.
 - `BUILD.txt` — exact source commit, Flutter version, version name/code and
   whether upload configuration was supplied.
 - `SHA256SUMS` — file checksums.
@@ -31,7 +33,7 @@ It is **not guaranteed to match** the existing phone installation or another
 workflow run. Do not uninstall EyeCue to overcome a signature mismatch: doing
 so can delete local trials. Use a stable, compatible signing key for updates.
 
-## Configure online upload
+## Configure Study upload
 
 In **repository Settings → Secrets and variables → Actions → Variables**, add:
 
@@ -42,9 +44,11 @@ In **repository Settings → Secrets and variables → Actions → Variables**, 
 
 Both are client build configuration, not server credentials. Never use a
 Supabase secret/service-role key or study upload token here. The workflow
-rejects partial configuration or an incorrect client-key type. If both variables
-are absent, testing builds still work for local save/export, but **cannot upload**;
-BUILD.txt and the run notice state that explicitly. Signed releases require both.
+requires both variables for Study and ignores configured variables on public
+builds. Public EyeCue declares no `INTERNET` permission and never constructs an
+upload client; the uploader class may remain compiled-in but is unreachable.
+`BUILD.txt` records the
+variant, entrypoint and telemetry state.
 
 ## Build a signed release APK and Play AAB
 
@@ -70,7 +74,8 @@ version name and version code. Signed releases from other branches are refused,
 and signing secrets are only provided to signing steps in this manual mode.
 Never enable `pull_request_target` to expose secrets to PR code.
 
-The download will contain `eyecue-release.apk`, `eyecue-release.aab`, BUILD.txt
+The public download will contain `eyecue-public-release.apk`,
+`eyecue-public-release.aab`, BUILD.txt
 and checksums. Missing signing secrets cause failure, not a debug-signed AAB.
 The workflow never uploads the keystore, source build directories or signing
 properties. Temporary signing material is removed in an `always()` step.

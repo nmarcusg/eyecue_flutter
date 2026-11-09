@@ -35,8 +35,9 @@ No legal opinion is given. This is the input to gate **D3** in
 * The upload payload is the exported snapshot plus study metadata
   ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:327)).
   No image, frame, or bitmap is ever placed in either structure.
-* The release APK requests `CAMERA` because the app *is* a camera app; the
-  permission is used at runtime only for the preview/analysis stream.
+* Public release requests `CAMERA` only. Study release adds `INTERNET` for
+  manual researcher upload. Debug/profile manifests also declare `INTERNET` for
+  Flutter hot reload; the no-`INTERNET` guarantee applies only to release APKs.
 
 ## 3. Telemetry is local by default
 
@@ -203,15 +204,21 @@ publishable key (client identity) and a study upload token (authorisation).
 
 ## 7. Permission justifications for the Play declaration
 
-Effective permission set of the release APK (`aapt2 dump badging`, L10 rebuild —
-[`release-procedure.md`](release-procedure.md) §6.2), and the justification to enter
-in the Play Console:
+| Build | App-declared permissions |
+| --- | --- |
+| Public release | `CAMERA` only |
+| Study release | `CAMERA`, `INTERNET` |
+| Debug/profile (either flavor) | `CAMERA`, `INTERNET` (Flutter hot reload) |
+
+The no-`INTERNET` guarantee applies to release artifacts only. Both release
+variants also receive runtime-library permissions shown below; verify each with
+`aapt` before Play declaration.
 
 | Permission | Declared by | Used by the app? | Justification to declare |
 | --- | --- | --- | --- |
-| `CAMERA` | this app | yes — the only frame source for on-device detection | "Camera frames are processed on the device to describe the scene; nothing is stored or uploaded." |
-| `INTERNET` | this app | yes — the optional, user-initiated research telemetry upload | "Used only when the researcher explicitly uploads a session; models are bundled and detection works offline." |
-| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | `com.google.ai.edge.litert:litert:2.1.5` | indirectly (LiteRT NPU path) | framework requirement of the on-device inference runtime; no user-facing data use |
+| `CAMERA` | this app (public and Study) | yes — the only frame source for on-device detection | "Camera frames are processed on the device to describe the scene; nothing is stored or uploaded." |
+| `INTERNET` | Study release manifest; Flutter debug/profile manifests | Study: yes — manual researcher upload; public release: no permission and no upload-client construction | Not declared by the public Play build; Study only: "Used for user-initiated research upload; models are bundled." |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | `com.google.ai.edge.litert:litert:2.1.5` | indirectly (LiteRT NPU path) | LiteRT-injected framework permissions; required for its NPU foreground service, not EyeCue data collection |
 | `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED` | `androidx.work:work-runtime:2.11.2` | indirectly (WorkManager initialisation on the startup path) | framework requirement of WorkManager; removing them risks `SecurityException` during startup, which cannot be tested without a device |
 | `app.eyecue.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | `androidx.core:core:1.18.0` (auto-generated, signature-level) | framework-internal | not user-visible, not removable |
 
@@ -219,6 +226,16 @@ Removed in L10, so they no longer appear in the declaration and need no
 justification: `RECORD_AUDIO`, `WRITE_EXTERNAL_STORAGE`, `READ_EXTERNAL_STORAGE`
 (evidence and residual risk: [`release-procedure.md`](release-procedure.md) §6.2).
 No runtime prompt exists for any permission except `CAMERA`.
+
+The public release declares no `INTERNET` permission and never constructs an
+upload client; the uploader class may remain compiled-in but is unreachable.
+Its Dart entrypoint omits the upload/research screens. An
+existing public installation may have older app-private trial files from an
+earlier version; updating does not delete or migrate those files, but they are
+unreadable from the public UI. Keep the prior build installable or export first
+if those records are needed. Speech is delegated to the installed Android TTS
+engine, which may fetch voice data using its own permissions and network access;
+that traffic is outside EyeCue's process and permissions.
 
 ## 8. Data safety answer sheet
 

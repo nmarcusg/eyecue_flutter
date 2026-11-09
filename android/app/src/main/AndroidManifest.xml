@@ -3,8 +3,6 @@
     <!-- Camera frames are the only input to the on-device detector; no image is
          stored or uploaded (exported telemetry carries numeric detections only). -->
     <uses-permission android:name="android.permission.CAMERA"/>
-    <!-- Manual telemetry upload only; models stay bundled and work offline. -->
-    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- camera_android_camerax injects RECORD_AUDIO for its video-with-audio
          path. This app only reads the CameraX analysis stream and never records
          audio, so the permission is unused. -->

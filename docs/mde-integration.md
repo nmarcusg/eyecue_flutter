@@ -162,9 +162,11 @@ in the debug and profile manifests), so the download failed, the model load
 threw, the estimator degraded, and depth never ran — while detection kept
 working because its model was bundled. Bundling removes the network dependency
 entirely instead of widening permissions, so the assistive path also works with
-no connectivity. The main manifest now declares `INTERNET` as well, but only for
-the optional manual research-telemetry upload; detection and depth still make no
-network requests.
+no connectivity. In the current variant split, only the Study manifest declares
+`INTERNET` for optional manual research-telemetry upload. The public release has
+no `INTERNET` permission; detection and depth make no network requests in either
+release. Speech is delegated to the installed Android TTS engine, which may fetch
+voice data using its own permissions and network access.
 
 `shortcut:` the plugin copies an asset once into the documents dir keyed by
 filename, and `_copyFlutterAssetToDocuments` returns early when that file
