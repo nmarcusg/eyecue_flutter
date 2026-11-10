@@ -59,6 +59,52 @@ void main() {
     expect(find.text('Privacy policy'), findsNothing);
   });
 
+  group('privacy link launch failures', () {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+
+    Future<void> tapPrivacyLink(WidgetTester tester) async {
+      await tester.pumpWidget(const MaterialApp(home: HelpScreen()));
+      await tester.scrollUntilVisible(find.text('Privacy policy'), 400);
+      await tester.tap(find.text('Privacy policy'));
+      await tester.pumpAndSettle();
+    }
+
+    void mockLaunch(WidgetTester tester, Future<bool> Function() outcome) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (_) => outcome(),
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+    }
+
+    const noBrowserMessage =
+        'Unable to open the privacy policy. Check your browser and connection.';
+
+    testWidgets('shows the fallback message when the launch returns false', (
+      tester,
+    ) async {
+      mockLaunch(tester, () async => false);
+      await tapPrivacyLink(tester);
+      expect(find.text(noBrowserMessage), findsOneWidget);
+    });
+
+    testWidgets('shows the fallback message when the launch throws', (
+      tester,
+    ) async {
+      mockLaunch(
+        tester,
+        () async => throw PlatformException(code: 'ACTIVITY_NOT_FOUND'),
+      );
+      await tapPrivacyLink(tester);
+      expect(find.text(noBrowserMessage), findsOneWidget);
+    });
+  });
+
   group('Help safety section', () {
     testWidgets('renders the heading and all five points in order', (
       tester,
