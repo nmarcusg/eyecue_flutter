@@ -1962,7 +1962,7 @@ void main() {
 
       // The confirmation names the detector that will produce the trial.
       expect(
-        find.textContaining('Detector: Built-in YOLOv8n.'),
+        find.textContaining('Detector: EyeCue campus detector.'),
         findsOneWidget,
       );
       expect(sessions.state, isNot(ResearchSessionState.recording));
@@ -1982,7 +1982,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('Recording trial $generatedLabel with Built-in YOLOv8n.'),
+        find.text('Recording trial $generatedLabel with EyeCue campus detector.'),
         findsOneWidget,
       );
 

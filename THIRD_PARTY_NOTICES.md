@@ -91,7 +91,7 @@ Both runtime models are compiled into the release bundle
 | Asset | Size | SHA-256 | Provenance |
 | --- | --- | --- | --- |
 | `assets/yolo26n-depth_w8a32.tflite` | 5 474 749 B | `8c7f242c2a8c339c6721863e103e17e026cbd784c9a3d031a8e902660c364311` | official `yolo26n-depth_w8a32.tflite` from the pinned `yolo-flutter-app` release `v0.6.6`, copied unchanged; its own `metadata.json` declares `"license": "AGPL-3.0 License (https://ultralytics.com/license)"` |
-| `assets/yolov8n_int8_new_metadata.tflite` | 3 483 114 B | `3a571033aedd222957e6f8973f30e48b9c55bce1572306c3d8b523b2a7919b6a` | generated in-tree by [`tool/package_ultralytics_metadata.dart`](tool/package_ultralytics_metadata.dart) from an **externally supplied** YOLOv8n INT8 base graph (base SHA-256 `63bf9a81fe2e19f01b9ffe32531374c8a1f00d8e11ce5a0ce27008ce611d54fb`); packaging only appends a deterministic `metadata.json` and rewrites no weights |
+| `assets/eyecue_v8_campus_only_w8a32.tflite` | 3 452 275 B | `91c25102eb1d2f42a94f7a563118f93605ee0e9e3e8ba2a85157f25bb0a8e2a1` | User-supplied, campus-trained detection model; embedded Ultralytics metadata identifies version 8.4.197, task detect and AGPL-3.0. The owner states the team trained the model and has distribution rights for the weights and training data; the training pipeline and dataset provenance are not recorded here. |
 
 Details and validation guarantees: [`docs/model-assets.md`](docs/model-assets.md).
 
@@ -104,9 +104,7 @@ Obligations that follow from shipping these weights:
   not source code; the training pipeline is not in this repository). Whether the
   bundled weights trigger §5/§6 at all, and what "source" means for them, is review
   item **R1** in §6 — **no opinion is offered here**.
-* The detection model's metadata payload carries no licence string (only the depth
-  model's does), and its base graph is not in the tree. That provenance gap is
-  review item **R2**.
+* The detection model metadata declares AGPL-3.0, but the training pipeline and dataset provenance are not established here; review item **R2** remains open.
 
 ## 4. Dart / Flutter dependencies (`pubspec.lock`)
 
@@ -211,7 +209,7 @@ needed to satisfy the "complete corresponding source" requirement.
 | plugin Dart/Kotlin/CMake sources + upstream `LICENSE` | `plugins/ultralytics_yolo/**` | yes |
 | plugin fork record (deviations, upgrade obligations) | `plugins/ultralytics_yolo/VENDORED.md` | yes |
 | depth model asset | `assets/yolo26n-depth_w8a32.tflite` | yes |
-| detection model asset | `assets/yolov8n_int8_new_metadata.tflite` | yes |
+| detection model asset | `assets/eyecue_v8_campus_only_w8a32.tflite` | yes |
 | labels | `assets/labels.txt` | yes |
 | model provenance / packaging tool | `docs/model-assets.md`, `tool/package_ultralytics_metadata.dart` | yes |
 | this notices file | `THIRD_PARTY_NOTICES.md` | yes |

@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import '../services/spatial_analysis_service.dart';
 import 'detection_info.dart';
 import 'model_config.dart';
 
@@ -63,25 +62,25 @@ class DetectorModel {
     required this.path,
   });
 
-  /// The bundled detector. Behavior and COCO label order stay untouched.
-  factory DetectorModel.builtIn(List<String> cocoLabels) => DetectorModel(
+  /// The bundled campus detector and its matching ordered labels.
+  factory DetectorModel.builtIn(List<String> labels) => DetectorModel(
     kind: DetectorModelKind.builtIn,
-    displayName: 'Built-in YOLOv8n',
+    displayName: 'EyeCue campus detector',
     fingerprint: builtInFingerprint,
-    labels: List<String>.unmodifiable(cocoLabels),
+    labels: List<String>.unmodifiable(labels),
     fileSizeBytes: 0,
     path: EyeCueModelConfig.modelAssetPath,
   );
 
-  static const String builtInFingerprint = 'builtin-yolov8n-int8-metadata';
+  static const String builtInFingerprint = 'builtin-campus-91c25102eb1d2f42';
 
   bool get isCustom => kind == DetectorModelKind.custom;
 
   int get classCount => labels.length;
 
-  /// `'builtin'` or `'custom:<first 12 hex chars>'`.
+  /// Identifies the bundled graph or uses `custom:<first 12 hex chars>`.
   String get id {
-    if (!isCustom) return 'builtin';
+    if (!isCustom) return 'builtin-campus-v1';
     final hex = fingerprint.split('-').first;
     return 'custom:${hex.length > 12 ? hex.substring(0, 12) : hex}';
   }
@@ -131,10 +130,10 @@ class TfliteFingerprintAccumulator {
   }
 }
 
-/// Narrow, semantic name sets used only for **custom** model labels.
+/// Semantic hazard categories shared by bundled and imported model labels.
 ///
-/// These are plain hazard-category names, not a COCO class-id table: a custom
-/// model's class `0` means whatever its own metadata says.
+/// These are plain hazard-category names, not a COCO class-id table: each
+/// model class means whatever its own metadata says.
 const Set<String> customHighPriorityLabels = {
   'person',
   'people',
@@ -152,7 +151,7 @@ const Set<String> customHighPriorityLabels = {
 };
 
 /// Narrow, semantic medium-hazard names (large static obstacles plus the
-/// everyday objects the built-in detector already ranks medium).
+/// everyday obstacles).
 const Set<String> customMediumPriorityLabels = {
   'chair',
   'table',
@@ -164,6 +163,10 @@ const Set<String> customMediumPriorityLabels = {
   'staircase',
   'wall',
   'pole',
+  'hand rails',
+  'trash bin',
+  'warning marker',
+  'fan',
   'cone',
   'box',
   'backpack',
@@ -200,17 +203,12 @@ const Set<String> customMediumPriorityLabels = {
 
 /// Priority for a detection from [kind].
 ///
-/// The built-in model keeps its existing COCO class-id policy unchanged. A
-/// custom model is judged **only** by its own label text — never by [classId],
-/// so a custom class `0` cannot inherit COCO person priority.
+/// Both detectors use their own label text rather than COCO class IDs.
 ObjectPriority priorityForClass(
   DetectorModelKind kind,
   int classId,
   String label,
 ) {
-  if (kind == DetectorModelKind.builtIn) {
-    return SpatialAnalysisService.priorityFor(classId);
-  }
   final normalized = normalizeLabelName(label);
   if (customHighPriorityLabels.contains(normalized)) return ObjectPriority.high;
   if (customMediumPriorityLabels.contains(normalized)) {

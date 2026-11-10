@@ -10,8 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// The bundled graph is the only fixture with a real flatbuffer; the scanner
 /// accepts appended bytes, so `asset + [..]` is a distinct, still-valid graph.
-const String _assetPath = 'assets/yolov8n_int8_new_metadata.tflite';
-const int _cocoClassCount = 80;
+const String _assetPath = 'assets/eyecue_v8_campus_only_w8a32.tflite';
+const int _cocoClassCount = 14;
 
 late Uint8List _modelBytes;
 
@@ -94,7 +94,7 @@ void main() {
 
         expect(service.isCustomSelected, isFalse);
         expect(service.current.kind, DetectorModelKind.builtIn);
-        expect(service.current.displayName, 'Built-in YOLOv8n');
+        expect(service.current.displayName, 'EyeCue campus detector');
         expect(service.current.ref.classCount, _cocoClassCount);
         expect(service.selectionRecoveryMessage, isNull);
       },
@@ -173,7 +173,7 @@ void main() {
         await service.load();
 
         expect(service.isCustomSelected, isFalse);
-        expect(service.current.displayName, 'Built-in YOLOv8n');
+        expect(service.current.displayName, 'EyeCue campus detector');
         expect(service.selectionRecoveryMessage, isNotNull);
         expect(
           service.selectionRecoveryMessage,
@@ -203,7 +203,7 @@ void main() {
         await service.load();
 
         expect(service.isCustomSelected, isFalse);
-        expect(service.current.displayName, 'Built-in YOLOv8n');
+        expect(service.current.displayName, 'EyeCue campus detector');
         expect(service.selectionRecoveryMessage, isNotNull);
         expect(File(path).existsSync(), isFalse);
         expect(settings.customModelFingerprint, isNull);
@@ -233,7 +233,7 @@ void main() {
         await service.load();
 
         expect(service.isCustomSelected, isFalse);
-        expect(service.current.displayName, 'Built-in YOLOv8n');
+        expect(service.current.displayName, 'EyeCue campus detector');
         expect(service.selectionRecoveryMessage, contains('could not be read'));
         expect(File(model.path).existsSync(), isTrue);
         expect(settings.customModelFingerprint, model.fingerprint);

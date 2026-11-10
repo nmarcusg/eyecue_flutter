@@ -937,7 +937,7 @@ void main() {
           reason: 'The detector card heading is not a semantic header',
         );
         // Selected model state and class count, read from the service.
-        expectSemanticNode(RegExp(r'^Built-in YOLOv8n'));
+        expectSemanticNode(RegExp(r'^EyeCue campus detector'));
         expect(find.textContaining('80 classes'), findsOneWidget);
         expect(find.text('Built-in detector'), findsOneWidget);
         // The next-action notice a model change requires is readable text.
