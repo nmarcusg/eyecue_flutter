@@ -17,7 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const String _bundledAsset = 'assets/yolov8n_int8_new_metadata.tflite';
+const String _bundledAsset = 'assets/eyecue_v8_campus_only_w8a32.tflite';
 
 /// Installs the platform-channel mocks a mounted engine needs, collecting the
 /// native view ids a payload can be pushed to.
@@ -845,8 +845,8 @@ void main() {
 
     final rows = telemetry.records;
     expect(rows.length, greaterThanOrEqualTo(2));
-    expect(rows.last.detectorModelId, 'builtin');
-    expect(rows.last.detectorModelName, 'Built-in YOLOv8n');
+    expect(rows.last.detectorModelId, 'builtin-campus-v1');
+    expect(rows.last.detectorModelName, 'EyeCue campus detector');
     // Rows written before the switch keep the identity they were written with.
     expect(rows.first.detectorModelId, customRef.id);
     expect(rows.first.detectorModelName, customRef.name);
