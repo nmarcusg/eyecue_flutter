@@ -1,6 +1,7 @@
 import 'package:eyecue_flutter/screens/help_screen.dart';
 import 'package:eyecue_flutter/widgets/safety_disclosure.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -24,6 +25,39 @@ void main() {
       ),
     );
   }
+
+  testWidgets('privacy link appears for EyeCue and is hidden for Study', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    MethodCall? launched;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      launched = call;
+      return true;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    await tester.pumpWidget(const MaterialApp(home: HelpScreen()));
+    await tester.scrollUntilVisible(find.text('Privacy policy'), 400);
+    expect(find.text('Privacy policy'), findsOneWidget);
+    await tester.tap(find.text('Privacy policy'));
+    await tester.pump();
+    expect(launched?.method, 'launch');
+    expect(
+      launched?.arguments['url'],
+      'https://nmarcusg.github.io/eyecue_flutter/',
+    );
+    await tester.pumpWidget(
+      const MaterialApp(home: HelpScreen(showPrivacyPolicy: false)),
+    );
+    expect(find.text('Privacy policy'), findsNothing);
+  });
 
   group('Help safety section', () {
     testWidgets('renders the heading and all five points in order', (
