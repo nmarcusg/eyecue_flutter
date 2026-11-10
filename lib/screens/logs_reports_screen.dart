@@ -76,8 +76,8 @@ class _LogsReportsScreenState extends State<LogsReportsScreen> {
   DetectorModelRef get _detectorRef =>
       widget.detectorModel?.current.ref ??
       const DetectorModelRef(
-        id: 'builtin',
-        name: 'Built-in YOLOv8n',
+        id: 'builtin-campus-v1',
+        name: 'EyeCue campus detector',
         fingerprint: DetectorModel.builtInFingerprint,
         classCount: 0,
       );

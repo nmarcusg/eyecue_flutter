@@ -41,7 +41,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/yolov8n_int8_new_metadata.tflite
+    - assets/eyecue_v8_campus_only_w8a32.tflite
     # Official Ultralytics depth model (yolo26n-depth, w8a32, v0.6.6). Bundled
     # so MDE runs offline; the manifest's INTERNET permission is only for the
     # optional manual telemetry upload.

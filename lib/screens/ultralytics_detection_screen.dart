@@ -307,7 +307,7 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
         telemetry: _telemetry,
         corrections: widget.corrections,
         confidenceThreshold: _settings.detectionConfidence,
-        // A custom model decides priority by its own label text, never by a
+        // Each model decides priority by its own label text, never by a
         // COCO class id.
         priorityResolver: (d) =>
             priorityForClass(_modelKind, d.classId, d.label),
@@ -1272,7 +1272,7 @@ class _UltralyticsDetectionScreenState extends State<UltralyticsDetectionScreen>
     final corrections = widget.corrections;
     if (corrections == null || !mounted) return;
     // The shared label list belongs to the built-in model; offering it against
-    // a custom model's detections would record invented COCO names.
+    // an imported model's detections would record the wrong names.
     if (_modelKind != DetectorModelKind.builtIn) return;
     final selection = await showDetectionCorrectionSheet(
       context: context,

@@ -106,8 +106,8 @@ void main() {
       final oldId = before.detectorModelId;
       final oldName = before.detectorModelName;
       final oldFingerprint = before.detectorModelFingerprint;
-      expect(oldId, 'builtin');
-      expect(oldName, 'Built-in YOLOv8n');
+      expect(oldId, 'builtin-campus-v1');
+      expect(oldName, 'EyeCue campus detector');
       expect(oldFingerprint, DetectorModel.builtInFingerprint);
       expect(beforeSample.detectorModelId, oldId);
       expect(beforeSample.detectorModelName, oldName);

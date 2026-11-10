@@ -52,7 +52,7 @@ class ObjectTracker {
     final observedTrackIds = <int>{};
 
     // Greedy global ordering prefers stronger geometric matches. Matching is
-    // class-aware, so two different COCO classes can never swap tracks.
+    // class-aware, so two different detector classes can never swap tracks.
     final candidates = <({double score, int detectionIndex, _Track track})>[];
     for (
       var detectionIndex = 0;

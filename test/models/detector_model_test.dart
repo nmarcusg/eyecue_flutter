@@ -27,10 +27,10 @@ void main() {
     test('built-in carries the readable name and a fixed fingerprint', () {
       final model = DetectorModel.builtIn(const ['person', 'bicycle']);
       expect(model.kind, DetectorModelKind.builtIn);
-      expect(model.displayName, 'Built-in YOLOv8n');
-      expect(model.fingerprint, 'builtin-yolov8n-int8-metadata');
-      expect(model.path, 'assets/yolov8n_int8_new_metadata.tflite');
-      expect(model.ref.id, 'builtin');
+      expect(model.displayName, 'EyeCue campus detector');
+      expect(model.fingerprint, 'builtin-campus-91c25102eb1d2f42');
+      expect(model.path, 'assets/eyecue_v8_campus_only_w8a32.tflite');
+      expect(model.ref.id, 'builtin-campus-v1');
       expect(model.ref.classCount, 2);
     });
 
@@ -51,18 +51,18 @@ void main() {
   });
 
   group('priorityForClass', () {
-    test('built-in keeps the COCO class-id policy', () {
+    test('campus built-in uses its own class labels for priority', () {
       expect(
-        priorityForClass(DetectorModelKind.builtIn, 0, 'anything'),
-        ObjectPriority.high,
-      );
-      expect(
-        priorityForClass(DetectorModelKind.builtIn, 56, 'anything'),
+        priorityForClass(DetectorModelKind.builtIn, 0, 'bench'),
         ObjectPriority.medium,
       );
       expect(
-        priorityForClass(DetectorModelKind.builtIn, 77, 'anything'),
-        ObjectPriority.low,
+        priorityForClass(DetectorModelKind.builtIn, 8, 'person'),
+        ObjectPriority.high,
+      );
+      expect(
+        priorityForClass(DetectorModelKind.builtIn, 7, 'hand-rails'),
+        ObjectPriority.medium,
       );
     });
 

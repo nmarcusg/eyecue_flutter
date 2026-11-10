@@ -9,8 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The bundled graph is the only fixture with a real TFLite flatbuffer.
-const String _assetPath = 'assets/yolov8n_int8_new_metadata.tflite';
-const int _cocoClassCount = 80;
+const String _assetPath = 'assets/eyecue_v8_campus_only_w8a32.tflite';
+const int _cocoClassCount = 14;
 
 class _FakePicker implements ModelFilePicker {
   _FakePicker(this.path);
@@ -112,7 +112,7 @@ void main() {
     await pumpSettings(tester, service);
 
     expect(find.text('Detector Model'), findsOneWidget);
-    expect(find.text('Built-in YOLOv8n · 80 classes'), findsOneWidget);
+    expect(find.text('EyeCue campus detector · 14 classes'), findsOneWidget);
     expect(find.text('Built-in detector'), findsOneWidget);
     expect(find.text('View Logs & Reports'), findsOneWidget);
   });
@@ -150,7 +150,7 @@ void main() {
 
     await pumpSettings(tester, service);
 
-    expect(find.text('Obstacle Detector v2 · 80 classes'), findsOneWidget);
+    expect(find.text('Obstacle Detector v2 · 14 classes'), findsOneWidget);
     expect(find.text('Imported model'), findsOneWidget);
   });
 
@@ -178,7 +178,7 @@ void main() {
     );
 
     expect(find.textContaining('That file is empty'), findsOneWidget);
-    expect(find.text('Built-in YOLOv8n · 80 classes'), findsOneWidget);
+    expect(find.text('EyeCue campus detector · 14 classes'), findsOneWidget);
   });
 
   testWidgets('a cancelled pick leaves the card unchanged', (tester) async {
@@ -198,7 +198,7 @@ void main() {
     await driveIo(tester, () => find.text('Import').evaluate().isEmpty);
 
     expect(find.textContaining('could not be imported'), findsNothing);
-    expect(find.text('Built-in YOLOv8n · 80 classes'), findsOneWidget);
+    expect(find.text('EyeCue campus detector · 14 classes'), findsOneWidget);
   });
 
   testWidgets('switching to built-in keeps the import and restores it', (
@@ -222,7 +222,7 @@ void main() {
 
     await tester.tap(find.text('Use built-in detector'));
     await tester.pumpAndSettle();
-    expect(find.text('Built-in YOLOv8n · 80 classes'), findsOneWidget);
+    expect(find.text('EyeCue campus detector · 14 classes'), findsOneWidget);
     late List<String> afterSwitch;
     await tester.runAsync(() async {
       afterSwitch = await service.debugStoredFiles();
@@ -231,7 +231,7 @@ void main() {
 
     await tester.tap(find.text('Use imported model'));
     await driveIo(tester, () => service.isCustomSelected);
-    expect(find.text('Obstacle Detector v2 · 80 classes'), findsOneWidget);
+    expect(find.text('Obstacle Detector v2 · 14 classes'), findsOneWidget);
   });
 
   testWidgets('the recovery message is rendered as a warning', (tester) async {
@@ -257,6 +257,6 @@ void main() {
     await pumpSettings(tester, reloaded);
 
     expect(find.text(reloaded.selectionRecoveryMessage!), findsOneWidget);
-    expect(find.text('Built-in YOLOv8n · 80 classes'), findsOneWidget);
+    expect(find.text('EyeCue campus detector · 14 classes'), findsOneWidget);
   });
 }

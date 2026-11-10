@@ -63,8 +63,8 @@ void main() {
             .toList()
           ..sort();
     expect(assets, [
+      'eyecue_v8_campus_only_w8a32.tflite',
       'yolo26n-depth_w8a32.tflite',
-      'yolov8n_int8_new_metadata.tflite',
     ]);
   });
 }
