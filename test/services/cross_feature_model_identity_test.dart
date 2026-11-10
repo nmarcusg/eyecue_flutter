@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// every trial summary and every export keeps the model that produced it, and
 /// no exported byte names a file.
 
-const String _assetPath = 'assets/yolov8n_int8_new_metadata.tflite';
+const String _assetPath = 'assets/eyecue_v8_campus_only_w8a32.tflite';
 
 /// Confirms start and completion immediately, so a test never waits on speech.
 class _QuietTtsEngine extends TtsEngine {
@@ -104,14 +104,14 @@ void main() {
     final rows = telemetry.records;
     expect(rows, hasLength(3));
     expect(rows.map((row) => row.detectorModelId), [
-      'builtin',
+      'builtin-campus-v1',
       custom.ref.id,
-      'builtin',
+      'builtin-campus-v1',
     ]);
     expect(rows.map((row) => row.detectorModelName), [
-      'Built-in YOLOv8n',
+      'EyeCue campus detector',
       'Obstacle Detector v2',
-      'Built-in YOLOv8n',
+      'EyeCue campus detector',
     ]);
 
     // The export keeps one dictionary entry per identity and every row
@@ -119,16 +119,19 @@ void main() {
     final export = TelemetryExportService(
       clock: () => now,
     ).snapshot(telemetry: telemetry);
-    expect(export.detectorModels.keys, ['builtin', custom.ref.id]);
-    expect(export.detectorModels['builtin']!['name'], 'Built-in YOLOv8n');
+    expect(export.detectorModels.keys, ['builtin-campus-v1', custom.ref.id]);
+    expect(
+      export.detectorModels['builtin-campus-v1']!['name'],
+      'EyeCue campus detector',
+    );
     expect(
       export.detectorModels[custom.ref.id]!['name'],
       'Obstacle Detector v2',
     );
     expect(export.detections.map((row) => row['detectorModelId']), [
-      'builtin',
+      'builtin-campus-v1',
       custom.ref.id,
-      'builtin',
+      'builtin-campus-v1',
     ]);
     for (final row in export.detections) {
       expect(
@@ -192,18 +195,18 @@ void main() {
 
       final session = (await sessions.finish())!.session;
       expect(session.detectors.map((detector) => detector.id), [
-        'builtin',
+        'builtin-campus-v1',
         custom.ref.id,
       ]);
       expect(session.records.map((record) => record.detectorModelId), [
-        'builtin',
+        'builtin-campus-v1',
         custom.ref.id,
       ]);
 
       final export = TelemetryExportService(
         clock: () => now,
       ).snapshot(telemetry: session);
-      expect(export.detectorModels.keys, ['builtin', custom.ref.id]);
+      expect(export.detectorModels.keys, ['builtin-campus-v1', custom.ref.id]);
       expect(export.detections, hasLength(2));
       for (final row in export.detections) {
         expect(
@@ -232,7 +235,7 @@ void main() {
       final settings = SettingsService(store: InMemorySettingsStore());
       final bytes = File(_assetPath).readAsBytesSync();
       final fingerprint = tfliteFingerprint(bytes);
-      final coco = List<String>.generate(80, (index) => 'class$index');
+      final coco = List<String>.generate(14, (index) => 'class$index');
       final source = File('${dir.path}/picked.tflite')..writeAsBytesSync(bytes);
       final service = DetectorModelService(
         settings,

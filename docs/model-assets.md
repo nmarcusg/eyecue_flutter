@@ -1,3 +1,5 @@
+> **Historical model documentation:** The original YOLOv8n detector described below has been replaced by the campus-trained detector. See `THIRD_PARTY_NOTICES.md` for the current artifact and unresolved provenance.
+
 # Model assets
 
 This record describes the metadata-enriched TFLite artifact used by the single
