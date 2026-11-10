@@ -401,7 +401,7 @@ class AppShellState extends State<AppShell> {
           detectorModel: widget.detectorModel,
         );
       case 3:
-        return const HelpScreen();
+        return HelpScreen(showPrivacyPolicy: widget.researchSessions == null);
       default:
         return const SizedBox.shrink();
     }

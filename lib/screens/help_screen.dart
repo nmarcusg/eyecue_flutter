@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_home_theme.dart';
@@ -17,7 +18,9 @@ import '../widgets/safety_disclosure.dart';
 /// the Help subtree only and must not leak into other tabs or the shell
 /// navigation bar.
 class HelpScreen extends StatelessWidget {
-  const HelpScreen({super.key});
+  const HelpScreen({super.key, this.showPrivacyPolicy = true});
+
+  final bool showPrivacyPolicy;
 
   @override
   Widget build(BuildContext context) {
@@ -60,11 +63,11 @@ class HelpScreen extends StatelessWidget {
                         horizontal: kSpace16,
                         vertical: kSpace16,
                       ),
-                      children: const [
+                      children: [
                         // The permanent copy of the safety disclosure. The
                         // first-use acknowledgement renders the same wording.
-                        SafetyDisclosureCard(),
-                        HelpSectionCard(
+                        const SafetyDisclosureCard(),
+                        const HelpSectionCard(
                           title: 'How It Works',
                           body:
                               '1. Open EyeCue.\n'
@@ -77,7 +80,7 @@ class HelpScreen extends StatelessWidget {
                               'internet needed.',
                         ),
                         // Per-item reading stops: one node per bullet.
-                        HelpSectionCard(
+                        const HelpSectionCard(
                           title: 'Gesture Controls',
                           items: [
                             'Two-finger double tap — start or exit '
@@ -88,7 +91,7 @@ class HelpScreen extends StatelessWidget {
                                 'audio alert.',
                           ],
                         ),
-                        HelpSectionCard(
+                        const HelpSectionCard(
                           title: 'Gesture Confirmation',
                           body:
                               'Every gesture gives instant feedback: an audio '
@@ -97,7 +100,7 @@ class HelpScreen extends StatelessWidget {
                               'need to look at the screen.',
                         ),
                         // Per-item reading stops: one node per bullet.
-                        HelpSectionCard(
+                        const HelpSectionCard(
                           title: 'Best Use Tip (Android)',
                           items: [
                             'Mount or carry the phone at chest height for '
@@ -108,6 +111,7 @@ class HelpScreen extends StatelessWidget {
                                 'rate to save battery.',
                           ],
                         ),
+                        if (showPrivacyPolicy) const _PrivacyPolicyButton(),
                       ],
                     ),
                   ),
@@ -119,4 +123,36 @@ class HelpScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PrivacyPolicyButton extends StatelessWidget {
+  const _PrivacyPolicyButton();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 16),
+    child: OutlinedButton.icon(
+      onPressed: () async {
+        final uri = Uri.parse('https://nmarcusg.github.io/eyecue_flutter/');
+        try {
+          if (await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+            return;
+          }
+        } catch (_) {
+          // Show an actionable message if Android cannot open a browser.
+        }
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Unable to open the privacy policy. Check your browser and connection.',
+              ),
+            ),
+          );
+        }
+      },
+      icon: const Icon(Icons.open_in_new),
+      label: const Text('Privacy policy'),
+    ),
+  );
 }
