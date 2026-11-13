@@ -398,7 +398,6 @@ class _SensitivityControlsState extends State<_SensitivityControls> {
                           0.05)
                       .round(),
               value: _draft,
-              label: _draft.toStringAsFixed(2),
               semanticFormatterCallback: (v) => v.toStringAsFixed(2),
               onChanged: (value) {
                 setState(
@@ -540,7 +539,6 @@ class _InferenceCadenceControlsState extends State<_InferenceCadenceControls> {
                   AppSettings.maxDetectionTargetHz -
                   AppSettings.minDetectionTargetHz,
               value: _detectionDraft,
-              label: '$detectionHz Hz',
               semanticFormatterCallback: (v) => '${v.round()} hertz',
               onChanged: automatic
                   ? null
@@ -573,7 +571,6 @@ class _InferenceCadenceControlsState extends State<_InferenceCadenceControls> {
               divisions:
                   AppSettings.maxDepthTargetHz - AppSettings.minDepthTargetHz,
               value: _depthDraft,
-              label: '$depthHz Hz',
               semanticFormatterCallback: (v) => '${v.round()} hertz',
               onChanged: depthDisabled
                   ? null
@@ -1136,7 +1133,6 @@ class _AlertDistanceControls extends StatelessWidget {
             min: 1,
             max: 5,
             divisions: 16,
-            label: '${normal.toStringAsFixed(2)} metres',
             onChanged: enabled
                 ? (value) => settings.setAlertDistances(
                     alertMeters: value,
@@ -1159,7 +1155,6 @@ class _AlertDistanceControls extends StatelessWidget {
             min: 0.5,
             max: normal - 0.25,
             divisions: ((normal - 0.75) * 4).round(),
-            label: '${urgent.toStringAsFixed(2)} metres',
             onChanged: enabled
                 ? (value) => settings.setAlertDistances(
                     alertMeters: normal,
