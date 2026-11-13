@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
+import android.view.MotionEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -20,6 +22,25 @@ import java.util.concurrent.Executors
  * remains the compatibility gate.
  */
 class MainActivity : FlutterActivity() {
+    // Flutter 3.44 can hit an uninitialized semantics transform during
+    // TalkBack exploration (flutter/flutter#184810). Drop only that hover.
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        return try {
+            super.dispatchGenericMotionEvent(event)
+        } catch (error: NullPointerException) {
+            val hover = event.actionMasked == MotionEvent.ACTION_HOVER_ENTER ||
+                event.actionMasked == MotionEvent.ACTION_HOVER_MOVE ||
+                event.actionMasked == MotionEvent.ACTION_HOVER_EXIT
+            val matrixFailure = error.stackTrace.any {
+                it.className == "android.opengl.Matrix" && it.methodName == "invertM"
+            }
+            val flutterView = error.stackTrace.any { it.className.startsWith("io.flutter.view.") }
+            if (!hover || !matrixFailure || !flutterView) throw error
+            Log.w("EyeCueAccessibility", "Ignored Flutter accessibility hover with an uninitialized transform")
+            true
+        }
+    }
+
     private var pendingPick: MethodChannel.Result? = null
     private data class ExportRequest(val result: MethodChannel.Result, val source: File)
     private var pendingExport: ExportRequest? = null
