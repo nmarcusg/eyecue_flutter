@@ -2,7 +2,7 @@ name: Android cloud build
 
 on:
   push:
-    branches: [main, dev, codex/android-cloud-build, codex/tts-speech-continuity]
+    branches: [main, dev, codex/android-cloud-build, codex/tts-speech-continuity, codex/talkback-flutter-engine]
   pull_request:
     branches: [main, dev]
   workflow_dispatch:
@@ -40,9 +40,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      FLUTTER_VERSION: '3.44.2'
+      FLUTTER_VERSION: '3.47.7'
       SIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}
-      STUDY_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.study_build }}
+      STUDY_BUILD: ${{ (github.event_name == 'workflow_dispatch' && inputs.study_build) || (github.event_name == 'push' && github.ref == 'refs/heads/codex/talkback-flutter-engine') }}
       UPLOAD_INTERNAL: ${{ github.event_name == 'workflow_dispatch' && inputs.signed_release && inputs.upload_internal }}
       BUILD_NAME: ${{ inputs.build_name || '1.0.0' }}
       BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
