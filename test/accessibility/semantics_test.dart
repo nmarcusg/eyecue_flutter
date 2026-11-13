@@ -878,6 +878,21 @@ void main() {
       );
     }
 
+    testWidgets('Settings sliders avoid hover-crashing value overlays', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+      final sliders = tester.widgetList<Slider>(find.byType(Slider)).toList();
+      expect(sliders, hasLength(5));
+      for (final slider in sliders) {
+        expect(slider.label, isNull);
+        expect(slider.semanticFormatterCallback, isNotNull);
+      }
+      await withSemantics(tester, () async {
+        expect(find.semantics.byValue('15 hertz'), findsWidgets);
+      });
+    });
+
     testWidgets('screen title and card headings are real semantic headings', (
       tester,
     ) async {
@@ -1040,8 +1055,9 @@ void main() {
         );
         // The Slider node carries the value, the slider flag, and the
         // increase/decrease actions.
-        final slider = expectSemanticNode('0.25');
-        final data = slider.getSemanticsData();
+        final sliders = find.semantics.byValue('0.25').evaluate().toList();
+        expect(sliders, isNotEmpty);
+        final data = sliders.first.getSemanticsData();
         expect(data.flagsCollection.isSlider, isTrue);
         expect(data.hasAction(SemanticsAction.increase), isTrue);
         expect(data.hasAction(SemanticsAction.decrease), isTrue);
