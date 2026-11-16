@@ -1,5 +1,8 @@
 # EyeCue — Settings Screen Implementation Plan
 
+> **Current status (2026-11-16, review base `main@aadf9e0`):** The visual Settings redesign is shipped; current code is [`settings_screen.dart`](../../lib/screens/settings_screen.dart). Model selection is built-in/imported detector selection. Accessibility follow-up `f95ffd6` removed Slider label arguments and retained semantic formatter callbacks, with regression coverage in [`semantics_test.dart`](../../test/accessibility/semantics_test.dart).
+
+
 > **Stage:** Plan only. No application code, tests, assets, dependency
 > declarations, or navigation behavior are changed by this document.
 >
@@ -9,7 +12,7 @@
 > [`settings-screen-design-spec.md`](settings-screen-design-spec.md) (Design-Spec)
 > → the approved [`settings-screen-analysis.md`](settings-screen-analysis.md)
 > (Analysis), especially its **Resolved Open Questions / Decisions** section
-> ([`settings-screen-analysis.md`](settings-screen-analysis.md:540)) → the
+> ([`settings-screen-analysis.md`](settings-screen-analysis.md)) → the
 > frontend rules in `.roo/rules/` (scope, naming, tokens, accessibility,
 > animation, doc-update, verification). All open questions raised in the Analysis
 > and Design-Spec were resolved by the project owner and by confirming them
@@ -17,8 +20,8 @@
 
 ## 1. Scope and invariants
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:15)
-and [`settings-screen-design-spec.md`](settings-screen-design-spec.md:627).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md)
+and [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 This plan turns the Design-Spec into concrete, implementable edits for a
 visual-only Settings redesign. Every file listed below traces back to the
@@ -29,69 +32,69 @@ code):
 
 | Contract | Current code | Preservation requirement |
 |---|---|---|
-| [`SettingsScreen`](../lib/screens/settings_screen.dart:11) | A `StatelessWidget` with constructor `SettingsScreen({super.key, required SettingsService settings, required VoidCallback onOpenLogsReports})` ([`settings_screen.dart`](../lib/screens/settings_screen.dart:15)) | Keep it a `StatelessWidget`; keep both required inputs; add only the optional `TelemetryService? telemetry` input described in §2. Existing two-argument constructions must still compile. |
-| Shell construction | [`app_shell.dart`](../lib/navigation/app_shell.dart:108) builds `SettingsScreen(settings: widget.settings, onOpenLogsReports: openLogsReports)` as tab index 2 | Only the Settings page construction is in scope; the single additive forward of `widget.telemetry` is the only shell change (§2). |
-| Navigation invariants | [`app_shell.dart`](../lib/navigation/app_shell.dart:20) owns the persistent four-tab [`NavigationBar`](../lib/navigation/app_shell.dart:138), the [`IndexedStack`](../lib/navigation/app_shell.dart:134), the `PopScope` tab-back behavior, and Logs & Reports as a pushed `MaterialPageRoute` | No removal or restructuring of the global four-tab bottom navigation; `AppShell` keeps ownership of `NavigationBar`, `IndexedStack`, `PopScope`, and the pushed Logs & Reports route. |
-| Settings listener | The body is wrapped in a [`ListenableBuilder`](../lib/screens/settings_screen.dart:25) over the injected [`SettingsService`](../lib/services/settings_service.dart:60) | Keep the listener-driven update behavior so every control reflects and writes the persisted value. |
-| Persistence | Six persisted settings with setters `setVibrationFeedback`, `setAutoStartDetection`, `setLowPowerMode`, `setAudioEnabled`, `setInferenceEngine`, `setDetectionConfidence` ([`settings-screen-analysis.md`](settings-screen-analysis.md:90)) | Keys, defaults, setters, and persistence timing unchanged. |
-| Sensitivity draft behavior | Preset taps persist immediately; slider changes are draft-only until `onChangeEnd`; `_handleSettingsChanged` re-syncs the draft from the service ([`settings_screen.dart`](../lib/screens/settings_screen.dart:145)) | Preserve the draft/`onChangeEnd` behavior exactly. |
-| Existing accessibility semantics | The advanced slider keeps its `Semantics(container: true, label: ...)` wrapper including the current threshold value ([`settings_screen.dart`](../lib/screens/settings_screen.dart:177)) | Preserve the existing slider container + label semantics. |
+| [`SettingsScreen`](../../lib/screens/settings_screen.dart#L11) | A `StatelessWidget` with constructor `SettingsScreen({super.key, required SettingsService settings, required VoidCallback onOpenLogsReports})` ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L15)) | Keep it a `StatelessWidget`; keep both required inputs; add only the optional `TelemetryService? telemetry` input described in §2. Existing two-argument constructions must still compile. |
+| Shell construction | [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108) builds `SettingsScreen(settings: widget.settings, onOpenLogsReports: openLogsReports)` as tab index 2 | Only the Settings page construction is in scope; the single additive forward of `widget.telemetry` is the only shell change (§2). |
+| Navigation invariants | [`app_shell.dart`](../../lib/navigation/app_shell.dart#L20) owns the persistent four-tab [`NavigationBar`](../../lib/navigation/app_shell.dart#L138), the [`IndexedStack`](../../lib/navigation/app_shell.dart#L134), the `PopScope` tab-back behavior, and Logs & Reports as a pushed `MaterialPageRoute` | No removal or restructuring of the global four-tab bottom navigation; `AppShell` keeps ownership of `NavigationBar`, `IndexedStack`, `PopScope`, and the pushed Logs & Reports route. |
+| Settings listener | The body is wrapped in a [`ListenableBuilder`](../../lib/screens/settings_screen.dart#L25) over the injected [`SettingsService`](../../lib/services/settings_service.dart#L60) | Keep the listener-driven update behavior so every control reflects and writes the persisted value. |
+| Persistence | Six persisted settings with setters `setVibrationFeedback`, `setAutoStartDetection`, `setLowPowerMode`, `setAudioEnabled`, `setInferenceEngine`, `setDetectionConfidence` ([`settings-screen-analysis.md`](settings-screen-analysis.md)) | Keys, defaults, setters, and persistence timing unchanged. |
+| Sensitivity draft behavior | Preset taps persist immediately; slider changes are draft-only until `onChangeEnd`; `_handleSettingsChanged` re-syncs the draft from the service ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L145)) | Preserve the draft/`onChangeEnd` behavior exactly. |
+| Existing accessibility semantics | The advanced slider keeps its `Semantics(container: true, label: ...)` wrapper including the current threshold value ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L177)) | Preserve the existing slider container + label semantics. |
 | Runtime behavior | No camera start, ML init, engine coordination, TTS, telemetry computation, persistence, or gesture state in Settings | No runtime state source is added. |
-| Global theme | [`buildEyeCueTheme()`](../lib/theme/app_theme.dart:13) dark theme used by [`EyeCueApp`](../lib/main.dart:61) | Unchanged; Settings uses a locally scoped light context. |
+| Global theme | [`buildEyeCueTheme()`](../../lib/theme/app_theme.dart#L13) dark theme used by [`EyeCueApp`](../../lib/main.dart) | Unchanged; Settings uses a locally scoped light context. |
 | Light-theme scope | Home/Help `Theme` wrapper pattern | The light surface is scoped to the Settings subtree only; it must not leak into Detect, Home, Help, Logs & Reports, or the shell navigation bar. |
 
 ### Files in scope
 
 | File | Design-Spec responsibility | Scope rule |
 |---|---|---|
-| [`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart:11) | Replace the dark plain-`ListView` hierarchy with the light, responsive, accessible card composition; preserve all existing controls, setters, persistence timing, the sensitivity draft/`onChangeEnd` behavior, and existing accessibility semantics; add the optional `TelemetryService? telemetry` input. | Primary UI file. |
-| [`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart:108) | Forward the already-constructed `widget.telemetry` into the `SettingsScreen` construction (one additive line). | **Only approved non-UI boundary change** (see §2). |
-| [`test/widget_test.dart`](../test/widget_test.dart:102) | Extend the existing `SettingsScreen` group with the preserved controls and the new card structure. | No new test file. |
-| [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:1) | Add a Settings semantics group (grouped nodes, decorative-icon exclusion, 200% text scale, no overflow) using the existing helpers. | No new test file. |
-| [`docs/architecture.md`](../docs/architecture.md:1) | Doc update: Settings component row / theme section to note Settings now consumes the light `buildHomeTheme()` subtree and the optional telemetry input. | Root `/docs` authoritative. |
-| [`docs/changelog.md`](../docs/changelog.md:1) | Doc update: add an Unreleased Settings Screen Visual Redesign entry. | Root `/docs` authoritative. |
-| [`docs/implementation-progress.md`](../docs/implementation-progress.md:1) | Doc update: add a Current Unreleased Candidate Settings Screen Visual Redesign section. | Root `/docs` authoritative. |
-| [`docs/session-log.md`](../docs/session-log.md:1) | Doc update: append a new session entry at the top. | Root `/docs` authoritative. |
+| [`lib/screens/settings_screen.dart`](../../lib/screens/settings_screen.dart#L11) | Replace the dark plain-`ListView` hierarchy with the light, responsive, accessible card composition; preserve all existing controls, setters, persistence timing, the sensitivity draft/`onChangeEnd` behavior, and existing accessibility semantics; add the optional `TelemetryService? telemetry` input. | Primary UI file. |
+| [`lib/navigation/app_shell.dart`](../../lib/navigation/app_shell.dart#L108) | Forward the already-constructed `widget.telemetry` into the `SettingsScreen` construction (one additive line). | **Only approved non-UI boundary change** (see §2). |
+| [`test/widget_test.dart`](../../test/widget_test.dart#L102) | Extend the existing `SettingsScreen` group with the preserved controls and the new card structure. | No new test file. |
+| [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L1) | Add a Settings semantics group (grouped nodes, decorative-icon exclusion, 200% text scale, no overflow) using the existing helpers. | No new test file. |
+| [`docs/architecture.md`](../architecture.md) | Doc update: Settings component row / theme section to note Settings now consumes the light `buildHomeTheme()` subtree and the optional telemetry input. | Root `/docs` authoritative. |
+| [`docs/changelog.md`](../changelog.md) | Doc update: add an Unreleased Settings Screen Visual Redesign entry. | Root `/docs` authoritative. |
+| [`docs/implementation-progress.md`](../implementation-progress.md) | Doc update: add a Current Unreleased Candidate Settings Screen Visual Redesign section. | Root `/docs` authoritative. |
+| [`docs/session-log.md`](../session-log.md) | Doc update: append a new session entry at the top. | Root `/docs` authoritative. |
 | `.roo/rules/docs/` mirror | Re-copy the entire root `/docs` directory into `.roo/rules/docs/` in the same change (per the doc-update rule). | Plain mirror; never hand-edited independently. |
 
 ### Files that must remain untouched
 
-[`app_home_theme.dart`](../lib/theme/app_home_theme.dart:1),
-[`app_colors.dart`](../lib/theme/app_colors.dart:1),
-[`app_spacing.dart`](../lib/theme/app_spacing.dart:1),
-[`app_radii.dart`](../lib/theme/app_radii.dart:1),
-[`app_typography.dart`](../lib/theme/app_typography.dart:1),
-[`app_theme.dart`](../lib/theme/app_theme.dart:13),
-[`main.dart`](../lib/main.dart:25), every model/service (including
-[`settings_service.dart`](../lib/services/settings_service.dart:60),
-[`app_settings.dart`](../lib/models/app_settings.dart:1), and
-[`telemetry_service.dart`](../lib/services/telemetry_service.dart:175)), every
+[`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L1),
+[`app_colors.dart`](../../lib/theme/app_colors.dart#L1),
+[`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1),
+[`app_radii.dart`](../../lib/theme/app_radii.dart#L1),
+[`app_typography.dart`](../../lib/theme/app_typography.dart#L1),
+[`app_theme.dart`](../../lib/theme/app_theme.dart#L13),
+[`main.dart`](../../lib/main.dart#L25), every model/service (including
+[`settings_service.dart`](../../lib/services/settings_service.dart#L60),
+[`app_settings.dart`](../../lib/models/app_settings.dart#L1), and
+[`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L175)), every
 non-Settings screen, every widget in `lib/widgets/`, `assets/`, `pubspec.yaml`,
 and all `design-reference/` files. No new state-management, routing, gesture, or
 UI-component package is introduced.
 
 ## 2. The only approved non-UI boundary change (flagged)
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:574)
-and [`settings-screen-analysis.md`](settings-screen-analysis.md:486).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md)
+and [`settings-screen-analysis.md`](settings-screen-analysis.md).
 
 Showing live FPS/latency/confidence on the Settings screen requires the screen to
 read an existing service it does not currently receive. This is the **only**
 change outside the primary UI file, and it is explicitly approved as a narrow,
 additive UI-boundary change:
 
-1. **Optional constructor parameter** on [`SettingsScreen`](../lib/screens/settings_screen.dart:11):
+1. **Optional constructor parameter** on [`SettingsScreen`](../../lib/screens/settings_screen.dart#L11):
    `final TelemetryService? telemetry;` added as an optional named parameter
    (`this.telemetry`) alongside the existing required `settings` and
    `onOpenLogsReports`. Existing two-argument constructions continue to compile.
-2. **One forwarding line** in [`app_shell.dart`](../lib/navigation/app_shell.dart:108):
+2. **One forwarding line** in [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108):
    pass `telemetry: widget.telemetry` into the `SettingsScreen` construction.
 
 Why this is in scope and not an architecture change:
 
-- It adds **no new service** — [`TelemetryService`](../lib/services/telemetry_service.dart:175)
-  is already constructed in [`main.dart`](../lib/main.dart:27) and already held by
-  [`AppShell`](../lib/navigation/app_shell.dart:21).
+- It adds **no new service** — [`TelemetryService`](../../lib/services/telemetry_service.dart#L175)
+  is already constructed in [`main.dart`](../../lib/main.dart#L27) and already held by
+  [`AppShell`](../../lib/navigation/app_shell.dart#L21).
 - It changes **no existing constructor argument** and no service/model API.
 - It touches only UI-owned files (`lib/screens/`, `lib/navigation/`).
 - It is a **read-only consumption** of what the service layer already exposes,
@@ -104,43 +107,43 @@ that fallback is documented but not the chosen path.
 
 ## 3. Confirmed theme/token facts (no change needed)
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:260)
-and [`settings-screen-analysis.md`](settings-screen-analysis.md:277).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md)
+and [`settings-screen-analysis.md`](settings-screen-analysis.md).
 
 The following facts are confirmed before being included in this plan:
 
 - **No theme/token file change is required.** Settings reuses
-  [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50) and the existing
+  [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50) and the existing
   `kHome*`/`kSpace*`/`kRadius*` tokens as-is (established Home/Help precedent).
   No rename, no duplication, no new Settings-scoped theme or token.
-- **`buildHomeTheme()`** ([`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50))
+- **`buildHomeTheme()`** ([`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50))
   already supplies the light surface (`kHomeSurfaceBase`), IBM Plex Sans
   typography, the cyan accent `ColorScheme`, and disables runtime font fetching.
   It is applied to the Settings subtree only.
-- **`kHomeSurfaceCard`** ([`app_colors.dart`](../lib/theme/app_colors.dart:118),
+- **`kHomeSurfaceCard`** ([`app_colors.dart`](../../lib/theme/app_colors.dart),
   `#FFFFFF`) is the light card surface; **`kHomeSurfaceBase`**
-  ([`app_colors.dart`](../lib/theme/app_colors.dart:115), `#F5F5F5`) is the
+  ([`app_colors.dart`](../../lib/theme/app_colors.dart), `#F5F5F5`) is the
   content background.
-- **`kHomeInk`** ([`app_colors.dart`](../lib/theme/app_colors.dart:124),
+- **`kHomeInk`** ([`app_colors.dart`](../../lib/theme/app_colors.dart),
   `#0A0A0A`) is the dark System Performance card surface — the confirmed value,
   already an existing token, so no new token is required.
-- **`kRadius24`** ([`app_radii.dart`](../lib/theme/app_radii.dart:34)) is the
+- **`kRadius24`** ([`app_radii.dart`](../../lib/theme/app_radii.dart)) is the
   card corner radius for both the light cards and the dark System Performance
   card.
 - **Settings spacing is limited to `kSpace6`/`kSpace8`/`kSpace12`/`kSpace16`/`kSpace20`/`kSpace24`.**
-  `kSpace32` exists in [`app_spacing.dart`](../lib/theme/app_spacing.dart:1) but is
+  `kSpace32` exists in [`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1) but is
   **not authorized for Settings**; do not copy `32`, `48`, or `64` from the token
   PNG as new Settings spacing values.
 - **Shadow choice (resolved — confirmed against the codebase): `kHomeShadowSoft`
   is the single baseline for all cards, including the dark System Performance
   card.** The Design-Spec lists
-  [`kHomeShadowElevated`](../lib/theme/app_home_theme.dart:27) as an *optional*
+  [`kHomeShadowElevated`](../../lib/theme/app_home_theme.dart#L27) as an *optional*
   alternative for the large dark surface. This plan selects the single
   `kHomeShadowSoft` baseline for every card so the composition is uniform and the
   change stays minimal. This is confirmed against the codebase: both existing
   light surfaces use `kHomeShadowSoft` only
-  ([`help_screen.dart`](../lib/screens/help_screen.dart:130),
-  [`home_screen.dart`](../lib/screens/home_screen.dart:174)), and
+  ([`help_screen.dart`](../../lib/screens/help_screen.dart#L130),
+  [`home_screen.dart`](../../lib/screens/home_screen.dart#L174)), and
   `kHomeShadowElevated` is **not referenced anywhere in `lib/`** — it is a
   reserved token. Using it would introduce a shadow treatment the app does not
   currently render. `kHomeShadowElevated` is therefore not used.
@@ -151,12 +154,12 @@ The following facts are confirmed before being included in this plan:
 
 ## 4. Reference composition and viewport treatment
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:51).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 **This is a token-consistent restyle, not a screenshot match.** The target
 screenshot's sample metric values (`91.4 / % ACC`) and its `Concise` audio
 mode/status-pill treatment are overridden by the authoritative token/spec
-document ([`settings-screen-analysis.md`](settings-screen-analysis.md:169)):
+document ([`settings-screen-analysis.md`](settings-screen-analysis.md)):
 
 1. **Audio Guidance is a standard On/Off toggle**, not a mode selector.
 2. **Engine Selection and Detection Sensitivity are preserved** and regrouped
@@ -166,7 +169,7 @@ document ([`settings-screen-analysis.md`](settings-screen-analysis.md:169)):
 
 The Settings content area is composed above the existing shell navigation bar.
 The Settings widget must not add a replacement navigation control; the retained
-shell [`NavigationBar`](../lib/navigation/app_shell.dart:138) remains the
+shell [`NavigationBar`](../../lib/navigation/app_shell.dart#L138) remains the
 navigation surface and reduces the available Settings viewport.
 
 The composition is a light Settings canvas only. The light surface is scoped to
@@ -175,8 +178,8 @@ bar.
 
 ## 5. Layout hierarchy
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:84)
-and [`settings-screen-design-spec.md`](settings-screen-design-spec.md:336).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md)
+and [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 The redesigned Settings layout follows the Home/Help responsive pattern. The
 proposed hierarchy is:
@@ -206,18 +209,18 @@ selects a plain `ListView` because:
 - The Settings body is a fixed, short list of four cards that must simply scroll
   when the viewport is short or text is scaled — the exact case the Help screen
   already solves with a plain `ListView`
-  ([`help_screen.dart`](../lib/screens/help_screen.dart:43)), which is the
+  ([`help_screen.dart`](../../lib/screens/help_screen.dart#L43)), which is the
   closest precedent (a light, card-stacked, scrollable screen).
 - `CustomScrollView` is used by Home only because it needs
   `SliverFillRemaining(hasScrollBody: false)` to fill a short viewport with a
-  bottom-anchored CTA ([`home_screen.dart`](../lib/screens/home_screen.dart:56)).
+  bottom-anchored CTA ([`home_screen.dart`](../../lib/screens/home_screen.dart#L56)).
   Settings has no bottom-anchored element, so that sliver machinery is
   unnecessary complexity.
 - A `ListView` satisfies the 200% text-scale no-overflow requirement (it scrolls
   by construction) with the least complexity, matching the Design-Spec's
   "least complexity" guidance.
 
-The card widgets remain private to [`settings_screen.dart`](../lib/screens/settings_screen.dart:11)
+The card widgets remain private to [`settings_screen.dart`](../../lib/screens/settings_screen.dart#L11)
 following the existing `_`-prefixed convention (`_SectionHeader`,
 `_SensitivityControls`). No new public reusable widget is justified by this
 redesign.
@@ -226,9 +229,9 @@ redesign.
 
 The light `Theme` wrapper must be scoped to the Settings subtree only, mirroring
 the Home/Help `Theme` wrapper pattern. It must be placed **inside** the Settings
-page so it does not wrap the shell's [`NavigationBar`](../lib/navigation/app_shell.dart:138)
+page so it does not wrap the shell's [`NavigationBar`](../../lib/navigation/app_shell.dart#L138)
 or leak into other tabs. The wrapper calls
-[`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50) as-is.
+[`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50) as-is.
 
 ### 5.2 Status-bar treatment
 
@@ -245,7 +248,7 @@ Settings subtree.
 - Use the available content width from parent constraints; do not branch on
   device model or hardware type.
 - Keep a leading/trailing content inset based on the approved spacing scale, with
-  [`kSpace16`](../lib/theme/app_spacing.dart:34) as the baseline outer inset.
+  [`kSpace16`](../../lib/theme/app_spacing.dart#L34) as the baseline outer inset.
 - Preserve scrolling when the available height is short or text scaling causes
   the content to exceed the viewport; never overflow at 200% text scale.
 - Do not add `OrientationBuilder`, orientation locks, new platform configuration,
@@ -253,16 +256,16 @@ Settings subtree.
 
 ## 6. Card order and contents
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:133).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 **Card order (resolved by the Design-Spec — authoritative):**
 
 | # | Card | Contents | Source of the controls |
 |---|------|----------|------------------------|
-| 1 | **Preferences** | `Vibration Feedback`, `Auto-Start on Open`, `Low Power Mode` | Existing `SwitchListTile`s ([`settings_screen.dart`](../lib/screens/settings_screen.dart:31)) |
-| 2 | **Audio Guidance** | `Audio / Voice Guidance` On/Off toggle | Existing `SwitchListTile` bound to `settings.audioEnabled` / `settings.setAudioEnabled` ([`settings_screen.dart`](../lib/screens/settings_screen.dart:97)) |
-| 3 | **Engine & Sensitivity** | `Inference Engine` (`RadioGroup<InferenceEngine>` + `RadioListTile`s) and `Detection Sensitivity` (preset `RadioGroup<DetectionSensitivityPreset>` + advanced `Slider`) | Existing controls ([`settings_screen.dart`](../lib/screens/settings_screen.dart:58), [`settings_screen.dart`](../lib/screens/settings_screen.dart:121)) |
-| 4 | **System Performance** (dark) | Live `Avg FPS` / `Avg latency` (MS) / `Avg confidence` metrics + `View Logs & Reports` action row | New presentation of existing telemetry + existing `onOpenLogsReports` callback ([`settings_screen.dart`](../lib/screens/settings_screen.dart:105)) |
+| 1 | **Preferences** | `Vibration Feedback`, `Auto-Start on Open`, `Low Power Mode` | Existing `SwitchListTile`s ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L31)) |
+| 2 | **Audio Guidance** | `Audio / Voice Guidance` On/Off toggle | Existing `SwitchListTile` bound to `settings.audioEnabled` / `settings.setAudioEnabled` ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L97)) |
+| 3 | **Engine & Sensitivity** | `Inference Engine` (`RadioGroup<InferenceEngine>` + `RadioListTile`s) and `Detection Sensitivity` (preset `RadioGroup<DetectionSensitivityPreset>` + advanced `Slider`) | Existing controls ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L58), [`settings_screen.dart`](../../lib/screens/settings_screen.dart#L121)) |
+| 4 | **System Performance** (dark) | Live `Avg FPS` / `Avg latency` (MS) / `Avg confidence` metrics + `View Logs & Reports` action row | New presentation of existing telemetry + existing `onOpenLogsReports` callback ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L105)) |
 
 **Rationale (from the Design-Spec):** the order mirrors the existing
 top-to-bottom control order (Vibration → Auto-Start → Low Power → Inference
@@ -277,8 +280,8 @@ standalone `Research` section into the System Performance card.
 The task brief lists a fifth card, **Research**, in the required card order. The
 approved Design-Spec and Analysis describe **four** cards and place the
 `View Logs & Reports` action **inside the System Performance card**
-([`settings-screen-design-spec.md`](settings-screen-design-spec.md:150),
-[`settings-screen-design-spec.md`](settings-screen-design-spec.md:159)).
+([`settings-screen-design-spec.md`](settings-screen-design-spec.md),
+[`settings-screen-design-spec.md`](settings-screen-design-spec.md)).
 
 **Resolution (recommended, confirmed against the codebase): the four-card
 structure from the approved Design-Spec is authoritative; no fifth Research card
@@ -286,11 +289,11 @@ is created.** Rationale:
 
 - The current implementation has **no** standalone Research *card* — `Research`
   is only a `_SectionHeader` label above the single `View Logs & Reports`
-  `ListTile` ([`settings_screen.dart`](../lib/screens/settings_screen.dart:104)).
+  `ListTile` ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L104)).
   A fifth card would therefore contain exactly one row, which is not a card
   grouping the rest of the composition uses.
 - The Design-Spec and Analysis both explicitly move that single affordance into
-  the System Performance card ([`settings-screen-design-spec.md`](settings-screen-design-spec.md:159)),
+  the System Performance card ([`settings-screen-design-spec.md`](settings-screen-design-spec.md)),
   so the researcher-facing entry remains present and last in the order — the
   brief's intent (a researcher-facing entry at the end) is satisfied without a
   separate card.
@@ -304,19 +307,19 @@ Code stage.
 
 ## 7. Telemetry presentation rules
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:450)
-and [`settings-screen-analysis.md`](settings-screen-analysis.md:313).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md)
+and [`settings-screen-analysis.md`](settings-screen-analysis.md).
 
 ### 7.1 Metric semantics (verified — must be reflected accurately)
 
-[`TelemetryService`](../lib/services/telemetry_service.dart:175) exposes
+[`TelemetryService`](../../lib/services/telemetry_service.dart#L175) exposes
 **retained/rolling averages**, NOT instantaneous values:
 
 | Member | Semantics |
 |---|---|
-| [`averageInferenceFps`](../lib/services/telemetry_service.dart:352) | Arithmetic mean of retained `RuntimeSample.inferenceFps`. |
-| [`averageLatencyMs`](../lib/services/telemetry_service.dart:346) | Arithmetic mean of retained `RuntimeSample.latencyMs`. |
-| [`averageConfidence`](../lib/services/telemetry_service.dart:358) | Arithmetic mean of retained `TelemetryRecord.confidence` (combines all engines and classes). |
+| [`averageInferenceFps`](../../lib/services/telemetry_service.dart#L352) | Arithmetic mean of retained `RuntimeSample.inferenceFps`. |
+| [`averageLatencyMs`](../../lib/services/telemetry_service.dart#L346) | Arithmetic mean of retained `RuntimeSample.latencyMs`. |
+| [`averageConfidence`](../../lib/services/telemetry_service.dart#L358) | Arithmetic mean of retained `TelemetryRecord.confidence` (combines all engines and classes). |
 
 Runtime samples are capped at **500** and detection records at **2,000**, with the
 oldest evicted first; the averages operate only on retained entries. There is
@@ -328,9 +331,9 @@ The three columns are labeled exactly:
 
 | Column | Source | Label |
 |---|---|---|
-| FPS | [`averageInferenceFps`](../lib/services/telemetry_service.dart:352) | `Avg FPS` |
-| MS | [`averageLatencyMs`](../lib/services/telemetry_service.dart:346) | `Avg latency` |
-| Confidence | [`averageConfidence`](../lib/services/telemetry_service.dart:358) | `Avg confidence` |
+| FPS | [`averageInferenceFps`](../../lib/services/telemetry_service.dart#L352) | `Avg FPS` |
+| MS | [`averageLatencyMs`](../../lib/services/telemetry_service.dart#L346) | `Avg latency` |
+| Confidence | [`averageConfidence`](../../lib/services/telemetry_service.dart#L358) | `Avg confidence` |
 
 The "average" wording is required because the values are arithmetic means over
 retained samples; omitting it would misrepresent them as instantaneous.
@@ -357,11 +360,11 @@ sample/illustrative value and must not be reproduced as a live accuracy claim.
 
 No Settings control is disabled by this redesign.
 
-## 8. Concrete edits to [`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart:11)
+## 8. Concrete edits to [`lib/screens/settings_screen.dart`](../../lib/screens/settings_screen.dart#L11)
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:84),
-[`settings-screen-design-spec.md`](settings-screen-design-spec.md:172), and
-[`settings-screen-design-spec.md`](settings-screen-design-spec.md:188).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md),
+[`settings-screen-design-spec.md`](settings-screen-design-spec.md), and
+[`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 The primary implementation file. The redesign replaces the dark plain-`ListView`
 hierarchy with the light, responsive, accessible card composition while
@@ -381,7 +384,7 @@ Replace the current `Scaffold → AppBar → ListenableBuilder → ListView` bod
 a Settings-local light context wrapping the responsive/scroll-safe skeleton:
 
 - Wrap the Settings subtree in the light theme via
-  [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50) so the light surface
+  [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50) so the light surface
   and ink apply only to Settings.
 - Wrap the subtree in `AnnotatedRegion<SystemUiOverlayStyle>` for dark
   status-bar icons on the light surface.
@@ -398,14 +401,14 @@ a Settings-local light context wrapping the responsive/scroll-safe skeleton:
 Introduce a private `_SettingsCard` (replacing the standalone `_SectionHeader`
 usage) that renders one card:
 
-- **Surface:** [`kHomeSurfaceCard`](../lib/theme/app_colors.dart:118) on the
-  [`kHomeSurfaceBase`](../lib/theme/app_colors.dart:115) background.
-- **Corner radius:** [`kRadius24`](../lib/theme/app_radii.dart:34). No raw
+- **Surface:** [`kHomeSurfaceCard`](../../lib/theme/app_colors.dart) on the
+  [`kHomeSurfaceBase`](../../lib/theme/app_colors.dart) background.
+- **Corner radius:** [`kRadius24`](../../lib/theme/app_radii.dart). No raw
   `BorderRadius.circular(...)` literal.
-- **Shadow:** [`kHomeShadowSoft`](../lib/theme/app_home_theme.dart:18) (the
+- **Shadow:** [`kHomeShadowSoft`](../../lib/theme/app_home_theme.dart#L18) (the
   single baseline chosen in §3).
 - **Padding/separation:** token-based inner padding and card-to-card separation
-  (baseline [`kSpace16`](../lib/theme/app_spacing.dart:34)), not raw
+  (baseline [`kSpace16`](../../lib/theme/app_spacing.dart#L34)), not raw
   `EdgeInsets` literals.
 - **Header row:** a decorative section icon (excluded via `ExcludeSemantics`) at
   the retained size, a token gap, and the card heading in the light
@@ -415,10 +418,10 @@ usage) that renders one card:
 
 **Audio Guidance card tint (resolved — recommended: do not apply the tint).**
 The Design-Spec permits expressing the target's pale cyan card treatment with
-[`kHomeAccentCyanLight`](../lib/theme/app_colors.dart:136) as a card surface
+[`kHomeAccentCyanLight`](../../lib/theme/app_colors.dart) as a card surface
 tint. This plan **does not apply it**: the token is currently used only as the
 static cyan rail accent on Home
-([`home_screen.dart`](../lib/screens/home_screen.dart:256)), not as a card
+([`home_screen.dart`](../../lib/screens/home_screen.dart#L256)), not as a card
 surface, and the Design-Spec's own baseline card surface is
 `kHomeSurfaceCard` (§6.1). Keeping every light card on the same
 `kHomeSurfaceCard` surface keeps the composition uniform and the change minimal,
@@ -435,7 +438,7 @@ compact status). This plan uses **only `kRadius24`** for the cards: the Settings
 composition has no accent rail, no compact toggle-like wrapper, and no compact
 status treatment, so none of the conditional radii applies. Confirmed against
 the codebase: `kRadius3` is used only by the Home cyan rail
-([`home_screen.dart`](../lib/screens/home_screen.dart:257)), and `kRadius14` and
+([`home_screen.dart`](../../lib/screens/home_screen.dart#L257)), and `kRadius14` and
 `kRadius18` are **not referenced anywhere in `lib/`** — they are reserved tokens.
 Introducing them here would add treatments the composition does not need.
 
@@ -443,25 +446,25 @@ Introducing them here would add treatments the composition does not need.
 
 The System Performance card is the one dark surface:
 
-- **Surface:** [`kHomeInk`](../lib/theme/app_colors.dart:124) (`#0A0A0A`) —
+- **Surface:** [`kHomeInk`](../../lib/theme/app_colors.dart) (`#0A0A0A`) —
   confirmed as an existing token
-  ([`app_colors.dart`](../lib/theme/app_colors.dart:124)); no new token is
+  ([`app_colors.dart`](../../lib/theme/app_colors.dart)); no new token is
   required.
-- **Corner radius:** [`kRadius24`](../lib/theme/app_radii.dart:34) — confirmed as
-  an existing token ([`app_radii.dart`](../lib/theme/app_radii.dart:34)).
+- **Corner radius:** [`kRadius24`](../../lib/theme/app_radii.dart) — confirmed as
+  an existing token ([`app_radii.dart`](../../lib/theme/app_radii.dart)).
 - **Foreground text and metric values:** a light color derived from the active
   theme/`ColorScheme` (e.g. `onPrimary`/white) rather than a new token. The light
   `buildHomeTheme()` `ColorScheme` is seeded from `kHomeAccentCyan`
-  ([`app_home_theme.dart`](../lib/theme/app_home_theme.dart:57)), so
+  ([`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L57)), so
   `colorScheme.onPrimary` resolves to a light foreground suitable for the dark
   `kHomeInk` surface.
-- **Shadow:** [`kHomeShadowSoft`](../lib/theme/app_home_theme.dart:18) (baseline
+- **Shadow:** [`kHomeShadowSoft`](../../lib/theme/app_home_theme.dart#L18) (baseline
   per §3).
 - **Metrics:** three columns labeled `Avg FPS`, `Avg latency` (MS), and
   `Avg confidence`, using the truthful retained averages and the `—` empty/null
   presentation from §7.
 - **Action row:** a `View Logs & Reports` row inside this card that invokes the
-  existing `onOpenLogsReports` callback ([`settings_screen.dart`](../lib/screens/settings_screen.dart:105)).
+  existing `onOpenLogsReports` callback ([`settings_screen.dart`](../../lib/screens/settings_screen.dart#L105)).
 
 ### 8.5 Preserved controls and semantics
 
@@ -503,13 +506,13 @@ The existing `RadioGroup<T>` + per-tile `value` pattern and the existing
 
 ### 8.6 Private component boundary
 
-Keep screen-only helpers private to [`settings_screen.dart`](../lib/screens/settings_screen.dart:11),
+Keep screen-only helpers private to [`settings_screen.dart`](../../lib/screens/settings_screen.dart#L11),
 following the existing `_`-prefixed convention. Do not create a public component
 solely for this redesign.
 
-## 9. Concrete edit to [`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart:108)
+## 9. Concrete edit to [`lib/navigation/app_shell.dart`](../../lib/navigation/app_shell.dart#L108)
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:574).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 Add the single additive forward of the already-constructed telemetry service into
 the Settings page construction:
@@ -526,9 +529,9 @@ case 2:
 No other shell change. `AppShell` keeps ownership of the `NavigationBar`,
 `IndexedStack`, `PopScope`, and the pushed Logs & Reports route.
 
-## 10. Concrete edits to [`test/widget_test.dart`](../test/widget_test.dart:102)
+## 10. Concrete edits to [`test/widget_test.dart`](../../test/widget_test.dart#L102)
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:595).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 Extend the existing `SettingsScreen` group (no new test file). The current tests
 assert the preserved controls; these remain valid because the controls are
@@ -549,21 +552,21 @@ preserved. Add/update:
   metrics when telemetry is provided.
 
 **Widget-test font resolution:** because
-[`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50) sets
+[`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50) sets
 `GoogleFonts.config.allowRuntimeFetching = false` and the bundled IBM Plex Sans
-assets are declared in [`pubspec.yaml`](../pubspec.yaml:43) under
+assets are declared in [`pubspec.yaml`](../../pubspec.yaml#L43) under
 `assets/fonts/`, the Settings widget tests resolve the fonts locally from the
 asset bundle. No network fetch is attempted and no test-only font override is
 required.
 
-## 11. Concrete edits to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:1)
+## 11. Concrete edits to [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L1)
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:595).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 Add a Settings semantics group (no new test file) reusing the existing helpers
-[`scaledApp`](../test/accessibility/semantics_test.dart:54),
-[`expectSemanticNode`](../test/accessibility/semantics_test.dart:99), and
-[`withSemantics`](../test/accessibility/semantics_test.dart:105). Coverage:
+[`scaledApp`](../../test/accessibility/semantics_test.dart#L54),
+[`expectSemanticNode`](../../test/accessibility/semantics_test.dart#L99), and
+[`withSemantics`](../../test/accessibility/semantics_test.dart#L105). Coverage:
 
 - The screen title `Settings` is a real semantic heading.
 - Each card group (heading + controls) is exposed as a coherent semantic node.
@@ -579,36 +582,36 @@ Add a Settings semantics group (no new test file) reusing the existing helpers
 ## 12. Concrete edits to the doc-sync files
 
 **Doc-update rule cross-reference:** `.roo/rules/rules-frontend/06-doc-update.md`
-and [`ui-conventions.md`](ui-conventions.md:1).
+and [`ui-conventions.md`](../ui-conventions.md).
 
 Any UI change that adds a screen, token, component, or convention must update the
 corresponding documentation in **both** the root `/docs` and the
 `.roo/rules/docs/` mirror. Root `/docs` is authoritative; `.roo/rules/docs/` is a
 plain mirror re-copied in the same change.
 
-### 12.1 [`docs/architecture.md`](../docs/architecture.md:1)
+### 12.1 [`docs/architecture.md`](../architecture.md)
 
 Update the Settings Screen component row and the theme/design section to note
 that Settings now consumes the light
-[`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50) subtree (scoped to the
+[`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50) subtree (scoped to the
 Settings subtree only) and that `SettingsScreen` takes an optional
 `TelemetryService? telemetry` input forwarded from `AppShell`. No token/theme
 file change is recorded because none is made.
 
-### 12.2 [`docs/changelog.md`](../docs/changelog.md:1)
+### 12.2 [`docs/changelog.md`](../changelog.md)
 
 Add an **Unreleased — Settings Screen Visual Redesign** entry at the top (above
 the existing Help Screen Visual Redesign entry) listing Added/Changed/Verified
 for the light Settings subtree, the card composition, the dark System Performance
 card, the truthful telemetry presentation, and the accessibility coverage.
 
-### 12.3 [`docs/implementation-progress.md`](../docs/implementation-progress.md:1)
+### 12.3 [`docs/implementation-progress.md`](../implementation-progress.md)
 
 Add a **Current Unreleased Candidate (2026-09-10) — Settings Screen Visual
 Redesign** section above the Help Screen Visual Redesign section, recording the
 completed Settings work and the current validation state.
 
-### 12.4 [`docs/session-log.md`](../docs/session-log.md:1)
+### 12.4 [`docs/session-log.md`](../session-log.md)
 
 Append a new session entry at the top (above the 2026-09-09 Help Screen Visual
 Redesign entry) recording the objective, completed work, decisions, and next
@@ -622,7 +625,7 @@ independently of root `/docs`.
 
 ## 13. Acceptance criteria
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:530).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 ### Visual and responsive acceptance
 
@@ -666,7 +669,7 @@ independently of root `/docs`.
 - The optional `TelemetryService? telemetry` input plus the shell forward is
   classified as a **narrow, additive UI-boundary change** (an optional parameter
   on `SettingsScreen` plus forwarding the already-constructed service from
-  [`app_shell.dart`](../lib/navigation/app_shell.dart:108)). It adds no new
+  [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)). It adds no new
   service, changes no existing constructor argument, and keeps existing
   two-argument test constructions compiling.
 - `ListenableBuilder` over the injected `SettingsService` continues to drive
@@ -690,9 +693,9 @@ independently of root `/docs`.
 - Decorative icons are excluded from the accessibility tree.
 - The Settings screen has no overflow or clipped primary content at 200% text
   scale.
-- The existing `SettingsScreen` group in [`widget_test.dart`](../test/widget_test.dart:102)
+- The existing `SettingsScreen` group in [`widget_test.dart`](../../test/widget_test.dart#L102)
   covers the preserved controls and the new card structure.
-- [`semantics_test.dart`](../test/accessibility/semantics_test.dart:1) covers
+- [`semantics_test.dart`](../../test/accessibility/semantics_test.dart#L1) covers
   the Settings control semantics, decorative-icon exclusions, and 200% scale.
 
 ### Verification commands
@@ -716,7 +719,7 @@ implementation time, consistent with the Home and Help specs.
 
 ## 14. Explicitly deferred work
 
-**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md:627).
+**Design-Spec cross-reference:** [`settings-screen-design-spec.md`](settings-screen-design-spec.md).
 
 The following are not part of this Settings redesign:
 

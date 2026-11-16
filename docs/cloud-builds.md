@@ -2,12 +2,15 @@
 
 Workflow: `.github/workflows/android-build.yml` (**Android cloud build**).
 It builds on GitHub-hosted Ubuntu runners; Android Studio and a connected phone
-are not needed. This workflow does not deploy Supabase or publish to Google Play.
+are not needed. The workflow does not deploy Supabase. A signed public manual
+dispatch can upload to Play internal testing when `upload_internal` is enabled;
+it does not publish to the production track.
 
 ## Get a testing APK
 
 Push to `main` or `dev`, or open/update a pull request targeting either branch.
-The setup branch `ci/android-cloud-build` also triggers a build for verification.
+The CI branch `ci/android-cloud-build` and feature branch
+`feat/tts-speech-continuity` also trigger push builds.
 After the workflow is merged into the default branch, you can also use
 **GitHub → Actions → Android cloud build → Run workflow**. Leave **signed_release**
 unchecked to build a testing APK from the selected branch.
@@ -16,7 +19,8 @@ Open the finished run and download `eyecue-android-<run>-<attempt>` under
 **Artifacts**. Unzip it to obtain:
 
 - `eyecue-public-testsigned.apk` — optimized public APK, with the repository's
-  `-testsigned` version suffix. It has no `INTERNET` permission or upload client.
+  `-testsigned` version suffix. It has no `INTERNET` permission; the public app does not construct or invoke
+  an upload client.
 - If `study_build` is selected: `eyecue-study.apk`, built with the retained Study
   key and research entrypoint. Study never produces an AAB.
 - `BUILD.txt` — exact source commit, Flutter version, version name/code and
@@ -24,9 +28,11 @@ Open the finished run and download `eyecue-android-<run>-<attempt>` under
 - `SHA256SUMS` — file checksums.
 
 Artifacts expire after 14 days. Download any build you need to keep.
-The workflow checks analyzer, Flutter tests and the backend validator before
-building. Flutter is pinned to 3.44.2 (Dart 3.12.2), matching the tested local SDK;
-Java is 17. Gradle memory/workers are limited for the hosted runner.
+The workflow runs `flutter pub get --enforce-lockfile`, `flutter analyze`,
+`flutter test --concurrency=1`, and the Node backend validator before building.
+It pins Flutter 3.44.2 on stable and Java 17. The project declares a Dart SDK
+constraint of `>=3.12.0 <4.0.0` in `pubspec.yaml`; the constraint is not a local
+SDK version report. Gradle memory/workers are limited for the hosted runner.
 
 Cloud fallback signing uses the runner's generated Android debug keystore.
 It is **not guaranteed to match** the existing phone installation or another
@@ -75,8 +81,10 @@ and signing secrets are only provided to signing steps in this manual mode.
 Never enable `pull_request_target` to expose secrets to PR code.
 
 The public download will contain `eyecue-public-release.apk`,
-`eyecue-public-release.aab`, BUILD.txt
-and checksums. Missing signing secrets cause failure, not a debug-signed AAB.
+`eyecue-public-release.aab`, `BUILD.txt` and checksums. If `upload_internal`
+remains enabled, the same dispatch also uploads the signed public AAB to Play's
+internal track after the artifact is saved. Uncheck it to build without a Play
+upload. Missing signing secrets cause failure, not a debug-signed AAB.
 The workflow never uploads the keystore, source build directories or signing
 properties. Temporary signing material is removed in an `always()` step.
 
@@ -88,14 +96,21 @@ choose a new code for a new Play upload. Default version name is 1.0.0.
 An upload-key-signed APK may not match a locally debug-signed installation;
 Play-delivered APKs are signed with the Play app-signing key, which may differ
 from the upload key. Check certificate compatibility before updating a phone.
-Building an AAB does not complete privacy/store declarations or Play review.
+The app's Help screen links to `https://nmarcusg.github.io/eyecue_flutter/` in
+the public flavor. This workflow does not verify that page's current content or
+availability. Building or uploading an AAB does not complete privacy/store
+declarations or Play review.
 
 ## Troubleshooting
 
 - No Run workflow button: merge the workflow into GitHub's default branch first.
 - Run fails: open the failed step before attempting another build. Tests block
   artifacts intentionally; don't bypass them to label a failing build successful.
-- Upload unavailable: configure both repository variables and build again.
+- Study telemetry upload unavailable: configure `EYECUE_TELEMETRY_INGEST_URL`
+  and `EYECUE_SUPABASE_PUBLISHABLE_KEY`, then rebuild Study.
+- Play internal upload unavailable: verify `EYECUE_PLAY_SERVICE_ACCOUNT_JSON`,
+  the public signing secrets, and a manual signed dispatch with `upload_internal`
+  enabled; see [Play automation](play-internal-automation.md).
 - Signed build refuses to start: select main and configure all four secrets.
 - Actions restricted: check repository Settings → Actions → General permits
   the pinned checkout/setup-java/upload-artifact actions and subosito/flutter-action.

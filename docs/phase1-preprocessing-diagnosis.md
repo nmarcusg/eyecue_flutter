@@ -2,6 +2,9 @@
 
 # Phase 1 — Preprocessing Diagnosis After the Converter Fix
 
+> **Current status (2026-11-16):** This is a diagnostic snapshot of the 2026-08-01 Custom EyeCue input path. That engine, its isolate, and temporary probes are absent after [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9); current camera preprocessing/inference belongs to the `ultralytics_yolo` plugin path used by [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Preserve all measurements as historical evidence.
+
+
 > **Status:** Historical diagnosis record. No code was changed as part of this
 > report.
 > **Evidence base:** raw frame-by-frame `performance.txt`, frame-1 `tensor.txt`,

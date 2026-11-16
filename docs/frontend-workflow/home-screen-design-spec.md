@@ -1,63 +1,66 @@
 # EyeCue — Home Screen Design Specification
 
+> **Current status (2026-11-16):** This staged home redesign document is preserved as design history. The corresponding live screen is [`home_screen.dart`](../../lib/screens/home_screen.dart); the cross-screen presentation redesign was implemented and visually verified (see [`visual-redesign.md`](visual-redesign.md) and the device verification entry in [`../project-status.md`](../project-status.md)). Later changes may alter details from this snapshot; use current source as the behavior reference.
+
+
 > **Stage:** Design-Spec only. No application code, tests, assets, dependency
 > declarations, or navigation behavior are changed by this document.
 >
 > **Task type:** Visual-only Home-screen redesign.
 >
-> **Source of truth:** The approved [`home-screen-analysis.md`](home-screen-analysis.md:1),
+> **Source of truth:** The approved [`home-screen-analysis.md`](home-screen-analysis.md),
 > especially its **Resolved Open Questions / Decisions** section, is the source
 > of truth for this specification. The extracted token Markdown is authoritative
-> over the token-summary PNG, as resolved in [`home-screen-analysis.md`](home-screen-analysis.md:571).
+> over the token-summary PNG, as resolved in [`home-screen-analysis.md`](home-screen-analysis.md).
 
 ## 1. Scope, invariants, and implementation boundary
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:20)
-and [`home-screen-analysis.md`](home-screen-analysis.md:420).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 This specification defines the visual hierarchy, local light styling, preference
 copy, asset use, responsive relationships, and accessibility expectations for
-[`HomeScreen`](../lib/screens/home_screen.dart:11). It does not redesign the
+[`HomeScreen`](../../lib/screens/home_screen.dart#L11). It does not redesign the
 camera experience, other screens, global theme, or app architecture.
 
 The implementation must preserve these contracts:
 
 | Contract | Required behavior |
 |---|---|
-| [`HomeScreen.settings`](../lib/screens/home_screen.dart:12) | Remains the injected [`SettingsService`](../lib/services/settings_service.dart:60) input. Home continues to observe its [`ListenableBuilder`](../lib/screens/home_screen.dart:89) source so the preference presentation updates when `autoStartDetection` changes. |
-| [`HomeScreen.onGoToDetection`](../lib/screens/home_screen.dart:13) | Remains the callback for the real Home action. The accessible CTA invokes it exactly once per activation. |
-| [`AppShell`](../lib/navigation/app_shell.dart:20) | Remains the owner of the persistent four-tab [`NavigationBar`](../lib/navigation/app_shell.dart:138), the [`IndexedStack`](../lib/navigation/app_shell.dart:134), and Home-to-Detect routing. |
+| [`HomeScreen.settings`](../../lib/screens/home_screen.dart#L12) | Remains the injected [`SettingsService`](../../lib/services/settings_service.dart#L60) input. Home continues to observe its [`ListenableBuilder`](../../lib/screens/home_screen.dart#L89) source so the preference presentation updates when `autoStartDetection` changes. |
+| [`HomeScreen.onGoToDetection`](../../lib/screens/home_screen.dart#L13) | Remains the callback for the real Home action. The accessible CTA invokes it exactly once per activation. |
+| [`AppShell`](../../lib/navigation/app_shell.dart#L20) | Remains the owner of the persistent four-tab [`NavigationBar`](../../lib/navigation/app_shell.dart#L138), the [`IndexedStack`](../../lib/navigation/app_shell.dart#L134), and Home-to-Detect routing. |
 | Runtime behavior | No camera start, ML initialization, engine coordination, TTS, telemetry, persistence, or gesture state is added to Home. |
-| Global theme | The existing global dark [`buildEyeCueTheme()`](../lib/theme/app_theme.dart:13) and its use by [`EyeCueApp`](../lib/main.dart:61) remain unchanged. |
+| Global theme | The existing global dark [`buildEyeCueTheme()`](../../lib/theme/app_theme.dart#L13) and its use by [`EyeCueApp`](../../lib/main.dart) remain unchanged. |
 
-The primary implementation file is [`home_screen.dart`](../lib/screens/home_screen.dart:21).
-Changes to [`app_colors.dart`](../lib/theme/app_colors.dart:1),
-[`app_radii.dart`](../lib/theme/app_radii.dart:1), the local Home theme styling,
-[`pubspec.yaml`](../pubspec.yaml:9), and the two existing test files are limited
+The primary implementation file is [`home_screen.dart`](../../lib/screens/home_screen.dart#L21).
+Changes to [`app_colors.dart`](../../lib/theme/app_colors.dart#L1),
+[`app_radii.dart`](../../lib/theme/app_radii.dart#L1), the local Home theme styling,
+[`pubspec.yaml`](../../pubspec.yaml#L9), and the two existing test files are limited
 to the responsibilities defined in this specification.
 
 ## 2. Reference composition and viewport treatment
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:238),
-[`home-screen-analysis.md`](home-screen-analysis.md:254), and
-[`home-screen-analysis.md`](home-screen-analysis.md:653).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md),
+[`home-screen-analysis.md`](home-screen-analysis.md), and
+[`home-screen-analysis.md`](home-screen-analysis.md).
 
-The ready composition is based on [`home_screen.png`](../design-reference/screens/home_screen.png).
-The preparing composition in [`home-preparing.png`](../design-reference/screens/home-preparing.png)
+The ready composition is based on [`home_screen.png`](../../design-reference/screens/home_screen.png).
+The preparing composition in [`home-preparing.png`](../../design-reference/screens/home-preparing.png)
 is a visual reference for a future runtime state, not an implementation state in
 this feature.
 
 The Home content area is composed above the existing shell navigation bar:
 
 1. A preference/status badge aligned to the leading content edge.
-2. A large centered mark using [`assets/logo.png`](../assets/logo.png).
+2. A large centered mark using [`assets/logo.png`](../../assets/logo.png).
 3. A centered live-text `EyeCue` wordmark below the mark.
 4. A lower instruction region containing a truthful headline, supporting copy,
    the retained accessible CTA, and the light cyan rail accent.
 
 The screenshots' OS clock, battery, signal row, and other system artwork are not
 part of the widget. The Home widget must not add an app bar or a replacement
-navigation control. The retained shell [`NavigationBar`](../lib/navigation/app_shell.dart:138)
+navigation control. The retained shell [`NavigationBar`](../../lib/navigation/app_shell.dart#L138)
 reduces the available Home viewport and must remain visible below the redesigned
 content.
 
@@ -67,22 +70,22 @@ shell navigation bar.
 
 ## 3. Responsive layout specification
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:361)
-and [`home-screen-analysis.md`](home-screen-analysis.md:653).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 The reference canvas is 390 × 844 and is a proportional baseline, not a source
-of Flutter pixel literals. Use the existing [`SafeArea`](../lib/screens/home_screen.dart:25),
-[`LayoutBuilder`](../lib/screens/home_screen.dart:27), and
-[`SingleChildScrollView`](../lib/screens/home_screen.dart:29) pattern.
+of Flutter pixel literals. Use the existing [`SafeArea`](../../lib/screens/home_screen.dart#L25),
+[`LayoutBuilder`](../../lib/screens/home_screen.dart#L27), and
+[`SingleChildScrollView`](../../lib/screens/home_screen.dart#L29) pattern.
 
 ### 3.1 Horizontal relationships
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:367).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 - Use the available content width from parent constraints; do not branch on
   device model or hardware type.
 - Keep a leading/trailing content inset based on the approved spacing scale,
-  with [`kSpace16`](../lib/theme/app_spacing.dart:34) as the baseline outer inset.
+  with [`kSpace16`](../../lib/theme/app_spacing.dart#L34) as the baseline outer inset.
 - Keep the status badge intrinsically sized and leading-aligned; it must not
   stretch to the full viewport width.
 - Constrain the brand group to a centered bounded width. The mark is a
@@ -96,7 +99,7 @@ of Flutter pixel literals. Use the existing [`SafeArea`](../lib/screens/home_scr
 
 ### 3.2 Vertical relationships
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:381).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 - Place the badge near the top of the SafeArea content with token-based inset.
 - Give the brand group the dominant vertical share of the available content,
@@ -113,8 +116,8 @@ of Flutter pixel literals. Use the existing [`SafeArea`](../lib/screens/home_scr
 
 ### 3.3 Narrow, large, and scaled constraints
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:374)
-and [`home-screen-analysis.md`](home-screen-analysis.md:348).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 - At narrow widths, allow the preference copy and lower instruction copy to
   wrap; never clip text or force horizontal overflow.
@@ -124,35 +127,35 @@ and [`home-screen-analysis.md`](home-screen-analysis.md:348).
   rather than shrinking text below its specified role size.
 - At 200% text scale, the badge, copy, and CTA must expand or wrap while the
   logo remains decorative and bounded.
-- Do not add [`OrientationBuilder`](../lib/screens/home_screen.dart:27),
+- Do not add [`OrientationBuilder`](../../lib/screens/home_screen.dart#L27),
   orientation locks, new platform configuration, or portrait-only device
   behavior as part of this visual change.
 
 ## 4. Preference-derived status and copy
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:485),
-[`home-screen-analysis.md`](home-screen-analysis.md:508), and
-[`home-screen-analysis.md`](home-screen-analysis.md:523).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md),
+[`home-screen-analysis.md`](home-screen-analysis.md), and
+[`home-screen-analysis.md`](home-screen-analysis.md).
 
 ### 4.1 Ready badge meaning
 
-The top badge presents only the existing [`autoStartDetection`](../lib/services/settings_service.dart:69)
+The top badge presents only the existing [`autoStartDetection`](../../lib/services/settings_service.dart#L69)
 preference. It is not evidence that the camera, model, engine, or detection
 runtime is ready or running.
 
 When `autoStartDetection` is `true`:
 
 - Badge text: `READY`.
-- Dot/accent: [`kHomeAccentCyan`](../lib/theme/app_colors.dart:1).
-- Badge surface: [`kHomeSurfaceCard96`](../lib/theme/app_colors.dart:1).
+- Dot/accent: [`kHomeAccentCyan`](../../lib/theme/app_colors.dart#L1).
+- Badge surface: [`kHomeSurfaceCard96`](../../lib/theme/app_colors.dart#L1).
 - Accessible status meaning: `Auto-Start is on. Detection will begin when you open Detect.`
 
 When `autoStartDetection` is `false`:
 
 - Badge text: `AUTO-START OFF`.
-- Dot/accent: [`kHomeInkMuted`](../lib/theme/app_colors.dart:1), not the
+- Dot/accent: [`kHomeInkMuted`](../../lib/theme/app_colors.dart#L1), not the
   preparing amber, because this is a preference state rather than preparation.
-- Badge surface: [`kHomeSurfaceCard96`](../lib/theme/app_colors.dart:1).
+- Badge surface: [`kHomeSurfaceCard96`](../../lib/theme/app_colors.dart#L1).
 - Accessible status meaning: `Auto-Start is off. Open Detect and press Start to begin.`
 
 The off-state badge wording is a truthful Home-specific presentation of the
@@ -161,12 +164,12 @@ runtime claim.
 
 The supplied ready/preparing references do not show an Auto-Start-off badge, so
 this off-state is a new composition. Its visual treatment follows the existing
-codebase precedent for an inactive/off preference: the current [`_StatusCard`](../lib/screens/home_screen.dart:81)
+codebase precedent for an inactive/off preference: the current [`_StatusCard`](../../lib/screens/home_screen.dart#L81)
 off branch uses a muted foreground (`theme.colorScheme.onSurfaceVariant`) rather
 than an accent color, and the app's muted status token
-([`kStatusBlueGrey`](../lib/theme/app_colors.dart:45)) represents a stopped/inactive
-state. The off-state badge therefore uses the muted [`kHomeInkMuted`](../lib/theme/app_colors.dart:1)
-dot with `AUTO-START OFF` text on the [`kHomeSurfaceCard96`](../lib/theme/app_colors.dart:1)
+([`kStatusBlueGrey`](../../lib/theme/app_colors.dart#L45)) represents a stopped/inactive
+state. The off-state badge therefore uses the muted [`kHomeInkMuted`](../../lib/theme/app_colors.dart#L1)
+dot with `AUTO-START OFF` text on the [`kHomeSurfaceCard96`](../../lib/theme/app_colors.dart#L1)
 surface. The badge is intrinsically sized and leading-aligned, uses the
 authoritative 18/24 radii, and must wrap rather than clip at 200% text scale.
 Its final dot size and pill width are confirmed visually on the physical Android
@@ -174,7 +177,7 @@ device during implementation (see §11).
 
 ### 4.2 Visible supporting copy
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:533).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 Use the following exact preference-truthful supporting copy below the lower
 instruction headline:
@@ -190,34 +193,34 @@ app-launch auto-start behavior.
 
 ### 4.3 Preparing reference
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:508).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 Do not add a real `Preparing` branch, timer, fake loading state, or new Home
 runtime input. The amber dot and `Preparing` copy in
-[`home-preparing.png`](../design-reference/screens/home-preparing.png) remain a
+[`home-preparing.png`](../../design-reference/screens/home-preparing.png) remain a
 future composition reference only. Connecting that variant requires lifting
-Detect-owned runtime state through [`AppShell`](../lib/navigation/app_shell.dart:20),
+Detect-owned runtime state through [`AppShell`](../../lib/navigation/app_shell.dart#L20),
 which is outside this visual-only scope.
 
 ## 5. CTA and deferred gesture treatment
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:540)
-and [`home-screen-analysis.md`](home-screen-analysis.md:330).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
-The real Home action remains [`AccessibleButton`](../lib/widgets/accessible_button.dart:8)
+The real Home action remains [`AccessibleButton`](../../lib/widgets/accessible_button.dart#L8)
 with:
 
 - visible label: `Go to Live Camera`;
 - existing camera icon treatment unless a Home-local visual wrapper is required;
 - `prominent: true` or an equivalent Home-local presentation that preserves its
   callback and semantics;
-- activation callback: [`onGoToDetection`](../lib/screens/home_screen.dart:13);
+- activation callback: [`onGoToDetection`](../../lib/screens/home_screen.dart#L13);
 - minimum touch target preserved through the existing 64 × 56 logical-pixel
-  contract in [`AccessibleButton`](../lib/widgets/accessible_button.dart:41).
+  contract in [`AccessibleButton`](../../lib/widgets/accessible_button.dart#L41).
 
 The button may be placed inside the lower instruction region and visually styled
 through a Home-local light theme. Do not modify the shared visual defaults of
-[`AccessibleButton`](../lib/widgets/accessible_button.dart:8), because that
+[`AccessibleButton`](../../lib/widgets/accessible_button.dart#L8), because that
 would affect Detection and other screens.
 
 The reference's `Swipe right to start!` text and the corresponding swipe handler
@@ -231,20 +234,20 @@ or gesture affordance and must be excluded from semantics.
 
 ## 6. Local Home visual theme
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:557)
-and [`home-screen-analysis.md`](home-screen-analysis.md:171).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 Home uses a locally scoped light visual theme/token context. The global dark
-theme, [`ThemeMode.dark`](../lib/main.dart:77), and shell navigation colors are
+theme, [`ThemeMode.dark`](../../lib/main.dart), and shell navigation colors are
 unchanged. The local Home context supplies the light background, ink, cyan
 accent, and Home typography to the Home subtree only.
 
 ### 6.1 Home color tokens
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:588)
-and [`extracted-design-tokens-screenshot.md`](../design-reference/tokens/extracted-design-tokens-screenshot.md:66).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`extracted-design-tokens-screenshot.md`](../../design-reference/tokens/extracted-design-tokens-screenshot.md).
 
-Add the following semantic constants to [`app_colors.dart`](../lib/theme/app_colors.dart:1)
+Add the following semantic constants to [`app_colors.dart`](../../lib/theme/app_colors.dart#L1)
 using the existing `k`-prefixed convention. These are the approved values from
 the authoritative extracted Markdown source:
 
@@ -261,18 +264,18 @@ the authoritative extracted Markdown source:
 | `kHomeAccentCyanDark` | `#087A9E` | Accessible dark cyan variant for a Home-specific pressed/glyph treatment if needed |
 | `kHomeWarningAmber` | `#F5B942` | Reserved for the deferred Preparing variant; not used to imply Auto-Start off |
 
-Do not replace existing global dark tokens or reinterpret [`kAccent`](../lib/theme/app_colors.dart:27)
+Do not replace existing global dark tokens or reinterpret [`kAccent`](../../lib/theme/app_colors.dart#L27)
 for Home. Do not add raw `Color(...)`, `Colors.*`, or alpha color literals to
-[`home_screen.dart`](../lib/screens/home_screen.dart:21) for these roles.
+[`home_screen.dart`](../../lib/screens/home_screen.dart#L21) for these roles.
 
 ### 6.2 Spacing and radii
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:199)
-and [`home-screen-analysis.md`](home-screen-analysis.md:571).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 The extracted Markdown wins over the PNG's coarser spacing summary. Home uses
 the spacing scale `6, 8, 12, 16, 20, 24`, represented by the existing
-[`app_spacing.dart`](../lib/theme/app_spacing.dart:1) tokens:
+[`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1) tokens:
 
 - `kSpace6`: rail thickness or compact separation;
 - `kSpace8`: closely related text separation;
@@ -295,17 +298,17 @@ The Home implementation must use the authoritative radii `3, 12, 14, 18, 24`:
 | 18 | Compact status treatment if required by the final composition |
 | 24 | Large status badge and large Home surfaces |
 
-[`app_radii.dart`](../lib/theme/app_radii.dart:1) currently lacks the missing
+[`app_radii.dart`](../../lib/theme/app_radii.dart#L1) currently lacks the missing
 reference values `3`, `14`, `18`, and `24`; add them as named `kRadius*` tokens
 in the implementation stage rather than hardcoding them in the screen. Reuse
 existing matching tokens where available.
 
 ### 6.3 Shadows as a theme component
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:588)
-and [`extracted-design-tokens-screenshot.md`](../design-reference/tokens/extracted-design-tokens-screenshot.md:86).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`extracted-design-tokens-screenshot.md`](../../design-reference/tokens/extracted-design-tokens-screenshot.md).
 
-Shadows are not entries in [`app_colors.dart`](../lib/theme/app_colors.dart:1).
+Shadows are not entries in [`app_colors.dart`](../../lib/theme/app_colors.dart#L1).
 Define them in a Home-local theme/decoration component consumed only by Home:
 
 | Name | Definition | Intended use |
@@ -315,20 +318,20 @@ Define them in a Home-local theme/decoration component consumed only by Home:
 | `shadow-knob` | `0px 2px 5px rgba(0,0,0,0.12)` | Not used by the current Home composition; reserved for a future control |
 
 The component may be represented by Home-local theme data in the existing
-[`app_theme.dart`](../lib/theme/app_theme.dart:13) or another `app_*.dart` theme
-file, but it must not mutate [`buildEyeCueTheme()`](../lib/theme/app_theme.dart:13)
+[`app_theme.dart`](../../lib/theme/app_theme.dart#L13) or another `app_*.dart` theme
+file, but it must not mutate [`buildEyeCueTheme()`](../../lib/theme/app_theme.dart#L13)
 or the global navigation theme.
 
 ## 7. Typography and offline font packaging
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:605)
-and [`home-screen-analysis.md`](home-screen-analysis.md:718).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 Add [`google_fonts`](https://pub.dev/packages/google_fonts) at version `^8.2.1`
-to [`pubspec.yaml`](../pubspec.yaml:9). Apply IBM Plex Sans only in the local
+to [`pubspec.yaml`](../../pubspec.yaml#L9). Apply IBM Plex Sans only in the local
 Home typography context through
-[`GoogleFonts.plexSansTextTheme(...)`](home-screen-analysis.md:618). Do not
-replace the global high-contrast [`highContrastTextTheme()`](../lib/theme/app_typography.dart:13)
+[`GoogleFonts.plexSansTextTheme(...)`](home-screen-analysis.md). Do not
+replace the global high-contrast [`highContrastTextTheme()`](../../lib/theme/app_typography.dart#L13)
 used by the dark application theme.
 
 The offline mode is mandatory and is confirmed against the
@@ -337,7 +340,7 @@ The offline mode is mandatory and is confirmed against the
 
 - bundle the font files as application assets under a dedicated folder (for
   example `assets/fonts/`) and declare that folder under `assets:` in
-  [`pubspec.yaml`](../pubspec.yaml:43);
+  [`pubspec.yaml`](../../pubspec.yaml#L43);
 - keep the original Google Fonts filenames so the package can resolve them
   locally — no `fonts:` section is required;
 - disable runtime HTTP fetching by setting
@@ -355,8 +358,8 @@ locally before relying on the offline path.
 
 ### 7.1 Material role mapping
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:627)
-and [`extracted-design-tokens-screenshot.md`](../design-reference/tokens/extracted-design-tokens-screenshot.md:91).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`extracted-design-tokens-screenshot.md`](../../design-reference/tokens/extracted-design-tokens-screenshot.md).
 
 The local Home text theme maps the extracted IBM Plex Sans roles as follows:
 
@@ -384,24 +387,24 @@ No other font weights are required by this Home specification.
 
 Line height and letter spacing are not specified in the extracted source. The
 codebase precedent confirms the global theme relies on Flutter defaults: the
-existing [`highContrastTextTheme()`](../lib/theme/app_typography.dart:13) sets
+existing [`highContrastTextTheme()`](../../lib/theme/app_typography.dart#L13) sets
 no `height` or `letterSpacing` on any role, and the only explicit values in the
 codebase are localized widget overrides (for example
-[`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:54)
-`height: 1.2`, [`priority_badge.dart`](../lib/widgets/priority_badge.dart:41)
-`letterSpacing: 0.5`, and [`help_screen.dart`](../lib/screens/help_screen.dart:96)
+[`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L54)
+`height: 1.2`, [`priority_badge.dart`](../../lib/widgets/priority_badge.dart#L41)
+`letterSpacing: 0.5`, and [`help_screen.dart`](../../lib/screens/help_screen.dart#L96)
 `height: 1.4`). The local Home IBM Plex Sans theme therefore uses the resolved
 Flutter/Google Fonts role defaults for line height and letter spacing, matching
 the global theme's convention, rather than inventing new values.
 
 ## 8. Logo asset and wordmark
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:308)
-and [`home-screen-analysis.md`](home-screen-analysis.md:640).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
-Use the existing mark-only [`assets/logo.png`](../assets/logo.png). The image is
+Use the existing mark-only [`assets/logo.png`](../../assets/logo.png). The image is
 not edited, recolored, cropped to include text, or replaced by an icon. Add its
-asset registration to [`pubspec.yaml`](../pubspec.yaml:43) during implementation
+asset registration to [`pubspec.yaml`](../../pubspec.yaml#L43) during implementation
 so the existing file can be loaded.
 
 The `EyeCue` wordmark is separate live text using the local
@@ -416,15 +419,15 @@ The logo image is decorative when the adjacent live wordmark is present:
 
 ## 9. Accessibility and semantics specification
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:330)
-and [`home-screen-analysis.md`](home-screen-analysis.md:356).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 The redesign must remain usable through TalkBack without relying on color, logo
 shape, or an unimplemented gesture.
 
 ### 9.1 Semantic tree
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:341).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 Use this semantic order:
 
@@ -437,7 +440,7 @@ The status badge is a non-interactive semantic container. Its textual label must
 distinguish Auto-Start on from Auto-Start off; cyan versus muted color is only a
 visual reinforcement. The logo image and cyan rail are excluded as decorative
 descendants. Do not create duplicate semantics from a wrapper and the
-[`AccessibleButton`](../lib/widgets/accessible_button.dart:27) child.
+[`AccessibleButton`](../../lib/widgets/accessible_button.dart#L27) child.
 
 The badge may be treated as a deliberate preference-status update when the
 settings value changes, but it must never become a per-frame or runtime-ready
@@ -445,107 +448,107 @@ live region. It must not announce camera detections.
 
 ### 9.2 CTA semantics
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:334).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 Preserve the existing button role, enabled state, tap action, and activation hint
-provided by [`AccessibleButton`](../lib/widgets/accessible_button.dart:27). The
+provided by [`AccessibleButton`](../../lib/widgets/accessible_button.dart#L27). The
 CTA must remain a real focusable control at 200% text scale and must continue to
-invoke [`onGoToDetection`](../lib/screens/home_screen.dart:13) without a gesture.
+invoke [`onGoToDetection`](../../lib/screens/home_screen.dart#L13) without a gesture.
 
 ### 9.3 Large text and touch targets
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:348)
-and [`home-screen-analysis.md`](home-screen-analysis.md:352).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
-- Test the Home screen with the existing 200% [`scaledApp`](../test/accessibility/semantics_test.dart:54)
+- Test the Home screen with the existing 200% [`scaledApp`](../../test/accessibility/semantics_test.dart#L54)
   helper.
 - Permit status and supporting copy to wrap and expand.
 - Do not clip the badge text, wordmark, headline, or CTA label.
-- Preserve the existing [`kMinTouchWidth`](../lib/theme/app_spacing.dart:51)
-  and [`kMinTouchHeight`](../lib/theme/app_spacing.dart:54) guidance.
+- Preserve the existing [`kMinTouchWidth`](../../lib/theme/app_spacing.dart)
+  and [`kMinTouchHeight`](../../lib/theme/app_spacing.dart) guidance.
 - Do not make the deferred right-swipe the only way to start detection.
 
 ## 10. Component and file plan
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:276)
-and [`home-screen-analysis.md`](home-screen-analysis.md:389).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 The design does not justify a new public reusable widget. Keep screen-only
-helpers private to [`home_screen.dart`](../lib/screens/home_screen.dart:81),
+helpers private to [`home_screen.dart`](../../lib/screens/home_screen.dart#L81),
 following the existing `_StatusCard` convention. A private status badge and a
 private instruction region are acceptable if they reduce build-method complexity;
 do not create a public component solely for this redesign.
 
 | File | Design-Spec responsibility | Scope rule |
 |---|---|---|
-| [`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart:21) | Replace the dark centered-column hierarchy with the responsive reference composition; preserve settings listening and CTA callback. | Primary UI file. |
-| [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart:1) | Add the approved `kHome*` light semantic colors. | UI token layer only. |
-| [`lib/theme/app_radii.dart`](../lib/theme/app_radii.dart:1) | Add missing authoritative `kRadius3`, `kRadius14`, `kRadius18`, and `kRadius24` values; reuse existing values where possible. | UI token layer only. |
-| [`lib/theme/app_theme.dart`](../lib/theme/app_theme.dart:13) or another `app_*.dart` theme file | Provide Home-local typography/decoration theme data without changing the global dark theme. | Local Home theme only. |
-| [`pubspec.yaml`](../pubspec.yaml:9) | Add `google_fonts: ^8.2.1`, register `assets/logo.png`, and register the selected offline IBM Plex Sans font asset folder. | Minimal packaging prerequisite; no unrelated dependency or asset changes. |
-| [`test/widget_test.dart`](../test/widget_test.dart:12) | Extend the existing `HomeScreen` group with visual/state/callback regressions. | No new test file. |
-| [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:115) | Add Home status, wordmark, CTA, decorative-image, and 200% text-scale semantics coverage using existing helpers. | No new test file. |
+| [`lib/screens/home_screen.dart`](../../lib/screens/home_screen.dart#L21) | Replace the dark centered-column hierarchy with the responsive reference composition; preserve settings listening and CTA callback. | Primary UI file. |
+| [`lib/theme/app_colors.dart`](../../lib/theme/app_colors.dart#L1) | Add the approved `kHome*` light semantic colors. | UI token layer only. |
+| [`lib/theme/app_radii.dart`](../../lib/theme/app_radii.dart#L1) | Add missing authoritative `kRadius3`, `kRadius14`, `kRadius18`, and `kRadius24` values; reuse existing values where possible. | UI token layer only. |
+| [`lib/theme/app_theme.dart`](../../lib/theme/app_theme.dart#L13) or another `app_*.dart` theme file | Provide Home-local typography/decoration theme data without changing the global dark theme. | Local Home theme only. |
+| [`pubspec.yaml`](../../pubspec.yaml#L9) | Add `google_fonts: ^8.2.1`, register `assets/logo.png`, and register the selected offline IBM Plex Sans font asset folder. | Minimal packaging prerequisite; no unrelated dependency or asset changes. |
+| [`test/widget_test.dart`](../../test/widget_test.dart#L12) | Extend the existing `HomeScreen` group with visual/state/callback regressions. | No new test file. |
+| [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L115) | Add Home status, wordmark, CTA, decorative-image, and 200% text-scale semantics coverage using existing helpers. | No new test file. |
 
-Do not modify [`AppShell`](../lib/navigation/app_shell.dart:20),
-[`main.dart`](../lib/main.dart:25), [`SettingsService`](../lib/services/settings_service.dart:60),
+Do not modify [`AppShell`](../../lib/navigation/app_shell.dart#L20),
+[`main.dart`](../../lib/main.dart#L25), [`SettingsService`](../../lib/services/settings_service.dart#L60),
 any model/service, or any non-Home screen for this feature.
 
 ## 11. Verification and acceptance criteria
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:389),
-[`home-screen-analysis.md`](home-screen-analysis.md:420), and
-[`home-screen-analysis.md`](home-screen-analysis.md:687).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md),
+[`home-screen-analysis.md`](home-screen-analysis.md), and
+[`home-screen-analysis.md`](home-screen-analysis.md).
 
 The implementation is complete only when all of the following are true:
 
 ### Visual and responsive acceptance
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:361).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 - Home renders the light `#F5F5F5`-role surface above the unchanged navigation
   bar.
 - The badge, centered mark, live wordmark, lower instruction, cyan rail, and
-  CTA follow the reference hierarchy from [`home_screen.png`](../design-reference/screens/home_screen.png).
+  CTA follow the reference hierarchy from [`home_screen.png`](../../design-reference/screens/home_screen.png).
 - The composition uses token values and proportional/bounded relationships,
   not screenshot pixel positions.
-- The logo mark is loaded from [`assets/logo.png`](../assets/logo.png), while
+- The logo mark is loaded from [`assets/logo.png`](../../assets/logo.png), while
   `EyeCue` remains live IBM Plex Sans text.
 - The global dark theme and the four-tab navigation remain visually and
   behaviorally unchanged.
 
 ### Behavior and copy acceptance
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:485).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md).
 
 - Auto-Start on presents `READY` as a preference presentation and uses the
   exact truthful copy specified above.
 - Auto-Start off presents `AUTO-START OFF` and the exact manual-start copy.
 - No Home copy claims that detection is already running, that app-launch
   auto-start has occurred, or that a runtime is Preparing.
-- Changing [`SettingsService.autoStartDetection`](../lib/services/settings_service.dart:69)
+- Changing [`SettingsService.autoStartDetection`](../../lib/services/settings_service.dart#L69)
   updates the Home presentation through the existing listener behavior.
-- Tapping `Go to Live Camera` invokes [`onGoToDetection`](../lib/screens/home_screen.dart:13).
+- Tapping `Go to Live Camera` invokes [`onGoToDetection`](../../lib/screens/home_screen.dart#L13).
 - No right-swipe handler or new runtime state source is introduced.
 
 ### Accessibility and automated-test acceptance
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:330)
-and [`home-screen-analysis.md`](home-screen-analysis.md:669).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 - The wordmark, status meaning, and CTA have non-duplicated semantics.
 - The logo and rail are decorative/excluded.
 - The CTA retains an actionable button role, enabled state, hint, and callback.
 - The Home screen has no overflow or clipped primary content at 200% text scale.
-- The existing Home group in [`widget_test.dart`](../test/widget_test.dart:12)
+- The existing Home group in [`widget_test.dart`](../../test/widget_test.dart#L12)
   covers branding, both preference presentations, listener updates, and CTA
   activation.
-- [`semantics_test.dart`](../test/accessibility/semantics_test.dart:115) covers
+- [`semantics_test.dart`](../../test/accessibility/semantics_test.dart#L115) covers
   the status node, live wordmark, CTA, decorative exclusions, and 200% scale.
 
 ### Physical Android-device acceptance
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:330)
-and [`ui-conventions.md`](ui-conventions.md:95).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`ui-conventions.md`](../ui-conventions.md).
 
 A physical Android device is available and connects to the development host
 over USB/wire (confirmed by the project owner). The implemented Home screen is
@@ -559,8 +562,8 @@ is attached at implementation time.
 
 ## 12. Explicitly deferred work
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:460)
-and [`home-screen-analysis.md`](home-screen-analysis.md:697).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 The following are not part of this Home redesign:
 
@@ -577,8 +580,8 @@ The following are not part of this Home redesign:
 
 ## Open Questions / Needs Verification
 
-**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md:477)
-and [`home-screen-analysis.md`](home-screen-analysis.md:726).
+**Analysis cross-reference:** [`home-screen-analysis.md`](home-screen-analysis.md)
+and [`home-screen-analysis.md`](home-screen-analysis.md).
 
 The product and architecture decisions required for this Design-Spec are
 resolved, and the previously listed implementation details have been confirmed
@@ -587,11 +590,11 @@ and moved into their owning sections:
 - **IBM Plex Sans offline packaging and no-network configuration** — resolved
   in §7 against the [`google_fonts`](https://pub.dev/packages/google_fonts)
   package guidance (Context7, version 8.2.1): bundle the four weights under an
-  asset folder declared in [`pubspec.yaml`](../pubspec.yaml:43), keep the
+  asset folder declared in [`pubspec.yaml`](../../pubspec.yaml#L43), keep the
   original Google Fonts filenames, and set
   `GoogleFonts.config.allowRuntimeFetching = false` to disable HTTP fetching.
 - **Subpixel typography tuning** — resolved in §7.1 against the codebase
-  precedent: the global [`highContrastTextTheme()`](../lib/theme/app_typography.dart:13)
+  precedent: the global [`highContrastTextTheme()`](../../lib/theme/app_typography.dart#L13)
   sets no line height or letter spacing, so the local Home IBM Plex Sans theme
   uses Flutter/Google Fonts role defaults.
 - **Off-state badge visual tuning** — resolved in §4.1 against the codebase

@@ -1,5 +1,8 @@
 # Fresh Detection Speech Revalidation — Analysis
 
+> **Implementation status (2026-11-16):** Fresh detector-result revalidation is implemented in [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart) and reconciled with shared tracking/speech in [`lib/services/assistive_detection_controller.dart`](../../lib/services/assistive_detection_controller.dart) and [`lib/services/tts_service.dart`](../../lib/services/tts_service.dart). Commit `6b28eff` records the fix; this analysis/plan is retained as its rationale and acceptance history.
+
+
 **Task type:** behavior/logic change; no intended visual design change.
 
 ## Scope and repository state
@@ -10,7 +13,7 @@ The existing related analysis [`custom-detector-priority-distance-alert-policy-a
 
 ## Active detector path and shared callback flow
 
-- The current screen set contains [`UltralyticsDetectionScreen`](../../lib/screens/ultralytics_detection_screen.dart), wrapped by [`EngineDetectionScreen`](../../lib/screens/engine_detection_screen.dart); there is no [`detection_screen.dart`](../../lib/screens/detection_screen.dart) or active separate Custom EyeCue screen in `lib/screens/`. Current task scope therefore has one active detector-result callback path, not two parallel detector callbacks. Engine-specific naming/docs must not imply a removed second path.
+- The current screen set contains [`UltralyticsDetectionScreen`](../../lib/screens/ultralytics_detection_screen.dart), wrapped by [`EngineDetectionScreen`](../../lib/screens/engine_detection_screen.dart); there is no `detection_screen.dart` or active separate Custom EyeCue screen in `lib/screens/`. Current task scope therefore has one active detector-result callback path, not two parallel detector callbacks. Engine-specific naming/docs must not imply a removed second path.
 - [`_handleStreamingData`](../../lib/screens/ultralytics_detection_screen.dart) rejects callbacks if detection is inactive/paused or if their callback epoch does not match both the current native view epoch and active epoch. It timestamps the first observable receipt with `DateTime.now()`, parses the native result, marks model readiness on the first payload, converts results, gets currently fresh depth estimates, then calls [`AssistiveDetectionController.updateDetections`](../../lib/services/assistive_detection_controller.dart).
 - The native result callback has no frame timestamp or session envelope; screen code explicitly calls pre-result timestamps unavailable. Its local epoch rejects callbacks from known prior native views, but does not establish whether a delayed result produced before pause/resume was delivered after resume within the same native epoch. Existing screen comments document a similar strict freshness limitation for overlay presentation; speech currently receives no stronger provenance than that callback.
 - [`updateDetections`](../../lib/services/assistive_detection_controller.dart) analyzes detections, updates tracking with the optional `timestamp` argument, records each detection, and submits the analyzed set/tracks for speech. The screen passes `resultReceivedAt` and meters but no explicit tracker timestamp; [`ObjectTracker.update`](../../lib/services/object_tracker.dart) therefore uses its `DateTime.now` clock. Result receipt and tracker event time are separate wall-clock reads.

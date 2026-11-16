@@ -1,24 +1,27 @@
 # EyeCue — Help Screen Design Specification
 
+> **Current status (2026-11-16, review base `main@aadf9e0`):** This design spec is retained as history. Current [`HelpScreen`](../../lib/screens/help_screen.dart) includes the public Privacy Policy action, with launch-failure coverage in [`help_screen_test.dart`](../../test/screens/help_screen_test.dart) (commit `879be04`); use [`visual-redesign.md`](visual-redesign.md) for the shipped visual redesign.
+
+
 > **Stage:** Design-Spec only. No application code, tests, assets, dependency
 > declarations, or navigation behavior are changed by this document.
 >
 > **Task type:** Visual-only frontend redesign of the Help Screen.
 >
-> **Source of truth:** The approved [`help-screen-analysis.md`](help-screen-analysis.md:1),
+> **Source of truth:** The approved [`help-screen-analysis.md`](help-screen-analysis.md),
 > especially its **Resolved Open Questions / Decisions** section
-> ([`help-screen-analysis.md`](help-screen-analysis.md:323)), is the source of
+> ([`help-screen-analysis.md`](help-screen-analysis.md)), is the source of
 > truth for this specification. All open questions raised in the Analysis were
 > resolved by the project owner and are treated as confirmed inputs here.
 
 ## 1. Scope, invariants, and implementation boundary
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:15)
-and [`help-screen-analysis.md`](help-screen-analysis.md:293).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md)
+and [`help-screen-analysis.md`](help-screen-analysis.md).
 
 This specification defines the visual hierarchy, local light styling, header/title
 treatment, card composition, icon treatment, responsive relationships, and
-accessibility expectations for [`HelpScreen`](../lib/screens/help_screen.dart:6).
+accessibility expectations for [`HelpScreen`](../../lib/screens/help_screen.dart#L6).
 It does not redesign the camera experience, other screens, the global theme, or
 the app architecture.
 
@@ -26,27 +29,27 @@ The implementation must preserve these contracts:
 
 | Contract | Required behavior |
 |---|---|
-| [`HelpScreen`](../lib/screens/help_screen.dart:6) | Remains a `StatelessWidget` with **no required service dependencies**, constructible as `const HelpScreen()` from [`app_shell.dart`](../lib/navigation/app_shell.dart:113) (`case 3: return const HelpScreen();`). |
-| Shell construction | [`app_shell.dart`](../lib/navigation/app_shell.dart:113) remains the owner of the persistent four-tab [`NavigationBar`](../lib/navigation/app_shell.dart:138) and the [`IndexedStack`](../lib/navigation/app_shell.dart:134). Only the Help page construction is in scope; no navigation, tab, or shell change is allowed. |
+| [`HelpScreen`](../../lib/screens/help_screen.dart#L6) | Remains a `StatelessWidget` with **no required service dependencies**, constructible as `const HelpScreen()` from [`app_shell.dart`](../../lib/navigation/app_shell.dart#L113) (`case 3: return const HelpScreen();`). |
+| Shell construction | [`app_shell.dart`](../../lib/navigation/app_shell.dart#L113) remains the owner of the persistent four-tab [`NavigationBar`](../../lib/navigation/app_shell.dart#L138) and the [`IndexedStack`](../../lib/navigation/app_shell.dart#L134). Only the Help page construction is in scope; no navigation, tab, or shell change is allowed. |
 | Content | The four section titles and their full body copy (the numbered steps, the four gesture bullets, the confirmation prose, and the four Android tips) are preserved **verbatim**. Only the visual presentation changes. |
 | Runtime behavior | No camera start, ML initialization, engine coordination, TTS, telemetry, persistence, gesture state, or new runtime input is added to Help. |
-| Global theme | The existing global dark [`buildEyeCueTheme()`](../lib/theme/app_theme.dart:13) and its use by [`EyeCueApp`](../lib/main.dart:61) remain unchanged. |
+| Global theme | The existing global dark [`buildEyeCueTheme()`](../../lib/theme/app_theme.dart#L13) and its use by [`EyeCueApp`](../../lib/main.dart) remain unchanged. |
 | Light-theme scope | The light surface is scoped to the Help subtree only (the Home `Theme` wrapper pattern). It must not leak into Detect, Settings, Home, Logs & Reports, or the shell navigation bar. |
 
-The primary implementation file is [`help_screen.dart`](../lib/screens/help_screen.dart:6).
-No change is expected to [`app_home_theme.dart`](../lib/theme/app_home_theme.dart:1),
-[`app_colors.dart`](../lib/theme/app_colors.dart:1),
-[`app_spacing.dart`](../lib/theme/app_spacing.dart:1),
-[`app_radii.dart`](../lib/theme/app_radii.dart:1), or
-[`app_typography.dart`](../lib/theme/app_typography.dart:1) — Help reuses the
+The primary implementation file is [`help_screen.dart`](../../lib/screens/help_screen.dart#L6).
+No change is expected to [`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L1),
+[`app_colors.dart`](../../lib/theme/app_colors.dart#L1),
+[`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1),
+[`app_radii.dart`](../../lib/theme/app_radii.dart#L1), or
+[`app_typography.dart`](../../lib/theme/app_typography.dart#L1) — Help reuses the
 existing `buildHomeTheme()` and `kHome*`/`kSpace*`/`kRadius*` tokens as-is
 (see §6). The two existing test files are limited to the responsibilities defined
 in this specification.
 
 ## 2. Reference composition and viewport treatment
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:120)
-and [`help-screen-analysis.md`](help-screen-analysis.md:143).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md)
+and [`help-screen-analysis.md`](help-screen-analysis.md).
 
 **No redesigned Help screenshot exists.** A recursive listing of
 `design-reference/screens/` contains `detection_screen.png`, `home_screen.png`,
@@ -63,7 +66,7 @@ the implementation does not attempt to match a screenshot that does not exist.
 
 The Help content area is composed above the existing shell navigation bar. The
 Help widget must not add a replacement navigation control; the retained shell
-[`NavigationBar`](../lib/navigation/app_shell.dart:138) remains the navigation
+[`NavigationBar`](../../lib/navigation/app_shell.dart#L138) remains the navigation
 surface and reduces the available Help viewport.
 
 The composition is a light Help canvas only. The light surface is scoped to the
@@ -71,12 +74,12 @@ Help subtree; it must not leak into other tabs or the shell navigation bar.
 
 ## 3. Layout hierarchy
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:105)
-and [`help-screen-analysis.md`](help-screen-analysis.md:242).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md)
+and [`help-screen-analysis.md`](help-screen-analysis.md).
 
 The redesigned Help layout follows the Home responsive pattern
-([`SafeArea`](../lib/screens/home_screen.dart:25) +
-[`LayoutBuilder`](../lib/screens/home_screen.dart:27) + bounded/centered width +
+([`SafeArea`](../../lib/screens/home_screen.dart#L25) +
+[`LayoutBuilder`](../../lib/screens/home_screen.dart#L27) + bounded/centered width +
 scrollable body). The proposed hierarchy is:
 
 ```
@@ -96,7 +99,7 @@ HelpScreen (StatelessWidget, const HelpScreen())
                                 └── _HelpCard — Best Use Tip (Android)
 ```
 
-The four `_HelpCard` widgets remain private to [`help_screen.dart`](../lib/screens/help_screen.dart:60)
+The four `_HelpCard` widgets remain private to [`help_screen.dart`](../../lib/screens/help_screen.dart#L60)
 following the existing `_`-prefixed convention. No new public reusable widget is
 justified by this redesign.
 
@@ -104,8 +107,8 @@ justified by this redesign.
 
 The light `Theme` wrapper must be scoped to the Help subtree only, mirroring the
 Home `Theme` wrapper pattern. It must be placed **inside** the Help page so it does
-not wrap the shell's [`NavigationBar`](../lib/navigation/app_shell.dart:138) or
-leak into other tabs. The wrapper calls [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50)
+not wrap the shell's [`NavigationBar`](../../lib/navigation/app_shell.dart#L138) or
+leak into other tabs. The wrapper calls [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50)
 as-is — no rename, no duplication, no new Help-scoped theme builder.
 
 ### 3.2 Status-bar treatment
@@ -116,10 +119,10 @@ remain visible on the light surface. This is scoped to the Help subtree.
 
 ## 4. Header / title treatment
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:331).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md).
 
 The Help header uses a **plain screen-title treatment** consistent with the light
-visual language. It does **not** reuse the brand mark, [`assets/logo.png`](../assets/logo.png),
+visual language. It does **not** reuse the brand mark, [`assets/logo.png`](../../assets/logo.png),
 or the `EyeCue` wordmark. `logo.png` is therefore out of scope for Help.
 
 The existing `AppBar(title: Text('Help & Gestures'))` is retained as the screen
@@ -129,9 +132,9 @@ already provides this role), not merely a styled `Text`.
 
 ## 5. Card composition and icon treatment
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:49),
-[`help-screen-analysis.md`](help-screen-analysis.md:91), and
-[`help-screen-analysis.md`](help-screen-analysis.md:342).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md),
+[`help-screen-analysis.md`](help-screen-analysis.md), and
+[`help-screen-analysis.md`](help-screen-analysis.md).
 
 ### 5.1 The four sections (content preserved verbatim)
 
@@ -149,19 +152,19 @@ wording, ordering, or content change.
 
 Each section is presented as a light card on the light surface:
 
-- **Card surface:** [`kHomeSurfaceCard`](../lib/theme/app_colors.dart:118) (`#FFFFFF`)
-  on the [`kHomeSurfaceBase`](../lib/theme/app_colors.dart:115) (`#F5F5F5`) content
+- **Card surface:** [`kHomeSurfaceCard`](../../lib/theme/app_colors.dart) (`#FFFFFF`)
+  on the [`kHomeSurfaceBase`](../../lib/theme/app_colors.dart) (`#F5F5F5`) content
   background.
-- **Corner radius:** [`kRadius24`](../lib/theme/app_radii.dart:34), matching the
+- **Corner radius:** [`kRadius24`](../../lib/theme/app_radii.dart), matching the
   Home large light surface (the preference/status badge uses `kRadius24` in
-  [`home_screen.dart`](../lib/screens/home_screen.dart:173)). No raw
+  [`home_screen.dart`](../../lib/screens/home_screen.dart#L173)). No raw
   `BorderRadius.circular(...)` literal.
 - **Card padding:** token-based inner padding (baseline `kSpace16`), not a raw
   `EdgeInsets.all(16)` literal.
 - **Card separation:** a token-based bottom margin between cards (baseline
   `kSpace16`), not a raw `EdgeInsets.only(bottom: 16)` literal.
-- **Shadow:** [`kHomeShadowSoft`](../lib/theme/app_home_theme.dart:18), the same
-  soft shadow the Home light surface uses ([`home_screen.dart`](../lib/screens/home_screen.dart:174)),
+- **Shadow:** [`kHomeShadowSoft`](../../lib/theme/app_home_theme.dart#L18), the same
+  soft shadow the Home light surface uses ([`home_screen.dart`](../../lib/screens/home_screen.dart#L174)),
   so cards lift off the `#F5F5F5` surface.
 
 ### 5.3 Card header row
@@ -171,10 +174,10 @@ Each card header is a `Row`:
 - **Icon:** the retained section icon (see §5.1), rendered in the light accent
   color. The icon is **decorative** — it duplicates the adjacent title — and is
   excluded from the accessibility tree (`ExcludeSemantics`). Icon color uses the
-  light accent token (e.g. [`kHomeAccentCyan`](../lib/theme/app_colors.dart:133)
+  light accent token (e.g. [`kHomeAccentCyan`](../../lib/theme/app_colors.dart)
   or the derived `colorScheme.primary` from `buildHomeTheme()`), not a raw
   `Color(...)` literal.
-- **Icon size:** retain the current size 28 ([`help_screen.dart`](../lib/screens/help_screen.dart:83)).
+- **Icon size:** retain the current size 28 ([`help_screen.dart`](../../lib/screens/help_screen.dart#L83)).
   This is a token-consistent restyle, so the existing icon size is unchanged.
 - **Gap:** a token-based gap between icon and title (baseline `kSpace12`), not a
   raw `SizedBox(width: 12)` literal.
@@ -191,8 +194,8 @@ text uses the light ink color from the theme; no raw color literal.
 
 ## 6. Exact token usage
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:258)
-and [`help-screen-analysis.md`](help-screen-analysis.md:143).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md)
+and [`help-screen-analysis.md`](help-screen-analysis.md).
 
 Help reuses the existing Home light theme and tokens **as-is** — no rename, no
 duplication, no new Help-scoped theme or token. The `kHome*`/`buildHomeTheme`
@@ -203,19 +206,19 @@ trade-off confirmed by the owner (Analysis §12, Option 1).
 
 | Token / builder | File | Help use |
 |---|---|---|
-| [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50) | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart:1) | The light `ThemeData` applied to the Help subtree (IBM Plex Sans typography, light surface, cyan accent). Reused as-is. |
+| [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50) | [`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L1) | The light `ThemeData` applied to the Help subtree (IBM Plex Sans typography, light surface, cyan accent). Reused as-is. |
 
 ### 6.2 Color tokens
 
 | Token | Value | Help use |
 |---|---|---|
-| [`kHomeSurfaceBase`](../lib/theme/app_colors.dart:115) | `#F5F5F5` | Help content background |
-| [`kHomeSurfaceCard`](../lib/theme/app_colors.dart:118) | `#FFFFFF` | Help card surface |
-| [`kHomeInk`](../lib/theme/app_colors.dart:124) | `#0A0A0A` | Card titles and body text (via the theme text roles) |
-| [`kHomeAccentCyan`](../lib/theme/app_colors.dart:133) | `#22C7F2` | Section icon accent (or the derived `colorScheme.primary` from `buildHomeTheme()`) |
+| [`kHomeSurfaceBase`](../../lib/theme/app_colors.dart) | `#F5F5F5` | Help content background |
+| [`kHomeSurfaceCard`](../../lib/theme/app_colors.dart) | `#FFFFFF` | Help card surface |
+| [`kHomeInk`](../../lib/theme/app_colors.dart) | `#0A0A0A` | Card titles and body text (via the theme text roles) |
+| [`kHomeAccentCyan`](../../lib/theme/app_colors.dart) | `#22C7F2` | Section icon accent (or the derived `colorScheme.primary` from `buildHomeTheme()`) |
 
 No raw `Color(...)`, `Colors.*`, or alpha color literals are added to
-[`help_screen.dart`](../lib/screens/help_screen.dart:6) for these roles. Colors
+[`help_screen.dart`](../../lib/screens/help_screen.dart#L6) for these roles. Colors
 already derived from the active light `ThemeData`/`ColorScheme` (e.g.
 `theme.colorScheme.surface`, `theme.colorScheme.primary`) are used via theme lookup
 rather than duplicated as tokens.
@@ -224,9 +227,9 @@ rather than duplicated as tokens.
 
 | Token | Value | Help use |
 |---|---|---|
-| [`kSpace12`](../lib/theme/app_spacing.dart:28) | 12 | Icon-to-title gap in the card header |
-| [`kSpace16`](../lib/theme/app_spacing.dart:34) | 16 | Card inner padding and card-to-card separation |
-| [`kSpace24`](../lib/theme/app_spacing.dart:43) | 24 | Screen-level outer inset / large section gap |
+| [`kSpace12`](../../lib/theme/app_spacing.dart#L28) | 12 | Icon-to-title gap in the card header |
+| [`kSpace16`](../../lib/theme/app_spacing.dart#L34) | 16 | Card inner padding and card-to-card separation |
+| [`kSpace24`](../../lib/theme/app_spacing.dart#L43) | 24 | Screen-level outer inset / large section gap |
 
 Use the tokens as logical design values and scale layout relationships from
 constraints where needed. Do not copy raw pixel literals into the screen.
@@ -235,7 +238,7 @@ constraints where needed. Do not copy raw pixel literals into the screen.
 
 | Token | Value | Help use |
 |---|---|---|
-| [`kRadius24`](../lib/theme/app_radii.dart:34) | 24 | Card corner radius, matching the Home large light surface |
+| [`kRadius24`](../../lib/theme/app_radii.dart) | 24 | Card corner radius, matching the Home large light surface |
 
 No raw `BorderRadius.circular(...)` literal.
 
@@ -243,12 +246,12 @@ No raw `BorderRadius.circular(...)` literal.
 
 | Token | File | Help use |
 |---|---|---|
-| [`kHomeShadowSoft`](../lib/theme/app_home_theme.dart:18) | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart:1) | Soft card shadow so cards lift off the light surface (same as the Home light surface) |
+| [`kHomeShadowSoft`](../../lib/theme/app_home_theme.dart#L18) | [`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L1) | Soft card shadow so cards lift off the light surface (same as the Home light surface) |
 
 ## 7. Responsive sizing rules
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:242)
-and [`help-screen-analysis.md`](help-screen-analysis.md:314).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md)
+and [`help-screen-analysis.md`](help-screen-analysis.md).
 
 The reference canvas is **390 × 844** and is a proportional baseline, not a source
 of Flutter pixel literals. Do not hardcode screenshot pixel dimensions.
@@ -258,7 +261,7 @@ of Flutter pixel literals. Do not hardcode screenshot pixel dimensions.
 - Use the available content width from parent constraints; do not branch on device
   model or hardware type.
 - Keep a leading/trailing content inset based on the approved spacing scale, with
-  [`kSpace16`](../lib/theme/app_spacing.dart:34) as the baseline outer inset.
+  [`kSpace16`](../../lib/theme/app_spacing.dart#L34) as the baseline outer inset.
 - Constrain the content to a **bounded/centered width** (Home caps at ~480) so the
   cards and text do not become unreadably wide on tablets or desktop-sized test
   constraints. The width is derived from constraints, not from a raster width.
@@ -287,7 +290,7 @@ of Flutter pixel literals. Do not hardcode screenshot pixel dimensions.
 
 ## 8. Semantic labels and content structure
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:218).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md).
 
 Help is primarily **static reading content** (no interactive controls today), so the
 main accessibility work is **semantic structure and readability**, not button roles.
@@ -321,10 +324,10 @@ region is introduced. Help must never announce camera detections.
 
 ## 9. Large-text behavior
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:218)
-and [`help-screen-analysis.md`](help-screen-analysis.md:314).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md)
+and [`help-screen-analysis.md`](help-screen-analysis.md).
 
-- Test the Help screen with the existing 200% [`scaledApp`](../test/accessibility/semantics_test.dart:54)
+- Test the Help screen with the existing 200% [`scaledApp`](../../test/accessibility/semantics_test.dart#L54)
   helper.
 - Permit card titles and body copy to wrap and expand.
 - Do not clip the screen title, any card title, or any body copy.
@@ -332,12 +335,12 @@ and [`help-screen-analysis.md`](help-screen-analysis.md:314).
   `CustomScrollView`/`SliverFillRemaining` pattern is the reference).
 - Help is currently non-interactive, so no touch-target change is required; if any
   interactive element is later added, it must preserve the existing
-  [`kMinTouchWidth`](../lib/theme/app_spacing.dart:51) and
-  [`kMinTouchHeight`](../lib/theme/app_spacing.dart:54) guidance.
+  [`kMinTouchWidth`](../../lib/theme/app_spacing.dart) and
+  [`kMinTouchHeight`](../../lib/theme/app_spacing.dart) guidance.
 
 ## 10. Loading / unavailable / disabled presentation
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:218).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md).
 
 Help is a **static, always-available** reading screen with no service dependency,
 no loading state, no unavailable state, and no disabled control. The four sections
@@ -349,9 +352,9 @@ status), but that is out of scope here.
 
 ## 11. Verification and acceptance criteria
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:293),
-[`help-screen-analysis.md`](help-screen-analysis.md:314), and
-[`help-screen-analysis.md`](help-screen-analysis.md:345).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md),
+[`help-screen-analysis.md`](help-screen-analysis.md), and
+[`help-screen-analysis.md`](help-screen-analysis.md).
 
 The implementation is complete only when all of the following are true:
 
@@ -383,9 +386,9 @@ The implementation is complete only when all of the following are true:
 - The screen title and each section group have non-duplicated semantics.
 - The section icons are decorative/excluded from the accessibility tree.
 - The Help screen has no overflow or clipped primary content at 200% text scale.
-- The existing Help group in [`widget_test.dart`](../test/widget_test.dart) covers
+- The existing Help group in [`widget_test.dart`](../../test/widget_test.dart) covers
   the four sections and the screen title.
-- [`semantics_test.dart`](../test/accessibility/semantics_test.dart) covers the
+- [`semantics_test.dart`](../../test/accessibility/semantics_test.dart) covers the
   Help section groups, decorative-icon exclusions, and 200% scale.
 
 ### Physical Android-device acceptance
@@ -401,8 +404,8 @@ device is attached at implementation time.
 
 ## 12. Explicitly deferred work
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:15)
-and [`help-screen-analysis.md`](help-screen-analysis.md:293).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md)
+and [`help-screen-analysis.md`](help-screen-analysis.md).
 
 The following are not part of this Help redesign:
 
@@ -423,7 +426,7 @@ The following are not part of this Help redesign:
 
 ## Open Questions / Needs Verification
 
-**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md:323).
+**Analysis cross-reference:** [`help-screen-analysis.md`](help-screen-analysis.md).
 
 The product and architecture decisions required for this Design-Spec are resolved,
 and the previously listed implementation details have been confirmed and moved into
@@ -451,8 +454,8 @@ icon size) were resolved against the codebase and the established Home light
 visual language. They are no longer open:
 
 - **Card corner radius — resolved: `kRadius24`.** The Home screen uses
-  [`kRadius24`](../lib/theme/app_radii.dart:34) for its large light surface (the
-  preference/status badge, [`home_screen.dart`](../lib/screens/home_screen.dart:173)),
+  [`kRadius24`](../../lib/theme/app_radii.dart) for its large light surface (the
+  preference/status badge, [`home_screen.dart`](../../lib/screens/home_screen.dart#L173)),
   which is the established radius for a large light surface lifting off the
   `#F5F5F5` background. The Help cards are the same kind of large light content
   surface, so they use `kRadius24` for consistency with the Home large-surface
@@ -460,11 +463,11 @@ visual language. They are no longer open:
   the radius the current Home large surface actually uses; `kRadius24` is the
   codebase-confirmed choice. (§5.2, §6.4)
 - **Card shadow — resolved: `kHomeShadowSoft`.** The Home screen applies
-  [`kHomeShadowSoft`](../lib/theme/app_home_theme.dart:18) to its light surface
-  ([`home_screen.dart`](../lib/screens/home_screen.dart:174)) so it lifts off the
+  [`kHomeShadowSoft`](../../lib/theme/app_home_theme.dart#L18) to its light surface
+  ([`home_screen.dart`](../../lib/screens/home_screen.dart#L174)) so it lifts off the
   `#F5F5F5` background. The Help cards use the same soft shadow for a consistent
   light-surface treatment. (§5.2, §6.5)
 - **Icon size — resolved: retain 28.** The current Help card renders its section
-  icon at size 28 ([`help_screen.dart`](../lib/screens/help_screen.dart:83)). This
+  icon at size 28 ([`help_screen.dart`](../../lib/screens/help_screen.dart#L83)). This
   is a token-consistent restyle, so the existing icon size is retained as-is; no
   icon-size change is required. (§5.3)

@@ -1,255 +1,52 @@
 # EyeCue — Known Issues
 
-> **Last Updated:** 2026-11-09 (TalkBack accessibility programme and the Detection alignment / chart-and-Logs polish phases completed and device-verified on the tested devices; the researcher-selectable detector models, L4 depth-accelerator and PD1–PD3/Custom-engine sections are historical)
-> See also: [`implementation-decisions.md`](implementation-decisions.md) (why decisions were made), [`project-status.md`](project-status.md) (current state), [`mde-integration.md`](mde-integration.md) (depth subsystem).
+Reviewed **2026-11-16** against local `main` at `aadf9e0`. This list separates unresolved evidence gaps from implemented behavior. See [project status](project-status.md), [testing](testing-plan.md), and [dated session evidence](session-log.md).
 
-## Monocular depth estimation (MDE)
+## Current validation gaps
 
-- **Metres are uncalibrated estimates.** The depth model was not calibrated per
-  phone or lens. Research-grade distance measurement requires calibration and is
-  out of scope.
-- **Device rotation is approximated.** The plugin exposes no rotation angle to
-  Dart and Flutter reports only portrait/landscape, so `deviceDegrees` is
-  `0`/`90`. A 180° turn and landscape-left vs landscape-right cannot be mapped;
-  if the rotation cannot be resolved the app runs degraded (bbox distance, no
-  heatmap).
-- **Resolved — the depth model could never be downloaded in a release build.**
-  The previously shipped build passed the official `yolo26n-depth` id and relied
-  on the plugin's first-use download, but the release manifests of that time
-  declared only `CAMERA` (`INTERNET` existed only in the debug/profile
-  manifests), so the load always failed and depth silently ran degraded. The
-  model is now bundled as
-  [`assets/yolo26n-depth_w8a32.tflite`](../assets/yolo26n-depth_w8a32.tflite).
-  The main manifest now also declares `INTERNET`, but only for the optional
-  manual telemetry upload; depth and detection make no network request.
-  Previously installed release APKs must be replaced to pick this up.
-- **Unmeasured on device.** Depth latency, achieved cadence, thermal impact,
-  detection FPS and depth accuracy have not been measured; the 2 Hz default
-  (500 ms) is a configured target, not an observed rate.
-- **The depth accelerator is a build-time knob, not a setting.**
-  `--dart-define=EYECUE_DEPTH_ACCELERATOR=auto|cpu|gpu` picks the depth
-  accelerator at build time (`auto` ships; an unknown or empty value resolves to
-  `auto`). Nothing is persisted, `AppSettings` is unchanged and there is no UI —
-  it exists so the benchmark matrix can pin depth to CPU. What the app and
-  telemetry report is the accelerator **native actually ran**: a requested GPU
-  that fell back to CPU reports `cpu`.
-- **The performance question is still open, and the protocol is the deliverable.**
-  [`benchmark-procedure.md`](benchmark-procedure.md) defines the matrix (MDE off,
-  heatmap off/on, bbox fallback, low power, two detector cadences, two depth
-  cadences, the accelerator combinations), the build/install/logcat/export
-  commands and a per-run record table. **No run has been performed and no
-  `CONFIRMED-ON-DEVICE` claim exists** — the 1.5 FPS Redmi regression is not
-  considered resolved until that matrix runs on hardware. Per-stage timings
-  (`DetectorStageTimings`, `DepthStageTimings`), the reported depth accelerator
-  and the native cumulative `droppedTicks` counter now reach the telemetry
-  payload (schema 4, `telemetry-data-dictionary.md`), so a run's evidence comes
-  from its export rather than a debugger. Recording them is not measuring them:
-  every figure stays device-gated.
-- **Stale depth hides the heatmap.** Maps older than 1000 ms or produced for a
-  different geometry are discarded for presentation and distance fall back to
-  the box-height heuristic.
-- **Box/heatmap switches are presentation only.** Hiding boxes does not stop
-  detection; hiding the heatmap does not stop depth inference; only
-  `boundingBoxApproximation` stops it.
-- **Resolved — depth stayed resident after MDE was switched off.** Selecting
-  `boundingBoxApproximation` used to stop the ticks only: the depth interpreter
-  (5.3 MB model + GPU delegate) stayed loaded for the rest of the session, and a
-  model-load failure was unrecoverable because nothing re-armed the load. Depth
-  is now released on disable (`MonocularDepthEstimator.releaseModel()`) and
-  reloaded once on re-enable, **including the disable-during-load window**: a
-  disable that lands while a load is in flight invalidates that load, which is
-  disposed on arrival, and the re-enable starts and adopts its own load instead
-  of joining the doomed one (proved by `a disable during the load does not
-  strand the re-enable`). Pause, stop and backgrounding still keep the model, so
-  a resume pays no reload.
+| Area | Open question / required evidence | Source or procedure |
+| --- | --- | --- |
+| Current campus detector | Ground-truth precision/recall/mAP, class coverage, robustness and sustained on-device performance are not established by old COCO/Custom observations | [Model assets](model-assets.md), [benchmark procedure](benchmark-procedure.md) |
+| Depth cost and quality | Achieved cadence, inference/transport cost, thermal/battery impact, memory, and metric accuracy need current-build measurements. The previously reported Redmi slowdown is not closed by instrumentation alone | [MDE](mde-integration.md), [benchmark results](benchmark-results.md) |
+| Native lifecycle | Offstage launch preparation, permission-dialog behavior, background/foreground, camera pre-emption, first result after Resume, and full FlutterJNI teardown need device-specific evidence | [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) |
+| Imported model | Real Android document-provider grants, imported graph execution, GPU acceptance/fallback, and screen-reader interaction need device validation | [`detector_model_service.dart`](../lib/services/detector_model_service.dart), [model contract](model-assets.md) |
+| Gesture feel | Release-to-navigation latency, haptic timing, thresholds and dominance ratio need a targeted physical-device check; deterministic pointer tests do not measure feel | [`gesture_controller.dart`](../lib/services/gesture_controller.dart), [navigation record](frontend-workflow/navigation-plan.md) |
+| Audible warning latency | App-side lifecycle timestamps do not measure physical sound onset. Platform callback ordering and missing/late callbacks still require care | [`tts_service.dart`](../lib/services/tts_service.dart), [telemetry dictionary](telemetry-data-dictionary.md) |
+| Live Study upload | Deployed URL/key, ingest version, database access and a real upload need service-specific verification; local validators do not establish deployment state | [Supabase](supabase-research-telemetry.md), [threat model](ingest-threat-model.md) |
+| Distribution | Actual Play track/review, production signing state, installed artifact identity, and source/licensing correspondence must be checked for each intended release | [Release procedure](release-procedure.md), [third-party notices](../THIRD_PARTY_NOTICES.md) |
 
-## Researcher-selectable detector models and research logging sessions
+## Depth limitations and implemented recovery
 
-Implemented on `feat/researcher-detector-models` (base `5ba1b38`). Statically
-verified only: `flutter analyze` reports no issues and the suites named in
-[`implementation-progress.md`](implementation-progress.md) pass locally.
+- Metres are uncalibrated estimates; bounding-box distance is heuristic. Neither proves safe independent navigation.
+- Native/Dart geometry handling has limited orientation information; inspect the current [MDE contract](mde-integration.md) before assuming 180-degree or both landscape directions are resolved. Dated heatmap alignment verification covers its recorded device/layout, not all geometries.
+- A map older than 1000 ms or incompatible with current geometry is not used for the heatmap; box distance is the fallback.
+- Hiding boxes or the heatmap changes presentation. Selecting bounding-box approximation disables depth inference and releases the model; pause/stop/background retain it for reuse.
+- Detection and depth models are bundled. The former first-use depth download problem is superseded; no download is needed for either built-in model.
+- Detection Automatic/1–30 Hz and depth 2–10 Hz are requested targets. `EYECUE_DEPTH_ACCELERATOR=auto|cpu|gpu` is a build-time request; telemetry must be read as the native-reported actual accelerator, not proof of the request being honored.
 
-- **What a custom model must be.** A TFLite object-detection graph with embedded
-  Ultralytics label metadata, `task: detect`, labels whose count agrees with the
-  model's class output, at most 40 MB and at most 1 000 labels. Anything else is
-  refused with an actionable message and the previous selection is kept. The
-  full contract is in [`model-assets.md`](model-assets.md#supported-custom-model-contract).
-- **A model switch is a deliberate stop.** Detection stops, the previous model's
-  detections, tracks, overlay and correction context are cleared, the app never
-  auto-restarts, and a stale payload from the superseded native view cannot
-  restore Ready or the old labels. The already-verified switch cases are active,
-  paused, stopped and still-loading
-  ([`ultralytics_detection_readiness_test.dart`](../test/screens/ultralytics_detection_readiness_test.dart)).
-- **Storage is bounded by construction**: at most one app-owned custom copy plus
-  its label sidecar, both named by content fingerprint, plus the bundled asset. A
-  replacement import deletes the previous copy; switching to the built-in model
-  deletes nothing.
-- **Research logging is independent of detection.** Recording starts only on an
-  explicit Start, Pause/Resume freeze and continue the same trial, Finish freezes
-  an immutable snapshot, and an interrupted draft restores **paused**. Paused
-  activity never enters trial totals, rates or cumulative counters (interval
-  baselines are used instead of resetting the live engine).
-- **A model change during a recording trial pauses logging and records the
-  boundary.** The reaction is registered where the services are created
-  ([`main.dart`](../lib/main.dart)), so it also fires for a restored paused draft
-  before the Logs & Reports route has ever been opened. A notification that does
-  **not** change the identity (re-selecting the active model) is not a boundary:
-  it neither pauses nor appends. Resuming later continues the same trial with the
-  replacement's identity, and setup rows are outside every interval.
-- **Export model keys are per-trial identities, and a suffix is per export.** The
-  export's `detectorModels` dictionary keys a second identity with the same
-  content id as `<id>~2`, then `<id>~3`; the app's model filter walks records then
-  samples while the export table walks samples then records, so the suffix is
-  valid **within one export** and must not be joined across exports.
-- **Remaining device gates (all still open).**
-  - Real custom-model execution: no imported graph has been run on a physical
-    device; every import, label and switching result in this round is from the
-    test suite.
-  - The Android SAF picker and its content-provider permissions have not been
-    exercised on a device; the picker is an injectable seam in tests.
-  - Accelerator behaviour for a custom graph (GPU delegate acceptance, fallback
-    to CPU) is unmeasured; only the bundled graph has any device history.
-  - Physical accessibility: the Detector Model card is covered by semantics and
-    200 % text-scale assertions in
-    [`semantics_test.dart`](../test/accessibility/semantics_test.dart), but no
-    screen-reader pass on hardware exists.
-  - Upload against the live research database was not exercised for this round
-    (no credentials, no live Supabase access by design).
+## Model and research-session boundaries
 
-## Current Blockers
+Custom imports must satisfy the [supported model contract](model-assets.md#supported-custom-model-contract), including embedded labels/task metadata and size/class-count limits. A model change stops detection, clears the previous model's context, and requires Start. This is distinct from restarting a paused Study recording.
 
-### ✅ TalkBack Semantic Operability and Speech Ownership — Implemented and Device-Verified (Complete)
+Only [`main_study.dart`](../lib/main_study.dart) constructs research sessions and watches detector identity changes. A change pauses an active trial and records a boundary; a no-op identity notification is not a boundary. Export model suffixes such as `~2` are local to that export and cannot be joined blindly across exports. Public builds retain detector selection and local telemetry but expose no Logs & Reports route or research-session service.
 
-- **Description:** TalkBack operability, speech ownership, and semantic structure are implemented and device-verified on the tested devices. Ownership is explicit: TalkBack owns application UI, navigation, control state, lifecycle state, and failures, while EyeCue TTS owns detected objects, distance/approach alerts, Quick Scan, and Repeat Last Alert. Only the four lifecycle utterances are suppressed while `MediaQuery.accessibleNavigationOf` is active, through the pure `shouldSpeakLifecycleUtterance()` helper and `kLifecycleUtterances`; no audio focus, `focus: true`, `setAudioAttributesForNavigation`, or `SemanticsService.announce` is used. Screen identity is carried by the first semantic node TalkBack reaches — Home announces `Home. ` plus its status meaning with the `EyeCue` wordmark as a `container` + `header` node behind `ExcludeSemantics`, and `Detection Mode` is a `container` + `header` node labelled `Detection` with unchanged visible text (no `sortKey`, no forced focus). The consolidated lifecycle card exposes Stop/Start through a semantic long-press (identity in `label`, state-only `value`, no gesture-teaching `hint`, and no `onTap` when stopped). `Repeat last alert` is a `CustomSemanticsAction` on a `Semantics(container: true, explicitChildNodes: true, label: 'Camera view')` viewport wrapper (no live region, no exclusion), and the Audio Guidance pill is mute/unmute only; a rejected repeat gives a distinct heavy haptic plus a transient live-region status (`Audio guidance is off` / `Nothing to repeat yet`) that never uses TTS and clears after 4 s or on state change. Failures have exactly one automatic live-region owner: `StatusPill.liveRegion` is `false` only while the failure panel is mounted. Help reads per item via [`help_section_card.dart`](../lib/widgets/help_section_card.dart) for Gesture Controls and Best Use Tip while How It Works and Gesture Confirmation stay grouped. A source guard forbids gesture-teaching semantic strings, `AccessibleButton` injects no activation/unavailable hints, Home exposes a single status node, the Settings slider wrappers are removed with hertz/2-dp formatters, the detector-model filter is one `MergeSemantics` node, the safety dialog title does not duplicate its body, and Logs & Reports duplicate text nodes are excluded with section titles promoted to headings.
-- **Location:** [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`status_pill.dart`](../lib/widgets/status_pill.dart), [`help_section_card.dart`](../lib/widgets/help_section_card.dart), [`help_screen.dart`](../lib/screens/help_screen.dart), [`accessible_button.dart`](../lib/widgets/accessible_button.dart), [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), [`settings_screen.dart`](../lib/screens/settings_screen.dart), [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart), and [`tts_service.dart`](../lib/services/tts_service.dart).
-- **Verified on device:** the previously open checks — transient live-region announcement after a failed Repeat, the repeated identical failure label, overlay rows staying separate non-live nodes under `explicitChildNodes`, `Repeat last alert` reachability above the native platform view, the merged detector-filter node exposing tap and re-announcing the selection, the single safety-dialog entry announcement, and Help per-item spacing parity — plus long-press delivery on the target TalkBack build, single-node announcement, hint repetition, focus retention after Stop/Start, and TTS/live-region overlap. All were confirmed on the tested devices.
-- **Preserved behaviour:** direct-touch gestures, the 3-second hold and its timers, detection logic, telemetry, research logging, saved data/settings, haptics, and the two-card Detection layout were not changed by this work.
-- **Non-blocking future refinement:** `Camera view` / `Repeat last alert` works and is verified, but its interaction model and discoverability still need minor UX polish. This is **not** an open core accessibility defect and is **not** blocking.
-- **Shell gesture needs no gating:** device evidence confirms horizontal shell navigation does not activate while TalkBack is enabled (touch exploration consumes the pointer sequence), so no accessibility gate or disable was added and [`app_shell.dart`](../lib/navigation/app_shell.dart) gesture behaviour was not touched.
-- **Status:** **Complete and device-verified on the tested devices** (`flutter analyze` 0 issues, `flutter test` 865 passing, 0 failing). One non-blocking polish item remains (Repeat discoverability).
+## Completed checks and non-blocking follow-ups
 
-### 🟢 Detection Redesign (PD1–PD3) — Non-Blocking Notes
+The 2026-11-09 [session record](session-log.md) reports TalkBack semantic operability/speech ownership and Detection alignment / chart-and-Logs polish as completed and device-verified on the tested devices. Do not reopen those exact checks merely because older design plans say pending. Conversely, that result does not close the full runtime/performance matrix above.
 
-The Detection redesign (PD1–PD3) is implemented and statically validated (`flutter analyze` 0 issues; `flutter test` **323 passing at the 2026-09-28 revision**), with three runtime repairs applied after physical-device validation (Custom `IntrinsicHeight` layout cascade, Custom post-frame start intent, Ultralytics native-session recreation on start-after-stop). The behavioral-deviation audit found **no unintended deviations** from baseline `f310e73`. That historical result does **not** verify the current Workstream 1 branch, which has not run Flutter tests or the analyzer. The following items are **non-blocking for the redesign** and are recorded for follow-up.
+Remaining polish includes Camera view / Repeat discoverability, very long chart elapsed-time labels, and documented layout choices at 200% text scale. The native startup timeout and stale-view rejection are implemented protections; they do not establish native crash recovery or complete result provenance after every transition.
 
-- **Ultralytics startup bound:** Ready now requires the mounted native view's first valid inference payload (including an empty detection list); model-path resolution alone remains Preparing. A live session with no payload fails to Unavailable/Retry after 30 seconds. The app-only regression suite exercises resolution-only, empty/non-empty payloads, startup timeout, and live resolution failure; native initialization and physical-device behavior remain unverified.
-- **Post-resume freshness diagnostic limitation:** the epoch diagnostic cannot isolate the first result after Resume.
-- **FlutterJNI teardown fatal:** not reproduced in the latest capture and **not fixed** — dedicated full-app teardown verification is pending.
-- **Ultralytics GPU path:** falls back to CPU/XNNPACK on this device/session (pre-existing, not redesign-introduced).
-- **Native CameraX graph churn** during recreation is expected plugin settling, not a proven leak.
-- **Deferred — strict PD3 result provenance/freshness:** remains deferred under its existing scope boundary (see [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) §13/§18). The overlay's UI-only snapshot clearing prevents known historical values from remaining visible after a non-Ready transition, but does not prove that a delayed pre-transition result cannot arrive after a later Ready state. This is **non-blocking for the redesign** and is not claimed as resolved.
-- **Location:** [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (the only Detection screen since `detection_screen.dart` was removed with the Custom engine on 2026-10-21), [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart), and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart).
-- **Status:** **Redesign implemented and statically validated; the items above are non-blocking follow-ups.**
+## Toolchain and maintenance
 
-### 🟢 Detection Alignment, Heatmap and Chart/Logs Polish — Device-Verified (No Open Gate)
+- Android SDK bounds inherit Flutter defaults; there is no explicit API-29-only floor. CI pins Flutter 3.44.2; update compatibility guidance if the toolchain changes.
+- The local native plugin fork has required depth/metrics changes. Revalidate its native compilation and payload contracts on upgrades; app-only tests do not prove native behavior. See [fork maintenance](../plugins/ultralytics_yolo/VENDORED.md).
+- Public release signing falls back to a marked test-signed artifact without upload credentials. Study tasks fail without retained Study signing material. The previous blanket claim that all release builds use the debug key is obsolete.
+- Public/Study privacy surfaces differ. The public policy-launch failure path displays an actionable message; opening the external page still depends on the browser/network.
 
-Two presentation-only phases, `detection-alignment-charts` and its follow-up
-`charts-logs-polish`, are implemented and **device-verified on the target Android
-device (2026-11-09)**. Every gate they previously carried as "Needs Verification"
-is now confirmed on hardware: the shared 16 dp gutter (header, camera viewport,
-action cards); heatmap-to-preview pixel correspondence with MDE enabled;
-`reservedSize` sufficiency and `Elapsed time (s)` legibility at 200 % text scale;
-`RotatedBox` inside `FittedBox` with real depth frames; the audio pill's ink ripple
-over its full 64 × 56 target; X-axis label legibility at 100 %/200 %; the clamped
-rightmost tick; `All models (mixed)` rendered whole; metadata-row single-line
-behaviour; and Logs/Charts filter-card visual parity.
+## Settings TalkBack crash fix now on main
 
-- **Status:** complete; no open device gate for either phase.
-- **Non-blocking polish notes (not defects):** `All models (mixed)` at 200 % text
-  scale on a 390 dp width was accepted as-is (no `FittedBox`, no type-role
-  change); the audio capsule / `StatusPill` height delta is ~3 dp and consists
-  entirely of `StatusPill`'s literal 1.5 dp border, which was deliberately not
-  tokenised; chart X ticks for very large elapsed domains (6+ character values)
-  still rely on the reserved 36 dp band and were not separately exercised.
-- **Location:** [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), [`depth_heatmap_view.dart`](../lib/widgets/depth_heatmap_view.dart), [`charts.dart`](../lib/widgets/charts.dart), [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart).
+The imported PR #17 commits remove slider value-label overlays without removing semantic formatting (`f95ffd6`), and add a narrow guard for the Flutter accessibility hover-transform exception in [`MainActivity.kt`](../android/app/src/main/kotlin/app/eyecue/mobile/MainActivity.kt) (`dd8aa53`). Other runtime exceptions remain visible. This session reviewed source only; it does not provide new device confirmation or prove every Flutter accessibility crash is prevented.
 
-### 🟢 Primary Gesture Navigation — Device-Observed Issues (Resolved by test, device gate open)
+## Retired issues
 
-The primary gesture navigation feature is implemented (persisted `hideBottomNavigation` preference with accessible-navigation override, one-finger linear non-wrapping primary navigation, Detection directional arbitration, Detection-owned horizontal navigation, light/medium haptic wayfinding, minimal best-effort navigation TTS, preserved system Back behavior, and preserved Detection lifecycle). Physical-device testing surfaced three issues, fixed in `6a0fe65`/`e5cdfe5`; review of that work surfaced two more, fixed in the F-remediation commit on this branch. Each is guarded by deterministic tests; the on-device feel/TalkBack check is the only gate left open.
-
-- **Resolved — Detection navigated before the finger was released.** [`gesture_controller.dart`](../lib/services/gesture_controller.dart) classified *and fired* a directional intent inside `onPointerMove`, so a long or fast swipe crossed the 80 px threshold and dispatched `swipeLeft`/`swipeRight`/`swipeDown` mid-drag. The move path now only classifies into a pending intent; the group-end (pointer-up) path fires it once. Guarded by `test/services/gesture_controller_test.dart` (`pointer contract (one pointer, commit on release)` — long and fast swipes, and the revised directional assertions) and `test/screens/gesture_navigation_direction_test.dart` (`a swipe in the live main area navigates exactly once, on release`; `a long swipe and a fast swipe each navigate exactly once`).
-- **Resolved — Detection horizontal navigation only worked inside the camera viewport.** The `GestureSurface` was the topmost child of the viewport stack, so every pointer outside that box never reached the controller. Where the region now sits, per state:
-  - **Inside the region (live state only — a session is active, or the retained shell after a manual Stop):** the whole flexible area between the top bar and the action-controls row, i.e. the camera viewport plus the stretch it fills. Swipes work anywhere on the working area.
-  - **Outside the region whenever they are present:** the top bar (audio pill), the depth-degraded notice (`WarningBanner` + `Retry depth estimate`, hoisted to a sibling above the flexible area rather than living inside it), and the action-controls row.
-  - **Outside the region in the non-live states:** the failed panel (`Retry`/`Stop`), the camera-pending panel (`Start Detection`) and the permission-denied panel (`Open Settings`/`Retry`) — those states have no camera to swipe, so the region is not mounted at all.
-
-  Guarded by `test/screens/gesture_navigation_direction_test.dart` (`the gesture region covers the whole main area, only while live` — which also asserts there is *no* `GestureSurface` on the never-started panel; the live main-area swipe case; `a swipe starting on the action controls row does not navigate`; `a second pointer invalidates a Detection sequence`).
-- **Resolved — every button inside the widened region was also a single tap.** `GestureSurface` is translucent and an ancestor of its child, so a pointer that landed on any descendant stayed in its path and was *additionally* classified as `singleTap` → `_togglePaused()`. Concretely: `Start Detection` started the session and paused it ~300 ms later (the confirm delay), and `Retry depth estimate` retried the estimator *and* paused a live session with a "Detection paused" announcement; the failed and permission-denied panel buttons were likewise classified (harmless only because pausing early-returns when no session is active). All of those buttons are now outside the region per the scope above. Guarded by `tapping Start Detection starts the session and never pauses it`, `tapping Retry depth estimate keeps the live session running` and `a tap or swipe on a panel button is never a gesture`.
-- **Resolved — a second pointer joining *after* classification still committed.** `_handleGroupEnd` fired the pending directional intent without re-checking `_multiPointerInvalidated`, so `down → move past the threshold → second pointer down → up, up` committed a navigation. The second-pointer branch of `onPointerDown` now clears `_pendingDirectional`, so any intent classified earlier is discarded together with the invalidation, whatever the pointer ordering. Guarded by `test/services/gesture_controller_test.dart` (`a second pointer discards a classification already made`).
-- **Resolved — a second pointer could re-arm a Home/Settings/Help sequence.** `_SingleFingerHorizontalDragRecognizer` ([`app_shell.dart`](../lib/navigation/app_shell.dart)) cleared its `_invalidated` flag in `didStopTrackingLastPointer` *before* deferring to the base class, which is what dispatches the drag end — so the commit check never saw the invalidation, and a sequence where a second pointer joined and left (or where the first pointer lifted and the remaining pointer kept dragging) still moved a tab. Invalidation is now permanent for the sequence and is cleared only by the next sequence's first pointer. Guarded by `test/navigation/app_shell_test.dart` (`a second pointer that enters and leaves cannot re-arm the sequence`; `a second pointer without movement still invalidates`; the pre-existing `a second pointer invalidates the whole sequence`).
-- **Why the earlier tests missed them.** `test/screens/gesture_navigation_direction_test.dart` only asserted the pure gesture → direction mapping, so nothing exercised raw pointer timing, the gesture surface's bounds or the effect of a panel tap; `test/services/gesture_controller_test.dart` asserted that a swipe fires *immediately after a move* (it encoded the defect as the expectation), never asserted that no pointer had been released, and left two invalidation cases at "nothing fired before release", which is trivially true; and `test/navigation/app_shell_test.dart`'s multi-pointer cases released both pointers together after the second one joined — the one ordering the old code happened to survive, or moved neither pointer far enough to commit.
-- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (shell gesture layer), [`gesture_controller.dart`](../lib/services/gesture_controller.dart) (Detection directional arbitration), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (gesture region) and [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart).
-- **Remaining device gate (BLOCKED-EXTERNAL):** the committed feel of the gesture (commit latency after release, haptic timing, TTS wayfinding over TalkBack, and the provisional 80 px thresholds / 1.5 dominance ratio) has not been re-measured on the physical Android device. Nothing in the test suite can stand in for that. No button-tap classification is left to accept on device: `Start Detection`, `Retry depth estimate`, and the failed/permission-denied panel buttons sit outside the gesture region in their states, so none of them can produce a `singleTap`.
-- **Status:** **Resolved — `CONFIRMED-BY-TEST`; on-device feel and TalkBack verification is the only open gate.**
-
-### 🟡 Home/Detection Shared Lifecycle — Physical-Device Behavior (Needs Verification)
-
-- **Description:** The shared Home/Detection lifecycle state is implemented and statically validated: [`EngineCoordinator`](../lib/services/engine_coordinator.dart) is the single app-shell-owned, user-facing Detection lifecycle/status source; Home and both Detection implementations render Preparing/Ready/Paused/Stopped/Unavailable from the same snapshot; an explicit `stopped` state and a one-shot start-intent contract were added; Auto-start ON prepares Detection in the background while Home stays visible; Auto-start OFF starts on deliberate entry without writing the preference; manual pause/stop is session-scoped; and the Home `Go to Live Camera` CTA was removed without replacement.
-- **Location:** [`app_shell.dart`](../lib/navigation/app_shell.dart) (coordinator ownership + entry/launch intent), [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart), [`home_screen.dart`](../lib/screens/home_screen.dart), and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (the only Detection screen since `detection_screen.dart` was removed with the Custom engine on 2026-10-21).
-- **Impact:** Offstage camera/native startup behavior on a physical device (Auto-start ON background preparation) has **not** been observed end-to-end. Whether an offstage cached `CameraPreview` or native `YOLOView` genuinely prepares at launch while Home is selected — including permission-dialog behavior and duplicate-open prevention — is unverified. Changing Auto-start while the app is already running, and Android background/foreground, process death, and camera pre-emption lifecycle behavior, are out of scope and unverified.
-- **Planned Fix:** Validate the Auto-start ON background-preparation and Auto-start OFF entry-start flows on a physical Android device, and confirm the shared status surfaces (Home + both Detection implementations) match on-device.
-- **Status:** **Implemented and statically validated; physical-device behavior Needs Verification.**
-
-### 🔴 Dual-Engine Benchmark, Compatibility, and Licence Validation (Critical)
-
-- **Description:** The selector, adapter, per-engine telemetry, Android packaging bridge, and basic device runtime are implemented. The fixed debug APK now installs and both engines process live camera frames on the Snapdragon 695/API 33 target; switching in both directions passed after correcting a lifecycle race. A controlled benchmark and broad device matrix have not been run.
-- **Impact:** The smoke test is enough to establish initial functionality on one phone, but not comparative sustained FPS, detection quality, orientation coverage, thermal/battery behavior, memory use, or wide compatibility. `ultralytics_yolo` 0.6.13 is also AGPL-3.0, so public Play distribution requires compliance with that licence or a suitable commercial licence.
-- **Planned Fix:** Complete the paired protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md), cover representative Android/API/chipset classes, resolve the native numeric-label presentation issue, confirm delegate selection, and resolve the distribution-licence choice before release.
-- **Status:** **Build and one-device smoke test passed; controlled performance, compatibility, and distribution validation pending.**
-
-### 🔴 XNNPACK SIGSEGV / Candidate Device Validation (historical — Custom engine removed 2026-10-21)
-
-- **Description:** The stable v0.2.2 path keeps XNNPACK disabled because the older YOLOv8n model previously caused a segmentation fault during inference on the Snapdragon 695 (Adreno 619 GPU). The current committed but unreleased runtime artifact `yolov8n_int8_new_metadata.tflite` (generated from the byte-identical `yolov8n_int8_new.tflite` base graph) attempts explicit XNNPACK and has FLOAT32 runtime I/O with an NCHW input.
-- **Location:** [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — interpreter creation / inference path.
-- **Impact:** A native SIGSEGV cannot be caught by Dart and could still terminate the isolate/process. The candidate now installs and runs on the target phone, but only a short observation exists: 65 completed frames were labelled `XNNPACK`, with approximately 5.7–6.2 inference FPS in app summaries and no fatal signal observed in the captured process-filtered logs. Detection quality, long-duration stability, and comparative performance remain unestablished. The old stable baseline observed approximately 2–3 FPS and 600 ms latency on the low-end device.
-- **Current mitigation:** Delegate ownership is retained for the interpreter lifetime. Recoverable Dart-level setup or invocation failures close the delegate-backed interpreter and retry on a four-thread CPU interpreter. This is not protection against a native crash.
-- **Planned Fix:** Extend the controlled target-device run, capture fallback/native-crash evidence, and run the official TFLite benchmark tool for the old CPU baseline, the candidate, and safe NNAPI/GPU alternatives where available. Add ground-truth accuracy, thermal, and memory measurements before selecting a release backend.
-- **Status:** **Partially device-observed but unresolved.** The candidate's short XNNPACK run is evidence of initial compatibility, not proof of speedup, long-term stability, full graph delegation, or crash resolution.
-
-### ✅ Custom Worker Recovery (historical — Custom engine removed 2026-10-21)
-
-- **Description:** The Custom worker now uses a pure injectable lifecycle coordinator with monotonic generations, typed worker-exit/error handling, bounded immediate/delayed retries, terminal failure, healthy-operation budget reset, and disposal-safe backoff.
-- **Location:** [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart) and [`inference_isolate.dart`](../lib/services/inference_isolate.dart)
-- **Verification:** Seven deterministic tests cover worker exit/respawn, stale messages, busy-gate release, delayed retry, terminal failure, disposal during backoff, and successful recovery. Native crashes such as SIGSEGV remain outside Dart recovery guarantees.
-
-## Resolved (previously tracked here)
-
-- ✅ **Unused `flutter_riverpod` dependency** — RESOLVED in WS4. The dependency was removed from `pubspec.yaml` (and the lockfile regenerated by the tool); the architecture remains `ChangeNotifier` services + constructor injection + `setState`. Verification was static only; no tests, analyzer, or build were run.
-- ✅ **Engine-switch closed-stream race** — RESOLVED in the unreleased candidate. A late Custom-isolate result could arrive after switching to Ultralytics and attempt to write to a closed result stream. Disposal now marks the service inactive before cancelling/closing resources, ignores late messages, and releases the UI busy gate when a frame is rejected. Both switch directions passed a post-fix device smoke test.
-- 🟡 **TTS scheduling — reworked, device-unverified (Workstream 1).** The v0.2.0 wiring (cooldown + label de-duplication + urgent bypass) has been replaced by a lifecycle-aware arbiter in [`tts_service.dart`](../lib/services/tts_service.dart): one in-flight utterance, one pending request, history committed only on confirmed `onStart`, paired-signal reconciliation, bounded recovery/quiet period, track-aware [`alert_policy.dart`](../lib/services/alert_policy.dart), semantic pending revalidation, controlled preemption, and idle-only wayfinding. **Not resolved:** `flutter_tts` callbacks carry no utterance identifier, real Android callback ordering and cancellation timing are unmeasured, and the relocated suite has not been executed. See [`architecture.md`](architecture.md#speech-scheduling-workstream-1).
-- ✅ **Permission-denied UI** — RESOLVED v0.2.0. [`detection_screen.dart`](../lib/screens/detection_screen.dart) shows a camera-denied state with retry / open-settings. No longer a blocker.
-- ✅ **Boilerplate counter-app test** — RESOLVED v0.2.0. [`test/widget_test.dart`](../test/widget_test.dart) now contains real Home/Settings/Help screen smoke tests; the full suite is 127 passing as of 2026-09-05.
-
-## Technical Debt
-
-| Priority | Item | Location |
-|----------|------|----------|
-| ✅ | Model path, labels path, confidence threshold, and IoU threshold duplicated across engines | Resolved by [`model_config.dart`](../lib/models/model_config.dart) |
-| 🟡 P1 | `flutter_tts` and `ultralytics_yolo` still apply the legacy Kotlin Gradle plugin mechanism; current builds pass, but a future Flutter toolchain will reject it | Upstream plugins / Android build |
-| 🟡 P1 | Dual LiteRT packaging bridge must be revalidated whenever either inference package or the Android toolchain changes | [`build.gradle.kts`](../android/app/build.gradle.kts) |
-| 🟡 P1 | Ultralytics' native overlay still needs device-level revalidation with the current metadata-enriched artifact; EyeCue's own adapted cards/TTS resolve labels correctly from `labels.txt` | Model metadata / Ultralytics overlay |
-| 🟡 P2 | Full YUV plane copies across SendPort (~460KB per frame) — could use `TransferableTypedData` (historical; Custom engine removed) | [`detection_screen.dart`](../lib/screens/detection_screen.dart) (frame dispatch) |
-| 🟡 P2 | Nearest-neighbor resize only — may reduce detection quality vs bilinear (historical; Custom engine removed) | `inference_isolate.dart` (deleted with the Custom engine on 2026-10-21) |
-| ✅ | Package name was the placeholder `com.example.eyecue_flutter` instead of the specified `com.eyecue` | Resolved by the owner-approved final ID `app.eyecue.mobile` ([`build.gradle.kts`](../android/app/build.gradle.kts)) |
-| 🟢 P3 | `minSdkVersion` relies on the Flutter default (24) — thesis targets Android 10 / API 29; not set explicitly | [`build.gradle.kts:18`](../android/app/build.gradle.kts:18) |
-| 🟢 P3 | Release build still signs with the debug keystore | [`build.gradle.kts`](../android/app/build.gradle.kts) |
-| ✅ | Detection sensitivity was previously fixed at 0.25 | Resolved by persisted presets and bounded advanced values in [`app_settings.dart`](../lib/models/app_settings.dart), applied through [`model_config.dart`](../lib/models/model_config.dart) |
-
-## Platform-Specific Limitations
-
-- **Android:** The **only** supported platform (per the thesis). The Snapdragon 695 testing device has a historical XNNPACK crash; the current candidate has only initial short-run validation there after storage was cleared. Other devices are untested.
-- **iOS / web / Windows / macOS / Linux:** Out of scope — EyeCue is Android-only. Their scaffolding was removed during the Android-only platform cleanup; no support is provided or planned.
-
-## Known Bugs
-
-| Bug | Details |
-|-----|---------|
-| ~~Camera frames never rotated to device orientation~~ | ✅ **FIXED (2026-08-01, v0.1.7)** — `BoxTransform` rotates/mirrors the input tensor to upright; portrait detections 0 → 0.91 on-device. See [`docs/orientation-implementation.md`](orientation-implementation.md). Back-landscape re-validation + front-camera runs still pending. |
-| ~~YUV420→RGB ignored rowStride/pixelStride~~ | ✅ **FIXED (2026-08-01, v0.1.4)** — converter honors real plane geometry; planar I420 + semi-planar NV12/NV21 verified on-device. See [`docs/camera-path-forensics.md`](camera-path-forensics.md). |
-| YUV conversion uses non-standard coefficients | Slight color shift in RGB output. Does not affect detection accuracy but could impact future visual-only features. |
-| `dynamic` type for the input buffer (historical; Custom engine removed) | `inference_isolate.dart:392` (deleted with the Custom engine on 2026-10-21) loses type safety. Could use a sealed/branched type per model dtype. |
-| ~~Broadcast stream with single listener~~ | ✅ **NO LONGER AN ISSUE (v0.2.0)** — the broadcast `resultsStream` now has multiple listeners (UI + TTS + telemetry), so broadcast is justified. |
-
-## Planned Fixes (by Milestone)
-
-See [`implementation-plan.md`](implementation-plan.md) for the full roadmap.
+The Custom-engine XNNPACK SIGSEGV, Custom-worker recovery, old dual-runtime packaging bridge, Dart YUV conversion, SendPort copies, and the old engine-switch race belong to removed code. Their [historical diagnostic records](index.md#historical-records) remain evidence for earlier revisions; they are not current blockers or promises of fixes in the native pipeline.

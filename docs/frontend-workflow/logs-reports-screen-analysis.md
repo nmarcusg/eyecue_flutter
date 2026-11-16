@@ -1,5 +1,8 @@
 # Logs & Reports Screen Analysis
 
+> **Current status (2026-11-16, review base `main@aadf9e0`):** This screen analysis is design history. Public startup in [`main.dart`](../../lib/main.dart) leaves the study research-session service and research Logs & Reports builder unset; Study wiring is in [`main_study.dart`](../../lib/main_study.dart). The current Logs screen remains [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart); the shipped chart/subtitle refinements are recorded in [`charts-logs-polish-plan.md`](charts-logs-polish-plan.md).
+
+
 **Task type:** visual-only restyle, no architecture change.
 
 ## Scope and source boundary
@@ -14,7 +17,7 @@ interaction, pagination, new telemetry calculations, correction mutation, or a
 new export schema.
 
 The current implementation is in
-[`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart). The
+[`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart). The
 findings below are based on the confirmed repository and visual-reference
 findings supplied for this task. This document is an analysis-stage artifact;
 it is not a design spec, implementation plan, or code change.
@@ -25,14 +28,14 @@ it is not a design spec, implementation plan, or code change.
 
 There is no current Logs & Reports target export, including no current light
 target export. The current
-[`design-reference/screens/`](../design-reference/screens/) directory contains
+[`design-reference/screens/`](../../design-reference/screens) directory contains
 references for detection, home, preparing, and settings, but no Logs & Reports
 reference. The only Logs & Reports images are legacy exports under
-[`design-reference/old_screen/logs_reports_screen/`](../design-reference/old_screen/logs_reports_screen/):
+[`design-reference/old_screen/logs_reports_screen/`](../../design-reference/old_screen/logs_reports_screen):
 
-- [`logs_reports_screen.jpg`](../design-reference/old_screen/logs_reports_screen/logs_reports_screen.jpg)
-- [`logs_reports_screen_charts.jpg`](../design-reference/old_screen/logs_reports_screen/logs_reports_screen_charts.jpg)
-- [`logs_reports_screen_logs.jpg`](../design-reference/old_screen/logs_reports_screen/logs_reports_screen_logs.jpg)
+- [`logs_reports_screen.jpg`](../../design-reference/old_screen/logs_reports_screen/logs_reports_screen.jpg)
+- [`logs_reports_screen_charts.jpg`](../../design-reference/old_screen/logs_reports_screen/logs_reports_screen_charts.jpg)
+- [`logs_reports_screen_logs.jpg`](../../design-reference/old_screen/logs_reports_screen/logs_reports_screen_logs.jpg)
 
 These legacy images are reference context only. They must not be treated as
 the intended redesign target. Exact Logs-specific pixel composition remains a
@@ -44,8 +47,8 @@ replacement structure.
 ### 1.2 Established light visual language
 
 The confirmed light references are
-[`settings-screen.png`](../design-reference/screens/settings-screen.png) and
-[`home_screen.png`](../design-reference/screens/home_screen.png). Their
+[`settings-screen.png`](../../design-reference/screens/settings-screen.png) and
+[`home_screen.png`](../../design-reference/screens/home_screen.png). Their
 established language is:
 
 - near-white background;
@@ -71,7 +74,7 @@ Logs & Reports export confirms those placements.
 ### 1.3 Authoritative token evidence
 
 The exact token evidence is in
-[`extracted-design-tokens-screenshot.md`](../design-reference/tokens/extracted-design-tokens-screenshot.md),
+[`extracted-design-tokens-screenshot.md`](../../design-reference/tokens/extracted-design-tokens-screenshot.md),
 which is authoritative over the token-summary PNG for exact values. Confirmed
 values are:
 
@@ -132,18 +135,18 @@ dark chart cards, or any newly invented light palette is the intended result.
 ### 2.1 Navigation and route ownership
 
 Logs & Reports is not a bottom-navigation tab. The shell’s
-[`openLogsReports()`](../lib/navigation/app_shell.dart:77) method pushes the
+[`openLogsReports()`](../../lib/navigation/app_shell.dart#L77) method pushes the
 screen through a `MaterialPageRoute`, and the shell remains beneath it. The
 four-tab navigation bar is not replaced by the pushed route. A later visual
 change should therefore keep route ownership in
-[`app_shell.dart`](../lib/navigation/app_shell.dart) unchanged.
+[`app_shell.dart`](../../lib/navigation/app_shell.dart) unchanged.
 
 The parent-confirmed direction is that Logs & Reports uses the established
 light secondary-screen language rather than the inherited dark route. The
-later implementation should reuse [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50)
+later implementation should reuse [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50)
 locally at the pushed route root and add scoped dark status-bar styling
 consistent with Settings and Help. This local scope must not generalize or
-rename the Home theme or tokens, and [`app_shell.dart`](../lib/navigation/app_shell.dart)
+rename the Home theme or tokens, and [`app_shell.dart`](../../lib/navigation/app_shell.dart)
 remains unchanged. The stale architecture wording that describes the light
 builder as scoped only to Home and Help is documentation debt, not a Logs
 implementation blocker.
@@ -156,9 +159,9 @@ dependency flow merely to restyle the screen.
 ### 2.2 Tab structure and state updates
 
 The screen currently uses
-[`DefaultTabController`](../lib/screens/logs_reports_screen.dart:48) for three
+[`DefaultTabController`](../../lib/screens/logs_reports_screen.dart#L48) for three
 tabs: Overview, Charts, and Logs. Its body uses
-[`ListenableBuilder`](../lib/screens/logs_reports_screen.dart:61) with telemetry
+[`ListenableBuilder`](../../lib/screens/logs_reports_screen.dart#L61) with telemetry
 and, when supplied, corrections. This keeps the displayed values current as
 the underlying services change.
 
@@ -331,11 +334,11 @@ pixel-level layout.
 
 All new or changed colors, spacing, radii, and typography must use the
 existing UI token layer in
-[`app_colors.dart`](../lib/theme/app_colors.dart),
-[`app_spacing.dart`](../lib/theme/app_spacing.dart),
-[`app_radii.dart`](../lib/theme/app_radii.dart),
-[`app_typography.dart`](../lib/theme/app_typography.dart), and
-[`app_home_theme.dart`](../lib/theme/app_home_theme.dart). Do not introduce
+[`app_colors.dart`](../../lib/theme/app_colors.dart),
+[`app_spacing.dart`](../../lib/theme/app_spacing.dart),
+[`app_radii.dart`](../../lib/theme/app_radii.dart),
+[`app_typography.dart`](../../lib/theme/app_typography.dart), and
+[`app_home_theme.dart`](../../lib/theme/app_home_theme.dart). Do not introduce
 inline color, spacing, radius, or type literals to approximate an absent
 reference.
 
@@ -416,9 +419,9 @@ The technical reuse-versus-generalization question is resolved in favor of
 local reuse for the pushed light route:
 
 1. Wrap the root of
-   [`LogsReportsScreen`](../lib/screens/logs_reports_screen.dart:23) with a
+   [`LogsReportsScreen`](../../lib/screens/logs_reports_screen.dart#L23) with a
    locally scoped `Theme` whose data comes from
-   [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50).
+   [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50).
 2. Add a local `AnnotatedRegion<SystemUiOverlayStyle>` with dark status-bar
    styling consistent with the existing Settings/Help pattern.
 3. Keep the local theme inside the pushed route. It must not wrap or recolor
@@ -426,7 +429,7 @@ local reuse for the pushed light route:
    other tabs unchanged.
 4. Do not generalize or rename the existing Home-local builder or `kHome*`
    tokens. Do not add another light-theme builder, change global theme
-   ownership, edit [`app_shell.dart`](../lib/navigation/app_shell.dart), or
+   ownership, edit [`app_shell.dart`](../../lib/navigation/app_shell.dart), or
    edit theme-token files for this Logs-only redesign.
 
 The architecture summary’s stale wording that scopes the light builder only to
@@ -485,7 +488,7 @@ Recommend a dedicated Logs screen-focused widget test file covering real screen
 content, route/light-theme scope, all tabs, exports, correction states,
 unavailable metrics, Logs states, priority semantics, and 200 percent
 text-scale/no-overflow behavior. Keep chart algorithm and bound tests in the
-existing [`charts_test.dart`](../test/widgets/charts_test.dart). **Needs
+existing [`charts_test.dart`](../../test/widgets/charts_test.dart). **Needs
 Verification [inferred-from-codebase]:** implement and validate this coverage
 in a later stage; no claim is made that it currently exists or has run.
 
@@ -523,11 +526,11 @@ The following are explicitly outside this visual-only redesign:
 - changing the custom or Ultralytics inference engines, camera path, service
   architecture, models, or data bindings;
 - changing read-only service/model files, including
-  [`telemetry_service.dart`](../lib/services/telemetry_service.dart),
-  [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart),
-  [`correction_service.dart`](../lib/services/correction_service.dart),
-  [`telemetry_export.dart`](../lib/models/telemetry_export.dart),
-  [`app_settings.dart`](../lib/models/app_settings.dart), or detection and
+  [`telemetry_service.dart`](../../lib/services/telemetry_service.dart),
+  [`telemetry_export_service.dart`](../../lib/services/telemetry_export_service.dart),
+  [`correction_service.dart`](../../lib/services/correction_service.dart),
+  [`telemetry_export.dart`](../../lib/models/telemetry_export.dart),
+  [`app_settings.dart`](../../lib/models/app_settings.dart), or detection and
   correction models;
 - generalizing the light-theme builder or renaming existing light tokens;
 - using the legacy Logs & Reports exports as the redesign target;
@@ -535,13 +538,13 @@ The following are explicitly outside this visual-only redesign:
 - modifying files outside the analysis artifact during this Analysis stage.
 
 Potential later implementation files are limited to the existing UI and test
-boundaries: [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart)
+boundaries: [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart)
 for the screen composition and local theme scope;
-[`charts.dart`](../lib/widgets/charts.dart) only if chart visuals or chart
-allocation are actually redesigned; [`charts_test.dart`](../test/widgets/charts_test.dart)
+[`charts.dart`](../../lib/widgets/charts.dart) only if chart visuals or chart
+allocation are actually redesigned; [`charts_test.dart`](../../test/widgets/charts_test.dart)
 for retained or extended chart-bound coverage; a semantics test location for
 direct Logs coverage; and a screen-focused widget test location if approved.
-[`app_shell.dart`](../lib/navigation/app_shell.dart) should remain unchanged
+[`app_shell.dart`](../../lib/navigation/app_shell.dart) should remain unchanged
 unless a separate, explicitly approved dependency-injection change is
 introduced. Theme and service files should remain read-only for this visual
 request unless confirmed design evidence requires a new token.

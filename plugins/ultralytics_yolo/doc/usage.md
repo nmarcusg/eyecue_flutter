@@ -6,6 +6,12 @@ path: /integrations/flutter/usage/
 
 # Usage Guide
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
 This guide shows the common ways to use the plugin in real apps without reintroducing model-management logic in your own code.
 
 ## 🎯 Single-Image Inference

@@ -2,6 +2,9 @@
 
 # Orientation Architecture — Implementation Summary
 
+> **Current status (2026-11-16):** The implementation summarized below belonged to the retired Custom EyeCue camera and tensor pipeline, removed in commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9). The former `detection_screen.dart`, `inference_isolate.dart`, `tensor_rotation.dart`, and `forensic_log.dart` paths are not current. The active Detection screen delegates camera orientation/preprocessing to `YOLOView`; do not treat the Custom pipeline steps as current behavior.
+
+
 > **Status:** The stable v0.2.2 orientation path is implemented and on-device
 > validated for back-camera portrait/static input (portrait detections at 0.91
 > confidence; static-image baseline byte-identical). The current unreleased
@@ -20,11 +23,11 @@
 | File | Why it changed |
 |------|----------------|
 | [`lib/models/box_transform.dart`](../lib/models/box_transform.dart) (NEW) | The single, device-independent source of truth for ALL orientation math: metadata→rotation, upright dims, reversible normalized-box rotation, and the plugin-convention `DeviceOrientation`→degrees mapping. |
-| [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart) | `processFrame` carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`). The isolate rotates + optionally mirrors the square input tensor to UPRIGHT before `interpreter.run()`; the current helper supports both NHWC and NCHW layouts (parser/NMS untouched), and logs per-frame orientation diagnostics. |
-| [`lib/models/tensor_rotation.dart`](../lib/models/tensor_rotation.dart) | Pure layout-aware rotation/mirroring helper for interleaved NHWC and planar NCHW buffers; unit-tested independently of the camera. |
-| [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart) | Computes the metadata-driven rotation per frame from `controller.value.deviceOrientation` + `CameraDescription.sensorOrientation` + lens; passes it downstream; sizes the preview and the painter with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`. |
+| `lib/services/inference_isolate.dart` | `processFrame` carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`). The isolate rotates + optionally mirrors the square input tensor to UPRIGHT before `interpreter.run()`; the current helper supports both NHWC and NCHW layouts (parser/NMS untouched), and logs per-frame orientation diagnostics. |
+| `lib/models/tensor_rotation.dart` | Pure layout-aware rotation/mirroring helper for interleaved NHWC and planar NCHW buffers; unit-tested independently of the camera. |
+| `lib/screens/detection_screen.dart` | Computes the metadata-driven rotation per frame from `controller.value.deviceOrientation` + `CameraDescription.sensorOrientation` + lens; passes it downstream; sizes the preview and the painter with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`. |
 | [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) | Removed all sensor-orientation knowledge (`lensDirection`/mirror). The painter is now a pure normalized→pixel mapper over the upright image; it no longer needs to know the lens or rotation. |
-| [`lib/services/forensic_log.dart`](../lib/services/forensic_log.dart) | Orientation-related diagnostics only: `recordOrientation` (per-frame) and sensor/lens fields in `recordCamera`. No other logging touched. |
+| `lib/services/forensic_log.dart` | Orientation-related diagnostics only: `recordOrientation` (per-frame) and sensor/lens fields in `recordCamera`. No other logging touched. |
 
 ## 2. Why each change
 
@@ -79,7 +82,7 @@ painter maps normalized → pixels over upright imageSize (no orientation logic)
 ```
 
 - The square 640×640 tensor makes 90°/180°/270° rotations lossless transposes;
-  [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) applies the same
+  `tensor_rotation.dart` applies the same
   logical transform to interleaved NHWC and planar NCHW storage.
 - Mirroring (front camera) is applied in the upright space (X-flip), matching
   the plugin's mirrored front preview (verified equivalent to the plugin's

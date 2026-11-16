@@ -1,5 +1,8 @@
 # Custom Detector Priority and Distance Alert Policy — Analysis
 
+> **Implementation status (2026-11-16):** Detector-aware alert ranking is implemented in [`lib/services/alert_policy.dart`](../../lib/services/alert_policy.dart), with active model identity and labels from [`lib/services/detector_model_service.dart`](../../lib/services/detector_model_service.dart) and [`lib/models/model_config.dart`](../../lib/models/model_config.dart). The built-in Campus model has 14 labels; this policy work does not restore the removed Custom EyeCue inference engine.
+
+
 **Task type:** logic/alert policy change; no intentional visual changes.
 
 ## Scope and repository state

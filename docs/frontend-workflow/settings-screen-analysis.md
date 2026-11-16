@@ -1,5 +1,8 @@
 # EyeCue — Settings Screen Visual Redesign: Analysis
 
+> **Current status (2026-11-16, review base `main@aadf9e0`):** This staged Settings analysis is historical. The live screen is [`settings_screen.dart`](../../lib/screens/settings_screen.dart); built-in/imported detector selection is model-based, not a Custom-vs-Ultralytics engine selector. Follow-up accessibility fix `f95ffd6` removed explicit Slider label arguments while retaining semantic formatter callbacks; current regression coverage is in [`semantics_test.dart`](../../test/accessibility/semantics_test.dart).
+
+
 > **Stage:** Analysis (read-only). No application code, tests, assets,
 > `pubspec.yaml`, or other project files were modified to produce this document.
 > **Date:** 2026-09-09
@@ -39,13 +42,13 @@ features are reused.
 
 **Critical scope boundary (flagged):** the target/token composition requires the
 Settings screen to display **live** FPS/MS performance metrics. The current
-[`SettingsScreen`](../lib/screens/settings_screen.dart:11) does **not** receive a
+[`SettingsScreen`](../../lib/screens/settings_screen.dart#L11) does **not** receive a
 `TelemetryService` — it is constructed with only `settings` and
-`onOpenLogsReports` ([`app_shell.dart`](../lib/navigation/app_shell.dart:108)).
+`onOpenLogsReports` ([`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)).
 Showing live metrics therefore requires adding a `TelemetryService` constructor
-dependency and threading it through [`app_shell.dart`](../lib/navigation/app_shell.dart:108).
+dependency and threading it through [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108).
 Confirmed against the codebase that `TelemetryService` is already constructed in
-[`main.dart`](../lib/main.dart:27) and passed to `AppShell`, so no `main.dart`
+[`main.dart`](../../lib/main.dart#L27) and passed to `AppShell`, so no `main.dart`
 change is required. The recommended resolution is to add an optional
 `TelemetryService? telemetry` input to `SettingsScreen` and forward
 `widget.telemetry` through the shell construction. This is a **service-wiring
@@ -58,15 +61,15 @@ change outside the UI-owned folders** and must be approved before any Code stage
 
 ### 2.1 Behavior contract (must be preserved)
 
-[`SettingsScreen`](../lib/screens/settings_screen.dart:11) is a
+[`SettingsScreen`](../../lib/screens/settings_screen.dart#L11) is a
 **`StatelessWidget`** with two required constructor inputs:
 
 | Input | Current role | Preservation requirement |
 |---|---|---|
-| [`settings`](../lib/screens/settings_screen.dart:12) | The injected [`SettingsService`](../lib/services/settings_service.dart:60); the body is wrapped in a [`ListenableBuilder`](../lib/screens/settings_screen.dart:25) so every control reflects and writes the persisted value. | Keep the input and the listener-driven update behavior. |
-| [`onOpenLogsReports`](../lib/screens/settings_screen.dart:13) | Callback invoked by the **View Logs & Reports** row; wired to [`AppShellState.openLogsReports`](../lib/navigation/app_shell.dart:77) which pushes the [`LogsReportsScreen`](../lib/screens/logs_reports_screen.dart:23) route. | Keep the callback and invoke it from the redesigned Logs & Reports affordance. |
+| [`settings`](../../lib/screens/settings_screen.dart#L12) | The injected [`SettingsService`](../../lib/services/settings_service.dart#L60); the body is wrapped in a [`ListenableBuilder`](../../lib/screens/settings_screen.dart#L25) so every control reflects and writes the persisted value. | Keep the input and the listener-driven update behavior. |
+| [`onOpenLogsReports`](../../lib/screens/settings_screen.dart#L13) | Callback invoked by the **View Logs & Reports** row; wired to [`AppShellState.openLogsReports`](../../lib/navigation/app_shell.dart#L77) which pushes the [`LogsReportsScreen`](../../lib/screens/logs_reports_screen.dart#L23) route. | Keep the callback and invoke it from the redesigned Logs & Reports affordance. |
 
-The screen is constructed from [`app_shell.dart`](../lib/navigation/app_shell.dart:108)
+The screen is constructed from [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)
 (`case 2: return SettingsScreen(settings: widget.settings, onOpenLogsReports:
 openLogsReports);`) inside the shell's `IndexedStack` as the third bottom-nav tab
 (Settings). It inherits the shell's `Scaffold`/`NavigationBar` and the global
@@ -89,9 +92,9 @@ controls in this order:
 
 ### 2.3 Persisted settings (must remain unchanged)
 
-All values are persisted by [`SettingsService`](../lib/services/settings_service.dart:60)
+All values are persisted by [`SettingsService`](../../lib/services/settings_service.dart#L60)
 as JSON under the application documents directory, with safe defaults on a
-missing/corrupt file. The model is [`AppSettings`](../lib/models/app_settings.dart:61)
+missing/corrupt file. The model is [`AppSettings`](../../lib/models/app_settings.dart#L61)
 (schema version 2). The fields surfaced by the Settings screen are:
 
 | Field | Default | Setter |
@@ -106,19 +109,19 @@ missing/corrupt file. The model is [`AppSettings`](../lib/models/app_settings.da
 The engine and sensitivity controls already exist in the current implementation
 and are **not** new features to add — they are existing behavior that the
 redesign must preserve and visually regroup. The `InferenceEngine` enum
-([`app_settings.dart`](../lib/models/app_settings.dart:1)) already carries the
+([`app_settings.dart`](../../lib/models/app_settings.dart#L1)) already carries the
 `Recommended`/`Advanced` semantics via `isRecommended` and the `label`/
 `description` strings. The `DetectionSensitivityPreset` enum
-([`app_settings.dart`](../lib/models/app_settings.dart:22)) already carries the
+([`app_settings.dart`](../../lib/models/app_settings.dart#L22)) already carries the
 three presets (`More detections` 0.15, `Balanced` 0.25, `Fewer false alerts`
 0.40) plus the advanced slider range 0.10–0.75 in 0.05 steps.
 
 ### 2.4 Navigation contract (must remain unchanged)
 
 The Settings screen is one of four tabs in the persistent bottom
-[`NavigationBar`](../lib/navigation/app_shell.dart:138) owned by
-[`AppShell`](../lib/navigation/app_shell.dart:20). Logs & Reports is pushed as a
-separate full-screen route from Settings ([`app_shell.dart`](../lib/navigation/app_shell.dart:77)).
+[`NavigationBar`](../../lib/navigation/app_shell.dart#L138) owned by
+[`AppShell`](../../lib/navigation/app_shell.dart#L20). Logs & Reports is pushed as a
+separate full-screen route from Settings ([`app_shell.dart`](../../lib/navigation/app_shell.dart#L77)).
 The redesign must not remove or restyle the shell navigation bar, and must not
 move Logs & Reports out of its pushed-route behavior.
 
@@ -134,14 +137,14 @@ engine/camera service.
 | Dependency | File | Role for Settings |
 |---|---|---|
 | Material | `package:flutter/material.dart` | `Scaffold`, `AppBar`, `ListView`, `SwitchListTile`, `RadioGroup`/`RadioListTile`, `Slider`, `ListTile`, `Theme` |
-| Settings model | [`app_settings.dart`](../lib/models/app_settings.dart:1) | `InferenceEngine`, `DetectionSensitivityPreset`, `AppSettings` bounds/defaults |
-| Settings service | [`settings_service.dart`](../lib/services/settings_service.dart:60) | Persisted values + setters; `ChangeNotifier` |
-| Shell construction | [`app_shell.dart`](../lib/navigation/app_shell.dart:108) | `SettingsScreen` as tab index 2; only the Settings page construction is in scope |
-| Theme (global) | [`app_theme.dart`](../lib/theme/app_theme.dart:13) | Dark `buildEyeCueTheme()` currently inherited by Settings |
-| Light-theme pattern | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50) | `buildHomeTheme()` — the established light `ThemeData` + IBM Plex Sans + shadow tokens to reuse |
-| Tokens | [`app_colors.dart`](../lib/theme/app_colors.dart:1), [`app_spacing.dart`](../lib/theme/app_spacing.dart:1), [`app_radii.dart`](../lib/theme/app_radii.dart:1), [`app_typography.dart`](../lib/theme/app_typography.dart:1) | Semantic color/spacing/radius/type tokens |
-| Reference implementations | [`home_screen.dart`](../lib/screens/home_screen.dart:22), [`help_screen.dart`](../lib/screens/help_screen.dart:17) | Light-theme, responsive, accessibility pattern to follow |
-| Telemetry (only if live metrics are approved) | [`telemetry_service.dart`](../lib/services/telemetry_service.dart:175) | `averageInferenceFps`, `averageLatencyMs`, `averageConfidence` — **not currently injected into Settings** |
+| Settings model | [`app_settings.dart`](../../lib/models/app_settings.dart#L1) | `InferenceEngine`, `DetectionSensitivityPreset`, `AppSettings` bounds/defaults |
+| Settings service | [`settings_service.dart`](../../lib/services/settings_service.dart#L60) | Persisted values + setters; `ChangeNotifier` |
+| Shell construction | [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108) | `SettingsScreen` as tab index 2; only the Settings page construction is in scope |
+| Theme (global) | [`app_theme.dart`](../../lib/theme/app_theme.dart#L13) | Dark `buildEyeCueTheme()` currently inherited by Settings |
+| Light-theme pattern | [`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50) | `buildHomeTheme()` — the established light `ThemeData` + IBM Plex Sans + shadow tokens to reuse |
+| Tokens | [`app_colors.dart`](../../lib/theme/app_colors.dart#L1), [`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1), [`app_radii.dart`](../../lib/theme/app_radii.dart#L1), [`app_typography.dart`](../../lib/theme/app_typography.dart#L1) | Semantic color/spacing/radius/type tokens |
+| Reference implementations | [`home_screen.dart`](../../lib/screens/home_screen.dart#L22), [`help_screen.dart`](../../lib/screens/help_screen.dart#L17) | Light-theme, responsive, accessibility pattern to follow |
+| Telemetry (only if live metrics are approved) | [`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L175) | `averageInferenceFps`, `averageLatencyMs`, `averageConfidence` — **not currently injected into Settings** |
 
 No unrelated routes or services were inspected. No repository-wide audit was
 performed.
@@ -194,8 +197,8 @@ Reports).
 The Home reference establishes the light palette, strong black typography, muted
 secondary text, cyan accent, generous whitespace, and rounded surfaces that the
 Settings redesign should reuse. The completed Home and Help implementations
-([`home_screen.dart`](../lib/screens/home_screen.dart:22),
-[`help_screen.dart`](../lib/screens/help_screen.dart:17)) are the concrete
+([`home_screen.dart`](../../lib/screens/home_screen.dart#L22),
+[`help_screen.dart`](../../lib/screens/help_screen.dart#L17)) are the concrete
 reference for how that language is applied in code.
 
 ### 4.5 Design-token PNG (`design-reference/tokens/design-tokens.png`)
@@ -207,7 +210,7 @@ visual-summary set is: IBM Plex Sans; brand colors `#F5F5F5`/`#0A0A0A`/
 `#FF5C5C`/`#4DA3FF`/`#667085`; spacing `8/16/24/32/48/64`; and type sizes
 Display 56 / Title 32 / Action 24 / Body 18 / Label 14.
 
-Per the established Home precedent (see [`home-screen-analysis.md`](home-screen-analysis.md:571)),
+Per the established Home precedent (see [`home-screen-analysis.md`](home-screen-analysis.md)),
 the **extracted token Markdown is authoritative over the token-summary PNG**
 where they disagree. The PNG is a visual cross-check only. The Markdown's finer
 spacing scale (`6, 8, 12, 16, 20, 24`) and its complete color/radius/shadow
@@ -215,7 +218,7 @@ definitions govern the Settings implementation; the PNG's coarser spacing
 (`8/16/24/32/48/64`) is not used as new spacing values. The PNG's type sizes
 (Display 56 / Title 32 / Action 24 / Body 18 / Label 14) are consistent with the
 Markdown's role mapping and are already reflected in the Home theme builder
-([`app_home_theme.dart`](../lib/theme/app_home_theme.dart:62)) at the sizes the
+([`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L62)) at the sizes the
 Home/Help implementations actually use.
 
 ---
@@ -230,7 +233,7 @@ preserve them exactly:
    dependency is separately approved — see §12).
 2. **All six persisted settings** (vibration, auto-start, low-power, audio,
    engine, sensitivity) keep their current keys, defaults, setters, and
-   persistence behavior via [`SettingsService`](../lib/services/settings_service.dart:60).
+   persistence behavior via [`SettingsService`](../../lib/services/settings_service.dart#L60).
 3. **Engine Selection** keeps the `Recommended`/`Ultralytics` and
    `Advanced`/`Custom EyeCue` semantics and the `InferenceEngine` enum labels.
 4. **Detection Sensitivity** keeps the three presets and the advanced slider
@@ -277,8 +280,8 @@ headers to the light, card-based composition, following the Home/Help pattern:
 ## 7. Theme reuse vs. generalization (RESOLVED — reuse `buildHomeTheme()` as-is)
 
 The existing light tokens are **Home-scoped**: `kHome*` in
-[`app_colors.dart`](../lib/theme/app_colors.dart:114) and `buildHomeTheme()` in
-[`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50). The completed Help
+[`app_colors.dart`](../../lib/theme/app_colors.dart) and `buildHomeTheme()` in
+[`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50). The completed Help
 feature already established the precedent of **reusing `buildHomeTheme()` and the
 `kHome*` tokens as-is** for a non-Home screen (owner decision, Help Analysis §12,
 Option 1), scoped to that screen's subtree only.
@@ -299,7 +302,7 @@ card surface (`kHomeSurfaceCard` `#FFFFFF`), ink (`kHomeInk` `#0A0A0A`), muted i
 exist.
 
 **Dark System Performance card surface — RESOLVED: `#0A0A0A` (the existing
-[`kHomeInk`](../lib/theme/app_colors.dart:124) token).** The project owner
+[`kHomeInk`](../../lib/theme/app_colors.dart) token).** The project owner
 confirmed the black System Performance card surface is `#0A0A0A`. That exact
 value is already the existing `kHomeInk` token, so **no new token is required** —
 the card surface reuses `kHomeInk` as its background, with light/white foreground
@@ -315,38 +318,38 @@ theme/`ColorScheme` (e.g. `onPrimary`/white) rather than a new token.
 ### 8.1 Live FPS and MS
 
 FPS and MS are **live, truthful** metrics available from
-[`TelemetryService`](../lib/services/telemetry_service.dart:175):
-`averageInferenceFps` ([`telemetry_service.dart`](../lib/services/telemetry_service.dart:352))
-and `averageLatencyMs` ([`telemetry_service.dart`](../lib/services/telemetry_service.dart:346)),
+[`TelemetryService`](../../lib/services/telemetry_service.dart#L175):
+`averageInferenceFps` ([`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L352))
+and `averageLatencyMs` ([`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L346)),
 plus per-engine summaries via `summaryFor(engine)`
-([`telemetry_service.dart`](../lib/services/telemetry_service.dart:364)). These
+([`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L364)). These
 are the same values the Logs & Reports Overview tab already displays
-([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:160)).
+([`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L160)).
 
 **Wiring decision (recommended, confirmed against the codebase):** to display
 live FPS/MS on the Settings screen, `SettingsScreen` must receive a
 `TelemetryService` and rebuild on its notifications. Confirmed against the
-codebase: [`SettingsScreen`](../lib/screens/settings_screen.dart:11) currently
+codebase: [`SettingsScreen`](../../lib/screens/settings_screen.dart#L11) currently
 takes only `settings` and `onOpenLogsReports`
-([`app_shell.dart`](../lib/navigation/app_shell.dart:108)), and
-[`TelemetryService`](../lib/services/telemetry_service.dart:175) is already
-constructed in [`main.dart`](../lib/main.dart:27) and passed to
-[`AppShell`](../lib/navigation/app_shell.dart:21). The recommended resolution is
+([`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)), and
+[`TelemetryService`](../../lib/services/telemetry_service.dart#L175) is already
+constructed in [`main.dart`](../../lib/main.dart#L27) and passed to
+[`AppShell`](../../lib/navigation/app_shell.dart#L21). The recommended resolution is
 to add an optional `TelemetryService? telemetry` input to `SettingsScreen` and
 thread `widget.telemetry` through the shell construction
-([`app_shell.dart`](../lib/navigation/app_shell.dart:108)).
+([`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)).
 
 **Scope assessment — this is NOT an architecture change.** It is a UI-owned
 wiring addition that only *reads* an existing service:
 
 - It does **not** modify any file in `lib/services/` or `lib/models/` — those
   stay read-only, and no service/model behavior, API, or lifecycle changes.
-- It touches only UI-owned files: [`settings_screen.dart`](../lib/screens/settings_screen.dart:11)
-  (`lib/screens/`) and [`app_shell.dart`](../lib/navigation/app_shell.dart:108)
+- It touches only UI-owned files: [`settings_screen.dart`](../../lib/screens/settings_screen.dart#L11)
+  (`lib/screens/`) and [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)
   (`lib/navigation/`).
 - It follows the **existing constructor-injection pattern** the shell already
   uses to pass `settings`, `tts`, `telemetry`, `corrections`, and `haptics` to
-  other screens ([`app_shell.dart`](../lib/navigation/app_shell.dart:100)).
+  other screens ([`app_shell.dart`](../../lib/navigation/app_shell.dart#L100)).
 - It is a **read-only consumption** of what the service layer already exposes,
   which the UI scope rule explicitly permits ("New UI may *read* what those
   layers expose, but must not modify them").
@@ -365,17 +368,17 @@ empty/unavailable state or be omitted, and the live values would be deferred.
 
 **Accuracy (`%ACC`) cannot be computed from a live camera feed.** It requires
 ground-truth labels (offline evaluation). This is an explicit, documented honesty
-rule in the codebase: [`TelemetryService`](../lib/services/telemetry_service.dart:172)
+rule in the codebase: [`TelemetryService`](../../lib/services/telemetry_service.dart#L172)
 "deliberately does **not** compute model accuracy," and the Logs & Reports screen
 shows Accuracy/Precision/Recall/F1/mAP as **unavailable** for exactly this reason
-([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:220)).
+([`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L220)).
 
 **Decision (recommended):** the Settings performance card must **not** display a
 fabricated `%ACC` value. The recommended choice is **(a) show average confidence**
 as the third metric, because it is a genuine, real measured value that the
 codebase already computes and surfaces (`TelemetryService.averageConfidence`,
-[`telemetry_service.dart`](../lib/services/telemetry_service.dart:358), shown in
-Logs & Reports at [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:205)),
+[`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L358), shown in
+Logs & Reports at [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L205)),
 and it keeps the three-column performance card populated with truthful data. The
 metric is labeled clearly (e.g. `Avg confidence`) so it is never mistaken for
 model accuracy. Option (b) — showing accuracy as **unavailable** with the same
@@ -396,7 +399,7 @@ The two token sources disagree on spacing:
 |---|---|
 | `design-tokens.png` (visual summary) | `8, 16, 24, 32, 48, 64` |
 | `extracted-design-tokens-screenshot.md` (authoritative) | `6, 8, 12, 16, 20, 24` |
-| [`app_spacing.dart`](../lib/theme/app_spacing.dart:1) | `1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 32` |
+| [`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1) | `1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 32` |
 
 **Decision (recommended):** the extracted Markdown is authoritative over the PNG
 (established Home precedent). Settings uses the existing `kSpace*` tokens
@@ -411,8 +414,8 @@ with the Markdown role mapping and are already reflected in `buildHomeTheme()`.
 
 The reference canvas is 390×844 and is a proportional baseline, not a source of
 Flutter pixel literals. Follow the Home/Help responsive pattern
-([`SafeArea`](../lib/screens/home_screen.dart:43) +
-[`LayoutBuilder`](../lib/screens/home_screen.dart:44) + bounded/centered width +
+([`SafeArea`](../../lib/screens/home_screen.dart#L43) +
+[`LayoutBuilder`](../../lib/screens/home_screen.dart#L44) + bounded/centered width +
 scrollable body):
 
 - Use the available content width from parent constraints; do not branch on
@@ -432,7 +435,7 @@ scrollable body):
 
 ## 11. Accessibility considerations
 
-Per [`ui-conventions.md`](ui-conventions.md) and the accessibility rule:
+Per `ui-conventions.md` and the accessibility rule:
 
 - Every interactive control (toggles, engine radios, sensitivity radios/slider,
   Logs & Reports affordance) must keep a semantic label, role, state (checked/
@@ -457,13 +460,13 @@ Per [`ui-conventions.md`](ui-conventions.md) and the accessibility rule:
 
 | File | Likely role |
 |---|---|
-| [`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart:11) | Primary redesign target: light `Theme` wrapper (reusing `buildHomeTheme()`), card-based grouping, preserved controls/callbacks |
-| [`test/widget_test.dart`](../test/widget_test.dart:102) | Extend the existing `SettingsScreen` group (no new file) |
-| [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:1) | Add Settings semantics + 200% text-scale coverage (no new file) |
-| [`docs/architecture.md`](../docs/architecture.md:1) | Doc update (Settings component row / theme section) if a token/theme change lands |
-| [`docs/changelog.md`](../docs/changelog.md:1) | Doc update |
-| [`docs/implementation-progress.md`](../docs/implementation-progress.md:1) | Doc update |
-| [`docs/session-log.md`](../docs/session-log.md:1) | Doc update |
+| [`lib/screens/settings_screen.dart`](../../lib/screens/settings_screen.dart#L11) | Primary redesign target: light `Theme` wrapper (reusing `buildHomeTheme()`), card-based grouping, preserved controls/callbacks |
+| [`test/widget_test.dart`](../../test/widget_test.dart#L102) | Extend the existing `SettingsScreen` group (no new file) |
+| [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L1) | Add Settings semantics + 200% text-scale coverage (no new file) |
+| [`docs/architecture.md`](../architecture.md) | Doc update (Settings component row / theme section) if a token/theme change lands |
+| [`docs/changelog.md`](../changelog.md) | Doc update |
+| [`docs/implementation-progress.md`](../implementation-progress.md) | Doc update |
+| [`docs/session-log.md`](../session-log.md) | Doc update |
 | `.roo/rules/docs/` mirror | Re-copy of root `/docs` after any doc change (per doc-update rule) |
 
 ### Files that must remain untouched
@@ -488,10 +491,10 @@ Per [`ui-conventions.md`](ui-conventions.md) and the accessibility rule:
 Showing **live FPS/MS** on the Settings screen requires adding an optional
 `TelemetryService? telemetry` input to `SettingsScreen` and forwarding
 `widget.telemetry` through the shell's Settings construction
-([`app_shell.dart`](../lib/navigation/app_shell.dart:108)). Both files are
+([`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)). Both files are
 UI-owned (`lib/screens/`, `lib/navigation/`), no `lib/services/` or `lib/models/`
 file changes, and no `main.dart` change is required (`TelemetryService` is
-already constructed in [`main.dart`](../lib/main.dart:27) and passed to
+already constructed in [`main.dart`](../../lib/main.dart#L27) and passed to
 `AppShell`). This is a read-only consumption of an existing service via the
 existing constructor-injection pattern, so it is **within the visual-only scope**
 and is acknowledged in the Plan rather than treated as an architecture change.
@@ -503,7 +506,7 @@ and is acknowledged in the Plan rather than treated as an architecture change.
 - **Live-metrics wiring:** the target requires live FPS/MS on Settings, but
   `SettingsScreen` does not receive `TelemetryService`. Adding an optional
   `TelemetryService? telemetry` input and forwarding it through
-  [`app_shell.dart`](../lib/navigation/app_shell.dart:108) is a UI-owned,
+  [`app_shell.dart`](../../lib/navigation/app_shell.dart#L108) is a UI-owned,
   read-only wiring addition (no service/model change, no `main.dart` change), so
   it is within the visual-only scope. If the change were restricted to
   `settings_screen.dart` alone, the performance card would show an
@@ -520,10 +523,10 @@ and is acknowledged in the Plan rather than treated as an architecture change.
 - **`const`/constructor contract:** `SettingsScreen` is constructed with two
   inputs from the shell. Adding an optional `TelemetryService? telemetry` input
   keeps the existing inputs intact; the shell construction
-  ([`app_shell.dart`](../lib/navigation/app_shell.dart:108)) and the Settings
+  ([`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)) and the Settings
   tests are updated together in the same change.
 - **Dark System Performance card:** the target shows a black card; resolved as
-  `#0A0A0A` = the existing [`kHomeInk`](../lib/theme/app_colors.dart:124) token
+  `#0A0A0A` = the existing [`kHomeInk`](../../lib/theme/app_colors.dart) token
   (see §7). No new token is required.
 - **Global dark theme vs light subtree:** Settings currently inherits the dark
   theme. Introducing a light subtree must be scoped so it does not leak into the
@@ -546,9 +549,9 @@ value is moved into its owning section above and removed from this list:
 - **Live-metrics wiring — RESOLVED (recommended, in scope).** Add an optional
   `TelemetryService? telemetry` input to `SettingsScreen` and forward
   `widget.telemetry` through the shell construction
-  ([`app_shell.dart`](../lib/navigation/app_shell.dart:108)). Confirmed against
+  ([`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)). Confirmed against
   the codebase that `TelemetryService` is already constructed in
-  [`main.dart`](../lib/main.dart:27) and passed to `AppShell`, so no `main.dart`
+  [`main.dart`](../../lib/main.dart#L27) and passed to `AppShell`, so no `main.dart`
   change is required. This is a UI-owned, read-only wiring addition (no
   service/model change), so it is **within the visual-only scope** and is
   acknowledged in the Plan rather than treated as an architecture change. (§8.1,
@@ -557,7 +560,7 @@ value is moved into its owning section above and removed from this list:
   third metric (a real measured value), labeled clearly so it is never mistaken
   for model accuracy; do not show a fabricated accuracy value. (§8.2)
 - **Dark System Performance card surface — RESOLVED.** `#0A0A0A`, which is the
-  existing [`kHomeInk`](../lib/theme/app_colors.dart:124) token. No new token is
+  existing [`kHomeInk`](../../lib/theme/app_colors.dart) token. No new token is
   required. (§7)
 - **Intro/brand copy — RESOLVED.** Ignore the target's `YOUR EYECUE` brand label
   and intro paragraph; follow the current Settings content (the retained
@@ -579,7 +582,7 @@ the analysis stage:
   controls and the Audio Guidance On/Off toggle, and the exact card order.
 - **Live-metrics wiring acknowledgement.** The optional `TelemetryService?`
   input on `SettingsScreen` plus the shell forward
-  ([`app_shell.dart`](../lib/navigation/app_shell.dart:108)) is a UI-owned,
+  ([`app_shell.dart`](../../lib/navigation/app_shell.dart#L108)) is a UI-owned,
   read-only wiring addition within the visual-only scope; it is acknowledged in
   the Plan. If the change were restricted to `settings_screen.dart` alone, the
   performance card would show an empty/unavailable state instead.

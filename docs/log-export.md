@@ -3,7 +3,10 @@
 JSON/CSV exports and the Logs & Reports screen are compiled into the Study
 variant only. The public EyeCue build has no researcher controls or export UI.
 
-From EyeCue Study version code 2, JSON and CSV export actions open Android's
+The implementation is wired by `lib/main_study.dart`. The version-code 2
+statement below records the first Study build for which this behavior was
+specified; verify the installed artifact/version before treating it as current.
+JSON and CSV export actions open Android's
 Save as document picker. The user can choose a filename and any writable location
 offered by an installed document provider: Downloads, supported removable storage
 or a cloud provider such as Google Drive when installed and available. Android's
@@ -37,6 +40,7 @@ No images, upload tokens, device identifiers or new research-data thinning are
 introduced. Existing serialization/precision rules remain unchanged.
 
 This does not import the private sessions from the original EyeCue installation,
-and it does not change the 2,000,000-byte Supabase upload cap. The separate Study
-package and its retained certificate are unchanged; code2 updates Study code1
-while the original EyeCue can stay installed alongside it.
+and it does not change the 2,000,000-byte Supabase upload cap. The Study flavor uses the separate package identity and retained signing
+certificate documented by [`release-procedure.md`](release-procedure.md). Its
+build tool verifies those properties; this document does not claim that a new
+Study artifact was built for local `main`.

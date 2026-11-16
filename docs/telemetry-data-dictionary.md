@@ -1,6 +1,8 @@
 # Telemetry export data dictionary
 
-> **Status:** export schema version 4 (unreleased Workstream 2 candidate).
+> **Status at local `main` (`aadf9e0`, 2026-11-16):** export schema version 4.
+> Any release or deployment status must be checked against the relevant build and
+> server; this dictionary describes the source contract.
 > Version 4 adds the detector and depth stage timings, the reported depth
 > accelerator, the depth grid size, the heatmap build cost and the cumulative
 > `depthDroppedTicks` counter to each sample. The exporter records bounded
@@ -9,7 +11,7 @@
 > addition to the per-frame inference data described below. All alert timings
 > come from the app's own speech-scheduler signals, so they describe the app-side
 > path only; physical audible-warning latency at the speaker is **not** measured.
-> No device run has validated this instrumentation.
+> This dictionary includes no device-validation evidence; scheduler timestamps are app-side proxies, not measured sound.
 >
 > **Every schema-4 sample key is optional on read.** A schema-3 payload simply
 > lacks them, and an unmeasured value is absent — never `0`.
@@ -37,7 +39,7 @@ are empty.
 | `session_start` | Session start time | UTC ISO-8601 timestamp; metadata rows only |
 | `session_duration_ms` | Session duration at export | Milliseconds; metadata rows only |
 | `engine` | Engine that produced a record | `ultralytics` (single engine) |
-| `model_id` | Detector-model dictionary key for the row's identity | `builtin`, `custom:<12 hex>`, or a `~n`-suffixed key; empty on rows that are not attributed |
+| `model_id` | Detector-model dictionary key for the row's identity | `builtin-campus-v1`, `custom:<12 hex>`, or a `~n`-suffixed key; empty on rows that are not attributed |
 | `model_name` | Readable model name recorded with the row | Text captured when the row was written; empty when the row is not attributed |
 | `model_fingerprint` | Content fingerprint recorded with the row | `<16 hex>-<byteLength>`; empty when the row is not attributed |
 
@@ -187,7 +189,7 @@ decimal place, which is analysis noise, not a data fault.
 
 | CSV column | Meaning | Units / values |
 |---|---|---|
-| `class_id` | Model class index | Integer; COCO index when using the bundled model |
+| `class_id` | Model class index | Integer; index into the active model’s ordered label list (campus model has 14 classes) |
 | `label` | Authoritative label resolved from `labels.txt` | UTF-8 text |
 | `confidence` | Detection confidence | Unit interval `[0, 1]` |
 | `latency_ms` | Latency associated with the detection update | Milliseconds |
@@ -204,7 +206,7 @@ JSON row carries only a **dictionary key**, never the name and fingerprint per
 row:
 
 - `detectorModelId` — a key into the export's top-level `detectorModels` table.
-  `builtin` is the bundled model; `custom:<12 hex>` is a researcher-imported
+  `builtin-campus-v1` is the bundled campus model; `custom:<12 hex>` is a researcher-imported
   graph, and those 12 characters are the start of its content fingerprint — the
   fingerprint itself is FNV-1a 64-bit over the file as 16 lowercase hex
   characters followed by `-<byteLength>`.

@@ -148,10 +148,11 @@ subtle and non-interfering with TalkBack/TTS.
 
 ## Verification
 
-UI changes are verified on a **physical Android device** (not an emulator or
-web target), consistent with the project docs. Run `flutter analyze` (0 issues)
-and `flutter test` after each change, and confirm no RenderFlex overflows or
-exceptions in logcat.
+The project verification policy for UI changes calls for a **physical Android
+device** (not an emulator or web target), `flutter analyze` (0 issues), and
+`flutter test`, plus a check for RenderFlex overflows and logcat exceptions.
+Historical device checks elsewhere in this file are dated evidence; they are not
+claims that local `main` was revalidated.
 
 `marionette_flutter` is a debug-only companion dependency initialized in
 `lib/main.dart` via `MarionetteBinding.ensureInitialized()` guarded by

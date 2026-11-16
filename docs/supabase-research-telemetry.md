@@ -1,9 +1,11 @@
 # Supabase researcher telemetry
 
 EyeCue keeps its JSON/CSV export as the source telemetry contract. Online
-collection is an optional, **manual per-session** action in Logs & Reports;
-it is not background telemetry and it is disabled in builds that lack the two
-required Dart defines.
+collection is an optional, **manual per-session** action in the Study flavor's
+Logs & Reports screen; it is not background telemetry and it is disabled in
+builds that lack the two required Dart defines. Public startup does not wire the
+research-session or Logs & Reports services (`lib/main.dart`); Study startup
+wires them in `lib/main_study.dart`.
 
 ## What is uploaded
 
@@ -286,7 +288,7 @@ bound the client does not mirror (see *Payload size*).
 ### Transport: `https` is enforced client-side
 
 The endpoint is checked before a request is built, so an insecure deployment cannot
-silently downgrade the upload. [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart:58)
+silently downgrade the upload. [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart#L58)
 returns a `TelemetryEndpointStatus`:
 
 | Status | Condition | Result |
@@ -302,7 +304,7 @@ Only scheme and host are constrained: port, path and query are free, so
 `https://<ref>.supabase.co/functions/v1/ingest-telemetry` is valid. A defective URL
 is **rejected, never repaired** — no trimming, no scheme substitution. Every refusal
 happens before the payload is built, so no request is made and the in-memory session
-is untouched ([`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart:298)).
+is untouched ([`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart#L298)).
 
 One tolerance is documented rather than fixed: there is no host-shape rule and no
 port-range check, so `https://.com`, `https://example..com`,
@@ -314,10 +316,10 @@ is a maintainer-set `--dart-define`, so the typo is caught in the build. The
 **Debug-only exception.** Plain `http` is accepted for a loopback host
 (`localhost`, `127.0.0.1`, `::1`) **and only when `kDebugMode` is true**, so a local
 ingest function can be exercised from a debug build
-([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart:98)). A release
+([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart#L98)). A release
 build rejects loopback `http` like any other insecure scheme, and non-loopback `http`
 is rejected in both modes. Both sides are asserted in
-[`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart:999)
+[`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart#L999)
 by injecting `debugMode` rather than relying on the compile-time constant — including
 one case that proves `debugMode: false` refuses loopback `http` **even though**
 `flutter test` runs with `kDebugMode` true, so the injected value is what decides.

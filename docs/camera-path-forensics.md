@@ -2,6 +2,9 @@
 
 # Live-Camera Path Forensic Investigation
 
+> **Current status (2026-11-16):** The camera-path measurements below document the retired Custom EyeCue stream and remain valid only for that 2026-08-01 experiment. That engine and its camera callback were removed in commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9); the active screen is [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), whose native `YOLOView` supplies results. The old preprocessing run is not a current test procedure.
+
+
 > **Status:** COMPLETE — camera path empirically isolated on-device (Android 13,
 > arm64, back camera, sensorOrientation 90°).
 > **Date:** 2026-08-01

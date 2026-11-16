@@ -12,7 +12,8 @@ Two kinds of marker appear in this document:
   when checked but is enforced by the Console, not by this repository. Re-check it
   in the Console at upload time.
 - `PLACEHOLDER — owner action` — content only the owner can supply (a real
-  contact address, a published privacy-policy URL).
+  contact address; the privacy-policy destination is configured in the public
+  app, but its hosted page still needs verification).
 
 Where a value was checked, the check date and source are recorded in §11.
 
@@ -41,7 +42,7 @@ Where a value was checked, the check date and source are recorded in §11.
 - Composition: the app's light card surface (`kHomeSurfaceCard`, `#FFFFFF`) as a
   rounded panel on the app's dark scaffold field (`kScaffoldBackground`,
   `#121212`), with the same logo mark centred. Both colours are tokens from
-  [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart:18).
+  [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart#L18).
 - **No fabricated UI is shown**: there is no fake screenshot, no invented chart
   and no device frame. Any text or device imagery must be added by the owner only
   if it is truthful; the generated file deliberately contains none (no font is
@@ -74,7 +75,7 @@ capability, so the short description cannot be read as a safety product claim.
 
 Draft. The safety section quotes the app's own disclosure **verbatim** — the
 single source of truth is
-[`lib/widgets/safety_disclosure.dart`](../lib/widgets/safety_disclosure.dart:15),
+[`lib/widgets/safety_disclosure.dart`](../lib/widgets/safety_disclosure.dart#L15),
 rendered by both the permanent Help section and the first-use acknowledgement. Do
 not reword it here: if the app's copy changes, this section changes with it (item
 G's wording, not a second notice).
@@ -88,10 +89,13 @@ which may fetch voice data using its own permissions and network access.
 
 WHAT IT DOES
 • Live detection. Camera frames are analysed on the phone and the names of
-  detected objects are announced with text-to-speech. Detections can also be shown
-  as boxes on the preview.
-• Estimated distance. An optional on-device depth model estimates how far away the
-  main objects are. These distances are estimates, not measurements.
+  detected objects are announced with text-to-speech. The built-in detector is
+  the campus-trained 14-class model (bench, bicycle, car, cat, chair, door, fan,
+  hand-rails, person, pole, stairs, table, trash_bin, warning_marker), not a
+  general-purpose all-object detector. Detections can also be shown as boxes.
+• Estimated distance. The bundled on-device depth model is optional and can be
+  disabled. When enabled, it estimates how far away the main objects are; these
+  distances are estimates, not measurements.
 • Priority and alerting. Detections are ranked by proximity and movement, with
   vibration and speech following a fixed alert policy instead of speaking every
   frame.
@@ -127,11 +131,16 @@ PRIVACY
 Camera frames never leave the device and are never stored. Public EyeCue does not
 include research recording or upload. EyeCue Study keeps research telemetry local
 unless the researcher uploads a session manually. The privacy policy is at:
-<privacy-policy URL — PLACEHOLDER — owner action>
+Public Help opens `https://nmarcusg.github.io/eyecue_flutter/` in an external
+browser. Verify that this hosted page is publicly available and its contents match
+the current app before using it as the Play listing's privacy-policy URL. The
+Study variant hides this in-app link.
 
 LICENCE AND SOURCE
-EyeCue is licensed AGPL-3.0-only. The corresponding source for every released
-build is published; see the licence and third-party notices shipped with the app.
+EyeCue is licensed AGPL-3.0-only. A source-distribution procedure is documented
+in the repository; publication of a corresponding source archive and written
+offer for a particular release is an owner action and has not been established
+by this draft.
 ```
 
 `VERIFY AT SUBMISSION`: the full-description character limit enforced by the
@@ -140,7 +149,7 @@ when pasting.
 
 ## 5. Release notes — template for `versionName 1.0.0` / `versionCode 1`
 
-The version is `version: 1.0.0+1` in [`pubspec.yaml`](../pubspec.yaml:4)
+The version is `version: 1.0.0+1` in [`pubspec.yaml`](../pubspec.yaml#L4)
 (`versionName 1.0.0`, `versionCode 1`). This is the first public listing, so the
 notes describe the app rather than a change. Fill the bracketed lines from the
 build's own evidence; do not claim a device-measured figure that the release notes
@@ -172,9 +181,9 @@ Help → Safety and Limitations before relying on it.
 | --- | --- | --- |
 | Support email | `PLACEHOLDER — owner action` | must be a monitored mailbox before submission |
 | Support URL (optional) | `PLACEHOLDER — owner action` | optional |
-| Privacy policy URL | `PLACEHOLDER — owner action` | **required external gate**: the policy must be published at a public HTTPS URL and must match [`privacy-and-data-safety.md`](privacy-and-data-safety.md) |
+| Privacy policy URL | `https://nmarcusg.github.io/eyecue_flutter/` (configured in public Help) | **OWNER ACTION**: verify live availability and that hosted content matches [`privacy-and-data-safety.md`](privacy-and-data-safety.md); use the verified URL in Play |
 
-The privacy policy text itself is not drafted here: the answers it must agree with
+The privacy policy text itself is not in this repository; the answers it must agree with
 are in [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §1, §4.1, §5 and
 §6, including the review items (retention period, deletion process) that must be
 decided before a policy can truthfully be published.
@@ -306,7 +315,7 @@ SUBMISSION` because it is enforced by the Console form, not by this repository.
 | Category | recommended `Tools`, not applied |
 | Content rating | preparation notes only, no rating decided |
 | Support contact | `PLACEHOLDER — owner action` |
-| Privacy policy URL | `PLACEHOLDER — owner action` (external gate) |
+| Privacy policy URL | Configured in public Help; live page/content still to verify |
 | Screenshots | **not created — device gate** |
 | Data safety answers | in [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8 |
 | Uploaded to Play Console | **no** |

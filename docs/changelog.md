@@ -5,6 +5,13 @@
 
 ---
 
+## Maintenance — Documentation reconciliation (2026-11-16)
+
+- Reconciled current guides with public/Study builds, the campus detector, single native engine, optional depth, settings schema 8 and telemetry export schema 4.
+- Added a documentation index and file-by-file review record; labelled retired plans and measurements without presenting them as current verification.
+- Documented the consolidated active checkout and recovery archives; generated caches rebuild on demand.
+- No application behavior or new runtime/performance verification is implied by this documentation entry. The older dated entries below retain their original outcomes; the 2026-11-09 session entry supersedes the initial chart-polish pending-device notes.
+
 ## Unreleased — Charts and Logs polish (2026-11-09)
 
 ### Changed
@@ -475,7 +482,7 @@ corrections land on top of `2779f9c`.
 - Updated both Detection presentations with higher-contrast `Detection Mode` title treatment, a bottom edge-inset overlay with left-aligned information rows, and two mockup-inspired action cards with state icons and left-aligned content. Lifecycle mappings, action callbacks, hold/tap timing, Quick Scan gating, gestures, and accessibility semantics are unchanged.
 
 ### Added
-- Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146), the semantic 11%-white overlay token used only for the `View Logs & Reports` action surface in Settings.
+- Added [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart), the semantic 11%-white overlay token used only for the `View Logs & Reports` action surface in Settings.
 
 ### Verified
 - `flutter analyze`: **0 issues**.
@@ -491,20 +498,20 @@ corrections land on top of `2779f9c`.
 - Added the shared presentation widget [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) (`DetectionInformationOverlay`): a compact in-viewport informational overlay of at most two rows, with stable High-priority promotion preserving source order, no confidence/debug/metric values, a dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority treatment, no animations, one manual non-live informational semantics node per row, and pointer transparency.
 
 ### Changed
-- Implemented the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) in both engine screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
+- Implemented the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md) in both engine screens — `detection_screen.dart` (`lib/screens/detection_screen.dart`, historical source) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
 - **PD1 (unified composition):** the dominant flexible camera viewport is retained; the top area keeps `Detection Mode`, the coordinator-derived status pill, and the Audio pill; exactly two side-by-side physical controls sit in one row beneath the viewport; and the normal screen no longer scrolls vertically. Removed from the normal UI: the detection card list, empty-state messages, `_GestureHint`, the visual `WarningBanner`, standalone Start/Stop, standalone Pause/Resume, visible Repeat, the standalone correction button, and correction/report actions on detection items. Correction removal is UI-only — [`CorrectionService`](../lib/services/correction_service.dart), its persistence, and the correction sheet remain intact. Ultralytics developer metrics were removed from the normal UI while telemetry collection is retained. The stopped viewport shell and [`GestureSurface`](../lib/widgets/gesture_surface.dart) are retained (Custom already did this; Ultralytics now does too).
 - **PD2 (consolidated lifecycle control):** one coordinator-driven control. Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing and Unavailable disabled. Visible copy: `PAUSE` + `HOLD 3 SEC TO STOP`; `RESUME` + `HOLD 3 SEC TO STOP`; `START` + `HOLD 3 SEC`; `PREPARING`; `UNAVAILABLE`. Progress starts at 0% on pointer down and fills continuously over the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; early release maps to tap; release after the timeout but before three seconds is an abandoned hold with no action; completion dispatches exactly once with a duplicate-dispatch lock; existing engine-owned completion TTS/haptics are reused without duplication. Quick Scan is tap-only, Ready/healthy-fallback only, and disabled during an active physical hold.
 - **PD3 (compact overlay):** a compact in-viewport informational overlay, maximum two rows, stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, hidden outside Ready/healthy fallback.
 
 ### Fixed (post-implementation, on-device)
-- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen).
-- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in `detection_screen.dart` (historical source) (mirroring the Ultralytics screen).
+- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in `detection_screen.dart` (historical source).
 - **Ultralytics Stop → Start stuck in Preparing:** fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
 
 ### Verified
 - `flutter analyze`: 0 issues.
 - `flutter test`: **323 passing**.
-- Behavioral-deviation audit: no unintended deviations. Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
+- Behavioral-deviation audit: no unintended deviations. Proven unchanged from baseline `f310e73`: `InferenceService`, `inference_isolate.dart` (historical source), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
 
 ### Non-Blocking Notes
 - **Ultralytics Ready timing semantics:** Ready can publish before the native camera returns to `CAMERA_STATE_ACTIVE`; the current definition is model/native initialization readiness, not strict pipeline-operational proof.
@@ -524,7 +531,7 @@ corrections land on top of `2779f9c`.
 
 ### Changed
 - Promoted [`EngineCoordinator`](../lib/services/engine_coordinator.dart) from a Detect-tab-local runtime observer to the single app-shell-owned, user-facing Detection lifecycle/status source. [`app_shell.dart`](../lib/navigation/app_shell.dart) now constructs exactly one coordinator for the shell lifetime and injects it into Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart); the coordinator is no longer constructed/disposed inside `_EngineDetectionScreenState`.
-- Home and both Detection implementations (Custom [`detection_screen.dart`](../lib/screens/detection_screen.dart) and Ultralytics [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart)) now render visible status (Preparing / Ready / Paused / Stopped / Unavailable) from the same coordinator snapshot via a shared mapping. Engine-local booleans remain only for camera/controller/inference mechanics and no longer select user-facing lifecycle/status content.
+- Home and both Detection implementations (Custom `detection_screen.dart` (historical source) and Ultralytics [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart)) now render visible status (Preparing / Ready / Paused / Stopped / Unavailable) from the same coordinator snapshot via a shared mapping. Engine-local booleans remain only for camera/controller/inference mechanics and no longer select user-facing lifecycle/status content.
 - **Auto-start ON:** app launch keeps Home visible while Detection initializes/starts in the background; the shared status moves Preparing → Ready/Unavailable; opening Detection later reuses the already-initialized cached instance without a second start.
 - **Auto-start OFF:** Detection stays off at launch; a deliberate primary navigation into Detection starts it immediately without changing the persisted `autoStartDetection` preference.
 - **Manual pause/stop is session-scoped:** leaving and re-entering Detection during the retained session does not auto-restart; an explicit resume/start is required. There is no cross-process persistence.
@@ -548,7 +555,7 @@ corrections land on top of `2779f9c`.
 - Added a persisted `hideBottomNavigation` preference to [`app_settings.dart`](../lib/models/app_settings.dart) (default `false`, backward-compatible parse for older JSON) with a matching getter/setter on [`settings_service.dart`](../lib/services/settings_service.dart) and a labeled Preferences control in [`settings_screen.dart`](../lib/screens/settings_screen.dart). The control represents the persisted preference, not the effective accessibility override.
 - Added one-finger linear, non-wrapping primary navigation in [`app_shell.dart`](../lib/navigation/app_shell.dart): a body-only, arena-aware horizontal drag layer moves linearly through Home → Detection → Settings → Help and does not modulo-wrap. A boundary attempt stays on the current tab and emits boundary feedback once.
 - Added Detection directional arbitration in [`gesture_controller.dart`](../lib/services/gesture_controller.dart): the first committed directional intent for a one-pointer sequence is locked (horizontal commit prevents a later downward repeat and vice versa), a second pointer before commitment invalidates one-pointer directional classification, and pointer cancellation suppresses every delayed or directional action from that sequence. Existing single-tap, two-finger double-tap, three-finger-tap, and downward-repeat intents are unchanged.
-- Added Detection-owned horizontal navigation: [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) carries a stable relative-navigation callback to both [`detection_screen.dart`](../lib/screens/detection_screen.dart) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), which forward horizontal intents while preserving the existing downward repeat mapping. The viewport-only [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) remains the only raw-pointer implementation.
+- Added Detection-owned horizontal navigation: [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) carries a stable relative-navigation callback to both `detection_screen.dart` (`lib/screens/detection_screen.dart`, historical source) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), which forward horizontal intents while preserving the existing downward repeat mapping. The viewport-only [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) remains the only raw-pointer implementation.
 - Added light/medium haptic wayfinding at the shell gesture-origin path only: [`lightTick`](../lib/services/haptics_service.dart) on successful relative navigation and [`mediumTick`](../lib/services/haptics_service.dart) on a committed boundary attempt; no haptic on insufficient drag or cancellation, and never `heavyTick` for routine navigation.
 - Added a minimal best-effort, drop-if-busy wayfinding API to [`tts_service.dart`](../lib/services/tts_service.dart) for destination/boundary phrases. It is suppressed when audio is disabled or accessible-navigation mode is on, never interrupts or delays Detection speech, and preserves Detection replay state.
 
@@ -568,7 +575,7 @@ corrections land on top of `2779f9c`.
 ## Unreleased — Detection Screen Visual Redesign (2026-09-10)
 
 ### Changed
-- Restyled the two Detection child screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom engine) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics engine) — as a visual-only change per [`detection-screen-plan.md`](detection-screen-plan.md). Both now scope the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) to the Detection subtree with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), and use the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light chrome does not leak into Home, Help, Settings, Logs & Reports, or the shell navigation bar.
+- Restyled the two Detection child screens — `detection_screen.dart` (historical source) (Custom engine) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics engine) — as a visual-only change per `detection-screen-plan.md` (historical source). Both now scope the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) to the Detection subtree with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), and use the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light chrome does not leak into Home, Help, Settings, Logs & Reports, or the shell navigation bar.
 - The camera viewport is now a rounded dark card (`kHomeInk` `#0A0A0A`, `kRadius24`, clipped) sitting on the light chrome. The viewport stack (`FittedBox` → `CustomPaint(BoundingBoxPainter)` → `_GestureHint` → `GestureSurface`) and the `applyBoxFit` overlay math are unchanged; the Ultralytics `YOLOView` native overlay is unchanged. No `LIVE CAMERA` label was added.
 - The header keeps the single `Detection Mode` title using the theme's `titleLarge` (non-bold `w600`, matching the Settings/Help `AppBar` title style) with the `StatusPill` retained as its own live-region element. The `StatusPill` and the `AUDIO ON` pill share one horizontal row, with the audio pill end-aligned right; the Ultralytics performance line and error text remain below that row.
 - The circular audio `IconButton` was replaced by an inline `AUDIO ON` / `AUDIO OFF` pill (a private `_AudioPill` helper colocated in each screen file): `kHomeSurfaceCard` surface, `kRadius20`, `kHomeShadowSoft`, a `kSpace8` leading dot (`kHomeAccentCyan` on / `kHomeInkMuted` off), uppercase `labelMedium` label with `letterSpacing: 0.5`, `kSpace12`/`kSpace6` padding (matching `StatusPill`), and a ≥48dp touch target. The toggle behavior, tooltip text, enabled state, and `ListenableBuilder(listenable: Listenable.merge([_settings, _tts]))` are preserved; the pill exposes a semantic label/role/state ("Audio guidance, on/off").
@@ -601,7 +608,7 @@ corrections land on top of `2779f9c`.
 - Added a focused widget test file [`test/screens/logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart) (25 tests) covering the real screen, route-local theme scope, all three tabs, exports, correction states, unavailable states, Logs priority semantics, and 200% text-scale no-overflow.
 
 ### Changed
-- Restyled the existing pushed Logs & Reports route in [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) as a visual-only change per [`logs-reports-screen-plan.md`](logs-reports-screen-plan.md). The route now scopes the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) locally with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), scoped to the pushed route only and not leaking into the shell navigation bar or other tabs.
+- Restyled the existing pushed Logs & Reports route in [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) as a visual-only change per `logs-reports-screen-plan.md` (`logs-reports-screen-plan.md`, historical source). The route now scopes the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) locally with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), scoped to the pushed route only and not leaking into the shell navigation bar or other tabs.
 - The route now uses a centered bounded secondary-screen layout (~480 logical px content bound, constraint-derived) with light surfaces/typography from the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change); spacing follows the 6/8/12/16/20/24 scale and existing radius roles.
 - The Overview, Charts, and Logs tabs were restyled while preserving all telemetry/correction/export/chart bindings, truthful unavailable metrics, navigation, scrolling, and accessibility contracts. [`charts.dart`](../lib/widgets/charts.dart) was **not** modified.
 - Fixed the Engine Comparison rows to render as a single horizontal row with the engine label visible on the left and the value right-aligned flush to the trailing edge (corrected an alignment issue, then a label-starvation regression).
@@ -700,8 +707,8 @@ corrections land on top of `2779f9c`.
 ## Unreleased — App-Only Runtime Hardening (2026-09-05)
 
 ### Added
-- Added [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart), a pure injectable coordinator for Custom-worker generations, bounded recovery, explicit retry, terminal failure, healthy-budget reset, and disposal-safe backoff.
-- Added explicit `reportWorkerExit` integration in [`inference_isolate.dart`](../lib/services/inference_isolate.dart), typed recovery telemetry/export records, metadata-packaging input safety, and accessibility coverage for runtime states, controls, detections, charts, warnings, and correction flows.
+- Added `inference_worker_lifecycle.dart` (historical source), a pure injectable coordinator for Custom-worker generations, bounded recovery, explicit retry, terminal failure, healthy-budget reset, and disposal-safe backoff.
+- Added explicit `reportWorkerExit` integration in `inference_isolate.dart` (historical source), typed recovery telemetry/export records, metadata-packaging input safety, and accessibility coverage for runtime states, controls, detections, charts, warnings, and correction flows.
 - Added seven deterministic lifecycle-orchestration tests covering respawn, stale-generation rejection, busy-gate release, delayed retry, terminal failure, disposal during backoff, and successful healthy recovery.
 
 ### Changed
@@ -722,13 +729,13 @@ corrections land on top of `2779f9c`.
 ## Unreleased — NCHW Model and Backend Candidate (2026-09-01)
 
 ### Added
-- Added [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite), a structurally validated YOLOv8n candidate with FLOAT32 runtime I/O, input shape `[1,3,640,640]` (NCHW), output shape `[1,84,8400]`, and internally quantized tensors.
-- Added [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) with pure NHWC (interleaved) and NCHW (planar) square-tensor rotation/mirroring support, plus 14 focused unit tests.
+- Added `yolov8n_int8_new.tflite` (historical source), a structurally validated YOLOv8n candidate with FLOAT32 runtime I/O, input shape `[1,3,640,640]` (NCHW), output shape `[1,84,8400]`, and internally quantized tensors.
+- Added `tensor_rotation.dart` (historical source) with pure NHWC (interleaved) and NCHW (planar) square-tensor rotation/mirroring support, plus 14 focused unit tests.
 - Added a persisted **Custom EyeCue / Ultralytics** selector in Settings. Custom retains the existing isolate/YUV/orientation/parser/NMS pipeline; Ultralytics uses `ultralytics_yolo` 0.6.13 for the native camera/inference path and maps results back into EyeCue's spatial, TTS, gesture, and telemetry layers.
 - Added per-engine summaries to Logs & Reports and the controlled comparison protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md).
 
 ### Changed
-- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) now selects input layout from runtime metadata, writes NCHW or NHWC preprocessing data, and attempts explicit XNNPACK for the candidate. The delegate is retained for the interpreter lifetime; recoverable setup/invocation failures retry on a four-thread CPU interpreter.
+- `inference_isolate.dart` (historical source) now selects input layout from runtime metadata, writes NCHW or NHWC preprocessing data, and attempts explicit XNNPACK for the candidate. The delegate is retained for the interpreter lifetime; recoverable setup/invocation failures retry on a four-thread CPU interpreter.
 - [`validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart) now validates the new model's verified tensor counts: 2 FLOAT32, 90 INT32, and 356 INT8 tensors.
 - Model asset path, label asset path, confidence threshold, and IoU threshold now come from one shared configuration so the two modes use controlled inputs.
 - Added a narrow Android packaging bridge for the two LiteRT generations: Ultralytics retains the LiteRT Next Java/runtime artifact, duplicate legacy Java/GPU artifacts are excluded, and only `tflite_flutter`'s classic 1.4.0 FFI library is extracted beside it. EyeCue's existing Custom `Interpreter` code is unchanged.
@@ -756,7 +763,7 @@ corrections land on top of `2779f9c`.
   screen used a `Column` with the camera in `Expanded` and a content-sized
   controls panel whose card list height was `detections × 78`, so adding
   detections shrank the camera region. The layout now reserves a **fixed**
-  content region ([`detection_screen.dart`](../lib/screens/detection_screen.dart)):
+  content region (`detection_screen.dart` (historical source)):
   a `LayoutBuilder`-derived `SizedBox` (height = `constraints.maxHeight × 0.32`,
   clamped to 200–320) holds the warning banner + a scrollable detection list +
   controls; the camera stays in the remaining `Expanded` space. Detection
@@ -812,7 +819,7 @@ corrections land on top of `2779f9c`.
 ### Added
 - **Application navigation** ([`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart)): 4-tab bottom navigation — **Home, Detect, Settings, Help** — with lazy page building and state preservation (`IndexedStack`), system-back to Home, and Logs & Reports pushed as a route from Settings.
 - **Home screen** ([`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart)): EyeCue branding/subtitle, detection status card (reflects Auto-Start), and a primary "Go to Live Camera" action.
-- **Detection screen** ([`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart)): the validated camera/inference pipeline (persistent isolate, YUV420, orientation, NMS, bounding-box painter) preserved, now wrapped in an assistive UI — live preview + boxes, status pill, audio mute toggle, detection object cards with priority badges, high-priority warning banner, and visible high-contrast controls (Start/Stop, Pause/Resume, Repeat, Scan). Developer telemetry moved off the primary screen.
+- **Detection screen** (`lib/screens/detection_screen.dart` (historical source)): the validated camera/inference pipeline (persistent isolate, YUV420, orientation, NMS, bounding-box painter) preserved, now wrapped in an assistive UI — live preview + boxes, status pill, audio mute toggle, detection object cards with priority badges, high-priority warning banner, and visible high-contrast controls (Start/Stop, Pause/Resume, Repeat, Scan). Developer telemetry moved off the primary screen.
 - **Text-to-speech** ([`lib/services/tts_service.dart`](../lib/services/tts_service.dart)): `flutter_tts` wired via an injectable `TtsEngine`; audio enabled/muted state, announcement cooldown, same-label de-duplication, urgent (high-priority) bypass, and repeat-last-alert.
 - **Thesis gestures** ([`lib/services/gesture_controller.dart`](../lib/services/gesture_controller.dart) + [`lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart)): two-finger double tap (start/stop), single tap (pause/resume), three-finger tap (quick scan), swipe down (repeat alert) — each with haptic + TTS confirmation.
 - **Settings screen** ([`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart)) with persisted preferences ([`lib/services/settings_service.dart`](../lib/services/settings_service.dart), file-backed JSON): Vibration Feedback, Auto-Start on Open, Low Power Mode (applies a dispatch throttle), Audio/Voice guidance, and Logs & Reports entry.
@@ -835,7 +842,7 @@ corrections land on top of `2779f9c`.
 ## v0.1.7.1 — "Post-Processing Completion: NMS + Confidence Threshold" (2026-08-01)
 
 ### Added
-- **Class-wise Non-Maximum Suppression (NMS)** in [`_parseYolov8Output`](../lib/services/inference_isolate.dart) — IoU threshold `0.45`; overlapping anchors of the same class are suppressed, so each object renders as one box instead of a jumble (previously every object fired many overlapping anchors).
+- **Class-wise Non-Maximum Suppression (NMS)** in `_parseYolov8Output` (`lib/services/inference_isolate.dart`, historical source) — IoU threshold `0.45`; overlapping anchors of the same class are suppressed, so each object renders as one box instead of a jumble (previously every object fired many overlapping anchors).
 - **Pre-NMS confidence threshold lowered to `0.25`** (standard YOLOv8) — was `0.5`, which dropped true detections while passing spurious full-frame boxes.
 - Pre-NMS candidate count exposed and logged as `candidates(before NMS)=N → after NMS=M`.
 
@@ -857,9 +864,9 @@ corrections land on top of `2779f9c`.
   - `uprightDims` — display dimensions for a rotated sensor frame (swap W/H on 90°/270°)
   - `rotateRect` / `invertRect` — pure, mutually-inverse normalized-box rotations (kept for unit tests / future sensor-space consumers)
   - `mirrorRect` — front-camera X-flip in upright space
-- **Upright tensor inference** ([`inference_isolate.dart`](../lib/services/inference_isolate.dart)) — `processFrame` now carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`); the isolate rotates + optionally X-mirrors the square 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()` (lossless transpose). Parser/NMS untouched — boxes after NMS are already in upright space.
-- [`detection_screen.dart`](../lib/screens/detection_screen.dart) — computes rotation per frame from the same `controller.value.deviceOrientation` that `CameraPreview` uses (painter and preview agree by construction); preview + painter sized with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`.
-- [`forensic_log.dart`](../lib/services/forensic_log.dart) — `recordOrientation` (per-frame sensor/device/rot/mirror/lens/dims) + sensor/lens fields in `recordCamera`.
+- **Upright tensor inference** (`inference_isolate.dart` (historical source)) — `processFrame` now carries orientation metadata (`rotationDegrees`, `mirror`, `sensorOrientation`, `deviceDegrees`, `lensFacing`); the isolate rotates + optionally X-mirrors the square 640×640 NHWC input tensor to UPRIGHT before `interpreter.run()` (lossless transpose). Parser/NMS untouched — boxes after NMS are already in upright space.
+- `detection_screen.dart` (historical source) — computes rotation per frame from the same `controller.value.deviceOrientation` that `CameraPreview` uses (painter and preview agree by construction); preview + painter sized with the UPRIGHT image dimensions; feeds sensor/lens into `recordCamera`.
+- `forensic_log.dart` (historical source) — `recordOrientation` (per-frame sensor/device/rot/mirror/lens/dims) + sensor/lens fields in `recordCamera`.
 
 ### Changed
 - [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart) — removed all sensor-orientation/lens/mirror knowledge; now a pure normalized→pixel mapper over the upright image (`applyBoxFit` math identical to the preview `FittedBox`).
@@ -883,7 +890,7 @@ corrections land on top of `2779f9c`.
 ## v0.1.3 — "Forensic File Logging" (2026-08-01)
 
 ### Added
-- [`ForensicLog`](../lib/services/forensic_log.dart) — structured, file-based diagnostics written to `<application_documents>/debug/run_YYYYMMDD_HHMMSS/` so the pipeline can be diagnosed offline without logcat:
+- `ForensicLog` (`lib/services/forensic_log.dart`, historical source) — structured, file-based diagnostics written to `<application_documents>/debug/run_YYYYMMDD_HHMMSS/` so the pipeline can be diagnosed offline without logcat:
   - `camera.txt` — CameraImage geometry (rowStride/pixelStride/plane lengths) + inferred format (I420 / NV21-NV12 / UNKNOWN), once
   - `preprocess.txt` — per-channel R/G/B min/max/mean/std, resize info, normalization stats (allZero/allOne/NaN/Inf), frame 1
   - `tensor.txt` — input tensor before `run()`: shape/dtype/expected vs actual length/first-64/last-64/sample/min/max/mean/std, frame 1
@@ -893,13 +900,13 @@ corrections land on top of `2779f9c`.
   - `errors.txt` — every exception raised by the instrumentation itself (never affects inference)
   - `summary.txt` — auto-generated diagnosis every 50 processed frames and on close (PASS/FAIL per stage, max confidence, P99, top class, distribution, ranked root causes)
   - PNG image dumps of the first frame: `frame_original.png` (Y luma), `frame_rgb.png` (YUV→RGB at camera res), `frame_resized.png`, `frame_model_input.png`
-- [`PngEncoder`](../lib/models/png_encoder.dart) — pure-Dart PNG encoder (isolate-safe, no `dart:ui`); validated with [`tool/validate_png.dart`](../tool/validate_png.dart) and cross-decoded with Python (pixels match exactly)
+- `PngEncoder` (`lib/models/png_encoder.dart`, historical source) — pure-Dart PNG encoder (isolate-safe, no `dart:ui`); validated with `tool/validate_png.dart` (`tool/validate_png.dart`, historical source) and cross-decoded with Python (pixels match exactly)
 - Every `ForensicLogger` write is synchronous and flushed; all writes are try/catch-guarded so logging can never break inference
-- Replaced the console-based probes: [`InferenceProbe`](../lib/services/inference_probe.dart) and [`InputProbe`](../lib/services/input_probe.dart) are now disabled (`enabled = false`) and their call sites removed
+- Replaced the console-based probes: `InferenceProbe` (`lib/services/inference_probe.dart`, historical source) and `InputProbe` (`lib/services/input_probe.dart`, historical source) are now disabled (`enabled = false`) and their call sites removed
 
 ### Changed
-- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) — run directory created at startup and passed to the isolate; forensic channels wired into the frame loop via `_safeForensic`; `processFrame` now forwards `cameraFps`/`droppedFrames` (logging only)
-- [`detection_screen.dart`](../lib/screens/detection_screen.dart) — records `camera.txt` on the first frame
+- `inference_isolate.dart` (historical source) — run directory created at startup and passed to the isolate; forensic channels wired into the frame loop via `_safeForensic`; `processFrame` now forwards `cameraFps`/`droppedFrames` (logging only)
+- `detection_screen.dart` (historical source) — records `camera.txt` on the first frame
 
 ### Notes
 - All instrumentation is removable: delete the forensic files/call sites and flip the `enabled` switches.
@@ -914,7 +921,7 @@ corrections land on top of `2779f9c`.
   - Strict **3:4 portrait camera preview anchored to the top** (`AspectRatio(3/4)` box), feed contained via `BoxFit.contain` — never stretched, warped, or cropped; full frame always visible.
   - Permanent **bottom information panel** with Material Tabs — exactly two tabs: **Metrics** and **Detections** (the panel never floats over the preview).
   - Preview width is computed from screen size while reserving a minimum panel height, so the layout adapts to different screens without ever squeezing the panel or distorting the feed.
-- **Metrics tab** ([`info_panel.dart`](../lib/widgets/info_panel.dart)): live FPS / average FPS / inference time / end-to-end latency, objects detected, highest/lowest/average confidence, camera resolution, preview resolution, model input resolution, aspect ratio, model name, backend, quantization type, thread count (un-instrumented values shown as "—").
+- **Metrics tab** (`info_panel.dart` (historical source)): live FPS / average FPS / inference time / end-to-end latency, objects detected, highest/lowest/average confidence, camera resolution, preview resolution, model input resolution, aspect ratio, model name, backend, quantization type, thread count (un-instrumented values shown as "—").
 - **Detections tab**: chronological detection history (newest at top), each entry with object class, confidence %, and relative age ("Just now / Xs ago / Xm ago"); scrolls independently; capped at 50 entries; 1-second timer refreshes ages.
 - Bounding boxes and labels rendered by [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart) directly inside the preview box using the same `applyBoxFit(BoxFit.contain)` transform as the preview — geometrically accurate, never scaled independently.
 
@@ -950,7 +957,7 @@ corrections land on top of `2779f9c`.
 ## v0.1.4 — "Camera Preprocessing Repair" (2026-08-01)
 
 ### Fixed
-- **Manual YUV420→RGB converter** ([`_convertYUV420toRGB`](../lib/services/inference_isolate.dart)) repaired to handle the actual CameraX delivery:
+- **Manual YUV420→RGB converter** (`_convertYUV420toRGB` (`lib/services/inference_isolate.dart`, historical source)) repaired to handle the actual CameraX delivery:
   - Honors real per-plane `rowStride`/`bytesPerRow` and `pixelStride`/`bytesPerPixel` (previously assumed tightly-packed rows — the Y rowStride 512 vs width caused row smearing).
   - Supports **planar I420** (pixelStride 1) and **semi-planar NV12/NV21** (pixelStride 2, interleaved chroma read from the U-led plane per the YUV_420_888 contract).
   - Resize (nearest-neighbor) and normalization math unchanged.
@@ -969,10 +976,10 @@ corrections land on top of `2779f9c`.
 ## v0.1.2 — "Runtime Model Introspection" (2026-08-01)
 
 ### Added
-- [`ModelMetadata`](../lib/models/model_metadata.dart) — immutable, self-describing runtime snapshot of the loaded model:
+- `ModelMetadata` (`lib/models/model_metadata.dart`, historical source) — immutable, self-describing runtime snapshot of the loaded model:
   - model name, input/output datatypes & shapes, scale/zeroPoint, quantized flags
   - derived classes/anchors, requires-input-quantization / requires-output-dequantization
-- [`ModelType`](../lib/models/model_metadata.dart) classification — FP32 / Full INT8 Quantized / Full UINT8 Quantized / Weight-Quantized / Unknown. Detected from runtime tensors + an internal tensor scan. **Never guessed from filenames.**
+- `ModelType` (`lib/models/model_metadata.dart`, historical source) classification — FP32 / Full INT8 Quantized / Full UINT8 Quantized / Weight-Quantized / Unknown. Detected from runtime tensors + an internal tensor scan. **Never guessed from filenames.**
 - [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart) — pure-Dart flatbuffer walker that counts internal tensor types (validated 1:1 against the reference `tflite` Python package on both bundled models)
 - Float16 (half-precision) byte conversion helpers for FLOAT16 I/O edge cases
 - Dynamic inference-path selection: preprocessing quantizes only when the input tensor is quantized; the parser dequantizes only when the output tensor is quantized — all from runtime metadata
@@ -982,11 +989,11 @@ corrections land on top of `2779f9c`.
 - Busy gate releases on isolate errors (`errorStream` in `InferenceService`), preventing permanent frame-drop wedges
 
 ### Changed
-- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) rewritten around `ModelMetadata`:
+- `inference_isolate.dart` (historical source) rewritten around `ModelMetadata`:
   - dtype-matched pre-allocated buffers (Float32/Float64/Int8/Uint8/Int16/Float16)
   - raw `ByteBuffer` I/O to `interpreter.run()` — **no reshape**, no input-tensor resizing
   - `model_loaded` message now carries the full metadata JSON map
-- [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart) — sections for MODEL / PERFORMANCE / CAMERA
+- `debug_overlay.dart` (historical source) — sections for MODEL / PERFORMANCE / CAMERA
 - `camera_screen.dart` — overlay wired to `metadataNotifier`; `_isInferring` reset on isolate error
 
 ### Fixed
@@ -1017,7 +1024,7 @@ corrections land on top of `2779f9c`.
   `[Service]`, `[Model]`, `[Camera]`, `[Inference]`, `[Detection]`, `[Painter]`, `[Performance]`, `[Error]`
 - Per-frame inference latency timing via `Stopwatch` (exposed via `InferenceService.lastLatencyMs`)
 - 5-second `[Performance]` summaries (camera FPS, inference FPS, avg/min/max latency, frame stats)
-- Visual debug overlay ([`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart)) — debug builds only (`kDebugMode`)
+- Visual debug overlay (`lib/widgets/debug_overlay.dart` (historical source)) — debug builds only (`kDebugMode`)
 - Error handling: try/catch around interpreter creation and the frame processing loop
 - Isolate error propagation to the main isolate via `{'type': 'error'}`
 

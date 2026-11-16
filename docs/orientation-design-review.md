@@ -1,5 +1,8 @@
 # Orientation Architecture Review & Implementation Plan
 
+> **Current status (2026-11-16):** This review proposed changes for the Custom EyeCue camera stream. That stream and its screen were removed in commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9); active orientation/preprocessing is delegated to the `ultralytics_yolo` plugin in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). The review remains historical design evidence.
+
+
 > **Status:** Historical design review — no code changes were made as part of
 > this report.
 > **Date:** 2026-08-01

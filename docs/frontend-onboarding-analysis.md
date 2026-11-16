@@ -1,5 +1,8 @@
 # EyeCue — Frontend UI Onboarding Analysis
 
+> **Current frontend status (2026-11-16):** The active Detection page is `EngineDetectionScreen` hosting `UltralyticsDetectionScreen`; the former Custom camera screen was removed in commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9). The public entry (`lib/main.dart`) leaves research recording and the research Logs & Reports builder unset; Study wiring is in `lib/main_study.dart`. This onboarding document describes the earlier two-engine frontend and its duplicate `.roo/rules/docs` mirror process; use [`docs/architecture.md`](architecture.md), [`docs/project-status.md`](project-status.md), and the live files under `lib/screens/` for current structure.
+
+
 > **Author role:** Frontend UI developer (analysis only — no code written or modified).
 > **Date:** 2026-09-09
 > **Scope:** Read-only analysis of `.roo/rules/docs/`, the repository structure, the MCP
@@ -34,10 +37,10 @@ non-UI code. Confirmed from the actual `lib/` tree (not guessed):
 |---|---|---|---|
 | App entry / theme | [`lib/main.dart`](../lib/main.dart) | `MaterialApp`, dark high-contrast theme, service wiring | UI (theme) + wiring |
 | Navigation shell | [`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart) | 4-tab bottom nav (Home/Detect/Settings/Help), lazy pages via `IndexedStack`, Logs & Reports pushed as a route | UI |
-| Screens | [`lib/screens/`](../lib/screens/) | Home, Detection, Engine Detection, Ultralytics Detection, Settings, Help, Logs & Reports | UI |
-| Widgets | [`lib/widgets/`](../lib/widgets/) | Reusable UI: buttons, cards, badges, banners, painters, charts, sheets, panels | UI |
-| Models | [`lib/models/`](../lib/models/) | Data classes / DTOs (Detection, settings, metadata, corrections, telemetry export, etc.) | Non-UI (data) |
-| Services | [`lib/services/`](../lib/services/) | Business logic: inference isolate, TTS, settings persistence, telemetry, spatial analysis, tracking, scene summaries, engine coordination, correction capture, export | Non-UI (logic/state) |
+| Screens | [`lib/screens/`](../lib/screens) | Home, Detection, Engine Detection, Ultralytics Detection, Settings, Help, Logs & Reports | UI |
+| Widgets | [`lib/widgets/`](../lib/widgets) | Reusable UI: buttons, cards, badges, banners, painters, charts, sheets, panels | UI |
+| Models | [`lib/models/`](../lib/models) | Data classes / DTOs (Detection, settings, metadata, corrections, telemetry export, etc.) | Non-UI (data) |
+| Services | [`lib/services/`](../lib/services) | Business logic: inference isolate, TTS, settings persistence, telemetry, spatial analysis, tracking, scene summaries, engine coordination, correction capture, export | Non-UI (logic/state) |
 
 **State management approach:** The docs state this is settled — plain `ChangeNotifier`
 services + `setState`, with **no DI framework** (services are wired in `main.dart` and
@@ -59,7 +62,7 @@ I inspected the actual screen/widget source (not just docs). Findings:
   [`settings_screen.dart`](../lib/screens/settings_screen.dart),
   [`help_screen.dart`](../lib/screens/help_screen.dart),
   [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart),
-  [`detection_screen.dart`](../lib/screens/detection_screen.dart),
+  `detection_screen.dart`,
   [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart),
   [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart).
   These render real content, consume the injected services, and are covered by widget
@@ -280,7 +283,7 @@ non-UI (`models/`, `services/`). New UI work should extend the existing UI folde
 
 ### 5.1 New screens
 
-Place new full-screen widgets in [`lib/screens/`](../lib/screens/) following the existing
+Place new full-screen widgets in [`lib/screens/`](../lib/screens) following the existing
 `snake_case_screen.dart` naming (e.g. `home_screen.dart`). Register them either as a new
 tab in [`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart) or as a pushed
 `MaterialPageRoute` (as Logs & Reports is), depending on whether they belong in the primary
@@ -288,7 +291,7 @@ tab in [`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart) or as
 
 ### 5.2 New reusable widgets
 
-Place new reusable widgets in [`lib/widgets/`](../lib/widgets/) as one class per
+Place new reusable widgets in [`lib/widgets/`](../lib/widgets) as one class per
 `snake_case.dart` file (matching the observed convention). Private helper widgets used by
 only one screen should stay as `_`-prefixed classes inside that screen's file (as
 `_StatusCard`, `_HelpCard`, `_SectionHeader` already are).

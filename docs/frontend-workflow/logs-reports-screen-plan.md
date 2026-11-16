@@ -1,5 +1,8 @@
 # Logs & Reports Screen Implementation Plan
 
+> **Current status (2026-11-16, review base `main@aadf9e0`):** The screen redesign is shipped and the current source is [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart). Public [`main.dart`](../../lib/main.dart) has no research-session/logger builder, while Study wiring lives in [`main_study.dart`](../../lib/main_study.dart); later chart/subtitle polish is recorded in [`charts-logs-polish-plan.md`](charts-logs-polish-plan.md).
+
+
 **Task type:** visual-only restyle of the existing pushed Logs & Reports route;
 no architecture, telemetry, export, correction, navigation, or API changes.
 
@@ -7,8 +10,8 @@ no architecture, telemetry, export, correction, navigation, or API changes.
 
 This plan follows the design specification first and the analysis second:
 
-- [`logs-reports-screen-design-spec.md`](logs-reports-screen-design-spec.md:1)
-- [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:1)
+- [`logs-reports-screen-design-spec.md`](logs-reports-screen-design-spec.md)
+- [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 The implementation must restyle the existing route in place while preserving
 the current Overview → Charts → Logs composition, section order, content,
@@ -21,7 +24,7 @@ be invented.
 
 ### Primary UI file
 
-- [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:16) —
+- [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L16) —
   apply the route-local light theme, centered bounded shell, surfaces,
   typography hierarchy, spacing, cards, tabs, Overview presentation, empty
   states, export presentation, correction presentation, unavailable-state
@@ -30,20 +33,20 @@ be invented.
 
 ### Conditional chart UI file
 
-- [`charts.dart`](../lib/widgets/charts.dart:537) — modify only if the
+- [`charts.dart`](../../lib/widgets/charts.dart) — modify only if the
   screen-level composition cannot provide the required light chart surface or
   chart styling. Any change must remain visual-only and preserve chart data
   binding, dynamic bounds, conditional benchmark lines, semantics summaries,
-  touch-disabled behavior, and the existing [`kChartHeight`](logs-reports-screen-analysis.md:267)
+  touch-disabled behavior, and the existing [`kChartHeight`](logs-reports-screen-analysis.md)
   allocation.
 
 ### Verification files justified by the source documents
 
-- [`charts_test.dart`](../test/widgets/charts_test.dart:1) — retain and, only
+- [`charts_test.dart`](../../test/widgets/charts_test.dart#L1) — retain and, only
   if chart presentation changes affect existing expectations, extend the
   existing chart-bound and chart-summary regression coverage without changing
   the chart algorithms.
-- A direct Logs screen-focused widget test file under [`test/`](../test/) — add
+- A direct Logs screen-focused widget test file under [`test/`](../../test) — add
   only if the implementation stage confirms the exact test location. The
   analysis and design specification recommend coverage for the real screen,
   route-local theme scope, all tabs, exports, correction states, unavailable
@@ -53,36 +56,36 @@ be invented.
 
 The following files are explicitly not implementation targets:
 
-- [`app_shell.dart`](../lib/navigation/app_shell.dart:77) — route push,
+- [`app_shell.dart`](../../lib/navigation/app_shell.dart#L77) — route push,
   underlying navigation, and back behavior remain unchanged.
-- [`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50),
-  [`app_colors.dart`](../lib/theme/app_colors.dart:79),
-  [`app_spacing.dart`](../lib/theme/app_spacing.dart:95),
-  [`app_radii.dart`](../lib/theme/app_radii.dart:94), and
-  [`app_typography.dart`](../lib/theme/app_typography.dart:96) — consume the
+- [`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50),
+  [`app_colors.dart`](../../lib/theme/app_colors.dart#L79),
+  [`app_spacing.dart`](../../lib/theme/app_spacing.dart),
+  [`app_radii.dart`](../../lib/theme/app_radii.dart), and
+  [`app_typography.dart`](../../lib/theme/app_typography.dart) — consume the
   existing theme and token layer; do not generalize, rename, or add tokens for
   this route.
-- [`telemetry_service.dart`](../lib/services/telemetry_service.dart:305),
-  [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:236),
-  [`correction_service.dart`](../lib/services/correction_service.dart:215),
-  [`telemetry_export.dart`](../lib/models/telemetry_export.dart:1), and other
+- [`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L305),
+  [`telemetry_export_service.dart`](../../lib/services/telemetry_export_service.dart#L236),
+  [`correction_service.dart`](../../lib/services/correction_service.dart),
+  [`telemetry_export.dart`](../../lib/models/telemetry_export.dart#L1), and other
   model/service files — remain read-only.
 
 ## Implementation sequence
 
 ### 1. Preserve the route shell and add only local light styling
 
-1. Keep [`openLogsReports()`](../lib/navigation/app_shell.dart:77) and the
+1. Keep [`openLogsReports()`](../../lib/navigation/app_shell.dart#L77) and the
    pushed-route ownership unchanged.
-2. At the root of [`LogsReportsScreen`](../lib/screens/logs_reports_screen.dart:23),
-   scope the existing [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50)
+2. At the root of [`LogsReportsScreen`](../../lib/screens/logs_reports_screen.dart#L23),
+   scope the existing [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50)
    locally to this route. Do not move the builder, rename it, replace global
    theme ownership, or wrap the underlying navigation shell.
 3. Apply the same local dark status-bar icon treatment used by the existing
    light Settings and Help routes. Keep the overlay styling bounded to the
    pushed route so popping it leaves the underlying shell unchanged.
-4. Retain the existing [`DefaultTabController`](../lib/screens/logs_reports_screen.dart:48),
-   [`ListenableBuilder`](../lib/screens/logs_reports_screen.dart:61),
+4. Retain the existing [`DefaultTabController`](../../lib/screens/logs_reports_screen.dart#L48),
+   [`ListenableBuilder`](../../lib/screens/logs_reports_screen.dart#L61),
    AppBar/TabBar/TabBarView relationship, and telemetry/correction listeners.
    The only visual changes at this step are theme, surface, text, indicator,
    and spacing presentation.
@@ -98,13 +101,13 @@ The following files are explicitly not implementation targets:
 3. Keep Overview and Charts vertically scrollable and keep the Logs list
    independently scrollable where its existing content requires it.
 4. Use the existing spacing scale of 6, 8, 12, 16, 20, and 24 for revised
-   relationships. Prefer token equivalents from [`app_spacing.dart`](../lib/theme/app_spacing.dart:95)
+   relationships. Prefer token equivalents from [`app_spacing.dart`](../../lib/theme/app_spacing.dart)
    for screen padding, section gaps, card gaps, row spacing, and control gaps.
    Preserve existing 14 and 4 relationships where changing them would alter a
    content grouping; do not introduce 32, 48, or 64 solely from the reference
    PNG.
 5. Use existing radius roles 3, 12, 14, 18, and 24 from
-   [`app_radii.dart`](../lib/theme/app_radii.dart:94). Select the mapping by
+   [`app_radii.dart`](../../lib/theme/app_radii.dart). Select the mapping by
    component hierarchy rather than by copying the legacy dark screen.
 
 ### 3. Restyle the route surfaces and typography hierarchy
@@ -116,7 +119,7 @@ The following files are explicitly not implementation targets:
    and disabled states.
 2. Do not place raw color, spacing, radius, font-size, weight, or letter-
    spacing literals in the redesigned UI. Consume the existing IBM Plex Sans
-   Regular, Medium, Semibold, and Bold roles from [`app_typography.dart`](../lib/theme/app_typography.dart:96)
+   Regular, Medium, Semibold, and Bold roles from [`app_typography.dart`](../../lib/theme/app_typography.dart)
    through the route-local theme.
 3. Make the route title distinct from tab labels, section headings distinct
    from metric labels, and primary metric values prominent without adding an
@@ -197,7 +200,7 @@ Metrics, and Usability.
    dynamic Y scaling/headroom, conditional 300 ms and 15 FPS benchmark lines,
    whole-minute frequency bucketing from the first retained record, and
    data-driven maximum Y.
-3. Keep the existing [`kChartHeight`](logs-reports-screen-analysis.md:267)
+3. Keep the existing [`kChartHeight`](logs-reports-screen-analysis.md)
    allocation of 180 logical pixels. Any visual treatment must draw inside
    that allocation and must not create overflow.
 4. Use the local light surface and existing chart/theme tokens for chart cards,
@@ -247,7 +250,7 @@ Metrics, and Usability.
    documents, including route-local light-theme scope, all three tabs, empty and
    populated states, export busy/success/failure behavior, corrections,
    unavailable metrics, Logs priority wording, and 200% text scale/no-overflow.
-2. Retain the existing [`charts_test.dart`](../test/widgets/charts_test.dart:1)
+2. Retain the existing [`charts_test.dart`](../../test/widgets/charts_test.dart#L1)
    algorithm, bound, and summary-semantic coverage. Add only presentation
    assertions justified by an actual chart visual change.
 3. Run static analysis and the full Flutter test suite in the implementation
@@ -295,7 +298,7 @@ Metrics, and Usability.
 - **Light chart treatment — Needs Verification [design-verified]:** confirm
   line/bar colors, grid and benchmark contrast, card grouping, heading
   treatment, padding, and empty-state alignment while retaining
-  [`kChartHeight`](logs-reports-screen-analysis.md:267), algorithms, bindings,
+  [`kChartHeight`](logs-reports-screen-analysis.md), algorithms, bindings,
   and semantics.
 - **Logs row treatment — Needs Verification [design-verified]:** confirm card
   versus divider treatment, metadata spacing, timestamp emphasis, and priority

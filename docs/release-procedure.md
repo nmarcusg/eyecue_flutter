@@ -1,9 +1,10 @@
 # EyeCue — Release Procedure (versioning, signing, app bundle)
 
-Operational procedure for producing a Play Store upload. It records what the
-configuration in this tree does and which decisions remain owner gates; measured
-build evidence lives in [`play-store-readiness.md`](play-store-readiness.md)
-(the L8/L9 rows).
+Operational procedure for producing a public Play artifact from the current
+flavor configuration. Historical measurements below retain their original
+dates and source commits; they are not evidence for the present flavored build.
+Owner gates and the latest source-level status are tracked in
+[`play-store-readiness.md`](play-store-readiness.md).
 
 ## Current distribution variants
 
@@ -18,11 +19,14 @@ Public output paths use `app-public-release.apk` and
 renamed `app-public-release-testsigned.apk` by `markTestSignedApk`.
 
 Study APKs require `--flavor study -t lib/main_study.dart`, the retained Study
-signing key and telemetry configuration. They use `app.eyecue.mobile.study`,
-declare `INTERNET`, and have a `-study` version suffix. Study is APK-only; do not
-build or distribute a Study AAB. Builds without an explicit flavor are expected
-to fail. Historical measurements later in this document describe older
-single-variant artifacts and are not evidence for the current public flavor.
+signing key, and both telemetry build variables. They use
+`app.eyecue.mobile.study`, declare `INTERNET`, and have a `-study` version-name
+suffix. Study is APK-only; the cloud workflow does not build a Study AAB.
+Builds without an explicit flavor fail. Both variants bundle the campus
+detector, `assets/labels.txt`, and the depth model; depth inference is optional
+and is only loaded when enabled. Historical measurements later in this document
+describe older single-variant artifacts and are not evidence for the current
+public flavor.
 
 ## 1. Application identity
 
@@ -42,7 +46,7 @@ upload for that listing.
 
 ## 2. Versioning
 
-Both version fields come from [`pubspec.yaml`](../pubspec.yaml:4) — `flutter`
+Both version fields come from [`pubspec.yaml`](../pubspec.yaml#L4) — `flutter`
 reads `version: <versionName>+<versionCode>` and passes them to Gradle through
 `flutter.versionName` / `flutter.versionCode`, which
 [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) assigns
@@ -126,13 +130,14 @@ Production signing is an **external gate**. With Play App Signing:
    Play support — so the upload keystore and its passwords belong in the owner's
    password manager, not in this repository.
 
-Until the owner provides the upload keystore (or the environment variables),
-every artifact produced here is debug-signed and test-only.
+When no upload keystore is configured, a public release build is debug-signed
+and marked `-testsigned`; it is a test artifact and must not be uploaded to Play.
+Study builds fail closed without their retained signing material.
 
 ## 4. Building the app bundle
 
 ```sh
-cd /home/nico/repos/eyecue_flutter-playstore
+cd /path/to/eyecue_flutter
 flutter build appbundle --release --flavor public
 ```
 
@@ -163,7 +168,7 @@ unzip -p "$APK" 'classes*.dex' | strings | grep -c 'androidx/work/impl/WorkDatab
 | Provide the upload keystore / `EYECUE_KEYSTORE_*` | a bundle Play will accept |
 | Enrol the app in Play App Signing | production distribution |
 | Licence (D2) — **decided**: `AGPL-3.0-only` | nothing left to decide; the obligations are in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §1 and §7, and R1–R7 there still warrant qualified legal review |
-| Privacy policy + Data Safety answers (D3) | [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8 and [`play-store-checklist.md`](play-store-checklist.md) §2 |
+| Privacy policy + Data Safety answers (D3) | [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8 and [`play-store-checklist.md`](play-store-checklist.md) §2; verify the configured public URL's live content and availability |
 | Store listing, screenshots, content rating, support contact | [`play-store-checklist.md`](play-store-checklist.md) §6–§10 |
 | Device install smoke test | the `CONFIRMED-ON-DEVICE` rows in the ledger |
 
@@ -296,14 +301,14 @@ uses-permission: name='app.eyecue.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSIO
 #### 6.2.1 Permissions removed in L10
 
 Three `tools:node="remove"` rules in
-[`android/app/src/main/AndroidManifest.xml`](../android/app/src/main/AndroidManifest.xml:8)
+[`android/app/src/main/AndroidManifest.xml`](../android/app/src/main/AndroidManifest.xml#L8)
 drop the two permissions `camera_android_camerax` injects for paths this app never
 uses, plus the storage permission the merger *implies* from them:
 
 | Removed | Injected by | Why unused | Residual risk |
 | --- | --- | --- | --- |
 | `RECORD_AUDIO` | `camera_android_camerax` — merged manifest `:10` | the app only reads the CameraX analysis stream; no audio is ever recorded | recording a **video with audio** would throw a `SecurityException`; that path is not used |
-| `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion='28'`) | `camera_android_camerax` — merged manifest `:11-13` | exports use Android's document picker and URI grants without broad storage access ([`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:424)) | a CameraX capture that saves into shared storage would fail on API ≤ 28; not used |
+| `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion='28'`) | `camera_android_camerax` — merged manifest `:11-13` | exports use Android's document picker and URI grants without broad storage access ([`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart#L424)) | a CameraX capture that saves into shared storage would fail on API ≤ 28; not used |
 | `READ_EXTERNAL_STORAGE` | **implied by the manifest merger** — declared by no manifest | nothing reads shared storage | same as above — capture-from-gallery flows would fail; not used |
 
 `READ_EXTERNAL_STORAGE` needs its own rule. The merger derives it from camerax's
@@ -400,12 +405,12 @@ payloads cannot hide a match. Hits per pattern, APK and AAB:
 
 No `--dart-define` was passed to either build, so there were no define values to
 bake in. The telemetry ingest URL and publishable key are still supplied at build
-time by the owner ([`supabase-research-telemetry.md`](supabase-research-telemetry.md:189));
+time by the owner ([`supabase-research-telemetry.md`](supabase-research-telemetry.md));
 with both defines unset `TelemetryUploadConfiguration.isConfigured` is false
-([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:30)),
+([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L30)),
 which gates the upload at both the service and the button
-([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:165),
-[`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:113)), so these
+([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L165),
+[`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart#L113)), so these
 artefacts cannot upload anything.
 
 ### 6.6 The `<queries>` `IMAGE_CAPTURE` block was removed (documented)
@@ -495,11 +500,15 @@ file names inside the APK are obfuscated by the resource shrinker (`res/BW.xml`,
 
 ## 7. Publishing the corresponding source (AGPL-3.0-only)
 
-The application is licensed **`AGPL-3.0-only`** ([`LICENSE`](../LICENSE)), the same
-licence as the vendored plugin and the bundled models. The inventory, the obligations
+The application is licensed **`AGPL-3.0-only`** ([`LICENSE`](../LICENSE)); the
+vendored plugin and bundled Ultralytics model metadata also identify AGPL-3.0.
+This records repository metadata, not an independent legal conclusion about the
+models or their provenance. The inventory, the obligations
 and the review items are in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §1,
-§6 and §7. Every released binary must map to the complete corresponding source of that
-exact build.
+§6 and §7. For release traceability, retain an archive and checksum tied to the
+exact binary. Whether that archive satisfies the legal corresponding-source
+obligations for every shipped component remains subject to the qualified review
+listed in `THIRD_PARTY_NOTICES.md` §6.
 
 1. **Tag ↔ `versionName`+`versionCode`.** Tag the commit that is built, before
    building it:

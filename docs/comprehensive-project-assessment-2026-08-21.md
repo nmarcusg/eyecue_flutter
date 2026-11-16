@@ -1,5 +1,8 @@
 # EyeCue Comprehensive Project Assessment and Performance Strategy
 
+> **Current status (2026-11-16):** The assessment below remains tied to revision `146c2e7`. Since then, commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9) removed the Custom EyeCue camera/inference engine; current Detection is `EngineDetectionScreen` → `UltralyticsDetectionScreen`. `main.dart` is the public app without study recording/report builder, while `main_study.dart` wires Study recording and model watching. Built-in detector identity/configuration is maintained in `lib/models/model_config.dart` and `lib/models/detector_model.dart` (current Campus model has 14 labels). Use [`project-status.md`](project-status.md) for current release status; the evidence and recommendations below are historical.
+
+
 **Assessment date:** 2026-08-21
 **Repository assessed:** `eyecue_flutter`
 **Assessed revision:** `146c2e7` (`main`, matching `origin/main` at the time of assessment)
@@ -141,7 +144,7 @@ The Home status card nevertheless says that the camera began detecting when the 
 Relevant files:
 
 - [`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart)
-- [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart)
+- `lib/screens/detection_screen.dart`
 - [`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart)
 - [`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart)
 
@@ -159,8 +162,8 @@ If a camera frame arrives before the handshake, the send can fail with a `LateIn
 
 Relevant files:
 
-- [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart)
-- [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart)
+- `lib/screens/detection_screen.dart`
+- `lib/services/inference_isolate.dart`
 
 ### 4.4 Generic camera/model error UI is missing
 
@@ -245,7 +248,7 @@ The three `fl_chart` widgets hide titles and axes. This makes it difficult to in
 Relevant files:
 
 - [`lib/services/telemetry_service.dart`](../lib/services/telemetry_service.dart)
-- [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart)
+- `lib/screens/detection_screen.dart`
 - [`lib/widgets/charts.dart`](../lib/widgets/charts.dart)
 - [`lib/screens/logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart)
 
@@ -277,7 +280,7 @@ The static finalized/closed state is also not reset for a later service lifecycl
 
 Relevant file:
 
-- [`lib/services/forensic_log.dart`](../lib/services/forensic_log.dart)
+- `lib/services/forensic_log.dart`
 
 ## 8. Inference-Pipeline Findings
 
@@ -324,8 +327,8 @@ NMS is quadratic and has no pre-NMS top-K limit.
 
 Relevant files:
 
-- [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart)
-- [`lib/models/model_metadata.dart`](../lib/models/model_metadata.dart)
+- `lib/services/inference_isolate.dart`
+- `lib/models/model_metadata.dart`
 - [`lib/models/box_transform.dart`](../lib/models/box_transform.dart)
 
 ## 9. Automated Test Assessment
@@ -364,7 +367,7 @@ The following critical paths are not covered by automated tests:
 
 Relevant files:
 
-- [`test/`](../test/)
+- [`test/`](../test)
 - [`docs/testing-plan.md`](testing-plan.md)
 - [`docs/implementation-plan.md`](implementation-plan.md)
 

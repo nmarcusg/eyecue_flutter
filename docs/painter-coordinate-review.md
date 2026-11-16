@@ -1,5 +1,8 @@
 # Painter ↔ Preview Coordinate-Space Review
 
+> **Current status (2026-11-16):** These coordinate calculations concern the retired Custom camera preview and painter path. The screen and painter snapshot studied here is historical; the active Detection view is [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), with boxes supplied by the plugin-backed result adapter. Do not apply the old `CameraPreview` geometry conclusions to `YOLOView` without a new measurement.
+
+
 > **Status:** Mathematical investigation only — NO code changes.
 > **Date:** 2026-08-01
 > **Evidence sources:** live camera run `run_20260801_194628` (painter logs,
@@ -9,7 +12,7 @@
 > `bounding_box_painter.dart` implementation.
 >
 > **Historical snapshot notice (2026-09-01):** The former `camera_screen.dart`
-> was later retired and removed in favor of [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+> was later retired and removed in favor of `detection_screen.dart`.
 > The measurements and conclusions below remain a record of the implementation
 > examined at the time.
 

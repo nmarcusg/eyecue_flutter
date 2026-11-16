@@ -1,5 +1,8 @@
 # EyeCue — Help Screen Visual Redesign: Analysis
 
+> **Current status (2026-11-16, review base `main@aadf9e0`):** This staged Help redesign document is retained as design history. The current [`HelpScreen`](../../lib/screens/help_screen.dart) includes the public Privacy Policy action; its external-launch failure path has regression coverage in [`help_screen_test.dart`](../../test/screens/help_screen_test.dart) (commit `879be04`). The visual redesign is documented in [`visual-redesign.md`](visual-redesign.md).
+
+
 > **Stage:** Analysis (read-only). No application code, tests, assets,
 > `pubspec.yaml`, or other project files were modified to produce this document.
 > **Date:** 2026-09-09
@@ -32,9 +35,9 @@ the light-theme pattern established by the completed Home feature are reused.
 
 ### 2.1 Behavior contract (must be preserved)
 
-[`HelpScreen`](../lib/screens/help_screen.dart) is a **`StatelessWidget`** with
+[`HelpScreen`](../../lib/screens/help_screen.dart) is a **`StatelessWidget`** with
 **no required service dependencies** and is constructible as
-`const HelpScreen()` from [`app_shell.dart`](../lib/navigation/app_shell.dart:113)
+`const HelpScreen()` from [`app_shell.dart`](../../lib/navigation/app_shell.dart#L113)
 (`case 3: return const HelpScreen();`). It renders inside the shell's
 `IndexedStack` as the fourth bottom-nav tab (Help), so it inherits the shell's
 `Scaffold`/`NavigationBar` and the global dark `ThemeData`. It has no
@@ -71,17 +74,17 @@ must remain unchanged. Only the visual presentation of that content changes.
 
 The Help Screen's direct dependencies are limited to Flutter Material and the
 shell that constructs it. No service, model, or engine is consumed by
-[`help_screen.dart`](../lib/screens/help_screen.dart).
+[`help_screen.dart`](../../lib/screens/help_screen.dart).
 
 | Dependency | File | Role for Help |
 |---|---|---|
 | Material | `package:flutter/material.dart` | `Scaffold`, `AppBar`, `ListView`, `Card`, `Icon`, `Text`, `Theme` |
-| Shell construction | [`app_shell.dart`](../lib/navigation/app_shell.dart:113) | `const HelpScreen()` as tab index 3; only the Help page construction is in scope |
-| Theme (global) | [`app_theme.dart`](../lib/theme/app_theme.dart) | Dark `buildEyeCueTheme()` currently inherited by Help |
-| Light-theme pattern | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart) | `buildHomeTheme()` — the established light `ThemeData` + IBM Plex Sans + shadow tokens to reuse/mirror |
-| Tokens | [`app_colors.dart`](../lib/theme/app_colors.dart), [`app_spacing.dart`](../lib/theme/app_spacing.dart), [`app_radii.dart`](../lib/theme/app_radii.dart), [`app_typography.dart`](../lib/theme/app_typography.dart) | Semantic color/spacing/radius/type tokens |
-| Reference implementation | [`home_screen.dart`](../lib/screens/home_screen.dart) | Light-theme, responsive, accessibility pattern to follow |
-| Fonts/assets | [`pubspec.yaml`](../pubspec.yaml) | `google_fonts` + bundled `assets/fonts/` (IBM Plex Sans), `assets/logo.png` |
+| Shell construction | [`app_shell.dart`](../../lib/navigation/app_shell.dart#L113) | `const HelpScreen()` as tab index 3; only the Help page construction is in scope |
+| Theme (global) | [`app_theme.dart`](../../lib/theme/app_theme.dart) | Dark `buildEyeCueTheme()` currently inherited by Help |
+| Light-theme pattern | [`app_home_theme.dart`](../../lib/theme/app_home_theme.dart) | `buildHomeTheme()` — the established light `ThemeData` + IBM Plex Sans + shadow tokens to reuse/mirror |
+| Tokens | [`app_colors.dart`](../../lib/theme/app_colors.dart), [`app_spacing.dart`](../../lib/theme/app_spacing.dart), [`app_radii.dart`](../../lib/theme/app_radii.dart), [`app_typography.dart`](../../lib/theme/app_typography.dart) | Semantic color/spacing/radius/type tokens |
+| Reference implementation | [`home_screen.dart`](../../lib/screens/home_screen.dart) | Light-theme, responsive, accessibility pattern to follow |
+| Fonts/assets | [`pubspec.yaml`](../../pubspec.yaml) | `google_fonts` + bundled `assets/fonts/` (IBM Plex Sans), `assets/logo.png` |
 
 No unrelated routes or services were inspected. No repository-wide audit was
 performed.
@@ -90,7 +93,7 @@ performed.
 
 ## 4. The four existing content sections
 
-Confirmed present in [`help_screen.dart`](../lib/screens/help_screen.dart:16-53):
+Confirmed present in [`help_screen.dart`](../../lib/screens/help_screen.dart#L16-L53):
 
 1. **How It Works** — `Icons.timeline_rounded`.
 2. **Gesture Controls** — `Icons.touch_app_rounded`.
@@ -175,22 +178,22 @@ sections and their copy.
 
 These are **candidates only** — the final allowed set is decided in the Plan
 stage after Design-Spec approval. All are UI-owned per
-[`ui-conventions.md`](ui-conventions.md) / `.roo/rules/rules-frontend/01-scope.md`:
+`ui-conventions.md` / `.roo/rules/rules-frontend/01-scope.md`:
 
 | File | Likely role |
 |---|---|
-| [`lib/screens/help_screen.dart`](../lib/screens/help_screen.dart) | Primary redesign target: light `Theme` wrapper (reusing `buildHomeTheme()`), header/title treatment (no logo), redesigned cards, icon treatment, responsive layout, semantics |
-| [`lib/theme/app_home_theme.dart`](../lib/theme/app_home_theme.dart) | **Not expected to change** — Help reuses `buildHomeTheme()` as-is (owner decision, §12); no new or generalized theme builder |
-| [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart) | **Not expected to change** — Help reuses the existing `kHome*` tokens; no new color anticipated |
-| [`lib/theme/app_spacing.dart`](../lib/theme/app_spacing.dart) | **Not expected to change** — Help reuses the existing `kSpace*` scale |
-| [`lib/theme/app_radii.dart`](../lib/theme/app_radii.dart) | **Not expected to change** — Help reuses the existing `kRadius*` scale |
-| [`lib/theme/app_typography.dart`](../lib/theme/app_typography.dart) | **Not expected to change** — Help reuses the IBM Plex Sans `TextTheme` from `buildHomeTheme()` |
-| [`test/widget_test.dart`](../test/widget_test.dart) | Help widget regression coverage (the existing `HelpScreen` group) |
-| [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart) | Help semantics + 200% text-scale coverage |
-| [`docs/architecture.md`](../docs/architecture.md) | Doc update (Help component row / theme section) if a token/theme change lands |
-| [`docs/changelog.md`](../docs/changelog.md) | Doc update |
-| [`docs/implementation-progress.md`](../docs/implementation-progress.md) | Doc update |
-| [`docs/session-log.md`](../docs/session-log.md) | Doc update |
+| [`lib/screens/help_screen.dart`](../../lib/screens/help_screen.dart) | Primary redesign target: light `Theme` wrapper (reusing `buildHomeTheme()`), header/title treatment (no logo), redesigned cards, icon treatment, responsive layout, semantics |
+| [`lib/theme/app_home_theme.dart`](../../lib/theme/app_home_theme.dart) | **Not expected to change** — Help reuses `buildHomeTheme()` as-is (owner decision, §12); no new or generalized theme builder |
+| [`lib/theme/app_colors.dart`](../../lib/theme/app_colors.dart) | **Not expected to change** — Help reuses the existing `kHome*` tokens; no new color anticipated |
+| [`lib/theme/app_spacing.dart`](../../lib/theme/app_spacing.dart) | **Not expected to change** — Help reuses the existing `kSpace*` scale |
+| [`lib/theme/app_radii.dart`](../../lib/theme/app_radii.dart) | **Not expected to change** — Help reuses the existing `kRadius*` scale |
+| [`lib/theme/app_typography.dart`](../../lib/theme/app_typography.dart) | **Not expected to change** — Help reuses the IBM Plex Sans `TextTheme` from `buildHomeTheme()` |
+| [`test/widget_test.dart`](../../test/widget_test.dart) | Help widget regression coverage (the existing `HelpScreen` group) |
+| [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart) | Help semantics + 200% text-scale coverage |
+| [`docs/architecture.md`](../architecture.md) | Doc update (Help component row / theme section) if a token/theme change lands |
+| [`docs/changelog.md`](../changelog.md) | Doc update |
+| [`docs/implementation-progress.md`](../implementation-progress.md) | Doc update |
+| [`docs/session-log.md`](../session-log.md) | Doc update |
 | `.roo/rules/docs/` mirror | Re-copy of root `/docs` after any doc change (per doc-update rule) |
 
 ---
@@ -217,7 +220,7 @@ stage after Design-Spec approval. All are UI-owned per
 
 ## 10. Accessibility considerations
 
-Per [`ui-conventions.md`](ui-conventions.md) and the accessibility rule:
+Per `ui-conventions.md` and the accessibility rule:
 
 - Help is primarily **static reading content** (no interactive controls today),
   so the main accessibility work is **semantic structure and readability**, not
@@ -258,8 +261,8 @@ Per [`ui-conventions.md`](ui-conventions.md) and the accessibility rule:
 ## 12. Token-naming / sharing decision (RESOLVED — reuse the Home light theme as-is)
 
 The existing light tokens are **Home-scoped**: `kHome*` in
-[`app_colors.dart`](../lib/theme/app_colors.dart) and `buildHomeTheme()` in
-[`app_home_theme.dart`](../lib/theme/app_home_theme.dart). Three options were
+[`app_colors.dart`](../../lib/theme/app_colors.dart) and `buildHomeTheme()` in
+[`app_home_theme.dart`](../../lib/theme/app_home_theme.dart). Three options were
 considered:
 
 1. **Reuse as-is.** Help imports `kHome*` tokens and `buildHomeTheme()` directly

@@ -3,23 +3,21 @@
 > Research papers, benchmark references, related work, ideas, and defense notes.  
 > Separate from implementation documentation.
 
-> **Current implementation note (2026-09-05):** The runtime candidate is the
-> metadata-enriched artifact [`yolov8n_int8_new_metadata.tflite`](../assets/yolov8n_int8_new_metadata.tflite),
-> generated from the byte-identical base graph
-> [`yolov8n_int8_new.tflite`](../assets/yolov8n_int8_new.tflite). Both selectable
-> engines use that artifact and the authoritative COCO labels. The model has
-> not been retrained, fine-tuned, or replaced. Formal accuracy, benchmark,
-> thermal, memory, and broad-device evidence remains pending.
-
+> **Current implementation note (local `main`, 2026-11-16):** the bundled
+> detector is the 14-class campus model and the optional depth asset is
+> `yolo26n-depth`; both run through the native Ultralytics plugin. Older YOLOv8
+> artifact measurements and thesis targets below are historical planning/evidence,
+> not claims about the current model. No current-model accuracy or benchmark
+> result is recorded here.
 ---
 
 ## Research Paper
 
-### Current Paper
+### Existing thesis draft (model description is historical)
 
 **Title:** EyeCue: Real-Time On-Device Object Detection for Visually Impaired Navigation
 
-The paper evaluates whether on-device object detection (YOLOv8n TFLite) can serve as an assistive navigation aid. Key evaluation metrics:
+The existing draft describes YOLOv8n TFLite; that model description predates the current campus detector. Its research questions and proposed metrics remain draft material, not current implementation evidence:
 
 - Detection accuracy
 - Latency (target: ≤300ms)
@@ -86,31 +84,27 @@ See [this discussion in chat_spec.md](../chat_spec.md) for the full analysis.
 - [ ] Battery consumption (% per minute of active detection)
 - [ ] Thermal throttling behavior
 
-### Model Variants Available
+### Historical model artifacts (not current runtime assets)
 
-> The "quantization" column below reflects **runtime introspection** (see [`implementation-decisions.md`](implementation-decisions.md) §4 / [`inference-tensor-diagnosis.md`](inference-tensor-diagnosis.md)) — never assumed from filenames.
+> The following table records older YOLOv8 artifacts. They are not bundled by
+> current `pubspec.yaml`; measurements are historical and should not be used as
+> current-model results.
 
 | File | I/O precision | Weights / internal types | Notes |
 |------|---------------|--------------------------|-------|
-| `yolov8n_int8_new_metadata.tflite` | FLOAT32 (in/out) | INT8 (356), INT32 (90), FLOAT32 (2) | **Current unreleased runtime artifact** — generated from the byte-identical base graph `yolov8n_int8_new.tflite`; classified *Weight-Quantized*. Input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]`. Declared in `pubspec.yaml`; structurally validated and initially exercised on-device, but not formally benchmarked or accuracy-validated. |
-| `yolov8n.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | **Stable v0.2.2 baseline** — classified *Weight-Quantized*. Input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`. Despite its name it is **not** full INT8. |
-| `yolov8n_int8.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | Same weight-quantized structure; present in `assets/` but **not declared in pubspec** (not loadable at runtime). |
+| `yolov8n_int8_new_metadata.tflite` | FLOAT32 (in/out) | INT8 (356), INT32 (90), FLOAT32 (2) | **Historical NCHW/XNNPACK candidate** — generated from the byte-identical base graph `yolov8n_int8_new.tflite`; classified *Weight-Quantized*. Input `[1, 3, 640, 640]` (NCHW), output `[1, 84, 8400]`. Previously declared in `pubspec.yaml`; not a current runtime asset. |
+| `yolov8n.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | **Historical v0.2.2 baseline** — classified *Weight-Quantized*. Input `[1, 640, 640, 3]` (NHWC), output `[1, 84, 8400]`. Despite its name it is **not** full INT8. |
+| `yolov8n_int8.tflite` | FLOAT32 (in/out) | INT8 (62 tensors) | Same weight-quantized structure; historical artifact; absent from the current runtime bundle. |
 | `yolov8n_int8ReLU.tflite` | — | — | GPU-compatible variant from the React Native prototype; **no longer present** in this repository's `assets/`. |
 
-### Current Candidate Verification Boundary
+### Current model evidence boundary
 
-The candidate's flatbuffer structure was inspected independently and is covered
-by [`tool/validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart). Runtime
-I/O is FLOAT32/FLOAT32, so the candidate does not require input quantization or
-output dequantization; its NCHW shape requires layout-aware preprocessing and
-rotation. The candidate is bundled in the generated debug APK and has now been
-installed on the API 33 test phone after storage cleanup. A short live run
-completed 65 XNNPACK-labelled frames with 164.8 ms calculated mean latency and
-approximately 5.7–6.2 app-reported inference FPS; a separate observation
-returned one `tv` at 67.9% confidence and 113.7 ms. These are initial runtime
-observations only: candidate accuracy, formal benchmark performance, thermal/
-memory behavior, long-duration stability, and complete graph delegation remain
-unverified.
+The current campus artifact identity, size, labels, and provenance note are in
+[`model-assets.md`](model-assets.md). Historical short-run measurements for the
+older NCHW/XNNPACK candidate are retained in [`benchmark-results.md`](benchmark-results.md);
+they do not measure the campus detector. Accuracy, latency, thermal/memory
+behaviour, and broad-device validation for the current model remain open in the
+available records.
 
 ---
 
@@ -118,7 +112,7 @@ unverified.
 
 ### Short-Term (Thesis Scope)
 
-Status reflects the v0.2.x implementation:
+This list records a mixture of older thesis planning and implemented features; check current source before treating any status as a present-day roadmap:
 
 - ~~Priority-based TTS queue: person > vehicle > obstacle > furniture > other~~ — ✅ Implemented (v0.2.0): class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart).
 - ~~Spatial audio cues: "person on your left" using binaural panning~~ — 🟡 Partially implemented: positional phrasing ("person on your left") via [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart); binaural panning not done.
@@ -129,7 +123,7 @@ Status reflects the v0.2.x implementation:
 ### Long-Term (Post-Thesis)
 
 - Custom model fine-tuned on assistive-specific classes (crosswalk, stairs, door, curb)
-- Depth estimation for distance-to-object reporting
+- Depth estimation for distance-to-object reporting — implemented as optional MDE; calibration and device validation remain open
 - Optical character recognition (OCR) for reading signs/text
 - Offline maps integration for navigation context
 - Wearable device support (smart glasses form factor)
@@ -149,9 +143,9 @@ Status reflects the v0.2.x implementation:
 ### Potential Panel Questions
 
 - "How can 300ms latency correspond to 15 FPS?" → Redefine metrics clearly
-- "Why Flutter instead of native Android?" → Cross-platform, faster UI development, GPU rendering
+- "Why Flutter with Android as the supported platform?" → Explain the project decision from its dated rationale; do not claim current multi-platform support.
 - "Why not use a cloud API?" → Privacy, offline use, latency
-- "How did you validate accuracy?" → The model is COCO-pre-trained and has passed controlled engineering checks, but application-level accuracy metrics and the target-user study have not yet been collected; do not present pre-training as an accuracy result.
+- "How did you validate accuracy?" → The current detector is campus-trained. The repository records no application-level accuracy metrics or target-user results; do not present model metadata or engineering checks as an accuracy result.
 - "What about false positives?" → Confidence threshold, priority-based TTS reduces noise
 
 ### Metric Definitions (To Finalize)

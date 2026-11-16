@@ -6,6 +6,12 @@ path: /integrations/flutter/performance/
 
 # Performance Guide
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
 Good performance comes from choosing the right model, limiting unnecessary work, and testing on real devices.
 
 ## 📦 Choose the Right Model

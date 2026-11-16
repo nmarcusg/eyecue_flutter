@@ -1,5 +1,10 @@
 # Automatic obstacle alert responsiveness
 
+The alert controls and speech policy are shared by public and Study builds.
+Trial configuration snapshots and trial records in **Research records** below
+are Study-only: `lib/main_study.dart` wires `ResearchSessionService`, while
+public `lib/main.dart` does not provide a trial recorder.
+
 Automatic speech uses the latest valid inset-region median from fresh,
 geometry-matched numerical depth. The presentation EMA is separate and advances
 once per current track/depth observation, so repeated detector callbacks cannot

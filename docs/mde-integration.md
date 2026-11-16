@@ -1,20 +1,19 @@
 # EyeCue — Monocular Depth Estimation (MDE) Integration
 
-> **Status:** Implemented and carried on `feat/granular-inference-cadence` above
-> the integrated MDE line. Verified on this branch with `flutter analyze --no-pub`
-> (4 pre-existing issues) and `flutter test --no-pub` (527 passing, 1 pre-existing
-> failure). No release build, device run or measurement has been performed on
-> this branch, so depth accuracy, on-device latency, thermal behaviour and the
-> manual matrix below are **unverified on hardware**. Metres are estimates, not
-> measurements.
+> **Status at local `main` (`aadf9e0`, 2026-11-16):** the optional MDE path and
+> cadence controls are present in source. The analysis/test counts below are
+> dated results from earlier branches, not a run on this checkout. No release
+> build or device measurement is claimed for this baseline; depth accuracy,
+> latency, thermal behaviour and the manual matrix remain unverified here.
+> Metres are estimates, not calibrated measurements.
 
 ## What changed
 
 EyeCue now has **one detection engine** (`ultralytics_yolo`, `YOLOView`) and an
 **optional second model instance** that estimates metric depth from the same
-camera session. The Custom EyeCue Dart/TFLite engine, `tflite_flutter` and the
-Gradle classic-LiteRT workaround were removed in the same branch; see
-[`architecture.md`](architecture.md).
+camera session. The earlier Custom EyeCue Dart/TFLite engine and
+`tflite_flutter` were removed before this baseline; that transition also removed
+the old Gradle classic-LiteRT workaround. See [`architecture.md`](architecture.md).
 
 Two independent user preferences control presentation, plus one mode control:
 
@@ -24,10 +23,11 @@ Two independent user preferences control presentation, plus one mode control:
 - **Show depth heatmap** (default on; the switch is disabled and its value kept
   while the mode is `boundingBoxApproximation`).
 
-Settings schema version is `5`: the distance/overlay work added the `3 → 4`
-fields and the inference-cadence work added `4 → 5` (`detectionTargetHz`,
-`depthTargetHz`). The parser is field-tolerant, so older JSON loads with the
-defaults and unknown modes fall back to `monocularDepth`.
+The current persisted-settings schema is `8` (`AppSettings.currentSchemaVersion`).
+Distance/overlay settings and cadence targets were introduced at schema versions
+4 and 5; safety acknowledgement, detector selection, and alert-distance settings
+later advanced it to 8. The parser remains field-tolerant, so older JSON loads
+with defaults and unknown distance modes fall back to `monocularDepth`.
 
 ## Architecture and data flow
 
@@ -154,7 +154,7 @@ asset, exactly like the detection model, and is loaded through the same
 `YOLOModelResolver` → `_copyFlutterAssetToDocuments` → `inspectModel` → native
 `loadModel` path that detection already proves on device.
 
-The previous design passed the official model id and let the plugin download
+The earlier design passed the official model id and let the plugin download
 `yolo26n-depth_w8a32.tflite` on first use into
 `<documents>/mobile-standard-v1/`. That could never work in a release build: at
 the time the release manifest declared only `CAMERA` (`INTERNET` existed solely
@@ -165,7 +165,8 @@ entirely instead of widening permissions, so the assistive path also works with
 no connectivity. In the current variant split, only the Study manifest declares
 `INTERNET` for optional manual research-telemetry upload. The public release has
 no `INTERNET` permission; detection and depth make no network requests in either
-release. Speech is delegated to the installed Android TTS engine, which may fetch
+release. Public `main.dart` does not wire Logs & Reports or research-session
+storage; Study startup in `lib/main_study.dart` does. Speech is delegated to the installed Android TTS engine, which may fetch
 voice data using its own permissions and network access.
 
 `shortcut:` the plugin copies an asset once into the documents dir keyed by
@@ -431,8 +432,9 @@ would need the frame the gate governs.
 
 ## Verification performed
 
-Commands run in `/home/nico/repos/eyecue_flutter-cadence` on
-`feat/granular-inference-cadence` (2026-10-23):
+Historical commands run in `/home/nico/repos/eyecue_flutter-cadence` on
+`feat/granular-inference-cadence` (2026-10-23); these results do not verify
+current local `main`:
 
 | Command | Result |
 |---|---|
@@ -469,17 +471,17 @@ Depth accuracy and the achieved on-device cadence remain **unmeasured** — see 
 table below.
 
 Earlier MDE-branch evidence (452 passing / 1 failing and an 82.9 MB release APK)
-is historical: it belongs to `/home/nico/repos/eyecue_flutter-mde` at base
-`dev@94f74d8` and does not verify this merged branch. No release build was run
-here, and the packaged library set was not re-inspected.
+belongs to `/home/nico/repos/eyecue_flutter-mde` at base `dev@94f74d8`; it is
+historical and does not verify current local `main`. The test-count records
+above are retained for provenance, not as current suite status.
 
 ### Measured vs unmeasured performance
 
 | Metric | Status |
 |---|---|
-| `flutter analyze --no-pub` / `flutter test --no-pub` | **Measured** (above) |
-| APK size | **Not measured on this branch**; the historical MDE-branch release APK was 82.9 MB |
-| Detection FPS / inference latency | **Not measured on this branch** (no device). Do not reuse older numbers. |
+| `flutter analyze --no-pub` / `flutter test --no-pub` | No run recorded for local `main`; older branch results above are historical |
+| APK size | **Not measured on local `main`**; the historical MDE-branch release APK was 82.9 MB |
+| Detection FPS / inference latency | **Not measured on local `main`** (no device). Do not reuse older numbers. |
 | Depth inference latency / cadence achieved | **Not measured**. The cadence target is a request, not an observed rate. |
 | Depth accuracy (metres) | **Not measured.** Uncalibrated model output. |
 | Thermal / battery impact | **Not measured.** |
@@ -517,7 +519,7 @@ results table — is [`benchmark-procedure.md`](benchmark-procedure.md). **No
 | Component | License |
 |---|---|
 | `ultralytics_yolo` Flutter plugin | AGPL-3.0 |
-| YOLOv8n detection and YOLO26n-depth weights | AGPL-3.0 |
+| Campus detector and YOLO26n-depth weights | AGPL-3.0 (provenance caveats in `THIRD_PARTY_NOTICES.md`) |
 | LiteRT / TFLite runtime (used by the plugin) | Apache-2.0 |
 | `camera` / `camera_android_camerax` | BSD-3-Clause |
 | Flutter, Dart, `flutter_tts`, `permission_handler`, `path_provider`, `fl_chart`, `google_fonts` | BSD-3-Clause / MIT / Apache-2.0 as published |

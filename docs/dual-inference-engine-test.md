@@ -2,6 +2,9 @@
 
 # EyeCue — Custom vs Ultralytics Test
 
+> **Current status (2026-11-16):** The Custom vs Ultralytics comparison is retired: commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9) removed the Custom engine and the Settings engine selector. There is one active plugin-backed Detection path in [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) / [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Keep the dated runs and protocol as historical evidence; they are not a current comparison plan.
+
+
 > **Test totals in this document are historical.** They predate the Workstream 1
 > TTS relocation onto `origin/dev`; that suite has since been restructured and
 > has not been executed. Speech scheduling also changed: both engines now share a

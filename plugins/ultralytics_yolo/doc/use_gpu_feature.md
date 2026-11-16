@@ -1,5 +1,12 @@
 # `useGpu` Feature
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
+
 ## Overview
 
 `useGpu` lets you choose whether inference should prefer GPU-backed execution when the platform supports it.
@@ -57,6 +64,7 @@ from ultralytics import YOLO
 
 YOLO("yolo26n.pt").export(format="litert", nms=False, end2end=False, imgsz=640)
 # Classification models use imgsz=224.
+
 ```
 
 Here the FP32 model runs in FP16 on the LiteRT GPU delegate, `nms=False` leaves NMS to the plugin, and `end2end=False` keeps the YOLO26 raw head for the Android LiteRT conversion path. Keep `useGpu: true` and verify the actual delegate from LiteRT logs.

@@ -12,7 +12,7 @@ measured against it, not the other way round.
 |---|---|
 | Research session payloads | the study's primary data; fabricated rows corrupt the corpus |
 | Integrity of the research corpus | a forged or replayed write is worse than a missing one |
-| The database | the collection is the only copy of an uploaded session |
+| Server-side collection | integrity and availability of each accepted server record; the device may also retain a local trial, but that local file is not a guaranteed backup |
 | Researcher identity | a stolen credential is a person's access, not just a token |
 
 ## Adversary
@@ -47,7 +47,7 @@ token, and it is never shipped in the APK.
   the migration.
 * **Shape.** 43–128 characters from `[A-Za-z0-9_-]`, no padding. The client
   checks the shape as a UX courtesy only
-  ([`ResearchSessionMetadata.hasValidUploadToken`](../lib/services/telemetry_upload_service.dart:159));
+  ([`ResearchSessionMetadata.hasValidUploadToken`](../lib/services/telemetry_upload_service.dart#L159));
   the server re-checks it
   ([`isValidUploadTokenShape`](../supabase/functions/ingest-telemetry/validate.js))
   and trusts only the database for validity.

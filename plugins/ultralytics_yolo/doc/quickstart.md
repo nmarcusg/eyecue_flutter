@@ -6,6 +6,12 @@ path: /integrations/flutter/quickstart/
 
 # Quick Start Guide
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
 Get YOLO object detection running in your Flutter app in under 2 minutes! ⚡
 
 ## 🎯 Goal

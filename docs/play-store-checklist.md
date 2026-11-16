@@ -29,7 +29,7 @@ Still open — these are the actual pre-submission gates:
 | 1 | Production upload keystore + Play App Signing enrolment | **OWNER ACTION** — no keystore exists; every artefact so far is debug-signed (`-testsigned`) |
 | 2 | Privacy / Data Safety answers (D3) | **OWNER DECISION** — undecided; §2 below is the answer sheet |
 | 3 | Installed-startup verification on a real device | **NOT VERIFIED** — no device/AVD on the build host |
-| 4 | Privacy policy published at a public URL | **OWNER ACTION** — does not exist |
+| 4 | Privacy policy is available at a public URL and matches the app | **OWNER ACTION** — the public app links to `https://nmarcusg.github.io/eyecue_flutter/`; verify the live page, its contents, and availability before submission |
 | 5 | Legal review of AGPL-3.0 obligations | **OWNER ACTION** — items R1–R7 in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) §6 |
 
 Do not open a Play Console listing before gate 1 is settled; gates 2–5 determine
@@ -39,12 +39,12 @@ what can honestly be *declared*.
 
 | Requirement | State |
 | --- | --- |
-| Publicly reachable URL, no login, no PDF-only | **OWNER ACTION** |
+| Publicly reachable URL, no login, no PDF-only | **OWNER ACTION** — verify the configured URL live; repository source cannot establish hosting or page contents |
 | States what is collected (camera frames not collected; research telemetry when the user uploads) | content ready in [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §1–§5 |
 | States retention period | **OWNER DECISION** — not defined in code (§6 there) |
 | States deletion request process | **OWNER DECISION** — no in-app path (§6 there) |
 | States the app is intended for research/assistive use and its limits | **OWNER ACTION** — wording is a study/company decision |
-| Linked in the Play listing and inside the app | Play listing is owner action; the app currently has **no** in-app link to a policy — that gap must be closed before submission |
+| Linked in the Play listing and inside the app | Play listing is owner action; the public Help screen has a button that opens the configured URL in an external browser. EyeCue Study hides this button. Verify the destination and listing link before submission. |
 
 *verify current Google Play policy at submission time* — the exact policy URL and
 content requirements (and whether a data-deletion URL is mandatory) change.
@@ -56,9 +56,10 @@ answers each field from code or marks it **OWNER DECISION**.
 
 Blocking items before the form can be answered truthfully:
 
-1. **Encryption in transit** — the client only checks that the ingest URL has a
-   scheme, not that it is `https` (P3). Declare "encrypted" only after the deployed
-   URL is pinned to `https`.
+1. **Encryption in transit** — the client accepts only `https` for release upload
+   endpoints and refuses to send to other schemes. The code does not verify the
+   deployed service's TLS configuration or certificate pinning; confirm the actual
+   endpoint and answer the Play form for the deployed system.
 2. **Device model / Android version** — not collected today; if the study wants them,
    the answer and the privacy policy change first.
 3. **Deletion request** — a documented manual process is required.
@@ -213,9 +214,9 @@ production-access application is required for this account type.
 | Final `applicationId` (gate 2) | no — decided | **DECIDED** — `app.eyecue.mobile` |
 | App licence (gate 3) | no — decided | **DECIDED** — `AGPL-3.0-only` (§15) |
 | Device startup verification (gate 4) | yes for any quality claim | **NOT VERIFIED** |
-| Privacy policy live (gate 5) | yes | **OWNER ACTION** |
+| Privacy policy URL and content live (gate 5) | yes | **OWNER ACTION** — configured URL exists in public Help; hosted page status/content not verified |
 | Legal review (gate 6) | yes | **OWNER ACTION** |
-| Data safety form answerable as-is | no — P3/P2/P4 open | [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1 |
+| Data safety form answerable as-is | owner must decide retention, participant-code handling, and sharing classification; validate hosted policy | [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1 |
 | Listing copy / screenshots | yes | **OWNER ACTION** |
 | Complete source published for each released binary (AGPL-3.0 §5/§6) | yes | **OWNER ACTION** — §15 |
 

@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-11-16 — Workspace consolidation and documentation reconciliation
+
+### Scope and evidence
+
+Reviewed current local `main` at `aadf9e0` against entry points, native manifests/Gradle, model configuration and labels, persistence/export contracts, tests and workflow definitions. Reconciled current guidance and dated history across the documentation tree, including nested design records and vendored package documentation; file-level coverage is recorded in [documentation audit](documentation-audit.md).
+
+### Maintenance
+
+Kept `/home/nico/repos/eyecue_flutter` as the active checkout; verified compressed snapshots and Git bundles preserve former worktrees, the older React Native project, design prototype and research scratch files under `/home/nico/repos/eyecue-archive/2026-11-16`. Removed generated caches/build output. Existing `.gitignore` and session-log edits were preserved during consolidation.
+
+### Documentation changes
+
+Current docs distinguish public/Study entry points and permissions, the 14-label campus detector, one native inference engine, optional depth, settings schema 8, export schema 4, build/signing automation and privacy-policy behavior. Superseded plans/measurements remain explicitly historical. Removed obsolete current-roadmap requirements for the deleted Custom engine and unsupported completion/time estimates.
+
+### Validation limits
+
+This is a documentation and repository-maintenance session. No new Flutter analyzer/test result, APK/AAB build, device run, research measurement, backend upload or Play Console status is claimed. Existing dated UI/test evidence was preserved with its original scope. See the audit for source/link validation outcomes.
+
+---
+
 ## 2026-11-09 — Detection alignment, heatmap and chart/Logs polish: device verification complete
 
 ### Context
@@ -261,7 +281,7 @@ sections of the documentation.
   [`thesis-product-status-audit.md`](thesis-product-status-audit.md),
   [`architecture.md`](architecture.md), [`ui-conventions.md`](ui-conventions.md),
   the frontend accessibility rule
-  ([`.roo/rules/rules-frontend/04-accessibility.md`](../.roo/rules/rules-frontend/04-accessibility.md)),
+  (`.roo/rules/rules-frontend/04-accessibility.md` (historical source)),
   [`changelog.md`](changelog.md) and this log now state the shipped behaviour:
   explicit speech ownership, screen identity on the first semantic node with no
   forced focus, a single automatic live-region failure owner
@@ -296,7 +316,7 @@ documentation without overstating device verification.
 
 ### Changed
 - [`ui-conventions.md`](ui-conventions.md) and the frontend accessibility rule
-  ([`.roo/rules/rules-frontend/04-accessibility.md`](../.roo/rules/rules-frontend/04-accessibility.md))
+  (`.roo/rules/rules-frontend/04-accessibility.md` (historical source))
   now state the speech-ownership rule (TalkBack owns UI/navigation/control/
   lifecycle/failure; EyeCue TTS owns objects, distance/approach, Quick Scan, and
   Repeat Last Alert; only the four lifecycle utterances are suppressed under
@@ -613,7 +633,7 @@ A device test produced an obstacle warning only after the user had already colli
 - Recorded the completed Settings typography/alignment, decorative icon removal, cyan active controls, Engine & Sensitivity hierarchy/indentation, truthful System Performance presentation, and unchanged Logs entry values/callback.
 - Recorded Help's icon-free card and app-bar title styling, plus the shared fixed light surface treatment for the scrolling Settings, Help, and Logs & Reports routes.
 - Recorded the Detection title contrast, edge-inset left-aligned information overlay, and two state-icon, left-aligned action cards. Existing lifecycle mappings, gesture behavior, action callbacks, hold/tap timing, Quick Scan gate, and semantics remain unchanged.
-- Recorded [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart:146) as the semantic 11%-white Settings action-surface token.
+- Recorded [`kHomeOverlayWhite11`](../lib/theme/app_colors.dart) as the semantic 11%-white Settings action-surface token.
 - Updated the applicable root documentation and synchronized only the changed curated copies of [`architecture.md`](architecture.md) and [`testing-plan.md`](testing-plan.md).
 
 ### Verified
@@ -633,19 +653,19 @@ A device test produced an obstacle warning only after the user had already colli
 - Implement the locked PD1–PD3 Detection redesign per [`detection-redesign-plan.md`](frontend-workflow/detection-redesign-plan.md): a unified, engine-parity Detection composition (PD1), one coordinator-driven consolidated physical lifecycle control (PD2), and a compact current-information overlay (PD3), without merging the Custom and Ultralytics camera/inference internals or changing the app-shell lifecycle policy.
 
 ### Completed
-- Implemented PD1–PD3 in both engine screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
+- Implemented PD1–PD3 in both engine screens — `detection_screen.dart` (historical source) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics).
 - **PD1:** dominant flexible camera viewport retained; top area keeps `Detection Mode`, the coordinator-derived status pill, and the Audio pill; exactly two side-by-side physical controls in one row beneath the viewport; no normal vertical scrolling. Removed from the normal UI: the detection card list, empty-state messages, `_GestureHint`, the visual `WarningBanner`, standalone Start/Stop, standalone Pause/Resume, visible Repeat, the standalone correction button, and correction/report actions on detection items. Correction removal is UI-only — [`CorrectionService`](../lib/services/correction_service.dart), its persistence, and the correction sheet remain intact. Ultralytics developer metrics were removed from the normal UI while telemetry collection is retained. The stopped viewport shell and [`GestureSurface`](../lib/widgets/gesture_surface.dart) are retained (Custom already did this; Ultralytics now does too).
 - **PD2:** one coordinator-driven consolidated lifecycle control. Ready tap Pause / hold 3s Stop; Paused tap Resume / hold 3s Stop; Stopped tap no-op / hold 3s Start; Preparing and Unavailable disabled. Visible copy: `PAUSE` + `HOLD 3 SEC TO STOP`; `RESUME` + `HOLD 3 SEC TO STOP`; `START` + `HOLD 3 SEC`; `PREPARING`; `UNAVAILABLE`. Progress starts at 0% on pointer down and fills continuously over the full three seconds; `kLongPressTimeout` only flips the secondary copy to `KEEP HOLDING` without restarting progress; early release maps to tap; release after the timeout but before three seconds is an abandoned hold with no action; completion dispatches exactly once with a duplicate-dispatch lock; existing engine-owned completion TTS/haptics are reused without duplication. Quick Scan is tap-only, Ready/healthy-fallback only, and disabled during an active physical hold.
 - **PD3:** compact in-viewport informational overlay, maximum two rows, stable High-priority promotion preserving source order, no confidence/debug/metric values, dark translucent container using the existing overlay token, cyan/neutral normal and amber high-priority accent, no animations, one manual non-live informational semantics node per row, hidden outside Ready/healthy fallback.
 - Added the shared presentation widgets [`detection_action_controls.dart`](../lib/widgets/detection_action_controls.dart) (`DetectionActionControls`) and [`detection_information_overlay.dart`](../lib/widgets/detection_information_overlay.dart) (`DetectionInformationOverlay`).
 
 ### Runtime Repairs (post-implementation, on-device)
-- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in [`detection_screen.dart`](../lib/screens/detection_screen.dart) (mirroring the Ultralytics screen).
-- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in [`detection_screen.dart`](../lib/screens/detection_screen.dart).
+- **Custom infinite-height layout cascade:** fixed by wrapping the shared control row in `IntrinsicHeight` in `detection_screen.dart` (historical source) (mirroring the Ultralytics screen).
+- **Custom `setState() or markNeedsBuild() called during build`:** fixed by deferring the one-shot start intent to a post-frame callback in `detection_screen.dart` (historical source).
 - **Ultralytics Stop → Start stuck in Preparing:** fixed by recreating the native session on start-after-stop (native-view epoch in the `YOLOView` key, an `_activeNativeEpoch` stale-`onModelLoad` guard, and a `_startInFlight` duplicate-start guard) in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart). Native `stop()` permanently destroys the predictor and is not reversible by `start()`.
 
 ### Behavioral-Deviation Audit
-- Result: **no unintended deviations.** Proven unchanged from baseline `f310e73`: `InferenceService`, [`inference_isolate.dart`](../lib/services/inference_isolate.dart), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
+- Result: **no unintended deviations.** Proven unchanged from baseline `f310e73`: `InferenceService`, `inference_isolate.dart` (historical source), `_processCameraImage()`, model initialization, XNNPACK configuration, preprocessing, rotation, NMS, confidence thresholds, detection ordering, bounding-box coordinates, [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart), [`AssistiveDetectionController`](../lib/services/assistive_detection_controller.dart), [`DetectionInfo`](../lib/models/detection_info.dart), spatial analysis, telemetry service, haptics service, correction service, and the Ultralytics adapter/model configuration. Custom Pause keeping the preview live is pre-existing baseline behavior, not a regression.
 
 ### Verified
 - `flutter analyze`: 0 issues.
@@ -671,7 +691,7 @@ A device test produced an obstacle warning only after the user had already colli
 
 ### Completed
 - Promoted [`EngineCoordinator`](../lib/services/engine_coordinator.dart) from a Detect-tab-local runtime observer to the single app-shell-owned, user-facing Detection lifecycle/status source. [`app_shell.dart`](../lib/navigation/app_shell.dart) now constructs exactly one coordinator for the shell lifetime and injects it into Home and [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart); the coordinator is no longer constructed/disposed inside `_EngineDetectionScreenState`.
-- Home and both Detection implementations (Custom [`detection_screen.dart`](../lib/screens/detection_screen.dart) and Ultralytics [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart)) now render visible status (Preparing / Ready / Paused / Stopped / Unavailable) from the same coordinator snapshot via a shared mapping. Engine-local booleans remain only for camera/controller/inference mechanics and no longer select user-facing lifecycle/status content.
+- Home and both Detection implementations (Custom `detection_screen.dart` (historical source) and Ultralytics [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart)) now render visible status (Preparing / Ready / Paused / Stopped / Unavailable) from the same coordinator snapshot via a shared mapping. Engine-local booleans remain only for camera/controller/inference mechanics and no longer select user-facing lifecycle/status content.
 - Added a `stopped` runtime state to [`detection_runtime_state.dart`](../lib/models/detection_runtime_state.dart) so an explicit manual stop is distinguishable from `idle` (never started) and `disposed` (teardown); every exhaustive state mapping (including [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart) and [`status_pill.dart`](../lib/widgets/status_pill.dart)) handles the new state.
 - Added start-intent / entry-start / stop APIs to [`engine_coordinator.dart`](../lib/services/engine_coordinator.dart): a monotonic one-shot start-intent token (silent launch origin versus user-entry origin) plus guarded transition APIs.
 - **Auto-start ON:** app launch keeps Home visible while Detection initializes/starts in the background; the shared status moves Preparing → Ready/Unavailable; opening Detection later reuses the already-initialized cached instance without a second start.
@@ -703,7 +723,7 @@ A device test produced an obstacle warning only after the user had already colli
 - Added the persisted `hideBottomNavigation` preference to [`app_settings.dart`](../lib/models/app_settings.dart) (default `false`, backward-compatible parse for older JSON) with a matching getter/setter on [`settings_service.dart`](../lib/services/settings_service.dart) and a labeled Preferences control in [`settings_screen.dart`](../lib/screens/settings_screen.dart). The control represents the persisted preference, not the effective accessibility override.
 - Added one-finger linear, non-wrapping primary navigation in [`app_shell.dart`](../lib/navigation/app_shell.dart): a body-only, arena-aware horizontal drag layer moves linearly through Home → Detection → Settings → Help and does not modulo-wrap. A boundary attempt stays on the current tab and emits boundary feedback once.
 - Added Detection directional arbitration in [`gesture_controller.dart`](../lib/services/gesture_controller.dart): the first committed directional intent for a one-pointer sequence is locked (horizontal commit prevents a later downward repeat and vice versa), a second pointer before commitment invalidates one-pointer directional classification, and pointer cancellation suppresses every delayed or directional action from that sequence. Existing single-tap, two-finger double-tap, three-finger-tap, and downward-repeat intents are unchanged.
-- Added Detection-owned horizontal navigation: [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) carries a stable relative-navigation callback to both [`detection_screen.dart`](../lib/screens/detection_screen.dart) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), which forward horizontal intents while preserving the existing downward repeat mapping. The viewport-only [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) remains the only raw-pointer implementation.
+- Added Detection-owned horizontal navigation: [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) carries a stable relative-navigation callback to both `detection_screen.dart` (`lib/screens/detection_screen.dart`, historical source) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart), which forward horizontal intents while preserving the existing downward repeat mapping. The viewport-only [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) remains the only raw-pointer implementation.
 - Added light/medium haptic wayfinding at the shell gesture-origin path only: `lightTick` on successful relative navigation and `mediumTick` on a committed boundary attempt; no haptic on insufficient drag or cancellation, and never `heavyTick` for routine navigation.
 - Added a minimal best-effort, drop-if-busy wayfinding API to [`tts_service.dart`](../lib/services/tts_service.dart) for destination/boundary phrases. It is suppressed when audio is disabled or accessible-navigation mode is on, never interrupts or delays Detection speech, and preserves Detection replay state.
 - [`app_shell.dart`](../lib/navigation/app_shell.dart) now derives effective bottom-bar visibility from the persisted `hideBottomNavigation` preference plus `MediaQuery.accessibleNavigationOf`: the bar is forced visible whenever accessible-navigation mode is active, and the accessibility override is never written back to the persisted preference. When accessibility mode turns off, the persisted preference takes effect again.
@@ -726,10 +746,10 @@ A device test produced an obstacle warning only after the user had already colli
 ## 2026-09-10 (21st session) — Detection Screen Visual Redesign
 
 ### Objective
-- Implement the approved visual-only Detection-screen redesign per [`detection-screen-plan.md`](detection-screen-plan.md), [`detection-screen-design-spec.md`](detection-screen-design-spec.md), and [`detection-screen-analysis.md`](detection-screen-analysis.md), preserving the existing camera/inference architecture, gestures, TTS/haptics/telemetry/correction flow, runtime-state reporting, engine fallback, navigation, and accessibility contracts.
+- Implement the approved visual-only Detection-screen redesign per `detection-screen-plan.md` (historical source), `detection-screen-design-spec.md` (`detection-screen-design-spec.md`, historical source), and `detection-screen-analysis.md` (historical source), preserving the existing camera/inference architecture, gestures, TTS/haptics/telemetry/correction flow, runtime-state reporting, engine fallback, navigation, and accessibility contracts.
 
 ### Completed
-- Restyled both Detection child screens — [`detection_screen.dart`](../lib/screens/detection_screen.dart) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics) — as a visual-only change. Both now scope the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) to the Detection subtree with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), using the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light chrome does not leak into Home, Help, Settings, Logs & Reports, or the shell navigation bar.
+- Restyled both Detection child screens — `detection_screen.dart` (historical source) (Custom) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) (Ultralytics) — as a visual-only change. Both now scope the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) to the Detection subtree with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), using the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light chrome does not leak into Home, Help, Settings, Logs & Reports, or the shell navigation bar.
 - The camera viewport is now a rounded dark card (`kHomeInk`, `kRadius24`, clipped). The viewport stack (`FittedBox` → `CustomPaint(BoundingBoxPainter)` → `_GestureHint` → `GestureSurface`) and the `applyBoxFit` overlay math are unchanged; the Ultralytics `YOLOView` native overlay is unchanged. No `LIVE CAMERA` label was added.
 - The header keeps the single `Detection Mode` title using the theme's `titleLarge` (non-bold `w600`, matching the Settings/Help `AppBar` title style) with the `StatusPill` retained as its own live-region element. The `StatusPill` and the `AUDIO ON` pill share one horizontal row, with the audio pill end-aligned right; the Ultralytics performance line and error text remain below that row.
 - Replaced the circular audio `IconButton` with an inline `AUDIO ON` / `AUDIO OFF` pill (private `_AudioPill` helper colocated in each screen file): `kHomeSurfaceCard`, `kRadius20`, `kHomeShadowSoft`, `kSpace8` leading dot (`kHomeAccentCyan` on / `kHomeInkMuted` off), uppercase `labelMedium` label with `letterSpacing: 0.5`, `kSpace12`/`kSpace6` padding (matching `StatusPill`), and a ≥48dp touch target. Toggle behavior, tooltip text, enabled state, and the `ListenableBuilder` merge are preserved; the pill exposes a semantic label/role/state.
@@ -742,7 +762,7 @@ A device test produced an obstacle warning only after the user had already colli
 
 ### Post-Implementation Fixes (on-device)
 - **Classification:** implementation bug (not a spec gap). The plan §1.1 preserves the "no overflow at 200% text scale" contract and §5.4/§4.6 preserve the fixed-height controls region; the restyle increased the fixed content's intrinsic height without adjusting the region floor.
-- **Overflow:** the physical SM S9010 (Android 15/API 35) showed `BOTTOM OVERFLOWED BY 74 PIXELS`. Traced to [`_buildControlsPanel()`](../lib/screens/detection_screen.dart:1048) / [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:633): the fixed-height region (`contentHeight` clamped 200–320) could not fit the two-row five-button `Wrap` (~120dp) plus the gesture-hint text at the 200dp floor. Fixed by wrapping the panel content in a `SingleChildScrollView` (detection list bounded to `maxHeight: 160`, still scrolling internally) and raising the clamp floor from `200.0` to `260.0` in both screens.
+- **Overflow:** the physical SM S9010 (Android 15/API 35) showed `BOTTOM OVERFLOWED BY 74 PIXELS`. Traced to `_buildControlsPanel()` (`lib/screens/detection_screen.dart`, historical source) / [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart#L633): the fixed-height region (`contentHeight` clamped 200–320) could not fit the two-row five-button `Wrap` (~120dp) plus the gesture-hint text at the 200dp floor. Fixed by wrapping the panel content in a `SingleChildScrollView` (detection list bounded to `maxHeight: 160`, still scrolling internally) and raising the clamp floor from `200.0` to `260.0` in both screens.
 - **`AUDIO ON` pill padding:** reduced from `kSpace16` to `kSpace12`/`kSpace6` to match the `StatusPill` treatment.
 - **Header alignment:** the `Detection Mode` title now uses the theme's `titleLarge` (non-bold `w600`) instead of the `w800` override, and the header top padding was raised to `kSpace16`, matching the Settings/Help `AppBar` title position. The `StatusPill` and `AUDIO ON` pill now share one horizontal row with the audio pill end-aligned right.
 
@@ -766,7 +786,7 @@ A device test produced an obstacle warning only after the user had already colli
 ## 2026-09-10 (20th session) — Logs & Reports Screen Visual Restyle
 
 ### Objective
-- Implement the approved visual-only restyle of the existing pushed Logs & Reports route per [`logs-reports-screen-plan.md`](logs-reports-screen-plan.md), [`logs-reports-screen-design-spec.md`](logs-reports-screen-design-spec.md), and [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md), preserving the existing architecture, telemetry/export/correction bindings, navigation, and accessibility contracts.
+- Implement the approved visual-only restyle of the existing pushed Logs & Reports route per `logs-reports-screen-plan.md` (historical source), `logs-reports-screen-design-spec.md` (`logs-reports-screen-design-spec.md`, historical source), and `logs-reports-screen-analysis.md` (historical source), preserving the existing architecture, telemetry/export/correction bindings, navigation, and accessibility contracts.
 
 ### Completed
 - Restyled [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) as a visual-only change: the route now scopes the existing Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) locally with dark status-bar icons (`AnnotatedRegion<SystemUiOverlayStyle>`), scoped to the pushed route only and not leaking into the shell navigation bar or other tabs.
@@ -793,7 +813,7 @@ A device test produced an obstacle warning only after the user had already colli
 ## 2026-09-10 (19th session) — Settings Screen Visual Redesign
 
 ### Objective
-- Implement the approved visual-only Settings-screen redesign per [`settings-screen-plan.md`](settings-screen-plan.md), [`settings-screen-design-spec.md`](settings-screen-design-spec.md), and [`settings-screen-analysis.md`](settings-screen-analysis.md), preserving the existing architecture, navigation, and runtime behavior.
+- Implement the approved visual-only Settings-screen redesign per `settings-screen-plan.md` (historical source), `settings-screen-design-spec.md` (`settings-screen-design-spec.md`, historical source), and `settings-screen-analysis.md` (historical source), preserving the existing architecture, navigation, and runtime behavior.
 
 ### Completed
 - Redesigned [`settings_screen.dart`](../lib/screens/settings_screen.dart) as a light, responsive composition that reuses the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light surface is scoped to the Settings subtree only and does not leak into the shell navigation bar or other tabs.
@@ -820,7 +840,7 @@ A device test produced an obstacle warning only after the user had already colli
 ## 2026-09-09 (18th session) — Help Screen Visual Redesign
 
 ### Objective
-- Implement the approved visual-only Help-screen redesign per [`help-screen-plan.md`](help-screen-plan.md), [`help-screen-design-spec.md`](help-screen-design-spec.md), and [`help-screen-analysis.md`](help-screen-analysis.md), preserving the existing architecture, navigation, and runtime behavior.
+- Implement the approved visual-only Help-screen redesign per `help-screen-plan.md` (historical source), `help-screen-design-spec.md` (`help-screen-design-spec.md`, historical source), and `help-screen-analysis.md` (historical source), preserving the existing architecture, navigation, and runtime behavior.
 
 ### Completed
 - Redesigned [`help_screen.dart`](../lib/screens/help_screen.dart) as a light, responsive, accessible composition that reuses the Home-local light theme [`buildHomeTheme()`](../lib/theme/app_home_theme.dart) and the existing `kHome*`/`kSpace*`/`kRadius*` tokens as-is (no theme/token file change). The light surface is scoped to the Help subtree only and does not leak into the shell navigation bar or other tabs.
@@ -848,7 +868,7 @@ A device test produced an obstacle warning only after the user had already colli
 ## 2026-09-09 (17th session) — Home Screen Visual Redesign
 
 ### Objective
-- Implement the approved visual-only Home-screen redesign per [`home-screen-plan.md`](home-screen-plan.md), [`home-screen-design-spec.md`](home-screen-design-spec.md), and [`home-screen-analysis.md`](home-screen-analysis.md), preserving the existing architecture, navigation, and runtime behavior.
+- Implement the approved visual-only Home-screen redesign per `home-screen-plan.md` (historical source), `home-screen-design-spec.md` (`home-screen-design-spec.md`, historical source), and `home-screen-analysis.md` (historical source), preserving the existing architecture, navigation, and runtime behavior.
 
 ### Completed
 - Added the `kHome*` light semantic color tokens to [`app_colors.dart`](../lib/theme/app_colors.dart) and the `kRadius3`/`kRadius14`/`kRadius18`/`kRadius24` radius tokens to [`app_radii.dart`](../lib/theme/app_radii.dart).
@@ -879,8 +899,8 @@ A device test produced an obstacle warning only after the user had already colli
 - Complete the repository-owned implementation described in [`app-only-implementation-plan.md`](app-only-implementation-plan.md), finish deterministic Custom-worker lifecycle coverage, and synchronize current project documentation without guessing Android release identity or credentials.
 
 ### Completed
-- Extracted Custom-worker lifecycle orchestration into [`inference_worker_lifecycle.dart`](../lib/services/inference_worker_lifecycle.dart), including monotonic generations, stale-message rejection, bounded immediate/delayed retries, explicit retry, terminal failure, healthy-operation budget reset, and disposal-safe backoff.
-- Added the explicit `reportWorkerExit` contract to [`inference_isolate.dart`](../lib/services/inference_isolate.dart) and added seven deterministic lifecycle tests for respawn, stale callbacks, busy-gate release, delayed retry, terminal failure, disposal during backoff, and successful recovery.
+- Extracted Custom-worker lifecycle orchestration into `inference_worker_lifecycle.dart` (historical source), including monotonic generations, stale-message rejection, bounded immediate/delayed retries, explicit retry, terminal failure, healthy-operation budget reset, and disposal-safe backoff.
+- Added the explicit `reportWorkerExit` contract to `inference_isolate.dart` (historical source) and added seven deterministic lifecycle tests for respawn, stale callbacks, busy-gate release, delayed retry, terminal failure, disposal during backoff, and successful recovery.
 - Completed the shared runtime/error state, engine fallback coordination, persisted sensitivity, correction capture, movement tracking, scene summaries, recovery telemetry, image-free JSON/CSV export, accessibility semantics, and 200% text-scale coverage across the two independent inference engines.
 - Added deterministic metadata-packaging input safety and synchronized the model, telemetry CSV, testing, architecture, roadmap, status, known-issues, README, and changelog documentation.
 
@@ -991,8 +1011,8 @@ A device test produced an obstacle warning only after the user had already colli
 ### Completed
 - Reviewed the then-uncommitted model, inference, tensor-rotation, test, validator, and documentation changes before they were committed.
 - Confirmed the candidate model directly: `yolov8n_int8_new.tflite` is 3,481,792 bytes with input `[1,3,640,640]` / FLOAT32, output `[1,84,8400]` / FLOAT32, and 448 tensors (2 FLOAT32, 90 INT32, 356 INT8).
-- Added runtime NCHW preprocessing and a standalone layout-aware [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) helper. The helper has 14 focused tests covering NHWC/NCHW rotations, mirroring, equivalence, and guards.
-- Hardened the experimental XNNPACK path in [`inference_isolate.dart`](../lib/services/inference_isolate.dart): delegate ownership is retained for interpreter lifetime; setup failures and recoverable invocation failures retry on a four-thread CPU interpreter. Native SIGSEGV remains uncatchable.
+- Added runtime NCHW preprocessing and a standalone layout-aware `tensor_rotation.dart` (historical source) helper. The helper has 14 focused tests covering NHWC/NCHW rotations, mirroring, equivalence, and guards.
+- Hardened the experimental XNNPACK path in `inference_isolate.dart` (historical source): delegate ownership is retained for interpreter lifetime; setup failures and recoverable invocation failures retry on a four-thread CPU interpreter. Native SIGSEGV remains uncatchable.
 - Extended [`validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart) to cover the candidate model.
 - Synchronized current status, architecture, implementation progress/decisions, known issues, research notes, benchmark notes, testing plan, changelog, and README. The 2026-08-21 comprehensive assessment remains a historical snapshot.
 
@@ -1055,7 +1075,7 @@ A device test produced an obstacle warning only after the user had already colli
   appeared, and (2) Logs & Reports charts could extend beyond their container.
 
 ### Diagnosis
-- **Camera resizing:** [`detection_screen.dart`](../lib/screens/detection_screen.dart)
+- **Camera resizing:** `detection_screen.dart` (historical source)
   built a `Column` with the camera in `Expanded` and a content-sized controls
   panel whose card list height was `detections × 78` — so detection count drove
   the bottom panel's height and shrank the camera region.
@@ -1134,7 +1154,7 @@ A device test produced an obstacle warning only after the user had already colli
 - **Navigation:** 4-tab bottom bar (Home, Detect, Settings, Help) with lazy pages
   and state preservation ([`lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart)).
 - **Screens:** [`home_screen.dart`](../lib/screens/home_screen.dart),
-  [`detection_screen.dart`](../lib/screens/detection_screen.dart),
+  `detection_screen.dart` (historical source),
   [`settings_screen.dart`](../lib/screens/settings_screen.dart),
   [`help_screen.dart`](../lib/screens/help_screen.dart),
   [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart).
@@ -1233,7 +1253,7 @@ A device test produced an obstacle warning only after the user had already colli
   plus all 21 files under [`docs/`](.) and cross-checked against the source in
   `lib/`, `tool/`, `test/`, and `pubspec.yaml`.
 - **Verified NMS is implemented** (contradicting several status docs): the
-  isolate's [`_parseYolov8Output`](../lib/services/inference_isolate.dart)
+  isolate's `_parseYolov8Output` (`lib/services/inference_isolate.dart`, historical source)
   applies class-wise NMS (IoU 0.45) after a pre-NMS confidence threshold of
   0.25. Fixed the stale "NMS missing" claims across:
   - [`README.md`](../README.md)
@@ -1277,7 +1297,7 @@ A device test produced an obstacle warning only after the user had already colli
   `DeviceOrientation` convention), `displayRotationDegrees` (metadata-driven,
   per-lens), `uprightDims`, and reversible `rotateRect`/`invertRect` +
   `mirrorRect`. No hardcoded angles.
-- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) —
+- `inference_isolate.dart` (historical source) —
   `processFrame` carries orientation metadata; isolate rotates + optionally
   X-mirrors the 640×640 NHWC input to UPRIGHT before `interpreter.run()`
   (lossless square transpose). Parser/NMS untouched; boxes after NMS are
@@ -1290,7 +1310,7 @@ A device test produced an obstacle warning only after the user had already colli
   stripped of all lens/mirror/orientation logic; now a pure normalized→pixel
   mapper over the upright image (`applyBoxFit` identical to the preview
   `FittedBox`).
-- [`forensic_log.dart`](../lib/services/forensic_log.dart) — `recordOrientation`
+- `forensic_log.dart` (historical source) — `recordOrientation`
   per frame + sensor/lens fields in `recordCamera`.
 - `flutter analyze`: 0 issues.
 
@@ -1326,7 +1346,7 @@ A device test produced an obstacle warning only after the user had already colli
 - `camera_screen.dart` — strict 3:4
   portrait preview anchored to the top (`AspectRatio(3/4)` + `BoxFit.contain`);
   permanent bottom panel with exactly two Material tabs (Metrics, Detections).
-- [`info_panel.dart`](../lib/widgets/info_panel.dart) — Metrics tab (live FPS,
+- `info_panel.dart` (historical source) — Metrics tab (live FPS,
   avg FPS, inference time, latency, confidence stats, resolutions, model info,
   backend, quantization, threads) and Detections tab (chronological history,
   capped 50, 1-second age timer).
@@ -1361,7 +1381,7 @@ A device test produced an obstacle warning only after the user had already colli
   at native aspect inside `FittedBox(fit: _previewFit)` with a `SizedBox` sized
   to the frame (`contain` = letterbox, `cover` = center-crop, single static
   switch).
-- [`inference_isolate.dart`](../lib/services/inference_isolate.dart) —
+- `inference_isolate.dart` (historical source) —
   `_convertYUV420toRGB` repaired to honor real per-plane `rowStride`/
   `bytesPerRow` and `pixelStride`/`bytesPerPixel`; supports planar I420
   (pixelStride 1) and semi-planar NV12/NV21 (pixelStride 2, U-led per the
@@ -1388,9 +1408,9 @@ A device test produced an obstacle warning only after the user had already colli
 - Replace console-based diagnostics with a structured, file-based forensic logging system (logcat was becoming unusable).
 
 ### Completed
-- [`ForensicLog`](../lib/services/forensic_log.dart) — timestamped run directories under `<documents>/debug/run_YYYYMMDD_HHMMSS/` with `summary/camera/preprocess/tensor/output/parser/performance/errors.txt`, synchronous flush-per-write, and full try/catch isolation (logging can never break inference).
+- `ForensicLog` (`lib/services/forensic_log.dart`, historical source) — timestamped run directories under `<documents>/debug/run_YYYYMMDD_HHMMSS/` with `summary/camera/preprocess/tensor/output/parser/performance/errors.txt`, synchronous flush-per-write, and full try/catch isolation (logging can never break inference).
 - First-frame PNG dumps: `frame_original.png` (Y luma), `frame_rgb.png` (YUV→RGB at camera res), `frame_resized.png`, `frame_model_input.png`.
-- [`PngEncoder`](../lib/models/png_encoder.dart) — pure-Dart PNG encoder (isolate-safe). Validated by [`tool/validate_png.dart`](../tool/validate_png.dart) (signature/CRC/chunks/dims) and cross-decoded in Python — pixel-exact.
+- `PngEncoder` (`lib/models/png_encoder.dart`, historical source) — pure-Dart PNG encoder (isolate-safe). Validated by `tool/validate_png.dart` (`tool/validate_png.dart`, historical source) (signature/CRC/chunks/dims) and cross-decoded in Python — pixel-exact.
 - Auto-generated `summary.txt` every 50 frames and on close: per-stage PASS/FAIL, max confidence, P99, top class, distribution, ranked root causes computed from collected statistics.
 - Wired run-dir creation into `initIsolate` (path passed to the isolate), frame-loop channels via `_safeForensic`, and `camera.txt` on the first frame in `camera_screen.dart`; `processFrame` forwards `cameraFps`/`droppedFrames` for the performance log.
 - Replaced console probes: `InferenceProbe`/`InputProbe` disabled (`enabled=false`) and call sites removed.
@@ -1413,12 +1433,12 @@ A device test produced an obstacle warning only after the user had already colli
 - Drive the inference pipeline from runtime model metadata (dynamic inference-path selection).
 
 ### Completed
-- **Diagnosis (pre-implementation):** traced the `NoSuchMethodError: Float32List has no instance method 'reshape'` crash to [`inference_isolate.dart:257`](../lib/services/inference_isolate.dart) — `reshape()` is a `List` *extension* method invoked on a `dynamic` receiver (extensions are never resolved via dynamic dispatch). Also identified two latent tensor-handling bugs (flat `List` output fails tflite_flutter's `copyTo()` shape check; flat float input triggers automatic 1-D `resizeInputTensor`). Full report: [`docs/inference-tensor-diagnosis.md`](inference-tensor-diagnosis.md).
+- **Diagnosis (pre-implementation):** traced the `NoSuchMethodError: Float32List has no instance method 'reshape'` crash to `inference_isolate.dart:257` (`lib/services/inference_isolate.dart`, historical source) — `reshape()` is a `List` *extension* method invoked on a `dynamic` receiver (extensions are never resolved via dynamic dispatch). Also identified two latent tensor-handling bugs (flat `List` output fails tflite_flutter's `copyTo()` shape check; flat float input triggers automatic 1-D `resizeInputTensor`). Full report: [`docs/inference-tensor-diagnosis.md`](inference-tensor-diagnosis.md).
 - **Model metadata:** parsed both bundled `.tflite` files with the reference `tflite` Python package → both are **FLOAT32 I/O** (input `[1, 640, 640, 3]`, output `[1, 84, 8400]`) with INT8 weights → *Weight-Quantized*.
-- **Implemented [`ModelMetadata`](../lib/models/model_metadata.dart)** — immutable runtime snapshot (name, I/O types, shapes, scale/zeroPoint, quantized flags, classes, anchors, model type) built from `getInputTensor(0)`/`getOutputTensor(0)` + an internal tensor scan.
+- **Implemented `ModelMetadata` (`lib/models/model_metadata.dart`, historical source)** — immutable runtime snapshot (name, I/O types, shapes, scale/zeroPoint, quantized flags, classes, anchors, model type) built from `getInputTensor(0)`/`getOutputTensor(0)` + an internal tensor scan.
 - **Implemented [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart)** — pure-Dart FlatBuffers walker counting internal tensor types; validated 1:1 against the Python reference (324/23/62 and 324/25/62), plus IEEE-754 float16 helpers.
-- **Rewrote [`inference_isolate.dart`](../lib/services/inference_isolate.dart)** around metadata: dtype-matched buffers, raw `ByteBuffer` I/O (fixes the reshape crash + latent output/input bugs), quantize-only-if-quantized preprocessing, dequantize-only-if-quantized post-processing, `MODEL INFORMATION` startup banner.
-- **Extended [`debug_overlay.dart`](../lib/widgets/debug_overlay.dart)** with a live MODEL section (name, type, I/O types, shapes, classes, anchors, quantization, scale/zeroPoint) that adapts automatically to any model.
+- **Rewrote `inference_isolate.dart` (historical source)** around metadata: dtype-matched buffers, raw `ByteBuffer` I/O (fixes the reshape crash + latent output/input bugs), quantize-only-if-quantized preprocessing, dequantize-only-if-quantized post-processing, `MODEL INFORMATION` startup banner.
+- **Extended `debug_overlay.dart` (historical source)** with a live MODEL section (name, type, I/O types, shapes, classes, anchors, quantization, scale/zeroPoint) that adapts automatically to any model.
 - **Wired `camera_screen.dart`**: overlay reacts to `metadataNotifier`; busy gate releases on isolate errors via `errorStream`.
 - **Added [`tool/validate_flatbuffer.dart`](../tool/validate_flatbuffer.dart)** — `dart run tool/validate_flatbuffer.dart` → all validations pass.
 - `flutter analyze`: 0 issues.
@@ -1453,7 +1473,7 @@ A device test produced an obstacle warning only after the user had already colli
 - Added structured debug logging with consistent prefixes: `[Service]`, `[Model]`, `[Camera]`, `[Inference]`, `[Detection]`, `[Painter]`, `[Performance]`, `[Error]`
 - Added per-frame inference latency timing via `Stopwatch` (exposed via `InferenceService.lastLatencyMs`)
 - Added 5-second `[Performance]` summaries (camera FPS, inference FPS, avg/min/max latency, frame stats)
-- Created [`lib/widgets/debug_overlay.dart`](../lib/widgets/debug_overlay.dart) — visual HUD for debug builds (`kDebugMode`)
+- Created `lib/widgets/debug_overlay.dart` (historical source) — visual HUD for debug builds (`kDebugMode`)
 - Added error handling: try/catch around interpreter creation + frame loop; isolate errors propagated to main isolate via `{'type': 'error'}`
 - Extended isolate message protocol: `{'type': 'result'/'error'/'model_loaded'}` with latency + frame metadata
 - Replaced all `print()` calls with `debugPrint()`

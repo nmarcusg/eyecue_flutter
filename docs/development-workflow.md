@@ -1,133 +1,62 @@
 # EyeCue — Development Workflow
 
-> **Read this first before every development session.**
+Reviewed **2026-11-16**. This guide applies to the current single-engine public/Study project. Use the code and selected revision as implementation truth; dated docs provide evidence and context.
 
-This document describes the recommended workflow for contributing to EyeCue. It is designed for both human developers and AI agents.
+## Start a session
 
-## Session Start Checklist
+1. Read [project status](project-status.md), [known issues](known-issues.md), and the most recent [session log](session-log.md) entries.
+2. Inspect `git status --short`, the current branch/HEAD, and remote divergence. Preserve existing edits; do not automatically merge or reset a dirty checkout.
+3. Read the relevant architecture, model, data, UI, or release contract from the [documentation index](index.md).
+4. Choose the smallest task and record what would demonstrate success.
 
-Before writing any code, complete these steps in order:
+The active checkout is `/home/nico/repos/eyecue_flutter`. Old worktrees were removed after verified archival under `/home/nico/repos/eyecue-archive/2026-11-16`. Their branches and local-file snapshots can be recovered; there is no need to keep one checkout per experiment. Recreate a worktree only when concurrent development needs it.
 
-1. **Read [`project-status.md`](project-status.md)** — Understand overall progress, current milestone, current blocker, and next objective.
-2. **Read [`implementation-plan.md`](implementation-plan.md)** — Review the roadmap, milestones, and feature dependencies.
-3. **Review [`implementation-progress.md`](implementation-progress.md)** — See exactly what is completed, in progress, and remaining.
-4. **Review [`implementation-decisions.md`](implementation-decisions.md)** — Understand why key architectural decisions were made. Do not reverse decisions without explicit discussion.
-5. **Check [`known-issues.md`](known-issues.md)** — Be aware of current blockers, technical debt, and platform-specific limitations.
-6. **Check [`session-log.md`](session-log.md)** — Review the last session's objectives, completed work, and next steps.
+## Restore the development environment
 
-## During Development
+CI uses Flutter 3.44.2. `pubspec.yaml` requires **Dart** >=3.12.0 <4.0.0; this is not a Flutter 3.12 requirement. Native Java compilation targets Java 17. Android SDK versions come from the selected Flutter toolchain.
 
-### Scope Discipline
+```bash
+cd /home/nico/repos/eyecue_flutter
+flutter pub get
+flutter run --flavor public -t lib/main.dart
+```
 
-- **Implement only the current task.** Do not expand scope to adjacent features.
-- **Do not modify unrelated files.** If a change requires touching files outside the task scope, pause and reassess.
-- **Do not refactor working code** unless the refactor is explicitly part of the current task.
-- **Do not optimize performance** unless the optimization is explicitly part of the current task.
+The Study entry point adds research sessions and reporting:
 
-### Code Quality
+```bash
+flutter run --flavor study -t lib/main_study.dart
+```
 
-- Follow existing patterns in the codebase (e.g., the pure service pattern in [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart), or [`inference_cadence.dart`](../lib/services/inference_cadence.dart) for a side-effect-free policy).
-- Add error handling for all new code paths.
-- Prefer explicit types over `dynamic` or `var` where the type is not obvious.
-- Keep methods focused and small. Extract helpers when a method exceeds ~30 lines.
+Study tasks require the retained signing configuration even in debug mode. Follow [Study installation](study-installation.md) and [release signing](release-procedure.md); do not regenerate a replacement identity/key casually. Build/cache directories were deliberately removed to save space and will regenerate when needed.
 
-### Testing
+## Implement and verify
 
-- Write unit tests for new logic (see [`testing-plan.md`](testing-plan.md) for priorities).
-- Run `flutter test` after each change to verify nothing is broken.
-- Run `flutter analyze` to catch static analysis issues.
+Follow the existing constructor-injected services and pure-policy patterns. Keep the public/Study boundary, model identity, persisted schema compatibility, and TalkBack/EyeCue speech ownership explicit. Engine selection currently has only Ultralytics; Custom-isolate instructions in old records are historical.
 
-### Commit Practices
+Select checks that cover the change:
 
-- Commit each logical change separately.
-- Write descriptive commit messages referencing the milestone and task.
+```bash
+flutter analyze --no-pub
+flutter test --no-pub --concurrency=1
+node --test supabase/functions/ingest-telemetry/validate.test.mjs
+```
 
-## After Development
+Run dependency resolution first when caches are absent. Use targeted tests during implementation and the required wider gates before distributing. Native plugin changes also need native compilation and device evidence; a Dart suite alone does not cover them. Match flavor/entry point for builds:
 
-### Documentation Updates
+```bash
+flutter build apk --debug --flavor public -t lib/main.dart
+```
 
-After completing a task, update the relevant documentation:
+Documentation-only edits need factual/source review, local link checks, and `git diff --check`; an APK build or a fresh performance claim is unnecessary. Record commands actually run and their revision, rather than copying a previous test total. See [testing plan](testing-plan.md) and [benchmark procedure](benchmark-procedure.md).
 
-1. **Append to [`session-log.md`](session-log.md):**
-   - Add a new entry at the top with today's date
-   - Record: objective, completed work, issues encountered, decisions made, next session's focus
+## Finish a session
 
-2. **Update [`changelog.md`](changelog.md):**
-   - If the session completed a version milestone, add an entry
-   - List Added, Changed, Removed, Fixed under the version heading
+- Update affected current contracts and [project status](project-status.md) when behavior or priorities change.
+- Prepend a dated [session entry](session-log.md) with scope, revision, evidence, limits, decisions, and next work. Preserve previous entries.
+- Update the [changelog](changelog.md) for meaningful behavior/tooling changes and the [progress log](implementation-progress.md) when a task is completed.
+- Keep historical plans, audits, and test/device outcomes tied to their dates. Link to the current contract instead of rewriting an old result.
+- Review the diff and keep secrets, datasets, caches, and local signing material outside tracked changes. Commit only the intended work when committing is requested.
 
-3. **Update [`implementation-progress.md`](implementation-progress.md):**
-   - Mark completed tasks as ✅
-   - Update "Current Work" section
-   - Update "Last Updated" timestamp
+## Documentation ownership
 
-4. **Update [`project-status.md`](project-status.md):**
-   - Update "Recent Accomplishments" if the task was significant
-   - Update "Current Blocker" if resolved
-   - Update "Last Updated" timestamp
-
-5. **Update [`known-issues.md`](known-issues.md):**
-   - Remove resolved blockers
-   - Add new technical debt items discovered
-   - Update planned fix status
-
-6. **Log implementation decisions** in [`implementation-decisions.md`](implementation-decisions.md) if a significant new decision was made.
-
-7. **Update [`benchmark-results.md`](benchmark-results.md)** if any performance measurements were taken.
-
-8. **Update [`research-notes.md`](research-notes.md)** if new papers, benchmarks, or ideas were explored.
-
-### Verification
-
-- Verify the app builds: `flutter build apk --debug`
-- Verify the app runs on the test device
-- Verify no regressions in existing functionality
-- Verify all documentation links are still valid
-
-## Common Tasks Reference
-
-### Adding a New Dependency
-
-1. Add to `pubspec.yaml`
-2. Run `flutter pub get`
-3. Document in [`architecture.md`](architecture.md) (External Dependencies table)
-4. Explain rationale in commit message
-
-### Adding a New Source File
-
-1. Place in the appropriate directory:
-   - `lib/models/` — data classes
-   - `lib/screens/` — full-screen widgets
-   - `lib/services/` — business logic, isolates, API wrappers
-   - `lib/widgets/` — reusable UI components (create if needed)
-2. Follow existing naming conventions (`snake_case.dart`)
-3. Update [`architecture.md`](architecture.md) folder structure if significant
-
-### Running Benchmarks
-
-1. Use the official TFLite benchmark tool: `android_aarch64_benchmark_model`
-2. Record results in [`benchmark-results.md`](benchmark-results.md)
-3. Update [`project-status.md`](project-status.md) if results change priorities
-
-## File Ownership
-
-| File/Directory | Purpose | When to Modify |
-|----------------|---------|----------------|
-| `lib/` | Application source code | During feature implementation |
-| `test/` | Automated tests | When adding/updating tests |
-| `assets/` | Model files, labels, images | When updating ML models or labels |
-| `docs/` | Project documentation | After every development session |
-| `pubspec.yaml` | Dependencies | When adding/removing packages |
-| `chat_spec.md` | Historical specification | **Never** — preserve as historical record |
-| `auditor.md` | Project audit | When a full re-audit is needed |
-
-## AI Agent Notes
-
-If you are an AI agent working on this project:
-
-- This `docs/` directory is your primary source of truth.
-- [`chat_spec.md`](../chat_spec.md) is the canonical historical specification. Reference it, do not modify it.
-- [`auditor.md`](../auditor.md) is a point-in-time audit. It may become stale as the project evolves.
-- Always read the session-start documents before proposing changes.
-- Prefer updating documentation over asking the user to do so.
-- When uncertain about a design decision, consult [`implementation-decisions.md`](implementation-decisions.md) first.
+Current guidance lives in root `docs/` and the root README. `docs/frontend-workflow/` preserves design/implementation records; dated audits and `chat_spec.md` preserve historical evidence. Plugin upstream docs describe the generic package; [`VENDORED.md`](../plugins/ultralytics_yolo/VENDORED.md) records EyeCue-specific differences. Do not replace license text or upstream changelog history with app documentation. The [file-by-file audit](documentation-audit.md) records review coverage and exceptions.

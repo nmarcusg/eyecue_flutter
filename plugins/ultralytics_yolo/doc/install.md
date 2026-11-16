@@ -6,6 +6,12 @@ path: /integrations/flutter/install/
 
 # Installation Guide
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
 Get the Ultralytics YOLO Flutter plugin up and running in your project with this comprehensive installation guide.
 
 ## 📦 Add to pubspec.yaml
@@ -18,7 +24,7 @@ Package: https://pub.dev/packages/ultralytics_yolo
 dependencies:
   flutter:
     sdk: flutter
-  ultralytics_yolo: ^0.6.11
+  ultralytics_yolo: ^0.6.13
 ```
 
 Run the installation command:

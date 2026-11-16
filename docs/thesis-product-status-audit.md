@@ -1,5 +1,7 @@
 # EyeCue — Thesis-Product Status Audit
 
+> **Current reconciliation — 2026-11-16:** The audit body is a historical August 2026 assessment, including its architecture, percentages, feature-gap scores and thesis-PDF interpretation. It is not a fresh audit of the thesis PDF or current application. Current source uses a single native engine, a campus-trained 14-label detector, optional bundled depth, lifecycle-aware speech, and public/Study builds. Study alone owns research trials/reports; later implementation and dated UI device verification supersede many “missing” rows. No new weighted completion score is assigned. Read [project status](project-status.md), [known issues](known-issues.md), and [progress history](implementation-progress.md) for current evidence. Old package/signing/dual-engine statements are not active release instructions.
+
 > **Audit date:** 2026-08-16
 > **Scope:** Full status assessment of the current Flutter codebase against the application structure and functional requirements implied by the **EyeCue thesis PDF**.
 > **Thesis source of truth:** `GRP8-P1-EyeCue_ Machine Learning-Based Real-Time Object Recognition and Audio Guidance System for the Visually Impaired (1).pdf` (latest version, per the project owner).
@@ -49,7 +51,7 @@
 3. [Current Flutter Architecture](#3-current-flutter-architecture)
 4. [Thesis-to-Code Feature Matrix](#4-thesis-to-code-feature-matrix)
 5. [Screen / UI Gap Analysis](#5-screen--ui-gap-analysis)
-6. [Assistive Functionality Gap Analysis](#6-assistive-functionality-gap-analysis)
+6. [Assistive Functionality Gap Analysis](#6-assistive-functionality-gap-analysis-domains-b-c-d)
 7. [Spatial Guidance Gap Analysis](#7-spatial-guidance-gap-analysis)
 8. [Research / Evaluation Gap Analysis](#8-research--evaluation-gap-analysis)
 9. [Production Readiness Gap Analysis](#9-production-readiness-gap-analysis)
@@ -173,15 +175,15 @@ Verified directly from the code (not from docs).
 ### 3.3 Screens
 
 - [`home_screen.dart`](../lib/screens/home_screen.dart) — branding/subtitle, Auto-Start-aware status card, "Go to Live Camera" CTA.
-- [`detection_screen.dart`](../lib/screens/detection_screen.dart) — the validated camera/inference pipeline preserved, now wrapped in the assistive UI: status pill, audio mute, detection object cards with priority badges, high-priority warning banner, visible high-contrast controls, gesture surface, and a camera-denied/error UI state.
+- `detection_screen.dart` (historical source) — the validated camera/inference pipeline preserved, now wrapped in the assistive UI: status pill, audio mute, detection object cards with priority badges, high-priority warning banner, visible high-contrast controls, gesture surface, and a camera-denied/error UI state.
 - [`settings_screen.dart`](../lib/screens/settings_screen.dart) — Vibration, Auto-Start, Low Power, Audio/Voice, Logs & Reports entry.
 - [`help_screen.dart`](../lib/screens/help_screen.dart) — how it works, gesture manual, confirmation, Android tips.
 - [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) — Overview / Charts / Logs dashboard.
 
-### 3.4 Inference service — [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart)
+### 3.4 Inference service — `lib/services/inference_isolate.dart` (historical source)
 
 - Persistent isolate (`Isolate.spawn` once), single `Interpreter`, pre-allocated dtype-matched buffers.
-- Runtime model introspection ([`ModelMetadata`](../lib/models/model_metadata.dart), [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart)).
+- Runtime model introspection (`ModelMetadata` (`lib/models/model_metadata.dart`, historical source), [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart)).
 - Manual YUV420→RGB (stride-aware), nearest-neighbor resize, metadata-driven quantization, input-tensor rotation/mirror to upright.
 - Argmax per anchor → confidence threshold 0.25 → **class-wise NMS (IoU 0.45)**.
 - Emits `List<Detection>` via a broadcast `StreamController` — consumed by the UI, TTS, and telemetry.
@@ -200,9 +202,9 @@ Verified directly from the code (not from docs).
 
 ### 3.6 Models / widgets / diagnostics
 
-- Models: [`Detection`](../lib/models/detection.dart), [`DetectionInfo`](../lib/models/detection_info.dart), [`AppSettings`](../lib/models/app_settings.dart), [`BoxTransform`](../lib/models/box_transform.dart), [`ModelMetadata`](../lib/models/model_metadata.dart), [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart), [`png_encoder.dart`](../lib/models/png_encoder.dart).
+- Models: [`Detection`](../lib/models/detection.dart), [`DetectionInfo`](../lib/models/detection_info.dart), [`AppSettings`](../lib/models/app_settings.dart), [`BoxTransform`](../lib/models/box_transform.dart), `ModelMetadata` (`lib/models/model_metadata.dart`, historical source), [`tflite_flatbuffer.dart`](../lib/models/tflite_flatbuffer.dart), `png_encoder.dart` (historical source).
 - Widgets: [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart), [`detection_card.dart`](../lib/widgets/detection_card.dart), [`priority_badge.dart`](../lib/widgets/priority_badge.dart), [`warning_banner.dart`](../lib/widgets/warning_banner.dart), [`status_pill.dart`](../lib/widgets/status_pill.dart), [`accessible_button.dart`](../lib/widgets/accessible_button.dart), [`charts.dart`](../lib/widgets/charts.dart); the unused `info_panel.dart` / `debug_overlay.dart` widgets were removed in WS4.
-- Diagnostics: [`forensic_log.dart`](../lib/services/forensic_log.dart) (file-based structured logs + PNG dumps, debug/profile only; release file I/O disabled); the `inference_probe.dart` / `input_probe.dart` files were removed in WS4.
+- Diagnostics: `forensic_log.dart` (historical source) (file-based structured logs + PNG dumps, debug/profile only; release file I/O disabled); the `inference_probe.dart` / `input_probe.dart` files were removed in WS4.
 
 ### 3.7 Dependencies ([`pubspec.yaml`](../pubspec.yaml))
 
@@ -226,14 +228,14 @@ Legend: ✅ COMPLETE · 🟡 PARTIAL · ❌ MISSING · ⚪ OUTSIDE APP / RESEARC
 
 | Thesis requirement | Current Flutter equivalent | Relevant file(s) | Status | Evidence | Remaining work | Priority |
 |---|---|---|---|---|---|---|
-| Real-time object detection (YOLOv8) | Persistent-isolate inference, argmax + class-wise NMS | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ✅ COMPLETE | `_parseYolov8Output` (argmax, conf 0.25, NMS IoU 0.45); on-device portrait detections 0.91 | None functional | — |
-| LiteRT on-device | `tflite_flutter` 0.12.1 classic `Interpreter.fromBuffer` with raw `ByteBuffer` I/O for Custom; `ultralytics_yolo` 0.6.13 LiteRT Next path for Ultralytics | [`pubspec.yaml`](../pubspec.yaml), [`inference_isolate.dart`](../lib/services/inference_isolate.dart), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | 🟡 IMPLEMENTED / DEVICE COMPARISON PENDING | Static/test/build checks plus controlled device protocol | Complete paired device runs | [`dual-inference-engine-test.md`](dual-inference-engine-test.md) |
-| Smartphone camera | `camera` 0.12, `ResolutionPreset.low`, YUV420, `startImageStream` | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | ✅ COMPLETE | `_setupCamera`, frame dispatch | None | — |
-| On-device inference (no network) | Whole pipeline is local | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ✅ COMPLETE | No network deps | None | — |
-| Real-time processing | Busy-gate frame dropping; CPU-only (XNNPACK disabled — SIGSEGV) | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | 🟡 PARTIAL | Frame-dropping works; throughput capped by CPU inference; informal on-device telemetry (Avg FPS ~2–3, Avg Latency ~600 ms on low-end device) but no formal report | XNNPACK/NNAPI/GPU investigation; formal FPS benchmark; metric redefinition | 🔴 High |
+| Real-time object detection (YOLOv8) | Persistent-isolate inference, argmax + class-wise NMS | `inference_isolate.dart` (historical source) | ✅ COMPLETE | `_parseYolov8Output` (argmax, conf 0.25, NMS IoU 0.45); on-device portrait detections 0.91 | None functional | — |
+| LiteRT on-device | `tflite_flutter` 0.12.1 classic `Interpreter.fromBuffer` with raw `ByteBuffer` I/O for Custom; `ultralytics_yolo` 0.6.13 LiteRT Next path for Ultralytics | [`pubspec.yaml`](../pubspec.yaml), `inference_isolate.dart` (`lib/services/inference_isolate.dart`, historical source), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | 🟡 IMPLEMENTED / DEVICE COMPARISON PENDING | Static/test/build checks plus controlled device protocol | Complete paired device runs | [`dual-inference-engine-test.md`](dual-inference-engine-test.md) |
+| Smartphone camera | `camera` 0.12, `ResolutionPreset.low`, YUV420, `startImageStream` | `detection_screen.dart` (historical source) | ✅ COMPLETE | `_setupCamera`, frame dispatch | None | — |
+| On-device inference (no network) | Whole pipeline is local | `inference_isolate.dart` (historical source) | ✅ COMPLETE | No network deps | None | — |
+| Real-time processing | Busy-gate frame dropping; CPU-only (XNNPACK disabled — SIGSEGV) | `detection_screen.dart` (historical source) | 🟡 PARTIAL | Frame-dropping works; throughput capped by CPU inference; informal on-device telemetry (Avg FPS ~2–3, Avg Latency ~600 ms on low-end device) but no formal report | XNNPACK/NNAPI/GPU investigation; formal FPS benchmark; metric redefinition | 🔴 High |
 | Audio feedback / text-to-speech | `flutter_tts` wired via [`tts_service.dart`](../lib/services/tts_service.dart) | [`tts_service.dart`](../lib/services/tts_service.dart) | ✅ COMPLETE | Cooldown, de-dup, urgent bypass, mute, repeat-last, scan summary | Speech latency tuning; on-device TTS validation | 🟡 Medium |
 | Object identity | `Detection.label` from `labels.txt` (80 COCO classes) | [`detection.dart`](../lib/models/detection.dart), `assets/labels.txt` | ✅ COMPLETE | Verified 80 labels | None | — |
-| Confidence | `Detection.confidence`, threshold + display | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ✅ COMPLETE | Confidence logged/rendered | None | — |
+| Confidence | `Detection.confidence`, threshold + display | `inference_isolate.dart` (historical source) | ✅ COMPLETE | Confidence logged/rendered | None | — |
 | Relative position (left/right/center) | `SpatialAnalysisService.analyze` → left/center/right from box geometry | [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart), [`detection_info.dart`](../lib/models/detection_info.dart) | ✅ COMPLETE | Pure function over `Detection.box`; phrased in TTS | None functional | — |
 | Approximate distance / spatial info | Approximate proximity band from box size/height (explicitly labeled heuristic) | [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart) | 🟡 PARTIAL | Band is "approximately …", not calibrated distance | Calibrated distance estimation | 🟡 Medium |
 | Movement / approach | **None** (no cross-frame tracking) | — | ❌ MISSING | No history-based motion logic | Temporal tracking (optional) | 🟡 Low |
@@ -247,8 +249,8 @@ Legend: ✅ COMPLETE · 🟡 PARTIAL · ❌ MISSING · ⚪ OUTSIDE APP / RESEARC
 | Start / exit detection mode (two-finger double tap) | `GestureController` two-finger double tap → start/stop | [`gesture_controller.dart`](../lib/services/gesture_controller.dart), [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart) | ✅ COMPLETE | State machine + haptic/TTS confirmation | On-device validation | 🟡 Medium |
 | Quick environmental scan (three-finger tap) | Three-finger tap → scan → TTS scene summary | [`gesture_controller.dart`](../lib/services/gesture_controller.dart) | ✅ COMPLETE | Scan summary implemented | On-device validation | 🟡 Medium |
 | Repeat most recent audio alert (swipe down) | Swipe down → repeat-last-alert | [`tts_service.dart`](../lib/services/tts_service.dart), [`gesture_controller.dart`](../lib/services/gesture_controller.dart) | ✅ COMPLETE | Repeat-last implemented | On-device validation | 🟡 Medium |
-| Pause / resume detection (single tap) | Single tap → pause/resume (camera preview stays live) | [`gesture_controller.dart`](../lib/services/gesture_controller.dart), [`detection_screen.dart`](../lib/screens/detection_screen.dart) | ✅ COMPLETE | Pause/resume state + dispatch throttle | On-device validation | 🟡 Medium |
-| Change detection sensitivity | **None.** Threshold is a `const` (0.25) | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ❌ MISSING | `kConfThreshold` const | Runtime-configurable threshold (thesis §2.4) | 🟡 Medium |
+| Pause / resume detection (single tap) | Single tap → pause/resume (camera preview stays live) | [`gesture_controller.dart`](../lib/services/gesture_controller.dart), `detection_screen.dart` (`lib/screens/detection_screen.dart`, historical source) | ✅ COMPLETE | Pause/resume state + dispatch throttle | On-device validation | 🟡 Medium |
+| Change detection sensitivity | **None.** Threshold is a `const` (0.25) | `inference_isolate.dart` (historical source) | ❌ MISSING | `kConfThreshold` const | Runtime-configurable threshold (thesis §2.4) | 🟡 Medium |
 | Error/correction interaction | **None** (visible fallback controls exist, but no corrective-input gesture/interface) | — | ❌ MISSING | — | Error-signal path (design decision) | 🟡 Low |
 
 ### 4.3 Application screens / modules
@@ -256,7 +258,7 @@ Legend: ✅ COMPLETE · 🟡 PARTIAL · ❌ MISSING · ⚪ OUTSIDE APP / RESEARC
 | Thesis requirement | Current Flutter equivalent | Relevant file(s) | Status | Evidence | Remaining work | Priority |
 |---|---|---|---|---|---|---|
 | Home | [`home_screen.dart`](../lib/screens/home_screen.dart) | — | ✅ COMPLETE | Branding, subtitle, Auto-Start status card, "Go to Live Camera" | None functional | — |
-| Detection | [`detection_screen.dart`](../lib/screens/detection_screen.dart) | — | ✅ COMPLETE | Assistive UI: status pill, object cards, priority badges, warning banner, controls, gestures, TTS | Blind-first polish, on-device validation | 🟡 Medium |
+| Detection | `detection_screen.dart` (historical source) | — | ✅ COMPLETE | Assistive UI: status pill, object cards, priority badges, warning banner, controls, gestures, TTS | Blind-first polish, on-device validation | 🟡 Medium |
 | Settings | [`settings_screen.dart`](../lib/screens/settings_screen.dart) | — | ✅ COMPLETE | Vibration, Auto-Start, Low Power, Audio, Logs & Reports | Sensitivity setting (add) | 🟡 Medium |
 | Help | [`help_screen.dart`](../lib/screens/help_screen.dart) | — | ✅ COMPLETE | Operations + gesture manual + tips | None functional | — |
 | Logs & Reports | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) + [`charts.dart`](../lib/widgets/charts.dart) | — | ✅ COMPLETE | Overview/Charts/Logs; latency/FPS/frequency charts; accuracy metrics shown as unavailable (require ground truth) | Accuracy/Precision/Recall/F1 comparative chart needs ground-truth tooling | 🟡 Medium |
@@ -278,7 +280,7 @@ Legend: ✅ COMPLETE · 🟡 PARTIAL · ❌ MISSING · ⚪ OUTSIDE APP / RESEARC
 |---|---|---|---|---|---|---|
 | Detection logs | `TelemetryService` detection log entries + Logs tab | [`telemetry_service.dart`](../lib/services/telemetry_service.dart) | ✅ COMPLETE | Chronological logs in Logs & Reports | Structured export (CSV/JSON) | 🟡 Medium |
 | Confidence logs | Telemetry records confidence per detection | [`telemetry_service.dart`](../lib/services/telemetry_service.dart) | ✅ COMPLETE | Recorded per detection | Export | 🟡 Medium |
-| Inference timing | Per-frame latency (`Stopwatch`) + telemetry samples | [`inference_isolate.dart`](../lib/services/inference_isolate.dart) | ✅ COMPLETE | Latency chart with 300 ms line | Formal results report | 🟡 Medium |
+| Inference timing | Per-frame latency (`Stopwatch`) + telemetry samples | `inference_isolate.dart` (historical source) | ✅ COMPLETE | Latency chart with 300 ms line | Formal results report | 🟡 Medium |
 | FPS | Camera FPS + inference FPS + telemetry samples | [`telemetry_service.dart`](../lib/services/telemetry_service.dart) | ✅ COMPLETE | FPS chart with 15 FPS line | Formal results report | 🟡 Medium |
 | Performance statistics | Overview tab aggregates | [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | ✅ COMPLETE | FPS, latency, detections, alerts, session duration | Export | 🟡 Medium |
 | Charts / graphs | `fl_chart` latency/FPS/frequency charts | [`charts.dart`](../lib/widgets/charts.dart) | ✅ COMPLETE | Three charts with dynamic Y-bounds | Acc/Prec/Rec/F1 chart (needs ground truth) | 🟡 Medium |
@@ -375,7 +377,7 @@ What the code now computes:
 | Area | Status | Evidence / notes |
 |---|---|---|
 | Camera permission | ✅ | `permission_handler` + manifest entry |
-| Permission-denied UI | ✅ | Camera-denied state with retry / open-settings ([`detection_screen.dart`](../lib/screens/detection_screen.dart)) |
+| Permission-denied UI | ✅ | Camera-denied state with retry / open-settings (`detection_screen.dart` (historical source)) |
 | Crash / error recovery | 🟡 | Isolate errors reported + camera-error UI; **no isolate restart** |
 | Release configuration | ❌ | Release build signs with **debug keystore** ([`build.gradle.kts`](../android/app/build.gradle.kts)); package `com.example.eyecue_flutter`; `minSdk` default 24 (thesis: Android 10 / API 29) |
 | Play Store readiness | ❌ | No privacy policy, content rating, app icon/branding, release signing, package rename |
@@ -525,7 +527,7 @@ H:  2% × 0.25 =  0.5
 
 ## 14. Risks / Dependencies
 
-1. **Thesis metric inconsistency (defense risk):** Hypothesis states ≥15 FPS **and** ≤300 ms latency, but 300 ms implies ≤3.3 FPS. [`docs/research-notes.md`](../docs/research-notes.md:30) already flags this. Must be redefined (camera FPS vs detection FPS vs end-to-end audio latency) before defense.
+1. **Thesis metric inconsistency (defense risk):** Hypothesis states ≥15 FPS **and** ≤300 ms latency, but 300 ms implies ≤3.3 FPS. [`docs/research-notes.md`](../docs/research-notes.md) already flags this. Must be redefined (camera FPS vs detection FPS vs end-to-end audio latency) before defense.
 2. **Thesis names React Native** in the "Software Framework" section while the implementation is Flutter. The methodology is stated as technology-agnostic, so this is a **documentation inconsistency in the thesis that should be revised** — not a reason to return to React Native.
 3. **XNNPACK SIGSEGV** blocks throughput; CPU-only may fail the ≥15 FPS hypothesis on the target device. Mitigate with NNAPI/GPU/fallback + realistic metric definitions.
 4. **Participant recruitment** (≥30 VI participants, ethical consent, supervised sessions) is a schedule risk and requires a *usable* audio app first — the app is now usable enough that this can begin.

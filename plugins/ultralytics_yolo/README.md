@@ -32,6 +32,13 @@ The main goal is simple integration: use an official model ID, or drop in your o
     <img src="https://raw.githubusercontent.com/ultralytics/assets/main/app/google-play.svg" width="15%" alt="Get it on Google Play"></a>
 </div>
 
+> **EyeCue integration scope:** this README documents the vendored plugin's
+> generic Android/iOS capabilities. The EyeCue app in this repository is
+> Android-only, bundles a campus-trained detector plus optional depth model,
+> and separates public and Study flavors. See the repository-level
+> [architecture](../../docs/architecture.md), [model assets](../../docs/model-assets.md),
+> and [MDE integration](../../docs/mde-integration.md) docs for EyeCue-specific behavior.
+
 ## ✨ Features
 
 - Official Ultralytics plugin for Flutter
@@ -96,7 +103,7 @@ await yolo.loadModel();
 final results = await yolo.predict(imageBytes);
 ```
 
-**[▶️ Example App](./example)** | **[📖 Installation Guide](doc/install.md)** | **[⚡ Quick Start Guide](doc/quickstart.md)**
+**▶️ Example App (`example/`, omitted from this vendored copy)** | **[📖 Installation Guide](doc/install.md)** | **[⚡ Quick Start Guide](doc/quickstart.md)**
 
 ## 📦 Model Loading
 
@@ -116,9 +123,9 @@ Official assets are maintained as GitHub release assets:
 
 | Platform             | Runtime asset                 | Release                                                                                          |
 | -------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| Android              | LiteRT w8a32 `.tflite`        | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| Android NPU (opt-in) | QNN `*_v73/_v81_qnn.onnx`     | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| iOS                  | Core ML int8 `.mlpackage.zip` | [yolo-ios-app `v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
+| Android              | LiteRT w8a32 `.tflite`        | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| Android NPU (opt-in) | QNN `*_v73/_v81_qnn.onnx`     | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| iOS                  | Core ML int8 `.mlpackage.zip` | [yolo-ios-app [`v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
 
 The Flutter resolver uses the LiteRT release for Android and the Core ML release for Apple platforms. Every mobile
 asset uses a fixed 224 × 224 classification input or 640 × 640 input for every other task. These release tags are

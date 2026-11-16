@@ -6,6 +6,12 @@ path: /integrations/flutter/models/
 
 # Model Integration Guide
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
 This plugin supports two model paths:
 
 - official Ultralytics release assets resolved by model ID
@@ -41,9 +47,9 @@ Official assets are maintained as GitHub release assets:
 
 | Platform    | Runtime asset                 | Release                                                                                          |
 | ----------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| Android     | LiteRT w8a32 `.tflite`        | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| Android NPU | QNN `.onnx`                   | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| iOS         | Core ML int8 `.mlpackage.zip` | [yolo-ios-app `v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
+| Android     | LiteRT w8a32 `.tflite`        | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| Android NPU | QNN `.onnx`                   | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| iOS         | Core ML int8 `.mlpackage.zip` | [yolo-ios-app [`v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
 
 URL patterns:
 
@@ -191,9 +197,9 @@ Official release assets are generated from YOLO26 checkpoints with task/size loo
 
 | Runtime      | Existing export path                                                    | Release                                                                                          |
 | ------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| LiteRT w8a32 | [`scripts/export-tflite-models.py`](../scripts/export-tflite-models.py) | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| QNN          | Ultralytics QNN export (`224` cls; `640` others)                        | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| Core ML int8 | `../yolo-ios-app/scripts/export-models.py`                              | [yolo-ios-app `v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
+| LiteRT w8a32 | [`scripts/export-tflite-models.py`](../scripts/export-tflite-models.py) | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| QNN          | Ultralytics QNN export (`224` cls; `640` others)                        | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| Core ML int8 | `../yolo-ios-app/scripts/export-models.py`                              | [yolo-ios-app [`v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
 
 `scripts/export-tflite-models.py` is the source of truth for Android export settings, verification, output names, and optional release upload. The Core ML counterpart in `../yolo-ios-app` owns the Apple asset export settings and packaging.
 

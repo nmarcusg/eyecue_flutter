@@ -1,5 +1,8 @@
 # EyeCue — Home Screen Implementation Plan
 
+> **Current status (2026-11-16):** This staged home redesign document is preserved as design history. The corresponding live screen is [`home_screen.dart`](../../lib/screens/home_screen.dart); the cross-screen presentation redesign was implemented and visually verified (see [`visual-redesign.md`](visual-redesign.md) and the device verification entry in [`../project-status.md`](../project-status.md)). Later changes may alter details from this snapshot; use current source as the behavior reference.
+
+
 > **Stage:** Plan only. No application code, tests, assets, dependency
 > declarations, or navigation behavior are changed by this document.
 >
@@ -10,14 +13,14 @@
 > the approved [`home-screen-analysis.md`](home-screen-analysis.md) (Analysis),
 > especially its **Resolved Open Questions / Decisions** section → the
 > authoritative token source
-> [`extracted-design-tokens-screenshot.md`](../design-reference/tokens/extracted-design-tokens-screenshot.md).
+> [`extracted-design-tokens-screenshot.md`](../../design-reference/tokens/extracted-design-tokens-screenshot.md).
 > The extracted token Markdown is authoritative over the token-summary PNG, as
-> resolved in [`home-screen-analysis.md`](home-screen-analysis.md:571).
+> resolved in [`home-screen-analysis.md`](home-screen-analysis.md).
 
 ## 1. Scope and invariants
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:13)
-and [`home-screen-design-spec.md`](home-screen-design-spec.md:468).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md)
+and [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 This plan turns the Design-Spec into concrete, implementable edits for a
 visual-only Home redesign. Every file listed below traces back to the
@@ -28,46 +31,46 @@ code):
 
 | Contract | Current code | Preservation requirement |
 |---|---|---|
-| [`HomeScreen.settings`](../lib/screens/home_screen.dart:12) | Injected [`SettingsService`](../lib/services/settings_service.dart:60) input | Keep the input and the [`ListenableBuilder`](../lib/screens/home_screen.dart:89) listener so the preference presentation updates when `autoStartDetection` changes. |
-| [`HomeScreen.onGoToDetection`](../lib/screens/home_screen.dart:13) | Callback invoked by the CTA | Keep the callback; the redesigned accessible CTA invokes it exactly once per activation. |
-| [`AppShell`](../lib/navigation/app_shell.dart:20) | Persistent four-tab [`NavigationBar`](../lib/navigation/app_shell.dart:138) + [`IndexedStack`](../lib/navigation/app_shell.dart:134) | No shell change; the retained nav bar stays visible below the redesigned Home content. |
+| [`HomeScreen.settings`](../../lib/screens/home_screen.dart#L12) | Injected [`SettingsService`](../../lib/services/settings_service.dart#L60) input | Keep the input and the [`ListenableBuilder`](../../lib/screens/home_screen.dart#L89) listener so the preference presentation updates when `autoStartDetection` changes. |
+| [`HomeScreen.onGoToDetection`](../../lib/screens/home_screen.dart#L13) | Callback invoked by the CTA | Keep the callback; the redesigned accessible CTA invokes it exactly once per activation. |
+| [`AppShell`](../../lib/navigation/app_shell.dart#L20) | Persistent four-tab [`NavigationBar`](../../lib/navigation/app_shell.dart#L138) + [`IndexedStack`](../../lib/navigation/app_shell.dart#L134) | No shell change; the retained nav bar stays visible below the redesigned Home content. |
 | Runtime behavior | No camera/ML/engine/TTS/telemetry/persistence/gesture state in Home | No runtime state source is added. |
-| Global theme | [`buildEyeCueTheme()`](../lib/theme/app_theme.dart:13) dark theme used by [`EyeCueApp`](../lib/main.dart:61) with `ThemeMode.dark` | Unchanged; Home uses a locally scoped light context. |
+| Global theme | [`buildEyeCueTheme()`](../../lib/theme/app_theme.dart#L13) dark theme used by [`EyeCueApp`](../../lib/main.dart) with `ThemeMode.dark` | Unchanged; Home uses a locally scoped light context. |
 
 ### Files in scope
 
 | File | Design-Spec responsibility | Scope rule |
 |---|---|---|
-| [`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart:21) | Replace the dark centered-column hierarchy with the responsive reference composition; preserve settings listening and CTA callback. | Primary UI file. |
-| [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart:1) | Add the approved `kHome*` light semantic colors. | UI token layer only. |
-| [`lib/theme/app_radii.dart`](../lib/theme/app_radii.dart:1) | Add missing authoritative `kRadius3`, `kRadius14`, `kRadius18`, and `kRadius24`; reuse existing values where possible. | UI token layer only. |
+| [`lib/screens/home_screen.dart`](../../lib/screens/home_screen.dart#L21) | Replace the dark centered-column hierarchy with the responsive reference composition; preserve settings listening and CTA callback. | Primary UI file. |
+| [`lib/theme/app_colors.dart`](../../lib/theme/app_colors.dart#L1) | Add the approved `kHome*` light semantic colors. | UI token layer only. |
+| [`lib/theme/app_radii.dart`](../../lib/theme/app_radii.dart#L1) | Add missing authoritative `kRadius3`, `kRadius14`, `kRadius18`, and `kRadius24`; reuse existing values where possible. | UI token layer only. |
 | Local Home theme file (see §6) | Provide Home-local typography/decoration theme data without changing the global dark theme. | Local Home theme only. |
-| [`pubspec.yaml`](../pubspec.yaml:9) | Add `google_fonts: ^8.2.1`, register `assets/logo.png`, and register the offline IBM Plex Sans font asset folder. | Minimal packaging prerequisite. |
-| [`test/widget_test.dart`](../test/widget_test.dart:12) | Extend the existing `HomeScreen` group with visual/state/callback regressions. | No new test file. |
-| [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:115) | Add Home status, wordmark, CTA, decorative-image, and 200% text-scale semantics coverage using existing helpers. | No new test file. |
+| [`pubspec.yaml`](../../pubspec.yaml#L9) | Add `google_fonts: ^8.2.1`, register `assets/logo.png`, and register the offline IBM Plex Sans font asset folder. | Minimal packaging prerequisite. |
+| [`test/widget_test.dart`](../../test/widget_test.dart#L12) | Extend the existing `HomeScreen` group with visual/state/callback regressions. | No new test file. |
+| [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L115) | Add Home status, wordmark, CTA, decorative-image, and 200% text-scale semantics coverage using existing helpers. | No new test file. |
 
 ### Files that must remain untouched
 
-[`AppShell`](../lib/navigation/app_shell.dart:20), [`main.dart`](../lib/main.dart:25),
-[`SettingsService`](../lib/services/settings_service.dart:60), every model/service,
-every non-Home screen, [`assets/logo.png`](../assets/logo.png) (consumed, not
+[`AppShell`](../../lib/navigation/app_shell.dart#L20), [`main.dart`](../../lib/main.dart#L25),
+[`SettingsService`](../../lib/services/settings_service.dart#L60), every model/service,
+every non-Home screen, [`assets/logo.png`](../../assets/logo.png) (consumed, not
 edited), and all `design-reference/` files. No new state-management, routing,
 gesture, or UI-component package is introduced.
 
 ## 2. Confirmed packaging facts
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:322)
-and [`home-screen-design-spec.md`](home-screen-design-spec.md:397).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md)
+and [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 The following facts are confirmed before being included in this plan:
 
 - **`google_fonts: ^8.2.1`** — confirmed as the dependency to add to
-  [`pubspec.yaml`](../pubspec.yaml:9). The package exposes
+  [`pubspec.yaml`](../../pubspec.yaml#L9). The package exposes
   `GoogleFonts.plexSans(...)` and `GoogleFonts.plexSansTextTheme(...)` and
   supports offline asset bundling.
 - **Offline asset-bundling setup** — confirmed: download the required IBM Plex
   Sans weights, place them under a dedicated asset folder (`assets/fonts/`),
-  declare that folder under `assets:` in [`pubspec.yaml`](../pubspec.yaml:43),
+  declare that folder under `assets:` in [`pubspec.yaml`](../../pubspec.yaml#L43),
   and keep the original Google Fonts filenames so the package resolves them
   locally. No `fonts:` section is required. Set
   `GoogleFonts.config.allowRuntimeFetching = false` so the package never falls
@@ -75,13 +78,13 @@ The following facts are confirmed before being included in this plan:
   Home-local theme builder (see §7.1), not in `main.dart`.
 - **`assets/logo.png` registration** — confirmed: the file exists (512×545 RGBA,
   mark-only on transparency) but is **not** declared in
-  [`pubspec.yaml`](../pubspec.yaml:45). Add the one-line `- assets/logo.png`
+  [`pubspec.yaml`](../../pubspec.yaml#L45). Add the one-line `- assets/logo.png`
   registration. The image is consumed, never edited; the wordmark stays live
   text.
 - **New `kHome*` color tokens** — confirmed for addition to
-  [`app_colors.dart`](../lib/theme/app_colors.dart:1) (see §5.1).
+  [`app_colors.dart`](../../lib/theme/app_colors.dart#L1) (see §5.1).
 - **Missing `kRadius3`/`kRadius14`/`kRadius18`/`kRadius24` tokens** — confirmed
-  as absent from [`app_radii.dart`](../lib/theme/app_radii.dart:1) (current set:
+  as absent from [`app_radii.dart`](../../lib/theme/app_radii.dart#L1) (current set:
   `kRadius4`, `kRadius6`, `kRadius8`, `kRadius12`, `kRadius16`, `kRadius20`).
   Add the four missing values (see §5.2).
 
@@ -110,18 +113,18 @@ See §7.
 
 ## 3. Reference composition and viewport treatment
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:39).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 The ready composition is based on
-[`home_screen.png`](../design-reference/screens/home_screen.png). The preparing
-composition in [`home-preparing.png`](../design-reference/screens/home-preparing.png)
+[`home_screen.png`](../../design-reference/screens/home_screen.png). The preparing
+composition in [`home-preparing.png`](../../design-reference/screens/home-preparing.png)
 is a visual reference for a future runtime state only and is **not** implemented
 in this feature.
 
 The Home content area is composed above the retained shell navigation bar:
 
 1. A preference/status badge aligned to the leading content edge.
-2. A large centered mark using [`assets/logo.png`](../assets/logo.png).
+2. A large centered mark using [`assets/logo.png`](../../assets/logo.png).
 3. A centered live-text `EyeCue` wordmark below the mark.
 4. A lower instruction region containing a truthful headline, supporting copy,
    the retained accessible CTA, and the light cyan rail accent.
@@ -133,19 +136,19 @@ or the shell navigation bar.
 
 ## 4. Responsive layout plan
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:68).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 The reference canvas is 390×844 and is a proportional baseline, not a source of
-Flutter pixel literals. Reuse the existing [`SafeArea`](../lib/screens/home_screen.dart:25),
-[`LayoutBuilder`](../lib/screens/home_screen.dart:27), and
-[`SingleChildScrollView`](../lib/screens/home_screen.dart:29) pattern.
+Flutter pixel literals. Reuse the existing [`SafeArea`](../../lib/screens/home_screen.dart#L25),
+[`LayoutBuilder`](../../lib/screens/home_screen.dart#L27), and
+[`SingleChildScrollView`](../../lib/screens/home_screen.dart#L29) pattern.
 
 ### 4.1 Horizontal relationships
 
 - Use the available content width from parent constraints; do not branch on
   device model or hardware type.
 - Keep a leading/trailing content inset based on the approved spacing scale,
-  with [`kSpace16`](../lib/theme/app_spacing.dart:34) as the baseline outer
+  with [`kSpace16`](../../lib/theme/app_spacing.dart#L34) as the baseline outer
   inset.
 - Keep the status badge intrinsically sized and leading-aligned; it must not
   stretch to the full viewport width.
@@ -186,14 +189,14 @@ Flutter pixel literals. Reuse the existing [`SafeArea`](../lib/screens/home_scre
 
 ## 5. Token additions
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:242).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
-### 5.1 Color tokens — [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart:1)
+### 5.1 Color tokens — [`lib/theme/app_colors.dart`](../../lib/theme/app_colors.dart#L1)
 
 Add the following semantic constants using the existing `k`-prefixed convention.
 These are the approved values from the authoritative extracted Markdown source.
 Do not replace existing global dark tokens or reinterpret
-[`kAccent`](../lib/theme/app_colors.dart:27) for Home.
+[`kAccent`](../../lib/theme/app_colors.dart#L27) for Home.
 
 | Token | Value | Home use |
 |---|---|---|
@@ -209,9 +212,9 @@ Do not replace existing global dark tokens or reinterpret
 | `kHomeWarningAmber` | `#F5B942` | Reserved for the deferred Preparing variant; not used to imply Auto-Start off |
 
 Do not add raw `Color(...)`, `Colors.*`, or alpha color literals to
-[`home_screen.dart`](../lib/screens/home_screen.dart:21) for these roles.
+[`home_screen.dart`](../../lib/screens/home_screen.dart#L21) for these roles.
 
-### 5.2 Radius tokens — [`lib/theme/app_radii.dart`](../lib/theme/app_radii.dart:1)
+### 5.2 Radius tokens — [`lib/theme/app_radii.dart`](../../lib/theme/app_radii.dart#L1)
 
 Add the missing authoritative values as named `kRadius*` tokens. Reuse existing
 matching tokens where available (`kRadius12` already exists).
@@ -227,13 +230,13 @@ matching tokens where available (`kRadius12` already exists).
 
 The extracted Markdown wins over the PNG's coarser spacing summary. Home uses
 the spacing scale `6, 8, 12, 16, 20, 24`, represented by the existing
-[`app_spacing.dart`](../lib/theme/app_spacing.dart:1) tokens (`kSpace6`,
+[`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1) tokens (`kSpace6`,
 `kSpace8`, `kSpace12`, `kSpace16`, `kSpace20`, `kSpace24`). No new spacing
 tokens are required; do not copy `32`, `48`, or `64` from the token PNG.
 
 ### 5.4 Shadows as a theme component
 
-Shadows are not entries in [`app_colors.dart`](../lib/theme/app_colors.dart:1).
+Shadows are not entries in [`app_colors.dart`](../../lib/theme/app_colors.dart#L1).
 Define them in the Home-local theme/decoration component (see §6):
 
 | Name | Definition | Intended use |
@@ -244,27 +247,27 @@ Define them in the Home-local theme/decoration component (see §6):
 
 ## 6. Local Home theme file
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:232)
-and [`home-screen-design-spec.md`](home-screen-design-spec.md:303).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md)
+and [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 Home uses a locally scoped light visual theme/token context. The global dark
 theme, `ThemeMode.dark`, and shell navigation colors are unchanged. The local
 Home context supplies the light background, ink, cyan accent, and Home
 typography to the Home subtree only.
 
-The Design-Spec permits this to live in [`app_theme.dart`](../lib/theme/app_theme.dart:13)
+The Design-Spec permits this to live in [`app_theme.dart`](../../lib/theme/app_theme.dart#L13)
 **or** another `app_*.dart` theme file, provided it does not mutate
-[`buildEyeCueTheme()`](../lib/theme/app_theme.dart:13) or the global navigation
+[`buildEyeCueTheme()`](../../lib/theme/app_theme.dart#L13) or the global navigation
 theme. **Plan decision (resolved):** add a new UI-owned theme file
-[`lib/theme/app_home_theme.dart`](../lib/theme/app_home_theme.dart) (new) that
+[`lib/theme/app_home_theme.dart`](../../lib/theme/app_home_theme.dart) (new) that
 exposes a Home-local light `ThemeData`/decoration builder and the `shadow-soft` /
 `shadow-elevated` / `shadow-knob` `BoxShadow` lists.
 
 **Why this location:** the naming-convention rule
-([`.roo/rules/rules-frontend/02-naming-convention.md`](../.roo/rules/rules-frontend/02-naming-convention.md:14))
+(`.roo/rules/rules-frontend/02-naming-convention.md`)
 requires design tokens/theme in `lib/theme/` to be `app_*.dart` files, so the
 file is named `app_home_theme.dart` (not `home_theme.dart`). This keeps the
-global [`app_theme.dart`](../lib/theme/app_theme.dart:13) byte-stable and
+global [`app_theme.dart`](../../lib/theme/app_theme.dart#L13) byte-stable and
 satisfies the Design-Spec's "another `app_*.dart` theme file" option. It is the
 only new file in the plan and is justified by the Design-Spec's explicit
 allowance for a separate `app_*.dart` theme file.
@@ -274,25 +277,25 @@ Sans text theme (see §7). It must not be applied above the Home subtree.
 
 ## 7. Typography and offline font packaging
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:322).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 ### 7.1 Dependency and offline setup
 
 - Add `google_fonts: ^8.2.1` to the `dependencies:` section of
-  [`pubspec.yaml`](../pubspec.yaml:9).
+  [`pubspec.yaml`](../../pubspec.yaml#L9).
 - Bundle the IBM Plex Sans font files under a dedicated asset folder (e.g.
   `assets/fonts/`) and declare that folder under `assets:` in
-  [`pubspec.yaml`](../pubspec.yaml:43). Keep the original Google Fonts filenames
+  [`pubspec.yaml`](../../pubspec.yaml#L43). Keep the original Google Fonts filenames
   so the package resolves them locally; no `fonts:` section is required.
 - Set `GoogleFonts.config.allowRuntimeFetching = false` so the package never
   falls back to a network request.
 
 **Placement decision (resolved):** set `GoogleFonts.config.allowRuntimeFetching
 = false` at the top of the Home-local theme builder in
-[`lib/theme/app_home_theme.dart`](../lib/theme/app_home_theme.dart), before any
+[`lib/theme/app_home_theme.dart`](../../lib/theme/app_home_theme.dart), before any
 `GoogleFonts.plexSansTextTheme(...)` call. **Why:** the frontend scope rule's
-narrow [`main.dart`](../lib/main.dart:25) exception
-([`.roo/rules/rules-frontend/01-scope.md`](../.roo/rules/rules-frontend/01-scope.md:16))
+narrow [`main.dart`](../../lib/main.dart#L25) exception
+(`.roo/rules/rules-frontend/01-scope.md`)
 covers only Marionette initialization and theme consumption; setting the flag in
 `main()` would be a third `main.dart` change not covered by that exception.
 Because IBM Plex Sans is applied only in the Home-local theme, setting the flag
@@ -332,11 +335,11 @@ local Home IBM Plex Sans theme uses the resolved Flutter/Google Fonts role
 defaults for line height and letter spacing, matching the global theme's
 convention (which sets no `height`/`letterSpacing` on any role).
 
-## 8. Concrete edits to [`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart:21)
+## 8. Concrete edits to [`lib/screens/home_screen.dart`](../../lib/screens/home_screen.dart#L21)
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:131),
-[`home-screen-design-spec.md`](home-screen-design-spec.md:202), and
-[`home-screen-design-spec.md`](home-screen-design-spec.md:468).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md),
+[`home-screen-design-spec.md`](home-screen-design-spec.md), and
+[`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 The primary implementation file. The redesign replaces the dark centered-column
 hierarchy with the responsive reference composition while preserving the
@@ -360,23 +363,23 @@ same responsive/scroll-safe skeleton:
 
 ### 8.2 Preference-derived status badge (private `_StatusBadge`)
 
-Replace the current private [`_StatusCard`](../lib/screens/home_screen.dart:81)
+Replace the current private [`_StatusCard`](../../lib/screens/home_screen.dart#L81)
 with a private status badge that keeps the `ListenableBuilder` over the injected
 `settings` service. The badge is a non-interactive semantic container.
 
 When `autoStartDetection` is `true`:
 
 - Badge text: `READY`.
-- Dot/accent: [`kHomeAccentCyan`](../lib/theme/app_colors.dart:1).
-- Badge surface: [`kHomeSurfaceCard96`](../lib/theme/app_colors.dart:1).
+- Dot/accent: [`kHomeAccentCyan`](../../lib/theme/app_colors.dart#L1).
+- Badge surface: [`kHomeSurfaceCard96`](../../lib/theme/app_colors.dart#L1).
 - Accessible status meaning: `Auto-Start is on. Detection will begin when you open Detect.`
 
 When `autoStartDetection` is `false`:
 
 - Badge text: `AUTO-START OFF`.
-- Dot/accent: [`kHomeInkMuted`](../lib/theme/app_colors.dart:1), not the
+- Dot/accent: [`kHomeInkMuted`](../../lib/theme/app_colors.dart#L1), not the
   preparing amber.
-- Badge surface: [`kHomeSurfaceCard96`](../lib/theme/app_colors.dart:1).
+- Badge surface: [`kHomeSurfaceCard96`](../../lib/theme/app_colors.dart#L1).
 - Accessible status meaning: `Auto-Start is off. Open Detect and press Start to begin.`
 
 The off-state badge wording is a truthful Home-specific presentation of the
@@ -402,20 +405,20 @@ app-launch auto-start behavior.
 
 ### 8.4 Retained accessible CTA
 
-The real Home action remains [`AccessibleButton`](../lib/widgets/accessible_button.dart:8)
+The real Home action remains [`AccessibleButton`](../../lib/widgets/accessible_button.dart#L8)
 with:
 
 - visible label: `Go to Live Camera`;
 - existing camera icon treatment unless a Home-local visual wrapper is required;
 - `prominent: true` or an equivalent Home-local presentation that preserves its
   callback and semantics;
-- activation callback: [`onGoToDetection`](../lib/screens/home_screen.dart:13);
+- activation callback: [`onGoToDetection`](../../lib/screens/home_screen.dart#L13);
 - minimum touch target preserved through the existing 64×56 logical-pixel
-  contract in [`AccessibleButton`](../lib/widgets/accessible_button.dart:41).
+  contract in [`AccessibleButton`](../../lib/widgets/accessible_button.dart#L41).
 
 The button may be placed inside the lower instruction region and visually styled
 through the Home-local light theme. Do not modify the shared visual defaults of
-[`AccessibleButton`](../lib/widgets/accessible_button.dart:8).
+[`AccessibleButton`](../../lib/widgets/accessible_button.dart#L8).
 
 ### 8.5 Deferred gesture and rail
 
@@ -427,35 +430,35 @@ indicator, or gesture affordance and must be excluded from semantics.
 
 ### 8.6 Logo and wordmark
 
-Use the existing mark-only [`assets/logo.png`](../assets/logo.png) as the visual
+Use the existing mark-only [`assets/logo.png`](../../assets/logo.png) as the visual
 mark (decorative, excluded from semantics when the adjacent live wordmark is
 present). The `EyeCue` wordmark is separate live text using the local
 `displayLarge` IBM Plex Sans mapping. Do not bake the wordmark into the image.
 
 ### 8.7 Private component boundary
 
-Keep screen-only helpers private to [`home_screen.dart`](../lib/screens/home_screen.dart:81),
+Keep screen-only helpers private to [`home_screen.dart`](../../lib/screens/home_screen.dart#L81),
 following the existing `_StatusCard` convention. A private status badge and a
 private instruction region are acceptable if they reduce build-method
 complexity; do not create a public component solely for this redesign.
 
 ## 9. Concrete edits to the token files
 
-### 9.1 [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart:1)
+### 9.1 [`lib/theme/app_colors.dart`](../../lib/theme/app_colors.dart#L1)
 
 Append the ten `kHome*` semantic color constants from §5.1 using the existing
 `k`-prefixed convention and doc-comment style. No existing token is modified.
 
-### 9.2 [`lib/theme/app_radii.dart`](../lib/theme/app_radii.dart:1)
+### 9.2 [`lib/theme/app_radii.dart`](../../lib/theme/app_radii.dart#L1)
 
 Append `kRadius3`, `kRadius14`, `kRadius18`, and `kRadius24` from §5.2 using the
 existing doc-comment style. `kRadius12` already exists and is reused; no
 existing token is modified.
 
-## 10. Concrete edits to [`pubspec.yaml`](../pubspec.yaml:9)
+## 10. Concrete edits to [`pubspec.yaml`](../../pubspec.yaml#L9)
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:322)
-and [`home-screen-design-spec.md`](home-screen-design-spec.md:397).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md)
+and [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 - Add `google_fonts: ^8.2.1` to the `dependencies:` section.
 - Under `flutter: assets:`, add `- assets/logo.png`.
@@ -466,10 +469,10 @@ No unrelated dependency or asset changes. The font files themselves are added
 under `assets/fonts/` during implementation (downloaded from Google Fonts with
 their original filenames); this plan does not commit binary font files.
 
-## 11. Concrete edits to [`test/widget_test.dart`](../test/widget_test.dart:12)
+## 11. Concrete edits to [`test/widget_test.dart`](../../test/widget_test.dart#L12)
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:486)
-and [`home-screen-design-spec.md`](home-screen-design-spec.md:530).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md)
+and [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 Extend the existing `HomeScreen` group (no new test file). The current tests
 assert the old copy (`Smart navigation assistance for visually impaired users.`
@@ -489,24 +492,24 @@ assertions must be updated to the new preference-truthful copy. Add/update:
 **Widget-test font resolution (resolved):** because the resolved placement sets
 `GoogleFonts.config.allowRuntimeFetching = false` in the Home-local theme
 builder, and the bundled IBM Plex Sans assets are declared in
-[`pubspec.yaml`](../pubspec.yaml:43) under `assets/fonts/`, the Home widget
+[`pubspec.yaml`](../../pubspec.yaml#L43) under `assets/fonts/`, the Home widget
 tests resolve the fonts locally from the asset bundle (flutter_test loads real
 project assets declared under `assets:`). No network fetch is attempted and no
 test-only font override is required. The existing `HomeScreen` group in
-[`widget_test.dart`](../test/widget_test.dart:12) and the new Home semantics
-group in [`semantics_test.dart`](../test/accessibility/semantics_test.dart:115)
+[`widget_test.dart`](../../test/widget_test.dart#L12) and the new Home semantics
+group in [`semantics_test.dart`](../../test/accessibility/semantics_test.dart#L115)
 render with the bundled fonts, matching production.
 
-## 12. Concrete edits to [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:115)
+## 12. Concrete edits to [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L115)
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:487)
-and [`home-screen-design-spec.md`](home-screen-design-spec.md:530).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md)
+and [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 Add a Home semantics group (no new test file) reusing the existing helpers
-[`scaledApp`](../test/accessibility/semantics_test.dart:54),
-[`expectButtonSemantics`](../test/accessibility/semantics_test.dart:63),
-[`expectSemanticNode`](../test/accessibility/semantics_test.dart:97), and
-[`withSemantics`](../test/accessibility/semantics_test.dart:103). Coverage:
+[`scaledApp`](../../test/accessibility/semantics_test.dart#L54),
+[`expectButtonSemantics`](../../test/accessibility/semantics_test.dart#L63),
+[`expectSemanticNode`](../../test/accessibility/semantics_test.dart#L97), and
+[`withSemantics`](../../test/accessibility/semantics_test.dart#L103). Coverage:
 
 - The status node exposes the complete preference-truthful meaning for both
   Auto-Start on and off (distinguishing the two states by text, not color).
@@ -521,7 +524,7 @@ Add a Home semantics group (no new test file) reusing the existing helpers
 
 ## 13. Preference-truthful copy and badge behavior summary
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:131).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 | `autoStartDetection` | Badge text | Dot/accent | Accessible status meaning | Supporting copy |
 |---|---|---|---|---|
@@ -536,17 +539,17 @@ runtime state through `AppShell`, which is outside this visual-only scope).
 
 ## 14. Acceptance criteria
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:493).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 ### Visual and responsive acceptance
 
 - Home renders the light `#F5F5F5`-role surface above the unchanged navigation
   bar.
 - The badge, centered mark, live wordmark, lower instruction, cyan rail, and CTA
-  follow the reference hierarchy from [`home_screen.png`](../design-reference/screens/home_screen.png).
+  follow the reference hierarchy from [`home_screen.png`](../../design-reference/screens/home_screen.png).
 - The composition uses token values and proportional/bounded relationships, not
   screenshot pixel positions.
-- The logo mark is loaded from [`assets/logo.png`](../assets/logo.png), while
+- The logo mark is loaded from [`assets/logo.png`](../../assets/logo.png), while
   `EyeCue` remains live IBM Plex Sans text.
 - The global dark theme and the four-tab navigation remain visually and
   behaviorally unchanged.
@@ -571,10 +574,10 @@ runtime state through `AppShell`, which is outside this visual-only scope).
 - The logo and rail are decorative/excluded.
 - The CTA retains an actionable button role, enabled state, hint, and callback.
 - The Home screen has no overflow or clipped primary content at 200% text scale.
-- The existing Home group in [`widget_test.dart`](../test/widget_test.dart:12)
+- The existing Home group in [`widget_test.dart`](../../test/widget_test.dart#L12)
   covers branding, both preference presentations, listener updates, and CTA
   activation.
-- [`semantics_test.dart`](../test/accessibility/semantics_test.dart:115) covers
+- [`semantics_test.dart`](../../test/accessibility/semantics_test.dart#L115) covers
   the status node, live wordmark, CTA, decorative exclusions, and 200% scale.
 
 ### Physical Android-device acceptance
@@ -602,7 +605,7 @@ or exceptions in logcat.
 
 ## 15. Explicitly deferred work
 
-**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md:560).
+**Design-Spec cross-reference:** [`home-screen-design-spec.md`](home-screen-design-spec.md).
 
 1. A real runtime-owned `Preparing` or `Ready` state.
 2. App-launch camera or ML auto-start.

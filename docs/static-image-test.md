@@ -2,6 +2,9 @@
 
 # Static-Image Test — Camera Removed From the Equation
 
+> **Current status (2026-11-16):** This bus-photo run is preserved as dated evidence from the removed Custom EyeCue pipeline. `assets/test_image.jpg`, `InferenceService.useTestImage`, and the old test adapter are no longer present; the former engine was removed in commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9). Current detector operation is through `YOLOView` in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart).
+
+
 > **Status:** COMPLETE — evidence collected on-device (Android 13, arm64).
 > **Date:** 2026-08-01
 > **Temporary mode:** `InferenceService.useTestImage` (`lib/services/inference_isolate.dart`)

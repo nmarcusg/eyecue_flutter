@@ -1,5 +1,8 @@
 # TalkBack Ownership Analysis (Stage 1 — re-check)
 
+> **Implementation status (2026-11-16, review base `main@aadf9e0`):** TalkBack ownership/action semantics are implemented in the current screens and widgets: Repeat is wired in [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart); shared controls and accessible buttons are in [`detection_action_controls.dart`](../../lib/widgets/detection_action_controls.dart) and [`accessible_button.dart`](../../lib/widgets/accessible_button.dart). Follow-up `f95ffd6` removed Flutter `Slider` label arguments while retaining semantic formatter callbacks, with updated assertions in [`semantics_test.dart`](../../test/accessibility/semantics_test.dart). `dd8aa53` adds an Android `MainActivity` hover guard for the Flutter accessibility transform crash. No build or device verification is claimed here; this document preserves the original decision record.
+
+
 **Stage:** 1 of 2 for this task (re-verification + feasibility analysis). **No code, test, or existing-doc edits.**
 No `flutter analyze` / `flutter test` / builds were run.
 
@@ -8,12 +11,12 @@ screen identity, Help reading granularity, Repeat relocation, and label copy. No
 a design-spec therefore does not apply (see the plan's scope statement).
 
 **Upstream inputs (read-only, decisions not re-litigated):**
-[`talkback-semantics-analysis.md`](docs/frontend-workflow/talkback-semantics-analysis.md) (evidence base) and
-[`talkback-semantics-plan.md`](docs/frontend-workflow/talkback-semantics-plan.md) (settled mechanism decisions).
+[`talkback-semantics-analysis.md`](talkback-semantics-analysis.md) (evidence base) and
+[`talkback-semantics-plan.md`](talkback-semantics-plan.md) (settled mechanism decisions).
 
 **Scope discipline:** this file is the only output of Stage 1. Every claim below is a current-tree `path:line` read, or a
 read of the **installed Flutter SDK** through `package:` URIs (used only for the dropdown feasibility question). Anything
-unconfirmed is tagged **Needs Verification** per [`.roo/rules/01-verification-policy.md`](.roo/rules/01-verification-policy.md).
+unconfirmed is tagged **Needs Verification** per `.roo/rules/01-verification-policy.md`.
 
 ---
 
@@ -23,19 +26,19 @@ The settled decisions are **implementable**, and the four lifecycle utterances, 
 the failure surfaces all exist where the brief says they do. Three re-check findings change what the plan must *do*:
 
 1. **The previous semantics stage is already landed in the tree.** The lifecycle card already exposes
-   `onLongPress` + `hintOverrides` ([`detection_action_controls.dart:307-319`](lib/widgets/detection_action_controls.dart:307),
-   [`:349-370`](lib/widgets/detection_action_controls.dart:349)), `AccessibleButton` already has no `hint`
-   ([`accessible_button.dart:27-51`](lib/widgets/accessible_button.dart:27)), the Home instruction region is already
-   excluded ([`home_screen.dart:223-245`](lib/screens/home_screen.dart:223)), the `Use fallback` path is already gone
-   ([`detection_state_panel.dart:16-28`](lib/widgets/detection_state_panel.dart:16)), and the header `_modelError`
-   duplicate is already excluded ([`ultralytics_detection_screen.dart:1483-1491`](lib/screens/ultralytics_detection_screen.dart:1483)).
+   `onLongPress` + `hintOverrides` ([`detection_action_controls.dart:307-319`](../../lib/widgets/detection_action_controls.dart#L307),
+   [`:349-370`](../../lib/widgets/detection_action_controls.dart#L349)), `AccessibleButton` already has no `hint`
+   ([`accessible_button.dart:27-51`](../../lib/widgets/accessible_button.dart#L27)), the Home instruction region is already
+   excluded ([`home_screen.dart:223-245`](../../lib/screens/home_screen.dart#L223)), the `Use fallback` path is already gone
+   ([`detection_state_panel.dart:16-28`](../../lib/widgets/detection_state_panel.dart#L16)), and the header `_modelError`
+   duplicate is already excluded ([`ultralytics_detection_screen.dart:1483-1491`](../../lib/screens/ultralytics_detection_screen.dart#L1483)).
    Several items the brief lists as additions are therefore **moves or re-scopes**, not first-time additions.
 
 2. **Repeat is currently on the audio pill, not absent.** `_AudioPill` already carries
    `container: true, excludeSemantics: true, button: true, label, onTap` **and**
    `customSemanticsActions: {CustomSemanticsAction('Repeat last alert'): repeat}`
-   ([`ultralytics_detection_screen.dart:1772-1783`](lib/screens/ultralytics_detection_screen.dart:1772)), fed by
-   `onRepeatAlert: _repeatAlert` ([`:1472`](lib/screens/ultralytics_detection_screen.dart:1472)). The settled decision is a
+   ([`ultralytics_detection_screen.dart:1772-1783`](../../lib/screens/ultralytics_detection_screen.dart#L1772)), fed by
+   `onRepeatAlert: _repeatAlert` ([`:1472`](../../lib/screens/ultralytics_detection_screen.dart#L1472)). The settled decision is a
    **relocation** to the camera viewport, which means deleting working code from the pill and a test that currently
    *passes* against it.
 
@@ -56,38 +59,38 @@ Verdicts: **TRUE** (holds, cited location accurate) · **CHANGED** (holds, cited
 
 | # | Settled fact | Verdict | Current evidence |
 |---|---|---|---|
-| 1 | `'Detection started'` utterance | **TRUE** | [`ultralytics_detection_screen.dart:871`](lib/screens/ultralytics_detection_screen.dart:871) — last statement of `_startDetection` ([`:807`](lib/screens/ultralytics_detection_screen.dart:807)), itself guarded by `announce` |
-| 2 | `'Detection stopped'` | **TRUE** | [`ultralytics_detection_screen.dart:916`](lib/screens/ultralytics_detection_screen.dart:916) |
-| 3 | `'Detection paused'` | **TRUE** | [`ultralytics_detection_screen.dart:941`](lib/screens/ultralytics_detection_screen.dart:941) |
-| 4 | `'Detection resumed'` | **TRUE** | [`ultralytics_detection_screen.dart:957`](lib/screens/ultralytics_detection_screen.dart:957) |
-| 5 | `StatusPill` is a live region and has no `liveRegion` parameter | **TRUE** | [`status_pill.dart:16-19`](lib/widgets/status_pill.dart:16) sets `container: true, liveRegion: true, label: 'Detection status: $label'`; the constructor takes only `label`/`color` ([`:9-12`](lib/widgets/status_pill.dart:9)) → the plan must add the optional parameter |
-| 6 | `DetectionStatePanel` is the failure surface and a live region | **TRUE** | [`detection_state_panel.dart:40-43`](lib/widgets/detection_state_panel.dart:40) `container: true, liveRegion: true, label: '$title. $message'`; it is mounted only for the failed state at [`ultralytics_detection_screen.dart:1511-1517`](lib/screens/ultralytics_detection_screen.dart:1511) |
-| 7 | Failure panel still offers `Retry` / `Stop` / `Open Settings` labels | **TRUE** | [`detection_state_panel.dart:88-107`](lib/widgets/detection_state_panel.dart:88) — `'Open Settings'` [`:90`](lib/widgets/detection_state_panel.dart:90), `'Retry'` [`:97`](lib/widgets/detection_state_panel.dart:97), `'Stop'` [`:104`](lib/widgets/detection_state_panel.dart:104). `onFallback` is **already removed** (absent from fields/ctor, [`:16-28`](lib/widgets/detection_state_panel.dart:16)) |
-| 8 | Header `_modelError` duplicates the panel message | **ALREADY DONE** | [`ultralytics_detection_screen.dart:1483-1491`](lib/screens/ultralytics_detection_screen.dart:1483) already wraps it in `ExcludeSemantics`; the string assignment at [`:1276`](lib/screens/ultralytics_detection_screen.dart:1276) is unchanged. No further work in this task |
-| 9 | Home has exactly one status node candidates at `:155-157` | **TRUE** | [`home_screen.dart:155-157`](lib/screens/home_screen.dart:155) `Semantics(container: true, label: presentation.meaning)` with the child excluded at [`:158`](lib/screens/home_screen.dart:158) |
-| 10 | Home instruction copy is a second/third stop | **CHANGED → ALREADY DONE** | Both instruction `Text`s are already inside `ExcludeSemantics` ([`home_screen.dart:223-245`](lib/screens/home_screen.dart:223)). The remaining Home work is only identity: the `'Home. '` prefix and the wordmark header |
-| 11 | Home wordmark is a bare `Text('EyeCue')` at `:104-108` | **TRUE** | [`home_screen.dart:104-108`](lib/screens/home_screen.dart:104) — plain `Text`, no `Semantics` wrapper; the decorative logo above it is already excluded ([`:95-102`](lib/screens/home_screen.dart:95)) |
-| 12 | `'Detection Mode'` header `Text` at `:1451-1454` | **TRUE** | [`ultralytics_detection_screen.dart:1451-1454`](lib/screens/ultralytics_detection_screen.dart:1451) |
-| 13 | `GestureSurface(child: viewport)` at `:1639` | **TRUE** | [`ultralytics_detection_screen.dart:1639`](lib/screens/ultralytics_detection_screen.dart:1639); the surface itself is a bare `Listener` with no semantics ([`gesture_surface.dart:32-42`](lib/widgets/gesture_surface.dart:32)) |
-| 14 | Repeat custom action lives on the audio pill | **CHANGED (this is the relocation target, not an addition)** | Pill semantics at [`ultralytics_detection_screen.dart:1772-1783`](lib/screens/ultralytics_detection_screen.dart:1772); wiring at [`:1472`](lib/screens/ultralytics_detection_screen.dart:1472) |
-| 15 | `_repeatAlert()` at `:1164-1167` | **CHANGED** | Actual declaration [`ultralytics_detection_screen.dart:1165-1168`](lib/screens/ultralytics_detection_screen.dart:1165) — medium haptic + `_tts.repeatLast()` |
-| 16 | `swipeDown` dispatches `_repeatAlert` at `:1331-1332` | **CHANGED** | [`ultralytics_detection_screen.dart:1332-1333`](lib/screens/ultralytics_detection_screen.dart:1332) |
-| 17 | `TtsService.repeatLast()` fails silently | **TRUE** | [`tts_service.dart:688-704`](lib/services/tts_service.dart:688) — `false` with no output when `_lastUtterance == null` ([`:690`](lib/services/tts_service.dart:690)) or when muted ([`:691-694`](lib/services/tts_service.dart:691)) |
-| 18 | `TtsService` exposes the state needed to disambiguate | **TRUE** | `bool get audioEnabled` [`tts_service.dart:237`](lib/services/tts_service.dart:237); `String? get lastUtterance` [`:240`](lib/services/tts_service.dart:240) |
-| 19 | Help has `Gesture Controls` / `Best Use Tip` / `How It Works` / `Gesture Confirmation` as one grouped body each | **TRUE** | Titles at [`help_screen.dart:68`](lib/screens/help_screen.dart:68), [`:79`](lib/screens/help_screen.dart:79), [`:90`](lib/screens/help_screen.dart:90), [`:98`](lib/screens/help_screen.dart:98); single body `Text` at [`:162`](lib/screens/help_screen.dart:162); heading semantics at [`:145-160`](lib/screens/help_screen.dart:145) |
-| 20 | Help/Gesture copy says `press Start` | **TRUE** | [`help_screen.dart:71`](lib/screens/help_screen.dart:71) |
-| 21 | `kSafetyDisclosureTitle` + dialog has no title | **TRUE** | Constant [`safety_disclosure.dart:15`](lib/widgets/safety_disclosure.dart:15); `AlertDialog` with `content:` only ([`:111-134`](lib/widgets/safety_disclosure.dart:111)); live lead banner [`:118-122`](lib/widgets/safety_disclosure.dart:118) whose liveness comes from [`warning_banner.dart:15-18`](lib/widgets/warning_banner.dart:15) |
-| 22 | Stale copy `'…custom EyeCue mode.'` at `:1685-1689` | **CHANGED** | [`ultralytics_detection_screen.dart:1693-1697`](lib/screens/ultralytics_detection_screen.dart:1693) |
-| 23 | Stale copy `'press Start'` sites | **CHANGED** | `kModelChangedMessage` [`ultralytics_detection_screen.dart:53-55`](lib/screens/ultralytics_detection_screen.dart:53); [`help_screen.dart:71`](lib/screens/help_screen.dart:71); **and** [`settings_screen.dart:730-731`](lib/screens/settings_screen.dart:730) (the brief cited `:744-746`) |
-| 24 | Detector-model dropdown is a labelled-control gap | **TRUE** | `_ModelFilter` at [`logs_reports_screen.dart:2006-2054`](lib/screens/logs_reports_screen.dart:2006): sibling `Text('Detector model')` at [`:2025`](lib/screens/logs_reports_screen.dart:2025) and a bare `DropdownButton<String?>` at [`:2029`](lib/screens/logs_reports_screen.dart:2029) inside a `Row` ([`:2023-2050`](lib/screens/logs_reports_screen.dart:2023)). This is the only dropdown in `lib/` (repo search) |
-| 25 | Shell horizontal navigation must not be touched | **NOT RE-VERIFIED (no change proposed)** | The brief's citation (`app_shell.dart:412-430`) was not re-read in this pass. Only [`app_shell.dart:395`](lib/navigation/app_shell.dart:395) (`MediaQuery.accessibleNavigationOf`) was read, to confirm the API exists in this tree. No file in `lib/navigation/` is in the change set |
-| 26 | `AccessibleButton.label` is also the visible button text | **TRUE — constrains the copy changes** | [`accessible_button.dart:27-31`](lib/widgets/accessible_button.dart:27) sets `label:` on `Semantics`; [`:36-39`](lib/widgets/accessible_button.dart:36) renders `Text(label)`. Therefore **renaming `Retry`/`Stop`/`Open Settings` is a visible-copy change**, not a semantics-only change |
-| 27 | Lifecycle card semantics already carry long-press + result-only hints | **ALREADY DONE** | [`detection_action_controls.dart:357-370`](lib/widgets/detection_action_controls.dart:357) (`onTap` gated for stopped, `onLongPress`, `onTapHint`, `onLongPressHint`), dispatch [`:307-319`](lib/widgets/detection_action_controls.dart:307) |
+| 1 | `'Detection started'` utterance | **TRUE** | [`ultralytics_detection_screen.dart:871`](../../lib/screens/ultralytics_detection_screen.dart#L871) — last statement of `_startDetection` ([`:807`](../../lib/screens/ultralytics_detection_screen.dart#L807)), itself guarded by `announce` |
+| 2 | `'Detection stopped'` | **TRUE** | [`ultralytics_detection_screen.dart:916`](../../lib/screens/ultralytics_detection_screen.dart#L916) |
+| 3 | `'Detection paused'` | **TRUE** | [`ultralytics_detection_screen.dart:941`](../../lib/screens/ultralytics_detection_screen.dart#L941) |
+| 4 | `'Detection resumed'` | **TRUE** | [`ultralytics_detection_screen.dart:957`](../../lib/screens/ultralytics_detection_screen.dart#L957) |
+| 5 | `StatusPill` is a live region and has no `liveRegion` parameter | **TRUE** | [`status_pill.dart:16-19`](../../lib/widgets/status_pill.dart#L16) sets `container: true, liveRegion: true, label: 'Detection status: $label'`; the constructor takes only `label`/`color` ([`:9-12`](../../lib/widgets/status_pill.dart#L9)) → the plan must add the optional parameter |
+| 6 | `DetectionStatePanel` is the failure surface and a live region | **TRUE** | [`detection_state_panel.dart:40-43`](../../lib/widgets/detection_state_panel.dart#L40) `container: true, liveRegion: true, label: '$title. $message'`; it is mounted only for the failed state at [`ultralytics_detection_screen.dart:1511-1517`](../../lib/screens/ultralytics_detection_screen.dart#L1511) |
+| 7 | Failure panel still offers `Retry` / `Stop` / `Open Settings` labels | **TRUE** | [`detection_state_panel.dart:88-107`](../../lib/widgets/detection_state_panel.dart#L88) — `'Open Settings'` [`:90`](../../lib/widgets/detection_state_panel.dart#L90), `'Retry'` [`:97`](../../lib/widgets/detection_state_panel.dart#L97), `'Stop'` [`:104`](../../lib/widgets/detection_state_panel.dart#L104). `onFallback` is **already removed** (absent from fields/ctor, [`:16-28`](../../lib/widgets/detection_state_panel.dart#L16)) |
+| 8 | Header `_modelError` duplicates the panel message | **ALREADY DONE** | [`ultralytics_detection_screen.dart:1483-1491`](../../lib/screens/ultralytics_detection_screen.dart#L1483) already wraps it in `ExcludeSemantics`; the string assignment at [`:1276`](../../lib/screens/ultralytics_detection_screen.dart#L1276) is unchanged. No further work in this task |
+| 9 | Home has exactly one status node candidates at `:155-157` | **TRUE** | [`home_screen.dart:155-157`](../../lib/screens/home_screen.dart#L155) `Semantics(container: true, label: presentation.meaning)` with the child excluded at [`:158`](../../lib/screens/home_screen.dart#L158) |
+| 10 | Home instruction copy is a second/third stop | **CHANGED → ALREADY DONE** | Both instruction `Text`s are already inside `ExcludeSemantics` ([`home_screen.dart:223-245`](../../lib/screens/home_screen.dart#L223)). The remaining Home work is only identity: the `'Home. '` prefix and the wordmark header |
+| 11 | Home wordmark is a bare `Text('EyeCue')` at `:104-108` | **TRUE** | [`home_screen.dart:104-108`](../../lib/screens/home_screen.dart#L104) — plain `Text`, no `Semantics` wrapper; the decorative logo above it is already excluded ([`:95-102`](../../lib/screens/home_screen.dart#L95)) |
+| 12 | `'Detection Mode'` header `Text` at `:1451-1454` | **TRUE** | [`ultralytics_detection_screen.dart:1451-1454`](../../lib/screens/ultralytics_detection_screen.dart#L1451) |
+| 13 | `GestureSurface(child: viewport)` at `:1639` | **TRUE** | [`ultralytics_detection_screen.dart:1639`](../../lib/screens/ultralytics_detection_screen.dart#L1639); the surface itself is a bare `Listener` with no semantics ([`gesture_surface.dart:32-42`](../../lib/widgets/gesture_surface.dart#L32)) |
+| 14 | Repeat custom action lives on the audio pill | **CHANGED (this is the relocation target, not an addition)** | Pill semantics at [`ultralytics_detection_screen.dart:1772-1783`](../../lib/screens/ultralytics_detection_screen.dart#L1772); wiring at [`:1472`](../../lib/screens/ultralytics_detection_screen.dart#L1472) |
+| 15 | `_repeatAlert()` at `:1164-1167` | **CHANGED** | Actual declaration [`ultralytics_detection_screen.dart:1165-1168`](../../lib/screens/ultralytics_detection_screen.dart#L1165) — medium haptic + `_tts.repeatLast()` |
+| 16 | `swipeDown` dispatches `_repeatAlert` at `:1331-1332` | **CHANGED** | [`ultralytics_detection_screen.dart:1332-1333`](../../lib/screens/ultralytics_detection_screen.dart#L1332) |
+| 17 | `TtsService.repeatLast()` fails silently | **TRUE** | [`tts_service.dart:688-704`](../../lib/services/tts_service.dart#L688) — `false` with no output when `_lastUtterance == null` ([`:690`](../../lib/services/tts_service.dart#L690)) or when muted ([`:691-694`](../../lib/services/tts_service.dart#L691)) |
+| 18 | `TtsService` exposes the state needed to disambiguate | **TRUE** | `bool get audioEnabled` [`tts_service.dart:237`](../../lib/services/tts_service.dart#L237); `String? get lastUtterance` [`:240`](../../lib/services/tts_service.dart#L240) |
+| 19 | Help has `Gesture Controls` / `Best Use Tip` / `How It Works` / `Gesture Confirmation` as one grouped body each | **TRUE** | Titles at [`help_screen.dart:68`](../../lib/screens/help_screen.dart#L68), [`:79`](../../lib/screens/help_screen.dart#L79), [`:90`](../../lib/screens/help_screen.dart#L90), [`:98`](../../lib/screens/help_screen.dart#L98); single body `Text` at [`:162`](../../lib/screens/help_screen.dart); heading semantics at [`:145-160`](../../lib/screens/help_screen.dart#L145) |
+| 20 | Help/Gesture copy says `press Start` | **TRUE** | [`help_screen.dart:71`](../../lib/screens/help_screen.dart#L71) |
+| 21 | `kSafetyDisclosureTitle` + dialog has no title | **TRUE** | Constant [`safety_disclosure.dart:15`](../../lib/widgets/safety_disclosure.dart#L15); `AlertDialog` with `content:` only ([`:111-134`](../../lib/widgets/safety_disclosure.dart#L111)); live lead banner [`:118-122`](../../lib/widgets/safety_disclosure.dart#L118) whose liveness comes from [`warning_banner.dart:15-18`](../../lib/widgets/warning_banner.dart#L15) |
+| 22 | Stale copy `'…custom EyeCue mode.'` at `:1685-1689` | **CHANGED** | [`ultralytics_detection_screen.dart:1693-1697`](../../lib/screens/ultralytics_detection_screen.dart#L1693) |
+| 23 | Stale copy `'press Start'` sites | **CHANGED** | `kModelChangedMessage` [`ultralytics_detection_screen.dart:53-55`](../../lib/screens/ultralytics_detection_screen.dart#L53); [`help_screen.dart:71`](../../lib/screens/help_screen.dart#L71); **and** [`settings_screen.dart:730-731`](../../lib/screens/settings_screen.dart#L730) (the brief cited `:744-746`) |
+| 24 | Detector-model dropdown is a labelled-control gap | **TRUE** | `_ModelFilter` at [`logs_reports_screen.dart:2006-2054`](../../lib/screens/logs_reports_screen.dart#L2006): sibling `Text('Detector model')` at [`:2025`](../../lib/screens/logs_reports_screen.dart#L2025) and a bare `DropdownButton<String?>` at [`:2029`](../../lib/screens/logs_reports_screen.dart#L2029) inside a `Row` ([`:2023-2050`](../../lib/screens/logs_reports_screen.dart#L2023)). This is the only dropdown in `lib/` (repo search) |
+| 25 | Shell horizontal navigation must not be touched | **NOT RE-VERIFIED (no change proposed)** | The brief's citation (`app_shell.dart:412-430`) was not re-read in this pass. Only [`app_shell.dart:395`](../../lib/navigation/app_shell.dart#L395) (`MediaQuery.accessibleNavigationOf`) was read, to confirm the API exists in this tree. No file in `lib/navigation/` is in the change set |
+| 26 | `AccessibleButton.label` is also the visible button text | **TRUE — constrains the copy changes** | [`accessible_button.dart:27-31`](../../lib/widgets/accessible_button.dart#L27) sets `label:` on `Semantics`; [`:36-39`](../../lib/widgets/accessible_button.dart#L36) renders `Text(label)`. Therefore **renaming `Retry`/`Stop`/`Open Settings` is a visible-copy change**, not a semantics-only change |
+| 27 | Lifecycle card semantics already carry long-press + result-only hints | **ALREADY DONE** | [`detection_action_controls.dart:357-370`](../../lib/widgets/detection_action_controls.dart#L357) (`onTap` gated for stopped, `onLongPress`, `onTapHint`, `onLongPressHint`), dispatch [`:307-319`](../../lib/widgets/detection_action_controls.dart#L307) |
 
 ### 1.1 Consequences of the re-check for the plan
 
 - The plan must **delete** the pill's custom action and **delete/rewrite** a currently-green test
-  ([`test/screens/gesture_navigation_direction_test.dart:375-415`](test/screens/gesture_navigation_direction_test.dart:375)).
+  ([`test/screens/gesture_navigation_direction_test.dart:375-415`](../../test/screens/gesture_navigation_direction_test.dart#L375)).
   This is a regression surface, not just an addition.
 - Home and the failure path are already de-duplicated; the plan's Home/failure work is narrower than the brief implies
   (`'Home. '` prefix, wordmark header, pill liveness while failed).
@@ -100,13 +103,13 @@ Verdicts: **TRUE** (holds, cited location accurate) · **CHANGED** (holds, cited
 
 ### 2.1 Distinguishing Repeat failure causes **without a service change** — verdict: FEASIBLE
 
-`repeatLast()` has three distinct exit paths ([`tts_service.dart:688-704`](lib/services/tts_service.dart:688)):
+`repeatLast()` has three distinct exit paths ([`tts_service.dart:688-704`](../../lib/services/tts_service.dart#L688)):
 
 | Cause | Service-internal condition | Return | Observable from the screen **without** a service change |
 |---|---|---|---|
-| Audio is off | `!_audioEnabled` ([`:691-694`](lib/services/tts_service.dart:691)) | `false` | **Yes** — `_tts.audioEnabled` getter ([`tts_service.dart:237`](lib/services/tts_service.dart:237)); the screen already reads audio state for the toggle at [`ultralytics_detection_screen.dart:1239-1242`](lib/screens/ultralytics_detection_screen.dart:1239) |
-| Nothing has ever started | `_lastUtterance == null` ([`:689-690`](lib/services/tts_service.dart:689)) | `false` | **Yes** — `_tts.lastUtterance` getter ([`tts_service.dart:240`](lib/services/tts_service.dart:240)) |
-| Cached utterance exists but the submission is refused (validity window / superseded) | `_submit(...)` result ([`:695-703`](lib/services/tts_service.dart:695), `validity: 10 s`) | `false` | **No** — indistinguishable from the previous case from outside; must fall back to the same generic wording |
+| Audio is off | `!_audioEnabled` ([`:691-694`](../../lib/services/tts_service.dart#L691)) | `false` | **Yes** — `_tts.audioEnabled` getter ([`tts_service.dart:237`](../../lib/services/tts_service.dart#L237)); the screen already reads audio state for the toggle at [`ultralytics_detection_screen.dart:1239-1242`](../../lib/screens/ultralytics_detection_screen.dart#L1239) |
+| Nothing has ever started | `_lastUtterance == null` ([`:689-690`](../../lib/services/tts_service.dart#L689)) | `false` | **Yes** — `_tts.lastUtterance` getter ([`tts_service.dart:240`](../../lib/services/tts_service.dart#L240)) |
+| Cached utterance exists but the submission is refused (validity window / superseded) | `_submit(...)` result ([`:695-703`](../../lib/services/tts_service.dart#L695), `validity: 10 s`) | `false` | **No** — indistinguishable from the previous case from outside; must fall back to the same generic wording |
 
 **Conclusion.** The two causes the brief names are separable purely in UI code, so the two required strings are achievable
 with **zero** `lib/services/` edits:
@@ -130,10 +133,10 @@ Verified against the installed SDK (`package:flutter/src/material/dropdown.dart`
 | `DropdownButtonFormField` | Renders the same `DropdownButton` **inside an `InputDecorator`** with `decoration` applied, `isDense: true` by default, and `suffixIcon` constraints/padding recomputed (`suffixIconConstraints`, `suffixIconEndMargin`) | **structural**: introduces a decorator border/underline, changes intrinsic height and horizontal padding, and relocates the arrow glyph |
 
 Because the brief makes visual parity a hard constraint, `DropdownButtonFormField` is rejected: reproducing
-[`logs_reports_screen.dart:2022-2053`](lib/screens/logs_reports_screen.dart:2022) exactly would require decoration/padding
+[`logs_reports_screen.dart:2022-2053`](../../lib/screens/logs_reports_screen.dart#L2022) exactly would require decoration/padding
 tuning that is a design change, not a semantics change.
 
-`MergeSemantics` around the existing `Row` ([`:2023-2050`](lib/screens/logs_reports_screen.dart:2023)) is the correct
+`MergeSemantics` around the existing `Row` ([`:2023-2050`](../../lib/screens/logs_reports_screen.dart#L2023)) is the correct
 mechanism: both the label `Text` and the dropdown's non-container annotations merge into one node carrying
 `Detector model` + the selected item + `button`/`expanded` + the tap action, with **zero layout, paint, or focus change**.
 
@@ -149,18 +152,18 @@ Only assertions that will **fail or become misleading** are listed. Line numbers
 
 | Test | Location | Encodes | Why it must change |
 |---|---|---|---|
-| `the audio pill is one node with a Repeat last alert action` | [`test/screens/gesture_navigation_direction_test.dart:375-415`](test/screens/gesture_navigation_direction_test.dart:375) | `expect(labelled, ['Repeat last alert'])` ([`:397`](test/screens/gesture_navigation_direction_test.dart:397)) and the invocation at [`:400-411`](test/screens/gesture_navigation_direction_test.dart:400) | The pill must expose **no** custom action; the same assertions move to the camera-view node |
-| Permission-denied panel taps | [`test/screens/gesture_navigation_direction_test.dart:358-372`](test/screens/gesture_navigation_direction_test.dart:358) | `find.text('Open Settings')` / `find.text('Retry')` ([`:358`](test/screens/gesture_navigation_direction_test.dart:358), [`:369`](test/screens/gesture_navigation_direction_test.dart:369), [`:371`](test/screens/gesture_navigation_direction_test.dart:371)) | Both labels are renamed |
-| Home meanings ×5 | [`test/accessibility/semantics_test.dart:459`](test/accessibility/semantics_test.dart:459), [`:475`](test/accessibility/semantics_test.dart:475), [`:497`](test/accessibility/semantics_test.dart:497), [`:511`](test/accessibility/semantics_test.dart:511), [`:520`](test/accessibility/semantics_test.dart:520), [`:539`](test/accessibility/semantics_test.dart:539) | Exact label strings with no `Home. ` prefix | The prefix is folded into the same node |
-| `expectButtonSemantics(tester, 'Retry')` / `('Stop')`, and the taps | [`test/accessibility/semantics_test.dart:286-291`](test/accessibility/semantics_test.dart:286) | Panel button labels | Renamed for context |
-| Wordmark assertions | [`test/accessibility/semantics_test.dart:461`](test/accessibility/semantics_test.dart:461), [`:498`](test/accessibility/semantics_test.dart:498), [`:552`](test/accessibility/semantics_test.dart:552) | `byLabel('EyeCue')` length 1 | **Still pass** (label unchanged) — extend with a `header` flag assertion instead of rewriting |
-| Help section headings | [`test/accessibility/semantics_test.dart:614-625`](test/accessibility/semantics_test.dart:614) | Heading nodes for the four cards, length 1 | Should still pass if the title semantics are preserved verbatim; re-check after extracting the card widget |
-| Help copy assertions | [`test/widget_test.dart:344-420`](test/widget_test.dart:344) | `find.textContaining('Two-finger double tap — start or exit')` ([`:402`](test/widget_test.dart:402)), Best Use Tip bullets ([`:415-420`](test/widget_test.dart:415)), `'1. Open EyeCue.'` ([`:395`](test/widget_test.dart:395)) | Pass **only** if the per-item split preserves the exact bullet strings; the `press Start` fix breaks the How-It-Works step string at [`help_screen.dart:71`](lib/screens/help_screen.dart:71) |
-| `StatusPill` live region | [`test/accessibility/semantics_test.dart:181-184`](test/accessibility/semantics_test.dart:181) | Pill is live | Unaffected if the new parameter defaults to `true`; add a failed-state case |
-| State panel live region | [`test/accessibility/semantics_test.dart:279-293`](test/accessibility/semantics_test.dart:279) | Panel is live and its buttons work | Panel liveness is retained; only labels change |
-| `'Detection started'` speech | [`test/screens/gesture_navigation_direction_test.dart:317`](test/screens/gesture_navigation_direction_test.dart:317), [`:339`](test/screens/gesture_navigation_direction_test.dart:339) | Default (non-TalkBack) start speech | **Must keep passing** — these pin the gated path's unaffected behaviour |
-| Two-control row / no visible `Start`/`Stop` | [`test/screens/ultralytics_detection_screen_layout_test.dart:108-118`](test/screens/ultralytics_detection_screen_layout_test.dart:108), [`test/screens/detection_screen_layout_test.dart:107-113`](test/screens/detection_screen_layout_test.dart:107), [`test/widget_test.dart:507-517`](test/widget_test.dart:507) | `find.text('Stop')`/`'Start'` find nothing | Still pass **only** because `find.text` matches whole strings — the renames must not produce an exact `'Stop'` |
-| `Detection Mode` visible title | [`test/widget_test.dart:455-472`](test/widget_test.dart:455), [`test/screens/detection_redesign_parity_test.dart:92`](test/screens/detection_redesign_parity_test.dart:92) | Visible `Text` | Visible text is unchanged by the header promotion; assertions stay |
+| `the audio pill is one node with a Repeat last alert action` | [`test/screens/gesture_navigation_direction_test.dart:375-415`](../../test/screens/gesture_navigation_direction_test.dart#L375) | `expect(labelled, ['Repeat last alert'])` ([`:397`](../../test/screens/gesture_navigation_direction_test.dart#L397)) and the invocation at [`:400-411`](../../test/screens/gesture_navigation_direction_test.dart#L400) | The pill must expose **no** custom action; the same assertions move to the camera-view node |
+| Permission-denied panel taps | [`test/screens/gesture_navigation_direction_test.dart:358-372`](../../test/screens/gesture_navigation_direction_test.dart#L358) | `find.text('Open Settings')` / `find.text('Retry')` ([`:358`](../../test/screens/gesture_navigation_direction_test.dart#L358), [`:369`](../../test/screens/gesture_navigation_direction_test.dart#L369), [`:371`](../../test/screens/gesture_navigation_direction_test.dart#L371)) | Both labels are renamed |
+| Home meanings ×5 | [`test/accessibility/semantics_test.dart:459`](../../test/accessibility/semantics_test.dart#L459), [`:475`](../../test/accessibility/semantics_test.dart#L475), [`:497`](../../test/accessibility/semantics_test.dart#L497), [`:511`](../../test/accessibility/semantics_test.dart#L511), [`:520`](../../test/accessibility/semantics_test.dart#L520), [`:539`](../../test/accessibility/semantics_test.dart#L539) | Exact label strings with no `Home. ` prefix | The prefix is folded into the same node |
+| `expectButtonSemantics(tester, 'Retry')` / `('Stop')`, and the taps | [`test/accessibility/semantics_test.dart:286-291`](../../test/accessibility/semantics_test.dart#L286) | Panel button labels | Renamed for context |
+| Wordmark assertions | [`test/accessibility/semantics_test.dart:461`](../../test/accessibility/semantics_test.dart#L461), [`:498`](../../test/accessibility/semantics_test.dart#L498), [`:552`](../../test/accessibility/semantics_test.dart#L552) | `byLabel('EyeCue')` length 1 | **Still pass** (label unchanged) — extend with a `header` flag assertion instead of rewriting |
+| Help section headings | [`test/accessibility/semantics_test.dart:614-625`](../../test/accessibility/semantics_test.dart#L614) | Heading nodes for the four cards, length 1 | Should still pass if the title semantics are preserved verbatim; re-check after extracting the card widget |
+| Help copy assertions | [`test/widget_test.dart:344-420`](../../test/widget_test.dart#L344) | `find.textContaining('Two-finger double tap — start or exit')` ([`:402`](../../test/widget_test.dart#L402)), Best Use Tip bullets ([`:415-420`](../../test/widget_test.dart#L415)), `'1. Open EyeCue.'` ([`:395`](../../test/widget_test.dart#L395)) | Pass **only** if the per-item split preserves the exact bullet strings; the `press Start` fix breaks the How-It-Works step string at [`help_screen.dart:71`](../../lib/screens/help_screen.dart#L71) |
+| `StatusPill` live region | [`test/accessibility/semantics_test.dart:181-184`](../../test/accessibility/semantics_test.dart#L181) | Pill is live | Unaffected if the new parameter defaults to `true`; add a failed-state case |
+| State panel live region | [`test/accessibility/semantics_test.dart:279-293`](../../test/accessibility/semantics_test.dart#L279) | Panel is live and its buttons work | Panel liveness is retained; only labels change |
+| `'Detection started'` speech | [`test/screens/gesture_navigation_direction_test.dart:317`](../../test/screens/gesture_navigation_direction_test.dart#L317), [`:339`](../../test/screens/gesture_navigation_direction_test.dart#L339) | Default (non-TalkBack) start speech | **Must keep passing** — these pin the gated path's unaffected behaviour |
+| Two-control row / no visible `Start`/`Stop` | [`test/screens/ultralytics_detection_screen_layout_test.dart:108-118`](../../test/screens/ultralytics_detection_screen_layout_test.dart#L108), [`test/screens/detection_screen_layout_test.dart:107-113`](../../test/screens/detection_screen_layout_test.dart#L107), [`test/widget_test.dart:507-517`](../../test/widget_test.dart#L507) | `find.text('Stop')`/`'Start'` find nothing | Still pass **only** because `find.text` matches whole strings — the renames must not produce an exact `'Stop'` |
+| `Detection Mode` visible title | [`test/widget_test.dart:455-472`](../../test/widget_test.dart#L455), [`test/screens/detection_redesign_parity_test.dart:92`](../../test/screens/detection_redesign_parity_test.dart#L92) | Visible `Text` | Visible text is unchanged by the header promotion; assertions stay |
 
 No test asserts the stale copy (`custom EyeCue mode`, `press Start`) or the dropdown label today, so §5 of the plan adds
 new coverage rather than amending existing coverage for those.
@@ -171,8 +174,8 @@ new coverage rather than amending existing coverage for those.
 
 | Directory | Needed? | Evidence |
 |---|---|---|
-| `lib/services/tts_service.dart` | **No** | `repeatLast()` ([`:688-704`](lib/services/tts_service.dart:688)) and the two observable getters ([`:237`](lib/services/tts_service.dart:237), [`:240`](lib/services/tts_service.dart:240)) are sufficient for UI-side cause discrimination (§2.1) |
-| `lib/services/haptics_service.dart` | **No** | `lightTick`/`mediumTick`/`heavyTick` already used by the screen ([`ultralytics_detection_screen.dart:934`](lib/screens/ultralytics_detection_screen.dart:934), [`:1161`](lib/screens/ultralytics_detection_screen.dart:1161), [`:1166`](lib/screens/ultralytics_detection_screen.dart:1166)); the distinct failure cue reuses `heavyTick` |
+| `lib/services/tts_service.dart` | **No** | `repeatLast()` ([`:688-704`](../../lib/services/tts_service.dart#L688)) and the two observable getters ([`:237`](../../lib/services/tts_service.dart#L237), [`:240`](../../lib/services/tts_service.dart#L240)) are sufficient for UI-side cause discrimination (§2.1) |
+| `lib/services/haptics_service.dart` | **No** | `lightTick`/`mediumTick`/`heavyTick` already used by the screen ([`ultralytics_detection_screen.dart:934`](../../lib/screens/ultralytics_detection_screen.dart#L934), [`:1161`](../../lib/screens/ultralytics_detection_screen.dart#L1161), [`:1166`](../../lib/screens/ultralytics_detection_screen.dart#L1166)); the distinct failure cue reuses `heavyTick` |
 | `lib/models/` | **No** | Nothing in the change set reads a new model field |
 
 **Standing scope exception (flag only, do not plan):** if implementation finds it needs a typed repeat-failure reason

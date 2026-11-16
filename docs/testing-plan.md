@@ -2,17 +2,27 @@
 
 > See also: [`architecture.md`](architecture.md) (system design), [`implementation-progress.md`](implementation-progress.md) (what's built).
 
-> **Verification status (2026-10-23):** the totals in the next paragraph are **historical**, recorded before the Workstream 1 TTS relocation onto `origin/dev`. The current branch runs `flutter analyze --no-pub` (4 pre-existing issues) and `flutter test --no-pub` (527 passing, 1 known pre-existing `tts_service_test` failure); no Gradle, build, emulator or device command has been run. Treat every passing count below as dated evidence, not current verification.
+> **Current evidence boundary (local `main`, 2026-11-16):** this document
+> contains dated test and device-validation records, not a test run on the current
+> checkout. The most recent recorded static suite is dated 2026-11-09
+> (`flutter test`: 882 passing, 0 failing; `flutter analyze`: 0 issues). Treat
+> those totals as historical evidence. Current campus-model accuracy,
+> performance, and broad device lifecycle validation remain open.
 >
-> **Current suite (2026-11-09):** `flutter test` → **882 passing, 0 failing**; `flutter analyze` → **0 issues**. Those totals were recorded at the static stage of the Charts and Logs polish work; the physical-device UI checks are recorded separately in the manual checklist below.
+> The app now has one native Ultralytics detection engine; the old Dart/TFLite
+> isolate tests and dual-engine checks below are historical plan items. Research
+> sessions, Logs & Reports, and their exports are wired only by the Study
+> entrypoint (`lib/main_study.dart`). Public `lib/main.dart` does not wire them.
 >
-> For the speech layer specifically: tests exist for the serialized scheduler, alert policy, escalation, semantic pending revalidation, preemption/anti-churn, and idle-only wayfinding, and they run in the current suite. Real Android callback ordering and cancellation latency are unverified on device. `flutter_tts` provides **no utterance identifier**, so callback correlation relies on serialization plus paired signals, with a bounded quiet-period mitigation. Alert-latency telemetry is implemented and its owning tests run in the current suite; the recorded intervals are app-side only (the Ultralytics interval is `app-side / post-inference`), so neither inference timing nor these summaries may be treated as physical audible-warning latency. Prompt, correct audible warnings are **not** proven for independent navigation.
-
-> **Historical suite (2026-09-29 — pre-relocation):** at that revision `flutter test` reported **343 passing, 0 failing** and `flutter analyze` reported **0 issues**; these figures do **not** describe the current branch. Existing automated coverage lives in [`test/`](../test/): navigation shell (including primary gesture navigation), screen smoke tests, widgets (priority badge, detection card, warning banner, accessible button, charts, correction flows, the Detection redesign's [`detection_action_controls_test.dart`](../test/widgets/detection_action_controls_test.dart), the Detection geometry suite [`detection_screen_alignment_test.dart`](../test/screens/detection_screen_alignment_test.dart) and [`depth_heatmap_view_test.dart`](../test/widgets/depth_heatmap_view_test.dart)), services (TTS, settings, spatial, telemetry, gesture controller, engine coordination, recovery lifecycle, metadata/export), theme regression, NHWC/NCHW tensor-rotation tests, engine-setting persistence, per-engine telemetry, and Ultralytics-result adaptation. The 59-test v0.2.2 suite remains the historical release baseline; the tables below distinguish deterministic automated coverage from physical-device/manual validation, and the TalkBack accessibility rows and checkboxes are now device-verified on the tested devices.
+> For speech, code and deterministic tests cover serialization, track-aware
+> alert policy, revalidation, and timing records. Native callback ordering,
+> audible latency, and safety for independent navigation are not established by
+> those tests. Dated device-check notes below preserve their original evidence
+> date and are not fresh validation of local `main`.
 
 ## Unit Testing Strategy
 
-### Core Pipeline Tests (Critical Path)
+### Historical Dart/TFLite pipeline test plan (removed runtime)
 
 | Test | Priority | Description |
 |------|----------|-------------|
@@ -20,12 +30,12 @@
 | YUV→RGB conversion correctness | 🔴 P0 | Verify against known test image with pre-computed RGB output |
 | YOLOv8 output parsing | 🔴 P0 | Verify argmax with pre-computed synthetic tensor; check class ID, confidence, bounding box |
 | INT8 dequantization | 🔴 P0 | Verify scale/zeroPoint math against known values |
-| Label loading | 🟢 P2 | Verify 80 COCO labels parsed correctly from `labels.txt` |
+| Label loading | 🟢 P2 | Verify 14 campus-model labels parsed correctly from `labels.txt` |
 | NHWC/NCHW detection | 🟢 P2 | Test channel-order heuristic with both layout types |
 | NHWC/NCHW tensor rotation | 🟢 P2 | Verify identity, 90°/180°/270°, mirror, buffer guards, and logical equivalence across interleaved and planar layouts — ✅ 14 unit tests |
 | Detection model serialization | 🟢 P2 | Verify `Detection` class JSON serialization/deserialization |
 
-### Inference Isolate Tests
+### Historical inference-isolate tests (removed runtime)
 
 | Test | Priority | Description |
 |------|----------|-------------|
@@ -72,18 +82,18 @@ migration and the function's own TypeScript are still not executed anywhere
 | Depth heatmap geometry (2026-11-09) (device-verified) | ✅ | [`depth_heatmap_view_test.dart`](../test/widgets/depth_heatmap_view_test.dart): nothing renders without a depth image; the image is rotated with `RotatedBox` and centre-cropped (`BoxFit.cover`) rather than stretched; cover fit centres the rotated image and crops the overflow; quarter turns map every rotation including negative angles; the widget is excluded from semantics |
 | Chart axis, tick and selector polish (2026-11-09) (device-verified) | ✅ | [`charts_test.dart`](../test/widgets/charts_test.dart): X ticks carry at most one decimal on a wall-clock interval, the rightmost X tick stays inside the chart box, X ticks fit the raised 36 dp bottom band at 200 % text scale, Y ticks are single-line and never carry two decimals, the widest Y tick fits the reserved gutter at 200 %, axes and ticks share `kHomeInkMuted`, and the FPS chart draws no benchmark line while the latency chart keeps its 300 ms line. [`logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart): the model filter shows `All models (mixed)` whole and as one labelled control node, the Logs filter card shares the Charts gutter, and a log row keeps the latency number and unit together |
 
-## Integration Testing Strategy
+## Integration testing strategy and historical engine checks
 
 | Test | Priority | Description |
 |------|----------|-------------|
-| Camera → Isolate → Detection pipeline | 🔴 P0 | End-to-end: start camera, receive frame, run inference, get detections |
+| CameraX → native detector → Detection pipeline | 🔴 P0 | End-to-end: start CameraX, receive native result, adapt detections |
 | Detection → TTS pipeline | 🟡 P1 | End-to-end: detection triggers speech |
 | Camera permission flow | 🟡 P1 | Full flow: request → grant → initialize; request → deny → fallback UI |
-| Isolate lifecycle | 🟡 P1 | Spawn at startup, survive multiple inferences, dispose on app exit |
+| Dart inference-isolate lifecycle | Historical | The current detector runs in the native plugin; this plan no longer applies |
 | Model swap | 🟢 P2 | Dynamic tensor shape query handles different model shapes |
-| Engine switch | 🟡 P0 | One-device bidirectional smoke pass completed after fixing a late-result disposal race; repeated/rotated/background lifecycle coverage remains |
+| Engine switching | Not applicable | There is one detection engine; custom-model selection changes the graph, not the engine |
 | Ultralytics native path | 🟡 P0 | On-device camera → native preprocessing/inference/NMS → EyeCue adapter/cards ran on Snapdragon 695; controlled TTS/telemetry/delegate validation remains |
-| Custom worker lifecycle orchestration | ✅ | Deterministic coverage for respawn, stale generations, busy-gate release, delayed retry, terminal failure, disposal during backoff, and healthy recovery |
+| Custom worker lifecycle orchestration (historical) | Historical | Covered the removed Dart inference worker; not current runtime behavior |
 | Accessibility semantics and large text (device-verified) | ✅ | Deterministic coverage for actionable labels, live regions, charts, correction controls, 200% text scale, and TalkBack action operability (semantic long-press Stop/Start, Repeat custom action on the `Camera view` container), plus speech-ownership gating, the single failure announcer, screen identity, merged detector-filter node, and per-item Help granularity |
 
 ## Manual Testing Checklist
@@ -95,7 +105,7 @@ migration and the function's own TypeScript are still not executed anywhere
 - [ ] Preview fills screen correctly on different aspect ratios
 
 ### Inference
-- [x] Both engine modes load the same model and thresholds — shared configuration plus APK/device smoke verification
+- [ ] Current campus detector loads and returns useful detections under controlled ground-truth evaluation — no such current-model result is recorded here
 - [ ] Switching engines does not leave the camera occupied or duplicate speech
 - [ ] Detection FPS meets or exceeds target on test device
 - [ ] Inference does not cause camera preview hitching
@@ -104,9 +114,9 @@ migration and the function's own TypeScript are still not executed anywhere
 
 ### Audio Feedback (TTS implemented v0.2.0)
 - [x] TTS speaks detected objects clearly — ✅ implemented (`tts_service.dart`), dedicated on-device audio validation pending
-- [x] TTS does not overlap/spam — ✅ strict serialized speech (one active utterance, one pending slot), track-aware suppression, confirmed-`onStart` commits, semantic escalation/revalidation, and controlled preemption are implemented. The suite now runs (`flutter test`: **865 passing, 0 failing**), and TalkBack/TTS behaviour was **validated on the tested devices**. Per-incident interruption counters were observed only as documented elsewhere; no new measurement is claimed for this row.
+- [x] TTS scheduler ordering and alert policy are implemented and have deterministic test coverage. Historical suite/device results are recorded above/by date; no new test or device run is claimed for local `main`.
 - [ ] TTS latency from detection to speech is acceptable
-- [x] TTS works with screen reader (TalkBack) active — confirmed on the tested devices during the TalkBack pass (TTS/live-region overlap)
+- [x] TTS / TalkBack speech ownership — the 2026-11-09 device pass is recorded as confirmation for the tested paths; not revalidated on local `main`.
 
 ### Accessibility
 - [x] All tested interactive elements expose the intended TalkBack semantics (labels, roles, states, actions) — automated coverage exists for labels and for the operability actions (lifecycle long-press Stop/Start, Repeat custom action on the `Camera view` container), plus speech ownership (only lifecycle TTS suppressed under accessible navigation) and the single failure announcer. The previously open real-world checks — long-press delivery, live-region timing, the failed-Repeat announcement, `Camera view` reachability above the native platform view, and focus retention after Stop/Start — were **confirmed on the tested devices**.
@@ -126,7 +136,7 @@ migration and the function's own TypeScript are still not executed anywhere
 - [x] Both Detection presentations have confirmed title contrast, edge-inset left-aligned information overlay, and two-card action-control treatment; lifecycle, gesture, hold/tap, Quick Scan, and semantics behavior remain unchanged.
 - [x] Physical Android visual checks for this redesign were explicitly confirmed by the user. No visual requirements remain outstanding for this redesign.
 
-### Detection Alignment, Heatmap and Chart Polish (Device-Confirmed 2026-11-09)
+### Detection alignment, heatmap and chart polish (recorded device evidence, 2026-11-09)
 - [x] Header, dark camera viewport and the two action cards share one 16 dp horizontal gutter on the device.
 - [x] Depth heatmap pixels correspond to the preview with MDE enabled (layout-aware rotation plus the box mapping's centre-crop).
 - [x] The audio pill's ink ripple extends over the whole 64 × 56 target, not only the capsule.
@@ -140,17 +150,17 @@ migration and the function's own TypeScript are still not executed anywhere
 ### Error Handling
 - [ ] Camera permission denied → shows explanation UI
 - [ ] Model fails to load → shows error UI
-- [x] Typed Dart-level inference failures → bounded Custom-worker recovery is covered by deterministic orchestration tests; native crashes such as SIGSEGV remain outside Dart guarantees and require device validation
+- [x] Typed Dart-level inference failures → bounded recovery in the removed Custom worker had deterministic orchestration tests (historical); native crashes such as SIGSEGV remain outside Dart guarantees and require device validation
 - [ ] Device rotation → no state loss
 
 ## Benchmark Plan
 
 See [`benchmark-results.md`](benchmark-results.md) for the recording template.
-For the two selectable runtime modes, follow the paired protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md).
+The paired dual-engine protocol in [`dual-inference-engine-test.md`](dual-inference-engine-test.md) describes a removed runtime; use [`benchmark-procedure.md`](benchmark-procedure.md) for the current single-engine measurement plan.
 
 ### Required Benchmarks
 
-1. **Raw Model Latency:** Run each declared model candidate through the TFLite benchmark tool on the target device; the current NCHW/XNNPACK candidate has initial short-run device evidence, but has not yet received a formal benchmark
+1. **Raw Model Latency:** Run each declared model candidate through the TFLite benchmark tool on the target device; the current campus detector has no benchmark recorded in this document
 2. **End-to-End Pipeline FPS:** Measure detection FPS on target device under sustained use
 3. **Preprocessing Latency:** Profile YUV→RGB conversion time
 4. **Memory Usage:** Monitor heap usage during 5-minute continuous detection
@@ -173,7 +183,7 @@ For the two selectable runtime modes, follow the paired protocol in [`dual-infer
 
 ### Feature: Error Recovery
 1. Force model load failure → verify error UI appears
-2. Force inference crash → verify isolate restarts automatically
+2. Force a recoverable native model failure → verify the documented unavailable/retry behavior; native process crashes cannot be recovered by Dart
 3. Force camera disconnect → verify app handles gracefully
 
 ### Feature: Performance Logging

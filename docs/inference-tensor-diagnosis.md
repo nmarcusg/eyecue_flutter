@@ -2,6 +2,9 @@
 
 # Inference Tensor-Handling Diagnosis
 
+> **Current status (2026-11-16):** This tensor-shape diagnosis and its proposed ByteBuffer fix concern the retired Custom EyeCue TFLite isolate, removed in [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9). The active app does not call the removed `inference_isolate.dart`; inference and tensor layout are managed by the `ultralytics_yolo` plugin.
+
+
 > **Status:** Historical investigation record — no code was modified as part of
 > this report.
 > **Scope:** Output/input tensor handling in the inference isolate.
@@ -11,7 +14,7 @@
 > **Historical snapshot notice (2026-09-01):** This report describes the
 > pre-ByteBuffer implementation and the model state observed on 2026-08-01.
 > The ByteBuffer fix recommended below is now implemented in
-> [`inference_isolate.dart`](../lib/services/inference_isolate.dart), and the
+> `inference_isolate.dart`, and the
 > current committed-but-unreleased NCHW/XNNPACK candidate has initial device
 > evidence. The old line references and `camera_screen.dart` references below
 > are retained as historical evidence; use [`project-status.md`](project-status.md)
@@ -29,7 +32,7 @@
 The crash `NoSuchMethodError: Class 'Float32List' has no instance method 'reshape'`
 is a **Dart type-system bug**, not a model bug:
 
-- [`inference_isolate.dart:257`](../lib/services/inference_isolate.dart:257) calls
+- `inference_isolate.dart:257` calls
   `inputBuffer.reshape(inputShape)` on a variable declared `dynamic`.
 - `reshape` is an **extension method** (`ListShape` on `List`) inside
   `tflite_flutter`, **not** an instance method of `Float32List`.
@@ -68,10 +71,10 @@ a zero-copy path that is shape-exempt on both input and output.
   *not* full int8 I/O quantization.
 - Therefore the app's INT8 input/output branches and the dequantization branch
   in the parser **never activate** with either file. The code's "INT8 model"
-  comments (e.g. [`inference_isolate.dart:156-157`](../lib/services/inference_isolate.dart:156))
+  comments (e.g. `inference_isolate.dart:156-157`)
   are misleading for the file actually loaded.
 - The app bundles only `assets/yolov8n.tflite`
-  ([`pubspec.yaml:42`](../pubspec.yaml:42)); `yolov8n_int8.tflite` sits in
+  ([`pubspec.yaml:42`](../pubspec.yaml#L42)); `yolov8n_int8.tflite` sits in
   `assets/` but is **not declared** and **not loaded**.
 - **No automatic dequantization occurs anywhere.** `outputTensor.params` for a
   float32 tensor returns scale `0`, zeroPoint `0`, and the parser correctly skips
@@ -81,7 +84,7 @@ a zero-copy path that is shape-exempt on both input and output.
 
 ## 3. Current Implementation
 
-All in [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart):
+All in `lib/services/inference_isolate.dart`:
 
 | Line | Code | What it is |
 |---|---|---|
@@ -130,7 +133,7 @@ on a plain `List<dynamic>`.
 ### Is it valid Dart?
 
 As written, **no** — because `inputBuffer` is declared `dynamic`
-([`inference_isolate.dart:222`](../lib/services/inference_isolate.dart:222)):
+(`inference_isolate.dart:222`):
 
 1. `inputBuffer.reshape(...)` compiles to a **dynamic invocation**.
 2. Dynamic dispatch looks up **instance methods on the runtime type only**.
@@ -177,7 +180,7 @@ destinations are:
 
 ### Parser compatibility
 
-`_parseYolov8Output` ([`inference_isolate.dart:417`](../lib/services/inference_isolate.dart:417))
+`_parseYolov8Output` (`inference_isolate.dart:417`)
 accepts a flat `List` and indexes `outputBuffer[j * numBoxes + i]` — this is
 **correct for the model's transposed `[1, 84, 8400]` layout** (84 feature rows ×
 8400 anchors; index = `feature * 8400 + anchor`). Delivering the output as a flat
@@ -221,10 +224,10 @@ Mechanics, verified in the historical `camera_screen.dart` implementation:
 2. It is reset **only** when a `result` message arrives
    (`camera_screen.dart:170`, historical line reference).
 3. The isolate's try/catch **does** catch the `NoSuchMethodError` and reports it as
-   `{'type': 'error'}` ([`inference_isolate.dart:288-299`](../lib/services/inference_isolate.dart:288)),
+   `{'type': 'error'}` (`inference_isolate.dart:288-299`),
    so the isolate process technically survives.
 4. But the main isolate's `error` handler only prints
-   ([`inference_isolate.dart:63-69`](../lib/services/inference_isolate.dart:63)) and
+   (`inference_isolate.dart:63-69`) and
    **never clears `_isInferring`** → the frame-dropping gate stays locked forever.
 
 So "isolate dies" is really **pipeline death**: no `result` ever arrives, the busy
@@ -239,7 +242,7 @@ flag wedges, and every subsequent frame is dropped. This matches the already-tra
 ### 8.1 Root cause
 
 1. **Immediate crash:** `inputBuffer.reshape(...)` at
-   [`inference_isolate.dart:257`](../lib/services/inference_isolate.dart:257) —
+   `inference_isolate.dart:257` —
    `reshape` is a `List` *extension method* invoked on a `dynamic` receiver; Dart
    does not resolve extensions via dynamic dispatch, so `Float32List` throws
    `NoSuchMethodError`.
@@ -248,7 +251,7 @@ flag wedges, and every subsequent frame is dropped. This matches the already-tra
 3. **Latent data corruption:** a flat `Float32List` input would trigger an
    automatic 1-D `resizeInputTensor`, breaking the fixed-shape model.
 
-### 8.2 Immediate fix (2 lines, [`inference_isolate.dart`](../lib/services/inference_isolate.dart))
+### 8.2 Immediate fix (2 lines, `inference_isolate.dart`)
 
 ```dart
 // line 233 — output: typed flat list backed by raw bytes
@@ -298,7 +301,7 @@ interpreter!.run(inputBuffer.buffer, outputBuffer.buffer);
 | Scope | Effort |
 |---|---|
 | Immediate fix | ~2–5 lines in one file; ~10–20 min; no other files touched |
-| + error recovery / busy-flag reset | ~15 lines across [`inference_isolate.dart`](../lib/services/inference_isolate.dart) and the then-current camera screen |
+| + error recovery / busy-flag reset | ~15 lines across `inference_isolate.dart` and the then-current camera screen |
 | + long-term (`TensorBuffer`, type safety, docs, stale comments) | small–medium; 1–2 files + docs |
 
 ---

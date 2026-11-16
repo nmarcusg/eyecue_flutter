@@ -6,6 +6,11 @@ This directory contains the **Flutter-specific** iOS layer of the plugin. The sh
 
 These sources are compiled by **both** build systems from this same tree: the Swift Package manifest at `ios/ultralytics_yolo/Package.swift` (Swift Package Manager) and `ios/ultralytics_yolo.podspec` (CocoaPods). Both pin the same `UltralyticsYOLO` version range — bump them together.
 
+> **EyeCue repository note:** this README documents the vendored plugin's iOS
+> layer. The EyeCue application at the repository root currently maintains an
+> Android runtime only; this plugin code is not an iOS EyeCue app target. See
+> [`docs/architecture.md`](../../../../../../docs/architecture.md).
+
 ## What Lives Here
 
 - the platform view + method-channel bridge to the Dart API (`YOLOPlugin`, `YOLOInstanceManager`, `SwiftYOLOPlatformView`)

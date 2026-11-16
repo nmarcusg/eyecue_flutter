@@ -1,5 +1,7 @@
 # EyeCue Flutter — Comprehensive Project Audit Report
 
+> **Current reconciliation — 2026-11-16:** This July 2026 report remains a historical snapshot. Its early-prototype inventory, percentages, dependency versions, removed isolate paths, and absence-of-features statements do not describe the current checkout. Current guidance is [project status](docs/project-status.md), [architecture](docs/architecture.md), and the [documentation index](docs/index.md). The current public/Study split, campus detector, native engine, research features and speech/accessibility work are later developments; this review does not retroactively alter the audit’s measurements.
+
 **Date:** 2026-07-22  
 **Auditor:** Automated Project Status Auditor  
 **Repository:** `/home/nico/repos/eyecue_flutter`  
@@ -158,13 +160,13 @@ eyecue_flutter/
 |---|---------|--------|----------|-------|----------------|
 | 1 | Camera initialization (YUV420, low res) | ✅ Complete | `camera_screen.dart:52-57` | `camera_screen.dart` | None |
 | 2 | Camera permission handling | ✅ Mostly Complete | `camera_screen.dart:38-45` | `camera_screen.dart` | No UI for denied state |
-| 3 | Persistent inference isolate | ✅ Complete | [`inference_isolate.dart:31-34`](lib/services/inference_isolate.dart:31) | `inference_isolate.dart` | None |
-| 4 | TFLite model loading (once) | ✅ Complete | [`inference_isolate.dart:98`](lib/services/inference_isolate.dart:98) | `inference_isolate.dart` | None |
-| 5 | Dynamic tensor shape querying | ✅ Complete | [`inference_isolate.dart:101-107`](lib/services/inference_isolate.dart:101) | `inference_isolate.dart` | None |
-| 6 | Manual YUV420→RGB conversion | ✅ Complete | [`inference_isolate.dart:195-262`](lib/services/inference_isolate.dart:195) | `inference_isolate.dart` | Nearest-neighbor resize only |
-| 7 | INT8 dequantization | ✅ Complete | [`inference_isolate.dart:280-309`](lib/services/inference_isolate.dart:280) | `inference_isolate.dart` | None |
-| 8 | Argmax per-box post-processing | ✅ Complete | [`inference_isolate.dart:269-330`](lib/services/inference_isolate.dart:269) | `inference_isolate.dart` | None |
-| 9 | COCO label loading | ✅ Complete | [`inference_isolate.dart:50-58`](lib/services/inference_isolate.dart:50) | `inference_isolate.dart` | None |
+| 3 | Persistent inference isolate | ✅ Complete | `inference_isolate.dart:31-34` (`lib/services/inference_isolate.dart`, historical source) | `inference_isolate.dart` | None |
+| 4 | TFLite model loading (once) | ✅ Complete | `inference_isolate.dart:98` (`lib/services/inference_isolate.dart`, historical source) | `inference_isolate.dart` | None |
+| 5 | Dynamic tensor shape querying | ✅ Complete | `inference_isolate.dart:101-107` (`lib/services/inference_isolate.dart`, historical source) | `inference_isolate.dart` | None |
+| 6 | Manual YUV420→RGB conversion | ✅ Complete | `inference_isolate.dart:195-262` (`lib/services/inference_isolate.dart`, historical source) | `inference_isolate.dart` | Nearest-neighbor resize only |
+| 7 | INT8 dequantization | ✅ Complete | `inference_isolate.dart:280-309` (`lib/services/inference_isolate.dart`, historical source) | `inference_isolate.dart` | None |
+| 8 | Argmax per-box post-processing | ✅ Complete | `inference_isolate.dart:269-330` (`lib/services/inference_isolate.dart`, historical source) | `inference_isolate.dart` | None |
+| 9 | COCO label loading | ✅ Complete | `inference_isolate.dart:50-58` (`lib/services/inference_isolate.dart`, historical source) | `inference_isolate.dart` | None |
 | 10 | Frame-dropping gate | ✅ Complete | `camera_screen.dart:87` | `camera_screen.dart` | None |
 | 11 | Stream-based results to UI | ✅ Complete | `camera_screen.dart:73-81` | `camera_screen.dart` | None |
 | 12 | Camera preview rendering | ✅ Complete | `camera_screen.dart:128` | `camera_screen.dart` | None |
@@ -249,7 +251,7 @@ Documentation           ████░░░░░░░░░░░░░░�
 
 ### 6.2 Key Discrepancies
 
-1. **XNNPACK removal (critical):** The plan explicitly called for XNNPACK. The implementation removed it due to a SIGSEGV on the test device (Snapdragon 695) — see [`inference_isolate.dart:93-94`](lib/services/inference_isolate.dart:93). This is a valid deviation but should be documented as a known limitation.
+1. **XNNPACK removal (critical):** The plan explicitly called for XNNPACK. The implementation removed it due to a SIGSEGV on the test device (Snapdragon 695) — see `inference_isolate.dart:93-94` (`lib/services/inference_isolate.dart`, historical source). This is a valid deviation but should be documented as a known limitation.
 
 2. **Package name:** Uses `com.example.eyecue_flutter` instead of specified `com.eyecue`. Low priority but should be fixed before any store submission.
 
@@ -267,36 +269,36 @@ Documentation           ████░░░░░░░░░░░░░░�
 
 | Area | Observation |
 |------|------------|
-| **Isolate architecture** | [`inference_isolate.dart`](lib/services/inference_isolate.dart) is well-structured: clean separation between bridge (InferenceService) and worker logic (static methods). The decision to use `Isolate.spawn()` with a persistent receive loop is the correct architectural pattern for this use case. |
+| **Isolate architecture** | `inference_isolate.dart` (historical source) is well-structured: clean separation between bridge (InferenceService) and worker logic (static methods). The decision to use `Isolate.spawn()` with a persistent receive loop is the correct architectural pattern for this use case. |
 | **Dynamic tensor shapes** | Querying `interpreter.getInputTensor(0).shape` and `interpreter.getOutputTensor(0).shape` instead of hardcoding `[1,84,2100]` is excellent practice. Supports model changes without code changes. |
-| **INT8 dequantization** | Handles `TensorType.int8`/`uint8` with proper `scale`/`zeroPoint` — [`inference_isolate.dart:280-309`](lib/services/inference_isolate.dart:280). This is technically correct and non-trivial. |
-| **NHWC/NCHW detection** | Auto-detects channel ordering from shape — [`inference_isolate.dart:126-128`](lib/services/inference_isolate.dart:126). Good defensive programming. |
-| **Manual YUV conversion** | Avoiding the `image` package for real-time video is the right call. The direct byte manipulation in [`_convertYUV420toRGB`](lib/services/inference_isolate.dart:195) avoids GC pressure. |
+| **INT8 dequantization** | Handles `TensorType.int8`/`uint8` with proper `scale`/`zeroPoint` — `inference_isolate.dart:280-309` (`lib/services/inference_isolate.dart`, historical source). This is technically correct and non-trivial. |
+| **NHWC/NCHW detection** | Auto-detects channel ordering from shape — `inference_isolate.dart:126-128` (`lib/services/inference_isolate.dart`, historical source). Good defensive programming. |
+| **Manual YUV conversion** | Avoiding the `image` package for real-time video is the right call. The direct byte manipulation in `_convertYUV420toRGB` (`lib/services/inference_isolate.dart`, historical source) avoids GC pressure. |
 | **Frame dropping** | The `_isInferring` boolean gate in `camera_screen.dart:87` is simple and correct. |
-| **Diagnostic logging** | Tensor metadata logging in [`inference_isolate.dart:113-121`](lib/services/inference_isolate.dart:113) is useful for debugging. |
+| **Diagnostic logging** | Tensor metadata logging in `inference_isolate.dart:113-121` (`lib/services/inference_isolate.dart`, historical source) is useful for debugging. |
 | **Resource cleanup** | `camera_screen.dart:108-113` properly disposes camera and isolate. |
 
 ### 7.2 Weaknesses
 
 | Area | Observation | Severity |
 |------|------------|----------|
-| **No error handling in isolate** | The historical inference pipeline in [`_isolateEntryPoint`](lib/services/inference_isolate.dart:84) had zero try/catch blocks. If TFLite crashed, the isolate died silently and the app froze. | 🔴 High |
+| **No error handling in isolate** | The historical inference pipeline in `_isolateEntryPoint` (`lib/services/inference_isolate.dart`, historical source) had zero try/catch blocks. If TFLite crashed, the isolate died silently and the app froze. | 🔴 High |
 | **No permission-denied UI** | `camera_screen.dart:43-44` just returns. User sees infinite spinner. | 🔴 High |
-| **Hardcoded labels path** | Labels loaded from hardcoded `'assets/labels.txt'` — [`inference_isolate.dart:51`](lib/services/inference_isolate.dart:51). Not configurable. | 🟡 Medium |
-| **Hardcoded model path** | Model loaded from hardcoded `'assets/yolov8n.tflite'` — [`inference_isolate.dart:46`](lib/services/inference_isolate.dart:46). No runtime model selection. | 🟡 Medium |
-| **Hardcoded confidence threshold** | `0.5` in [`inference_isolate.dart:179`](lib/services/inference_isolate.dart:179). Not tunable. | 🟡 Medium |
-| **Nearest-neighbor resize** | YUV→RGB uses `round().clamp()` for resize — [`inference_isolate.dart:212-217`](lib/services/inference_isolate.dart:212). No bilinear interpolation. May reduce detection quality. | 🟡 Medium |
+| **Hardcoded labels path** | Labels loaded from hardcoded `'assets/labels.txt'` — `inference_isolate.dart:51` (`lib/services/inference_isolate.dart`, historical source). Not configurable. | 🟡 Medium |
+| **Hardcoded model path** | Model loaded from hardcoded `'assets/yolov8n.tflite'` — `inference_isolate.dart:46` (`lib/services/inference_isolate.dart`, historical source). No runtime model selection. | 🟡 Medium |
+| **Hardcoded confidence threshold** | `0.5` in `inference_isolate.dart:179` (`lib/services/inference_isolate.dart`, historical source). Not tunable. | 🟡 Medium |
+| **Nearest-neighbor resize** | YUV→RGB uses `round().clamp()` for resize — `inference_isolate.dart:212-217` (`lib/services/inference_isolate.dart`, historical source). No bilinear interpolation. May reduce detection quality. | 🟡 Medium |
 | **YUV conversion constants** | The conversion uses non-standard coefficients (1.402, 0.344, 1.772 with unsigned u/v minus 128). The standard ITU-R BT.601 uses (u-128) and (v-128) with slightly different coefficients. The current implementation uses `uVal = uPlane[...] - 128` and `vVal = vPlane[...] - 128` which is correct, but the coefficients differ from the typical SDTV formula. This may cause subtle color shifts but likely doesn't affect detection accuracy significantly. | 🟢 Low |
 | **Full plane bytes sent over SendPort** | `camera_screen.dart:98-104` sends entire Y, U, V planes across the isolate boundary every frame. At 640×480 YUV420, that's ~460KB per frame. This is a memory copy that could be optimized with `TransferableTypedData`. | 🟡 Medium |
 | **No NMS** | Multiple boxes for the same object are all returned. The UI would show overlapping rectangles. | 🟡 Medium |
 | **Broadcast stream** | Using `StreamController.broadcast()` is fine but unnecessary — only one listener exists. | 🟢 Low |
-| **`dynamic` type for input buffer** | [`inference_isolate.dart:137`](lib/services/inference_isolate.dart:137) uses `dynamic` for the input buffer. Loses type safety. Could use a sealed class or union type. | 🟢 Low |
+| **`dynamic` type for input buffer** | `inference_isolate.dart:137` (`lib/services/inference_isolate.dart`, historical source) uses `dynamic` for the input buffer. Loses type safety. Could use a sealed class or union type. | 🟢 Low |
 | **Unused Riverpod dependency** | Zero usages of `flutter_riverpod` in all of `lib/`. Adds unnecessary dependency weight. | 🟡 Medium |
 | **`path_provider` unused** | Declared but never imported. | 🟢 Low |
 
 ### 7.3 Code Organization
 
-- **Good:** Separation of model ([`detection.dart`](lib/models/detection.dart)), service ([`inference_isolate.dart`](lib/services/inference_isolate.dart)), and screen (`camera_screen.dart`).
+- **Good:** Separation of model ([`detection.dart`](lib/models/detection.dart)), service (`inference_isolate.dart` (`lib/services/inference_isolate.dart`, historical source)), and screen (`camera_screen.dart`).
 - **Needs improvement:** All business logic is in static methods on `InferenceService`. As the project grows, preprocessing, post-processing, and label management should be extracted into separate classes.
 - **Needs improvement:** Configuration is scattered as hardcoded values. A central config file or class is needed.
 
@@ -308,19 +310,19 @@ Documentation           ████░░░░░░░░░░░░░░�
 
 | Priority | Item | Location | Impact |
 |----------|------|----------|--------|
-| 🔴 P0 | No error handling in inference isolate | [`inference_isolate.dart:151-187`](lib/services/inference_isolate.dart:151) | Silent crashes, app freeze |
+| 🔴 P0 | No error handling in inference isolate | `inference_isolate.dart:151-187` (`lib/services/inference_isolate.dart`, historical source) | Silent crashes, app freeze |
 | 🔴 P0 | No permission-denied UI | `camera_screen.dart:43` | Broken UX |
-| 🔴 P0 | XNNPACK SIGSEGV — no fallback or investigation | [`inference_isolate.dart:93`](lib/services/inference_isolate.dart:93) | Performance ceiling |
-| 🟡 P1 | No NMS implementation | [`inference_isolate.dart:269`](lib/services/inference_isolate.dart:269) | Duplicate detections |
-| 🟡 P1 | Unused dependencies (4 packages) | [`pubspec.yaml:22-32`](pubspec.yaml:22) | Bloat, confusion |
+| 🔴 P0 | XNNPACK SIGSEGV — no fallback or investigation | `inference_isolate.dart:93` (`lib/services/inference_isolate.dart`, historical source) | Performance ceiling |
+| 🟡 P1 | No NMS implementation | `inference_isolate.dart:269` (`lib/services/inference_isolate.dart`, historical source) | Duplicate detections |
+| 🟡 P1 | Unused dependencies (4 packages) | [`pubspec.yaml:22-32`](pubspec.yaml#L22) | Bloat, confusion |
 | 🟡 P1 | No bounding box painter | `camera_screen.dart:130` | Core feature missing |
 | 🟡 P1 | No TTS integration | — | Core feature missing |
 | 🟡 P2 | Hardcoded thresholds/paths | Multiple locations | Inflexibility |
 | 🟡 P2 | Large memory copies per frame | `camera_screen.dart:98` | Memory pressure |
-| 🟡 P2 | Nearest-neighbor resize only | [`inference_isolate.dart:212`](lib/services/inference_isolate.dart:212) | Quality degradation |
+| 🟡 P2 | Nearest-neighbor resize only | `inference_isolate.dart:212` (`lib/services/inference_isolate.dart`, historical source) | Quality degradation |
 | 🟢 P3 | Stale `.flutter-plugins` file | [`.flutter-plugins`](.flutter-plugins) | Confusion during debugging |
-| 🟢 P3 | Package name `com.example` | [`build.gradle.kts:17`](android/app/build.gradle.kts:17) | Not production-ready |
-| 🟢 P3 | `minSdk` relies on Flutter default (21) | [`build.gradle.kts:18`](android/app/build.gradle.kts:18) | May fail on API 21-23 |
+| 🟢 P3 | Package name `com.example` | [`build.gradle.kts:17`](android/app/build.gradle.kts#L17) | Not production-ready |
+| 🟢 P3 | `minSdk` relies on Flutter default (21) | [`build.gradle.kts:18`](android/app/build.gradle.kts#L18) | May fail on API 21-23 |
 | 🟢 P3 | Boilerplate test file | [`test/widget_test.dart`](test/widget_test.dart) | Misleading |
 
 ### 8.2 TODOs and FIXMEs
@@ -370,7 +372,7 @@ The only test file is [`test/widget_test.dart`](test/widget_test.dart) — a **b
 
 | # | Blocker | Severity | Details |
 |---|---------|----------|---------|
-| 1 | **XNNPACK SIGSEGV** | 🔴 Critical | XNNPACK crashes on Snapdragon 695 with the INT8 YOLOv8n model. See [`inference_isolate.dart:93-94`](lib/services/inference_isolate.dart:93). Without hardware acceleration, inference is CPU-bound and slower than it could be. |
+| 1 | **XNNPACK SIGSEGV** | 🔴 Critical | XNNPACK crashes on Snapdragon 695 with the INT8 YOLOv8n model. See `inference_isolate.dart:93-94` (`lib/services/inference_isolate.dart`, historical source). Without hardware acceleration, inference is CPU-bound and slower than it could be. |
 | 2 | **No TTS integration** | 🔴 Critical | The app's entire purpose is to speak detected objects. Without TTS, it's a silent camera viewer. |
 | 3 | **No bounding box overlay** | 🟡 High | Detections are computed but never displayed. Users cannot see what was detected. |
 | 4 | **No error recovery** | 🟡 High | Any TFLite crash kills the isolate silently. The UI shows stale state indefinitely. |

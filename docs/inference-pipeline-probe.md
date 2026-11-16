@@ -2,9 +2,12 @@
 
 # Inference Pipeline Probe — "Objects: 0" Forensic Investigation
 
+> **Current status (2026-11-16):** The probe, static-image mode, and parser described here were part of the Custom EyeCue pipeline removed in [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9). Their historic measurements remain useful evidence but cannot be reproduced from this checkout. The active path is the plugin-backed `YOLOView` in [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart).
+
+
 > **Status:** Historical investigation record. No pipeline behavior was changed
 > as part of this report.
-> **Temporary diagnostics:** [`lib/services/inference_probe.dart`](../lib/services/inference_probe.dart) (phases 1–8, removable).
+> **Temporary diagnostics:** `lib/services/inference_probe.dart` (phases 1–8, removable).
 > **Date:** 2026-08-01
 
 > **Historical snapshot notice (2026-09-01):** This report records the
@@ -60,7 +63,7 @@ operator graph (`tool/dump_graph_tail.py` / `dump_decode_consts.py`):
 
 The grid (`Const_3`, values 0.5…79.5) and per-anchor strides are **inside the
 graph** — the app parser must **not** decode again and must **not** divide by
-640. [`_parseYolov8Output`](../lib/services/inference_isolate.dart) treating
+640. `_parseYolov8Output` treating
 `cx/cy/w/h` as normalized `[0,1]` is **correct**.
 
 The real post-processing gaps that make on-device detections *appear* incorrect:
@@ -182,8 +185,8 @@ cheap, definitive confirmation that the buffer actually received the output.
 ### 4.4 On-device probe evidence (to be collected)
 
 Temporary probes are installed (removable) in
-[`lib/services/inference_probe.dart`](../lib/services/inference_probe.dart) and
-wired into [`inference_isolate.dart`](../lib/services/inference_isolate.dart):
+`lib/services/inference_probe.dart` and
+wired into `inference_isolate.dart`:
 
 | Probe | What it logs | Decides |
 |-------|--------------|---------|
@@ -233,7 +236,7 @@ distinguish this are `[Probe P2]` (input pixel stats) and `[Probe P3]`
 (boxes arrive normalized [0,1]); the real gaps were **missing NMS** (duplicate
 overlapping boxes per object) and a **pre-NMS threshold of 0.5** that was too
 high (standard YOLOv8 uses 0.25). Both fixed in
-[`_parseYolov8Output`](../lib/services/inference_isolate.dart).
+`_parseYolov8Output`.
 
 ---
 
@@ -271,8 +274,8 @@ high (standard YOLOv8 uses 0.25). Both fixed in
 
 ## 8. How to Remove the Probes
 
-1. Delete [`lib/services/inference_probe.dart`](../lib/services/inference_probe.dart).
-2. In [`lib/services/inference_isolate.dart`](../lib/services/inference_isolate.dart):
+1. Delete `lib/services/inference_probe.dart`.
+2. In `lib/services/inference_isolate.dart`:
    remove the `inference_probe.dart` import and all `InferenceProbe.*` calls
    (marked `// TEMPORARY forensic probe`).
 3. `flutter analyze` should return to the pre-probe baseline.

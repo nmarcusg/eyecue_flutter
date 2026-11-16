@@ -1,5 +1,8 @@
 # Charts and Logs Polish — Design Spec
 
+> **Implementation status (2026-11-16):** The planned Detection alignment and chart/Logs polish shipped: the viewport gutter and heatmap geometry are in [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart) and [`lib/widgets/depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart); chart axes are in [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart), and Logs filter/subtitle layout is in [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart). Device verification was recorded in [`docs/project-status.md`](../project-status.md) and commit `62dfa21`. This file remains the dated analysis/spec/plan; its scope limits are not current work instructions.
+
+
 - **Date:** 2026-11-09
 - **Feature slug:** `charts-logs-polish`
 - **Stage:** 2 of 4 (design-spec). Downstream: plan → implementation, in the refinement/post-fix phase. Source-of-truth order for the implementation stage: plan → **this file** → [`charts-logs-polish-analysis.md`](charts-logs-polish-analysis.md).
@@ -15,8 +18,8 @@
 
 | File | Folder | Issue | Why |
 |---|---|---|---|
-| [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart:1) | `lib/widgets/` (UI-owned) | 1 | X tick format, X interval-independent precision, bottom-title fit and bottom band height |
-| [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart:1) | `lib/screens/` (UI-owned) | 2, 3, 4 | `_ModelFilter` layout, Logs row subtitle, populated Logs list padding |
+| [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart#L1) | `lib/widgets/` (UI-owned) | 1 | X tick format, X interval-independent precision, bottom-title fit and bottom band height |
+| [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L1) | `lib/screens/` (UI-owned) | 2, 3, 4 | `_ModelFilter` layout, Logs row subtitle, populated Logs list padding |
 
 ### 1.2 Out of scope — explicitly not touched
 
@@ -34,12 +37,12 @@ The following shipped behaviour is the baseline this phase must not regress. Eac
 
 | # | Behaviour that must survive | Anchor |
 |---|---|---|
-| P1 | Detection 16 dp gutter (viewport `Padding` inside the `Camera view` semantics node, action row `kSpace16`) | [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart:1861) |
-| P2 | Heatmap `RotatedBox` + `FittedBox(BoxFit.cover, alignment: center)` | [`depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart:24) |
-| P3 | `AUDIO ON` content-sized capsule inside its 64 × 56 target | [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart:1904) |
-| P4 | Y axis: no name (`axisNameSize: 0`), `reservedSize: 64`, `_formatYAxisTick`, `kHomeInkMuted` axis + tick ink, `labelSmall` tick type, `_ChartCard` title gap `kSpace16`, FPS benchmark wording **and** line absent, 300 ms latency line present, `kChartHeight = 180` | [`charts.dart:286-311`](../../lib/widgets/charts.dart:286), [`charts.dart:354-367`](../../lib/widgets/charts.dart:354), [`logs_reports_screen.dart:1795-1804`](../../lib/screens/logs_reports_screen.dart:1795) |
+| P1 | Detection 16 dp gutter (viewport `Padding` inside the `Camera view` semantics node, action row `kSpace16`) | [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L1861) |
+| P2 | Heatmap `RotatedBox` + `FittedBox(BoxFit.cover, alignment: center)` | [`depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart#L24) |
+| P3 | `AUDIO ON` content-sized capsule inside its 64 × 56 target | [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L1904) |
+| P4 | Y axis: no name (`axisNameSize: 0`), `reservedSize: 64`, `_formatYAxisTick`, `kHomeInkMuted` axis + tick ink, `labelSmall` tick type, `_ChartCard` title gap `kSpace16`, FPS benchmark wording **and** line absent, 300 ms latency line present, `kChartHeight = 180` | [`charts.dart:286-311`](../../lib/widgets/charts.dart#L286), [`charts.dart:354-367`](../../lib/widgets/charts.dart#L354), [`logs_reports_screen.dart:1795-1804`](../../lib/screens/logs_reports_screen.dart#L1795) |
 
-Also preserved by construction: the chart semantics summaries (`_sampleSummary`, `_engineSummary`) and the bar chart's integer minute labels, which **bypass** the X formatter through the `minuteLabels` branch ([`charts.dart:323-325`](../../lib/widgets/charts.dart:323)).
+Also preserved by construction: the chart semantics summaries (`_sampleSummary`, `_engineSummary`) and the bar chart's integer minute labels, which **bypass** the X formatter through the `minuteLabels` branch ([`charts.dart:323-325`](../../lib/widgets/charts.dart#L323)).
 
 ---
 
@@ -47,7 +50,7 @@ Also preserved by construction: the chart semantics summaries (`_sampleSummary`,
 
 | # | Decision | Tag | Evidence |
 |---|---|---|---|
-| **D1** | X ticks use a new value-only formatter: at most **1 decimal**, trailing `.0` stripped, no thousands separators, applied **only** to the X axis of `LatencyChart`, `FpsChart` and `DetectionFrequencyChart`'s non-minute branch. Interval still `maxX / 2`. **Domain headroom rejected.** The prior phase's "X formatter byte-identical" instruction is explicitly superseded. | `[product-decision]` (settled decision 1) + code arithmetic | Settled decision 1; analysis §2.1/§2.4/§2.5; the `math.max(elapsedSeconds.last, 1.0)` floor at [`charts.dart:46`](../../lib/widgets/charts.dart:46)/[:141](../../lib/widgets/charts.dart:141) proves `xInterval >= 0.5`, so 1 decimal can never merge adjacent ticks |
+| **D1** | X ticks use a new value-only formatter: at most **1 decimal**, trailing `.0` stripped, no thousands separators, applied **only** to the X axis of `LatencyChart`, `FpsChart` and `DetectionFrequencyChart`'s non-minute branch. Interval still `maxX / 2`. **Domain headroom rejected.** The prior phase's "X formatter byte-identical" instruction is explicitly superseded. | `[product-decision]` (settled decision 1) + code arithmetic | Settled decision 1; analysis §2.1/§2.4/§2.5; the `math.max(elapsedSeconds.last, 1.0)` floor at [`charts.dart:46`](../../lib/widgets/charts.dart#L46)/[:141](../../lib/widgets/charts.dart#L141) proves `xInterval >= 0.5`, so 1 decimal can never merge adjacent ticks |
 | **D2a** | Rightmost tick kept and pulled inside with `SideTitleWidget(fitInside: SideTitleFitInsideData(enabled: true, distanceFromEdge: 4, parentAxisSize: meta.parentAxisSize, axisPosition: meta.axisPosition))`. **Zero plot-width cost.** `maxIncluded: false` and a right reserved gutter rejected. | `[product-decision]` (settled decision 1) + Context7-verified | Context7 `SideTitleWidget` constructor and `TitleMeta` field list, §5.3 below; analysis §2.2 |
 | **D2b** | Bottom bands raised from the library defaults 22 / 22 to `reservedSize: 36` and `axisNameSize: 36` for the 14 sp `labelSmall` tick; plot height cost paid inside the unchanged `kChartHeight: 180`. | `[inferred-from-codebase]` + arithmetic (analysis §2.3 records the 22 dp values as a spec gap, its classification 1c) | §5.4 below |
 | **D3** | `_ModelFilter` becomes a `Column`: the `Detector model` label above a full-card-width `DropdownButton<String?>(isExpanded: true)`, with `maxLines: 1` on every item `Text`. `MergeSemantics` and the label-first order are kept. | `[product-decision]` (settled decision 2) | §6 below; analysis §3.3 |
@@ -62,7 +65,7 @@ Also preserved by construction: the chart semantics summaries (`_sampleSummary`,
 
 ### 4.1 Current state (cited)
 
-The X tick string is produced by `_formatAxisTick(value, xInterval)` ([`charts.dart:325`](../../lib/widgets/charts.dart:325)). That function derives its precision from **both** the value and the interval ([`charts.dart:336-352`](../../lib/widgets/charts.dart:336)):
+The X tick string is produced by `_formatAxisTick(value, xInterval)` ([`charts.dart:325`](../../lib/widgets/charts.dart#L325)). That function derives its precision from **both** the value and the interval ([`charts.dart:336-352`](../../lib/widgets/charts.dart#L336)):
 
 ```dart
 String _formatAxisTick(double value, double interval) {
@@ -84,13 +87,13 @@ String _formatAxisTick(double value, double interval) {
 }
 ```
 
-`xInterval` is `maxX / 2` ([`charts.dart:85`](../../lib/widgets/charts.dart:85), [`charts.dart:176`](../../lib/widgets/charts.dart:176)) and `maxX` is wall-clock elapsed seconds ([`charts.dart:40-46`](../../lib/widgets/charts.dart:40)). A last sample at 8.3 s therefore yields ticks `0`, `4.15`, `8.3` — a two-decimal label in a 22 dp band at 200 % text scale.
+`xInterval` is `maxX / 2` ([`charts.dart:85`](../../lib/widgets/charts.dart#L85), [`charts.dart:176`](../../lib/widgets/charts.dart#L176)) and `maxX` is wall-clock elapsed seconds ([`charts.dart:40-46`](../../lib/widgets/charts.dart#L40)). A last sample at 8.3 s therefore yields ticks `0`, `4.15`, `8.3` — a two-decimal label in a 22 dp band at 200 % text scale.
 
-`_formatAxisTick` has exactly two call sites: the Y axis was moved to `_formatYAxisTick` in the previous phase, so **X is its only caller** ([`charts.dart:325`](../../lib/widgets/charts.dart:325)). Verified by reading the file: `_formatYAxisTick` is used at [:303](../../lib/widgets/charts.dart:303).
+`_formatAxisTick` has exactly two call sites: the Y axis was moved to `_formatYAxisTick` in the previous phase, so **X is its only caller** ([`charts.dart:325`](../../lib/widgets/charts.dart#L325)). Verified by reading the file: `_formatYAxisTick` is used at [:303](../../lib/widgets/charts.dart#L303).
 
 ### 4.2 Supersession statement
 
-The prior plan ordered the X formatter kept byte-identical ([`detection-alignment-charts-plan.md:282`](detection-alignment-charts-plan.md:282)) and the shipped doc comment records the same intent ([`charts.dart:359-360`](../../lib/widgets/charts.dart:359)). **This phase supersedes that instruction for the X axis only.** The prior documents are not edited; this section is the record (`.roo/rules/01-verification-policy.md`, "No silent resolution"). The Y axis keeps `_formatYAxisTick` unchanged.
+The prior plan ordered the X formatter kept byte-identical ([`detection-alignment-charts-plan.md:282`](detection-alignment-charts-plan.md)) and the shipped doc comment records the same intent ([`charts.dart:359-360`](../../lib/widgets/charts.dart#L359)). **This phase supersedes that instruction for the X axis only.** The prior documents are not edited; this section is the record (`.roo/rules/01-verification-policy.md`, "No silent resolution"). The Y axis keeps `_formatYAxisTick` unchanged.
 
 ### 4.3 Target state
 
@@ -110,7 +113,7 @@ String _formatXAxisTick(double value) {
 
 - The X call site becomes `_formatXAxisTick(value)`; the `minuteLabels` branch (`'${value.round() + 1}'`) is untouched, so the bucket chart's X ticks stay integers.
 - `_formatAxisTick` is **deleted** (not left dead): after the X call site moves it has no caller, so keeping it would be an unused private element and `flutter analyze` would not be clean.
-- The doc comment on `_formatYAxisTick` ([`charts.dart:354-360`](../../lib/widgets/charts.dart:354)) currently says *"The X axis deliberately keeps [_formatAxisTick] …"*. It must be rewritten (the symbol it references no longer exists) to say the X axis now uses `_formatXAxisTick`.
+- The doc comment on `_formatYAxisTick` ([`charts.dart:354-360`](../../lib/widgets/charts.dart#L354)) currently says *"The X axis deliberately keeps [_formatAxisTick] …"*. It must be rewritten (the symbol it references no longer exists) to say the X axis now uses `_formatXAxisTick`.
 
 Worked outputs, all from the formatter rule above:
 
@@ -127,14 +130,14 @@ The last row is the regression the current suite cannot see; it is the dataset t
 ### 4.4 Acceptance criteria
 
 1. Every X tick `Text` for a wall-clock dataset matches `^\d+(\.\d)?$` — at most one decimal, no thousands separator.
-2. The existing labels `0` / `0.5` / `1` (sub-second) and `0` / `1.5` / `3` (three seconds) are **unchanged**, so the 200 %-scale assertions at [`charts_test.dart:167-169`](../../test/widgets/charts_test.dart:167) and [:202-204](../../test/widgets/charts_test.dart:202) are untouched — no assertion is relaxed or re-pinned.
-3. `minX`/`maxX` and every spot x-value are unchanged (no domain headroom), so [`charts_test.dart:139-145`](../../test/widgets/charts_test.dart:139) stays green.
+2. The existing labels `0` / `0.5` / `1` (sub-second) and `0` / `1.5` / `3` (three seconds) are **unchanged**, so the 200 %-scale assertions at [`charts_test.dart:167-169`](../../test/widgets/charts_test.dart#L167) and [:202-204](../../test/widgets/charts_test.dart#L202) are untouched — no assertion is relaxed or re-pinned.
+3. `minX`/`maxX` and every spot x-value are unchanged (no domain headroom), so [`charts_test.dart:139-145`](../../test/widgets/charts_test.dart#L139) stays green.
 4. `DetectionFrequencyChart` X ticks remain the integer minute labels (`1`, `2`, `3`, …, `25`) produced by the `minuteLabels` branch.
 
 ### 4.5 Proving tests
 
 - New: `X ticks carry at most one decimal on a wall-clock interval` (§11, T1).
-- Unchanged and re-run: [`charts_test.dart:104-121`](../../test/widgets/charts_test.dart:104), [:123-147](../../test/widgets/charts_test.dart:123), [:149-182](../../test/widgets/charts_test.dart:149), [:184-217](../../test/widgets/charts_test.dart:184), [:292-311](../../test/widgets/charts_test.dart:292), [:313-321](../../test/widgets/charts_test.dart:313).
+- Unchanged and re-run: [`charts_test.dart:104-121`](../../test/widgets/charts_test.dart#L104), [:123-147](../../test/widgets/charts_test.dart#L123), [:149-182](../../test/widgets/charts_test.dart#L149), [:184-217](../../test/widgets/charts_test.dart#L184), [:292-311](../../test/widgets/charts_test.dart#L292), [:313-321](../../test/widgets/charts_test.dart#L313).
 
 ---
 
@@ -142,11 +145,11 @@ The last row is the regression the current suite cannot see; it is the dataset t
 
 ### 5.1 Current state (cited)
 
-- The plot's right edge **is** `maxX` ([`charts.dart:73`](../../lib/widgets/charts.dart:73), [:164](../../lib/widgets/charts.dart:164)); the bar chart lets fl_chart derive it from the last group ([`charts.dart:236-255`](../../lib/widgets/charts.dart:236)).
+- The plot's right edge **is** `maxX` ([`charts.dart:73`](../../lib/widgets/charts.dart#L73), [:164](../../lib/widgets/charts.dart#L164)); the bar chart lets fl_chart derive it from the last group ([`charts.dart:236-255`](../../lib/widgets/charts.dart#L236)).
 - The X title is centred on its tick, and `minIncluded`/`maxIncluded` default to `true`, so a label exists exactly at the plot's right edge.
-- The only horizontal reservation is the **left** gutter (`reservedSize: 64`); `rightTitles` is `const AxisTitles(sideTitles: SideTitles())` ([`charts.dart:285`](../../lib/widgets/charts.dart:285)), reserving nothing. Half of the last label therefore falls outside the chart box.
-- `_ChartCard` puts the chart in a bare `SizedBox(height: kChartHeight, child: child)` ([`logs_reports_screen.dart:1804`](../../lib/screens/logs_reports_screen.dart:1804)) inside `_LightCard`'s `Container`, whose only decoration is a `BoxDecoration` — **no clip is configured by the app**.
-- The bottom bands are library defaults: `axisNameSize: 22` ([`charts.dart:314`](../../lib/widgets/charts.dart:314)) and `reservedSize: 22` ([`charts.dart:318`](../../lib/widgets/charts.dart:318)) are the fl_chart `SideTitles.reservedSize` default. The tick type is `labelSmall` = 14 sp under the Home theme ([`app_home_theme.dart:89-93`](../../lib/theme/app_home_theme.dart:89)).
+- The only horizontal reservation is the **left** gutter (`reservedSize: 64`); `rightTitles` is `const AxisTitles(sideTitles: SideTitles())` ([`charts.dart:285`](../../lib/widgets/charts.dart#L285)), reserving nothing. Half of the last label therefore falls outside the chart box.
+- `_ChartCard` puts the chart in a bare `SizedBox(height: kChartHeight, child: child)` ([`logs_reports_screen.dart:1804`](../../lib/screens/logs_reports_screen.dart#L1804)) inside `_LightCard`'s `Container`, whose only decoration is a `BoxDecoration` — **no clip is configured by the app**.
+- The bottom bands are library defaults: `axisNameSize: 22` ([`charts.dart:314`](../../lib/widgets/charts.dart#L314)) and `reservedSize: 22` ([`charts.dart:318`](../../lib/widgets/charts.dart#L318)) are the fl_chart `SideTitles.reservedSize` default. The tick type is `labelSmall` = 14 sp under the Home theme ([`app_home_theme.dart:89-93`](../../lib/theme/app_home_theme.dart#L89)).
 
 ### 5.2 Context7 evidence gathered for this stage
 
@@ -184,7 +187,7 @@ Why this option and not the others:
 | (i) `fitInside` | **0 dp** — no reservation is added; only the last label's own box is shifted left inside the axis box | keeps the end-of-domain label, does not touch `maxX`, does not touch the first/middle label (their centred boxes are already inside the axis box) | **adopted** |
 | (ii) right-side reserved gutter | −(half the widest X label) ≈ −20 dp at 100 %, ≈ −34 dp at 200 % — i.e. the plot loses 8–18 % of its width, and an empty gutter is drawn | keeps the label but renders nothing in the space | rejected: pays width to hold its own label |
 | (iii) `maxIncluded: false` | 0 dp | **removes** the rightmost label instead of showing it | rejected: settles "the rightmost tick must not clip" by deleting the tick |
-| (iv) domain headroom | 0 dp of box width, but changes `maxX` and every spot mapping | breaks [`charts_test.dart:139-145`](../../test/widgets/charts_test.dart:139) | rejected (analysis §2.2) |
+| (iv) domain headroom | 0 dp of box width, but changes `maxX` and every spot mapping | breaks [`charts_test.dart:139-145`](../../test/widgets/charts_test.dart#L139) | rejected (analysis §2.2) |
 
 **Plot-width arithmetic after the fix** (chart box = card inner width; plot = box − 64 left reserve; no right reserve added):
 
@@ -194,7 +197,7 @@ Why this option and not the others:
 | 360 dp | 328 | 296 | 232 | **232** | 0 |
 | 390 dp | 358 | 326 | 262 | **262** | 0 |
 
-**200 %-scale overlap arithmetic** (existing assertions, which must survive unchanged). In `flutter_test` the glyph advance is ≈ 0.5 em, and `wrap()` ([`charts_test.dart:24-34`](../../test/widgets/charts_test.dart:24)) uses a bare `MaterialApp`, so the tick font is Material's default `labelSmall` (11 sp → 22 px at 200 %):
+**200 %-scale overlap arithmetic** (existing assertions, which must survive unchanged). In `flutter_test` the glyph advance is ≈ 0.5 em, and `wrap()` ([`charts_test.dart:24-34`](../../test/widgets/charts_test.dart#L24)) uses a bare `MaterialApp`, so the tick font is Material's default `labelSmall` (11 sp → 22 px at 200 %):
 
 | Case | plot x-range (width 260) | tick widths | before | after `fitInside` |
 |---|---|---|---|---|
@@ -231,7 +234,7 @@ Cost against `kChartHeight: 180`:
 | today | 22 + 22 = 44 | 136 | 180 |
 | after | 36 + 36 = 72 | **108** | 180 (unchanged) |
 
-The plot loses 28 dp of height (≈ 21 % of the plot, ≈ 16 % of the card). `kChartHeight` is **not** raised: it is a token in [`lib/theme/app_spacing.dart`](../../lib/theme/app_spacing.dart:39), and `lib/theme/` is out of scope for this phase. The consequence — a shorter plot — is accepted and recorded as a device gate (NV-6).
+The plot loses 28 dp of height (≈ 21 % of the plot, ≈ 16 % of the card). `kChartHeight` is **not** raised: it is a token in [`lib/theme/app_spacing.dart`](../../lib/theme/app_spacing.dart#L39), and `lib/theme/` is out of scope for this phase. The consequence — a shorter plot — is accepted and recorded as a device gate (NV-6).
 
 ### 5.5 Acceptance criteria
 
@@ -244,7 +247,7 @@ The plot loses 28 dp of height (≈ 21 % of the plot, ≈ 16 % of the card). `kC
 ### 5.6 Proving tests
 
 - New: `the rightmost X tick stays inside the chart box` (§11, T2) and the bottom-band guard (§11, T3, conditional — see NV-6).
-- Unchanged and re-run: [`charts_test.dart:149-182`](../../test/widgets/charts_test.dart:149), [:184-217](../../test/widgets/charts_test.dart:184), [:219-232](../../test/widgets/charts_test.dart:219), [:333-347](../../test/widgets/charts_test.dart:333), [:349-365](../../test/widgets/charts_test.dart:349), and the Logs & Reports `Charts has no overflow at 200 percent text scale` ([`logs_reports_screen_test.dart:1314-1326`](../../test/screens/logs_reports_screen_test.dart:1314)).
+- Unchanged and re-run: [`charts_test.dart:149-182`](../../test/widgets/charts_test.dart#L149), [:184-217](../../test/widgets/charts_test.dart#L184), [:219-232](../../test/widgets/charts_test.dart#L219), [:333-347](../../test/widgets/charts_test.dart#L333), [:349-365](../../test/widgets/charts_test.dart#L349), and the Logs & Reports `Charts has no overflow at 200 percent text scale` ([`logs_reports_screen_test.dart:1314-1326`](../../test/screens/logs_reports_screen_test.dart#L1314)).
 
 ---
 
@@ -252,7 +255,7 @@ The plot loses 28 dp of height (≈ 21 % of the plot, ≈ 16 % of the card). `kC
 
 ### 6.1 Current state (cited)
 
-`_ModelFilter.build` ([`logs_reports_screen.dart:2019-2062`](../../lib/screens/logs_reports_screen.dart:2019)) is a `_LightCard` → `MergeSemantics` → `Row[Text('Detector model', bodyLarge), SizedBox(kSpace12), Expanded(DropdownButtonHideUnderline(DropdownButton<String?>(isExpanded: true, …)))]`. Each item `Text` carries `overflow: TextOverflow.ellipsis` with **no `maxLines`**.
+`_ModelFilter.build` ([`logs_reports_screen.dart:2019-2062`](../../lib/screens/logs_reports_screen.dart#L2019)) is a `_LightCard` → `MergeSemantics` → `Row[Text('Detector model', bodyLarge), SizedBox(kSpace12), Expanded(DropdownButtonHideUnderline(DropdownButton<String?>(isExpanded: true, …)))]`. Each item `Text` carries `overflow: TextOverflow.ellipsis` with **no `maxLines`**.
 
 Structural cause (analysis §3.3): the `Detector model` label is not flexible, so an 18 sp label plus a 12 dp gap is taken out of the single row before the dropdown's own chrome (expand icon + padding) is subtracted; the `Expanded` value column is what is left. `TextOverflow.ellipsis` turns the resulting shortage into a truncated value rather than a visible failure, which is why `Charts has no overflow at 200 percent text scale` cannot catch it.
 
@@ -322,11 +325,11 @@ Glyph estimates are `[inferred-from-codebase]` arithmetic (analysis §3.3 record
 
 | Contract | Anchor | How it survives |
 |---|---|---|
-| One merged semantics node whose label **starts with** `Detector model`, contains the selected value, `isButton`, has `tap` | [`logs_reports_screen_test.dart:2252-2261`](../../test/screens/logs_reports_screen_test.dart:2252) | `MergeSemantics` still wraps the whole subtree; the label `Text` is still the **first** child in traversal order; the `DropdownButton` still supplies the button flag and tap action |
-| `DropdownButton<String?>` findable by type (`find.byType(DropdownButton<String?>).first` / `.tap`) | [:1572](../../test/screens/logs_reports_screen_test.dart:1572), [:1724](../../test/screens/logs_reports_screen_test.dart:1724), [:1778](../../test/screens/logs_reports_screen_test.dart:1778), [:1811](../../test/screens/logs_reports_screen_test.dart:1811), [:1824](../../test/screens/logs_reports_screen_test.dart:1824), [:2245](../../test/screens/logs_reports_screen_test.dart:2245) | the widget type and its generic argument are unchanged; it is still the first `DropdownButton<String?>` in the tree |
-| `find.text('All models (mixed)')` is `findsOneWidget` | [:1563](../../test/screens/logs_reports_screen_test.dart:1563), [:1749](../../test/screens/logs_reports_screen_test.dart:1749) | the label is still one `Text` whose `data` is `_allModelsLabel`; no wrapping widget is introduced around it |
-| Menu item taps by text (`find.text('Built-in YOLOv8n').last`) | [:1826](../../test/screens/logs_reports_screen_test.dart:1826), [:1574](../../test/screens/logs_reports_screen_test.dart:1574) | item construction is unchanged apart from `maxLines` |
-| The four 200 %-scale no-overflow tests (Overview, Alert Latency, Charts, Logs) | [:1286-1340](../../test/screens/logs_reports_screen_test.dart:1286) | a taller card and an ellipsised value raise nothing; `takeException()` stays null |
+| One merged semantics node whose label **starts with** `Detector model`, contains the selected value, `isButton`, has `tap` | [`logs_reports_screen_test.dart:2252-2261`](../../test/screens/logs_reports_screen_test.dart#L2252) | `MergeSemantics` still wraps the whole subtree; the label `Text` is still the **first** child in traversal order; the `DropdownButton` still supplies the button flag and tap action |
+| `DropdownButton<String?>` findable by type (`find.byType(DropdownButton<String?>).first` / `.tap`) | [:1572](../../test/screens/logs_reports_screen_test.dart#L1572), [:1724](../../test/screens/logs_reports_screen_test.dart#L1724), [:1778](../../test/screens/logs_reports_screen_test.dart#L1778), [:1811](../../test/screens/logs_reports_screen_test.dart#L1811), [:1824](../../test/screens/logs_reports_screen_test.dart#L1824), [:2245](../../test/screens/logs_reports_screen_test.dart#L2245) | the widget type and its generic argument are unchanged; it is still the first `DropdownButton<String?>` in the tree |
+| `find.text('All models (mixed)')` is `findsOneWidget` | [:1563](../../test/screens/logs_reports_screen_test.dart#L1563), [:1749](../../test/screens/logs_reports_screen_test.dart#L1749) | the label is still one `Text` whose `data` is `_allModelsLabel`; no wrapping widget is introduced around it |
+| Menu item taps by text (`find.text('Built-in YOLOv8n').last`) | [:1826](../../test/screens/logs_reports_screen_test.dart#L1826), [:1574](../../test/screens/logs_reports_screen_test.dart#L1574) | item construction is unchanged apart from `maxLines` |
+| The four 200 %-scale no-overflow tests (Overview, Alert Latency, Charts, Logs) | [:1286-1340](../../test/screens/logs_reports_screen_test.dart#L1286) | a taller card and an ellipsised value raise nothing; `takeException()` stays null |
 
 ### 6.4 Acceptance criteria
 
@@ -339,7 +342,7 @@ Glyph estimates are `[inferred-from-codebase]` arithmetic (analysis §3.3 record
 ### 6.5 Proving tests
 
 - New: `the model filter shows All models mixed whole` and the cross-tab gutter check (§11, T5/T6).
-- Unchanged and re-run: every row of §6.3 plus `filtering to one model names it in the chart cards` ([:1566-1591](../../test/screens/logs_reports_screen_test.dart:1566)) and `the log list filters to one model but keeps the filter` ([:1817-1836](../../test/screens/logs_reports_screen_test.dart:1817)).
+- Unchanged and re-run: every row of §6.3 plus `filtering to one model names it in the chart cards` ([:1566-1591](../../test/screens/logs_reports_screen_test.dart#L1566)) and `the log list filters to one model but keeps the filter` ([:1817-1836](../../test/screens/logs_reports_screen_test.dart#L1817)).
 
 ### 6.6 Known residual
 
@@ -351,7 +354,7 @@ At 200 % text scale on a 390 dp surface the value may still ellipsise by a small
 
 ### 7.1 Current state (cited)
 
-The populated Logs row's subtitle is **one** `Text` built by `[...].join(' · ')` ([`logs_reports_screen.dart:1418-1427`](../../lib/screens/logs_reports_screen.dart:1418)) with default `softWrap: true`, no `maxLines`, no `overflow`. One field is `'${r.latencyMs.toStringAsFixed(0)} ms'` ([:1425](../../lib/screens/logs_reports_screen.dart:1425)) — an internal space, i.e. a legal line-break opportunity. Flutter's line breaker therefore splits `58` / `ms` when the width runs out.
+The populated Logs row's subtitle is **one** `Text` built by `[...].join(' · ')` ([`logs_reports_screen.dart:1418-1427`](../../lib/screens/logs_reports_screen.dart#L1418)) with default `softWrap: true`, no `maxLines`, no `overflow`. One field is `'${r.latencyMs.toStringAsFixed(0)} ms'` ([:1425](../../lib/screens/logs_reports_screen.dart#L1425)) — an internal space, i.e. a legal line-break opportunity. Flutter's line breaker therefore splits `58` / `ms` when the width runs out.
 
 ### 7.2 Candidates and their test impact (from analysis §4.4)
 
@@ -391,7 +394,7 @@ Why the non-breaking space over the per-field `Wrap`:
 
 Explicitly rejected: an ellipsis that hides metadata (settled decision 3 forbids silently hiding values).
 
-The `title` line `'person — 82%'` ([`:1416`](../../lib/screens/logs_reports_screen.dart:1416)) and the `trailing` timestamp are **not** in scope: the decision names metadata *values* (the subtitle), and neither of those carries a number+unit pair.
+The `title` line `'person — 82%'` ([`:1416`](../../lib/screens/logs_reports_screen.dart#L1416)) and the `trailing` timestamp are **not** in scope: the decision names metadata *values* (the subtitle), and neither of those carries a number+unit pair.
 
 ### 7.4 Acceptance criteria
 
@@ -413,8 +416,8 @@ The `title` line `'person — 82%'` ([`:1416`](../../lib/screens/logs_reports_sc
 
 | | Charts tab | Logs tab (populated) |
 |---|---|---|
-| Container | `_BoundedScrollView` ([`logs_reports_screen.dart:1291`](../../lib/screens/logs_reports_screen.dart:1291)) → `SafeArea` → `LayoutBuilder` → `Center` → `ConstrainedBox(480)` → `ListView` | `LayoutBuilder` → `Center` → `ConstrainedBox(480)` → `ListView.builder` ([`logs_reports_screen.dart:1384-1392`](../../lib/screens/logs_reports_screen.dart:1384)) — no `SafeArea` |
-| List padding | `EdgeInsets.symmetric(horizontal: kSpace16, vertical: kSpace16)` ([:1684-1687](../../lib/screens/logs_reports_screen.dart:1684)) | `EdgeInsets.symmetric(vertical: kSpace8)` — **horizontal 0** ([:1395](../../lib/screens/logs_reports_screen.dart:1395)) |
+| Container | `_BoundedScrollView` ([`logs_reports_screen.dart:1291`](../../lib/screens/logs_reports_screen.dart#L1291)) → `SafeArea` → `LayoutBuilder` → `Center` → `ConstrainedBox(480)` → `ListView` | `LayoutBuilder` → `Center` → `ConstrainedBox(480)` → `ListView.builder` ([`logs_reports_screen.dart:1384-1392`](../../lib/screens/logs_reports_screen.dart#L1384)) — no `SafeArea` |
+| List padding | `EdgeInsets.symmetric(horizontal: kSpace16, vertical: kSpace16)` ([:1684-1687](../../lib/screens/logs_reports_screen.dart#L1684)) | `EdgeInsets.symmetric(vertical: kSpace8)` — **horizontal 0** ([:1395](../../lib/screens/logs_reports_screen.dart#L1395)) |
 
 At 390 dp: Charts card left 16 / right 374 / width **358** / content left **32**; Logs card left 0 / right 390 / width **390** / content left **16**.
 
@@ -431,7 +434,7 @@ At 390 dp: Charts card left 16 / right 374 / width **358** / content left **32**
 ```
 
 - `horizontal: kSpace16` — the same token the Charts list and `_LightCard` use.
-- `vertical: kSpace8` **kept**, and the filter row's own `EdgeInsets.only(bottom: kSpace8)` ([:1399](../../lib/screens/logs_reports_screen.dart:1399)) kept, so the vertical rhythm is untouched.
+- `vertical: kSpace8` **kept**, and the filter row's own `EdgeInsets.only(bottom: kSpace8)` ([:1399](../../lib/screens/logs_reports_screen.dart#L1399)) kept, so the vertical rhythm is untouched.
 - `SafeArea` is **not** added. Justification from the code, not preference: `SafeArea` insets the **top/bottom/left/right** parts of the window; the horizontal difference in scope is 0 for this app's portrait surface, and the populated Logs list is the only one of the four states without it — adding it would change vertical insets in the same step as a horizontal-alignment fix, i.e. widen the diff for no horizontal benefit. Recorded as `[inferred-from-codebase]`, and as an open item (NV-5).
 
 Geometry after the fix:
@@ -456,7 +459,7 @@ This fix narrows the Logs filter card by **32 dp** (16 dp per side). Applied alo
 ### 8.5 Proving tests
 
 - New: `the Logs filter card shares the Charts gutter` (§11, T6) — a same-test cross-tab comparison, because no existing test asserts any rectangle (analysis §5.2).
-- Unchanged and re-run: `Logs has no overflow at 200 percent text scale` ([:1328-1340](../../test/screens/logs_reports_screen_test.dart:1328)), `populated logs render a newest-first row` ([:705-717](../../test/screens/logs_reports_screen_test.dart:705)).
+- Unchanged and re-run: `Logs has no overflow at 200 percent text scale` ([:1328-1340](../../test/screens/logs_reports_screen_test.dart#L1328)), `populated logs render a newest-first row` ([:705-717](../../test/screens/logs_reports_screen_test.dart#L705)).
 
 ---
 
@@ -466,20 +469,20 @@ This fix narrows the Logs filter card by **32 dp** (16 dp per side). Applied alo
 
 | Token | Value | Source | Used by |
 |---|---|---|---|
-| `kSpace16` | 16 | [`app_spacing.dart:27`](../../lib/theme/app_spacing.dart:27) | D5 horizontal list inset (and the unchanged `_LightCard` padding) |
-| `kSpace8` | 8 | [`app_spacing.dart:15`](../../lib/theme/app_spacing.dart:15) | D3 label→dropdown vertical gap; D5 vertical inset (unchanged) |
-| `kRadius14` | 14 | [`app_radii.dart:18`](../../lib/theme/app_radii.dart:18) | card radius — unchanged |
-| `kHomeSurfaceCard` | `#FFFFFF` | [`app_colors.dart:75`](../../lib/theme/app_colors.dart:75) | card surface — unchanged |
-| `kHomeInkMuted` | `#667085` | [`app_colors.dart:84`](../../lib/theme/app_colors.dart:84) | axis stroke + tick ink — unchanged |
-| `labelSmall` | 14 sp w500 | [`app_home_theme.dart:89`](../../lib/theme/app_home_theme.dart:89) | chart tick type — unchanged |
-| `bodyLarge` | 18 sp w500 | [`app_home_theme.dart:69`](../../lib/theme/app_home_theme.dart:69) | `Detector model` label — unchanged |
-| `kChartHeight` | 180 | [`app_spacing.dart:39`](../../lib/theme/app_spacing.dart:39) | chart allocation — **not edited**; D2b's cost is paid inside it |
+| `kSpace16` | 16 | [`app_spacing.dart:27`](../../lib/theme/app_spacing.dart#L27) | D5 horizontal list inset (and the unchanged `_LightCard` padding) |
+| `kSpace8` | 8 | [`app_spacing.dart:15`](../../lib/theme/app_spacing.dart#L15) | D3 label→dropdown vertical gap; D5 vertical inset (unchanged) |
+| `kRadius14` | 14 | [`app_radii.dart:18`](../../lib/theme/app_radii.dart#L18) | card radius — unchanged |
+| `kHomeSurfaceCard` | `#FFFFFF` | [`app_colors.dart:75`](../../lib/theme/app_colors.dart#L75) | card surface — unchanged |
+| `kHomeInkMuted` | `#667085` | [`app_colors.dart:84`](../../lib/theme/app_colors.dart#L84) | axis stroke + tick ink — unchanged |
+| `labelSmall` | 14 sp w500 | [`app_home_theme.dart:89`](../../lib/theme/app_home_theme.dart#L89) | chart tick type — unchanged |
+| `bodyLarge` | 18 sp w500 | [`app_home_theme.dart:69`](../../lib/theme/app_home_theme.dart#L69) | `Detector model` label — unchanged |
+| `kChartHeight` | 180 | [`app_spacing.dart:39`](../../lib/theme/app_spacing.dart#L39) | chart allocation — **not edited**; D2b's cost is paid inside it |
 
 ### 9.2 Not added
 
 No new token, and **no theme file is edited**.
 
-- `reservedSize: 36`, `axisNameSize: 36`, `distanceFromEdge: 4`, `space: 4` are layout metrics inside one private function; the prior design-spec already recorded them as intentionally local literals ([`detection-alignment-charts-design-spec.md:380`](detection-alignment-charts-design-spec.md:380)), and adding a token for a single-consumer axis budget is the same anti-pattern.
+- `reservedSize: 36`, `axisNameSize: 36`, `distanceFromEdge: 4`, `space: 4` are layout metrics inside one private function; the prior design-spec already recorded them as intentionally local literals ([`detection-alignment-charts-design-spec.md:380`](detection-alignment-charts-design-spec.md)), and adding a token for a single-consumer axis budget is the same anti-pattern.
 - D3, D4 and D5 are expressed entirely with `kSpace8` / `kSpace16` and no new value.
 - A non-breaking space is a character, not a token.
 
@@ -491,35 +494,35 @@ No new token, and **no theme file is edited**.
 
 | file:line | Current assertion | Required change |
 |---|---|---|
-| [`logs_reports_screen_test.dart:714`](../../test/screens/logs_reports_screen_test.dart:714) | `find.textContaining('Ultralytics · center · 120 ms')` | `find.textContaining('Ultralytics · center · 120\u00A0ms')` |
-| [`logs_reports_screen_test.dart:1530`](../../test/screens/logs_reports_screen_test.dart:1530) | `find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms')` | `… 'center · 100\u00A0ms'` |
-| [`logs_reports_screen_test.dart:1535`](../../test/screens/logs_reports_screen_test.dart:1535) | `find.textContaining('Obstacle Detector v2 · Ultralytics · center · 100 ms')` | `… 'center · 100\u00A0ms'` |
-| [`logs_reports_screen_test.dart:1832`](../../test/screens/logs_reports_screen_test.dart:1832) | `find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms')` | `… 'center · 100\u00A0ms'` |
+| [`logs_reports_screen_test.dart:714`](../../test/screens/logs_reports_screen_test.dart#L714) | `find.textContaining('Ultralytics · center · 120 ms')` | `find.textContaining('Ultralytics · center · 120\u00A0ms')` |
+| [`logs_reports_screen_test.dart:1530`](../../test/screens/logs_reports_screen_test.dart#L1530) | `find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms')` | `… 'center · 100\u00A0ms'` |
+| [`logs_reports_screen_test.dart:1535`](../../test/screens/logs_reports_screen_test.dart#L1535) | `find.textContaining('Obstacle Detector v2 · Ultralytics · center · 100 ms')` | `… 'center · 100\u00A0ms'` |
+| [`logs_reports_screen_test.dart:1832`](../../test/screens/logs_reports_screen_test.dart#L1832) | `find.textContaining('Built-in YOLOv8n · Ultralytics · center · 100 ms')` | `… 'center · 100\u00A0ms'` |
 
-A repository-wide search for `center · ` in `test/` returns exactly these four sites, so no other assertion carries the joined subtitle string. `find.textContaining('Obstacle Detector v2 · ')` at [:1835](../../test/screens/logs_reports_screen_test.dart:1835) is unaffected (no number+unit pair).
+A repository-wide search for `center · ` in `test/` returns exactly these four sites, so no other assertion carries the joined subtitle string. `find.textContaining('Obstacle Detector v2 · ')` at [:1835](../../test/screens/logs_reports_screen_test.dart#L1835) is unaffected (no number+unit pair).
 
 ### 10.2 Assertions that must **not** change (and why they survive)
 
 | file:line | Assertion | Why it survives |
 |---|---|---|
-| [`charts_test.dart:167-169`](../../test/widgets/charts_test.dart:167) | `['0','0.5','1']` each `findsWidgets` at 200 %, width 260 | D1 keeps one decimal, so `0.5` is still produced; `maxX`/interval unchanged |
-| [`charts_test.dart:202-204`](../../test/widgets/charts_test.dart:202) | `['0','1.5','3']` | same |
-| [`charts_test.dart:170-180`](../../test/widgets/charts_test.dart:170), [:205-215](../../test/widgets/charts_test.dart:205) | tick rects do not overlap | tick count and values unchanged; `fitInside` only shifts the last label inward (§5.3 arithmetic) |
-| [`charts_test.dart:308`](../../test/widgets/charts_test.dart:308) | `find.textContaining(RegExp(r'\.\d\d'))` `findsNothing` | D1 guarantees ≤ 1 decimal on X as well; the assertion now guards both axes and is not weakened |
-| [`charts_test.dart:139-145`](../../test/widgets/charts_test.dart:139) | `minX 0`, `maxX 9`, spots `[0,2,9]` | no domain headroom was adopted |
-| [`charts_test.dart:316-319`](../../test/widgets/charts_test.dart:316) | `10`/`20`/`30`/`40` `findsOneWidget`, `10.0` absent | X ticks there are `0`/`0.5`/`1`; no collision with Y integers |
-| [`charts_test.dart:328`](../../test/widgets/charts_test.dart:328), [:344-345](../../test/widgets/charts_test.dart:344) | `39.8`, `width + 4 <= 64` | Y axis untouched |
-| [`charts_test.dart:358-363`](../../test/widgets/charts_test.dart:358) | tick colour + `labelSmall` size | `tickStyle` untouched |
-| [`logs_reports_screen_test.dart:1563`](../../test/screens/logs_reports_screen_test.dart:1563), [:1749](../../test/screens/logs_reports_screen_test.dart:1749) | `find.text('All models (mixed)')` `findsOneWidget` | still exactly one `Text` with that `data` |
-| [`logs_reports_screen_test.dart:1572`](../../test/screens/logs_reports_screen_test.dart:1572), [:1824](../../test/screens/logs_reports_screen_test.dart:1824), [:2245](../../test/screens/logs_reports_screen_test.dart:2245) | `find.byType(DropdownButton<String?>).first` | same widget type and generic |
-| [`logs_reports_screen_test.dart:2252-2261`](../../test/screens/logs_reports_screen_test.dart:2252) | one merged node, `^Detector model`, button, tap | `MergeSemantics` + label-first order retained |
-| [`logs_reports_screen_test.dart:1314-1326`](../../test/screens/logs_reports_screen_test.dart:1314), [:1328-1340](../../test/screens/logs_reports_screen_test.dart:1328) | 200 % no overflow (Charts, Logs) | ellipsis/`Wrap`-free changes raise nothing; taller card is inside scrolling lists |
-| [`logs_reports_screen_test.dart:711`](../../test/screens/logs_reports_screen_test.dart:711) | `find.text('person — 82%')` | title untouched |
-| [`semantics_test.dart:342-401`](../../test/accessibility/semantics_test.dart:342) | chart summary prefixes | `_sampleSummary` / `_engineSummary` untouched |
+| [`charts_test.dart:167-169`](../../test/widgets/charts_test.dart#L167) | `['0','0.5','1']` each `findsWidgets` at 200 %, width 260 | D1 keeps one decimal, so `0.5` is still produced; `maxX`/interval unchanged |
+| [`charts_test.dart:202-204`](../../test/widgets/charts_test.dart#L202) | `['0','1.5','3']` | same |
+| [`charts_test.dart:170-180`](../../test/widgets/charts_test.dart#L170), [:205-215](../../test/widgets/charts_test.dart#L205) | tick rects do not overlap | tick count and values unchanged; `fitInside` only shifts the last label inward (§5.3 arithmetic) |
+| [`charts_test.dart:308`](../../test/widgets/charts_test.dart#L308) | `find.textContaining(RegExp(r'\.\d\d'))` `findsNothing` | D1 guarantees ≤ 1 decimal on X as well; the assertion now guards both axes and is not weakened |
+| [`charts_test.dart:139-145`](../../test/widgets/charts_test.dart#L139) | `minX 0`, `maxX 9`, spots `[0,2,9]` | no domain headroom was adopted |
+| [`charts_test.dart:316-319`](../../test/widgets/charts_test.dart#L316) | `10`/`20`/`30`/`40` `findsOneWidget`, `10.0` absent | X ticks there are `0`/`0.5`/`1`; no collision with Y integers |
+| [`charts_test.dart:328`](../../test/widgets/charts_test.dart#L328), [:344-345](../../test/widgets/charts_test.dart#L344) | `39.8`, `width + 4 <= 64` | Y axis untouched |
+| [`charts_test.dart:358-363`](../../test/widgets/charts_test.dart#L358) | tick colour + `labelSmall` size | `tickStyle` untouched |
+| [`logs_reports_screen_test.dart:1563`](../../test/screens/logs_reports_screen_test.dart#L1563), [:1749](../../test/screens/logs_reports_screen_test.dart#L1749) | `find.text('All models (mixed)')` `findsOneWidget` | still exactly one `Text` with that `data` |
+| [`logs_reports_screen_test.dart:1572`](../../test/screens/logs_reports_screen_test.dart#L1572), [:1824](../../test/screens/logs_reports_screen_test.dart#L1824), [:2245](../../test/screens/logs_reports_screen_test.dart#L2245) | `find.byType(DropdownButton<String?>).first` | same widget type and generic |
+| [`logs_reports_screen_test.dart:2252-2261`](../../test/screens/logs_reports_screen_test.dart#L2252) | one merged node, `^Detector model`, button, tap | `MergeSemantics` + label-first order retained |
+| [`logs_reports_screen_test.dart:1314-1326`](../../test/screens/logs_reports_screen_test.dart#L1314), [:1328-1340](../../test/screens/logs_reports_screen_test.dart#L1328) | 200 % no overflow (Charts, Logs) | ellipsis/`Wrap`-free changes raise nothing; taller card is inside scrolling lists |
+| [`logs_reports_screen_test.dart:711`](../../test/screens/logs_reports_screen_test.dart#L711) | `find.text('person — 82%')` | title untouched |
+| [`semantics_test.dart:342-401`](../../test/accessibility/semantics_test.dart#L342) | chart summary prefixes | `_sampleSummary` / `_engineSummary` untouched |
 
 ### 10.3 Preservation-list suites to re-run (must not regress)
 
-[`detection_screen_alignment_test.dart`](../../test/screens/detection_screen_alignment_test.dart:1), [`depth_heatmap_view_test.dart`](../../test/widgets/depth_heatmap_view_test.dart:23), [`gesture_navigation_direction_test.dart`](../../test/screens/gesture_navigation_direction_test.dart:250). None imports `charts.dart` or the Logs tab, so they are safe by non-overlap — but they must be run, not assumed.
+[`detection_screen_alignment_test.dart`](../../test/screens/detection_screen_alignment_test.dart#L1), [`depth_heatmap_view_test.dart`](../../test/widgets/depth_heatmap_view_test.dart#L23), [`gesture_navigation_direction_test.dart`](../../test/screens/gesture_navigation_direction_test.dart#L250). None imports `charts.dart` or the Logs tab, so they are safe by non-overlap — but they must be run, not assumed.
 
 ---
 
@@ -534,7 +537,7 @@ A repository-wide search for `center · ` in `test/` returns exactly these four 
 | **T6** | `the Logs filter card shares the Charts gutter` | `test/screens/logs_reports_screen_test.dart` | in one test: `getTopLeft(find.text('Detector model')).dx` on Logs equals `getTopLeft(<the Inference Latency card title>).dx` on Charts; both cards are the first child of a 16 dp `_LightCard`, so equality proves a shared gutter |
 | **T7** | `a log row keeps the latency number and unit together` | `test/screens/logs_reports_screen_test.dart` | every rendered row subtitle `Text.data` matches neither `RegExp(r'\d ms')`; for the `Ultralytics · center · 120 ms` fixture the subtitle is one laid-out line (`computeLineMetrics().length == 1`, API name NV-7) |
 
-T5 must be added inside the group that already defines the local `paintedParagraph` helper ([`logs_reports_screen_test.dart:1367`](../../test/screens/logs_reports_screen_test.dart:1367)) — that helper is local to its group, so a test outside it cannot call it.
+T5 must be added inside the group that already defines the local `paintedParagraph` helper ([`logs_reports_screen_test.dart:1367`](../../test/screens/logs_reports_screen_test.dart#L1367)) — that helper is local to its group, so a test outside it cannot call it.
 
 ---
 
@@ -549,7 +552,7 @@ T5 must be added inside the group that already defines the local `paintedParagra
 | R5 | The estimator of "All models (mixed) needs ~160 dp" is arithmetic, not measurement | medium | acceptance is the font-independent `didExceedMaxLines == false`, not a width number |
 | R6 | `_formatAxisTick` deletion leaves a dangling doc reference | low | the `_formatYAxisTick` doc comment is rewritten in the same step; `flutter analyze` catches any residue |
 | R7 | The test font's advance makes a width assertion pass that would fail on device | medium | T5 asserts *overflow*, not width; the device check is a separate gate (NV-9) |
-| R8 | Bar chart minute labels accidentally routed through the new formatter | very low | the `minuteLabels` branch is untouched and is asserted by [`charts_test.dart:117-121`](../../test/widgets/charts_test.dart:117) |
+| R8 | Bar chart minute labels accidentally routed through the new formatter | very low | the `minuteLabels` branch is untouched and is asserted by [`charts_test.dart:117-121`](../../test/widgets/charts_test.dart#L117) |
 
 **Rollback:** each change is a single, independently revertible block — P1/P2 in `charts.dart`, P3/P4/P5 in `logs_reports_screen.dart`. No data, setting, telemetry or persistence schema is touched, so rollback has no migration cost.
 
@@ -584,17 +587,17 @@ T5 must be added inside the group that already defines the local `paintedParagra
   line, and matching Logs/Charts filter cards. X ticks for very large elapsed
   domains (6+ character values) were **not** separately exercised and still rely
   on the reserved 36 dp band — a non-blocking note, not a defect.
-- **NV-10 `[product-decision]` — whether to record the new device gates in [`known-issues.md`](../../docs/known-issues.md).** If the implementation stage adds them there, the `.roo/rules/docs/` allow-list re-copy rule applies (`known-issues.md` is allow-listed). This phase does not require it.
+- **NV-10 `[product-decision]` — whether to record the new device gates in [`known-issues.md`](../known-issues.md).** If the implementation stage adds them there, the `.roo/rules/docs/` allow-list re-copy rule applies (`known-issues.md` is allow-listed). This phase does not require it.
 
 ### 13.3 Files an implementer might suspect, and why they are out of scope
 
 | File | Why it looks necessary | Why it is not |
 |---|---|---|
-| [`lib/theme/app_spacing.dart`](../../lib/theme/app_spacing.dart:1) (`kChartHeight`) | restoring the 136 dp plot after D2b | `lib/theme/` is out of scope; the card height change would ripple to every chart card and is a separate decision |
-| [`lib/theme/app_home_theme.dart`](../../lib/theme/app_home_theme.dart:64) | dropping `titleMedium` to 16 sp would fit `All models (mixed)` at 200 % | changes every screen's typography — a redesign, not a polish fix |
-| [`lib/screens/logs_reports_screen.dart:1707`](../../lib/screens/logs_reports_screen.dart:1707) `_LightCard` padding | narrowing the Logs card | would change every card in Overview, Charts and Logs; the defect is the list's padding |
-| [`lib/services/telemetry_service.dart`](../../lib/services/telemetry_service.dart:1) | `RuntimeSample.timestamp` drives `maxX` | presentation concern; mutating recorded timestamps would corrupt telemetry and exports |
-| [`test/widgets/charts_test.dart:24`](../../test/widgets/charts_test.dart:24) `wrap()` helper | adding a theme so ticks are 14 sp | a themed helper already exists ([`wrapThemed`, :40](../../test/widgets/charts_test.dart:40)); new tests choose the right helper explicitly rather than changing an existing one |
+| [`lib/theme/app_spacing.dart`](../../lib/theme/app_spacing.dart#L1) (`kChartHeight`) | restoring the 136 dp plot after D2b | `lib/theme/` is out of scope; the card height change would ripple to every chart card and is a separate decision |
+| [`lib/theme/app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L64) | dropping `titleMedium` to 16 sp would fit `All models (mixed)` at 200 % | changes every screen's typography — a redesign, not a polish fix |
+| [`lib/screens/logs_reports_screen.dart:1707`](../../lib/screens/logs_reports_screen.dart#L1707) `_LightCard` padding | narrowing the Logs card | would change every card in Overview, Charts and Logs; the defect is the list's padding |
+| [`lib/services/telemetry_service.dart`](../../lib/services/telemetry_service.dart#L1) | `RuntimeSample.timestamp` drives `maxX` | presentation concern; mutating recorded timestamps would corrupt telemetry and exports |
+| [`test/widgets/charts_test.dart:24`](../../test/widgets/charts_test.dart#L24) `wrap()` helper | adding a theme so ticks are 14 sp | a themed helper already exists ([`wrapThemed`, :40](../../test/widgets/charts_test.dart#L40)); new tests choose the right helper explicitly rather than changing an existing one |
 
 ---
 

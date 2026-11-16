@@ -1,24 +1,20 @@
 # EyeCue — Figma-to-Widget Component Inventory
 
-> **Status:** Scaffolding only. This is a template with one row per known
-> screen; the **Figma screenshot paths are intentionally blank** because actual
-> Figma export is a manual step performed outside this scaffolding task. Do not
-> fabricate screenshot paths or statuses. Population happens once Figma screens
-> are exported into `design-reference/screens/` and `design-reference/components/`.
-> **Source-of-truth note:** this is an agent-facing record that lives in
-> `.roo/rules/docs/` by design (mirroring `frontend-onboarding-analysis.md`).
-> If it should also be visible to humans, mirror it into root `/docs` as well.
+> **Status:** Inventory of implemented screens and reusable widgets. The
+> screenshot column remains blank because these entries are not verified Figma
+> exports; the files under `design-reference/screens/` are design references.
+> This inventory is maintained in the repository's root `docs/` directory.
 
 ## Screens
 
 | Screen name | Figma screenshot path (blank until exported) | Corresponding widget file | Status (placeholder/real/not started) |
 |---|---|---|---|
 | Home |  | [`lib/screens/home_screen.dart`](../lib/screens/home_screen.dart) | real |
-| Detect (Ultralytics) — the only Detection screen since the Custom engine was removed on 2026-10-21 |  | [`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | real |
-| Engine Detection wrapper |  | [`lib/screens/engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) | real |
+| Detection |  | [`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart) | real |
+| Detection lifecycle wrapper |  | [`lib/screens/engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart) | real |
 | Settings |  | [`lib/screens/settings_screen.dart`](../lib/screens/settings_screen.dart) | real |
 | Help |  | [`lib/screens/help_screen.dart`](../lib/screens/help_screen.dart) | real |
-| Logs & Reports |  | [`lib/screens/logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | real |
+| Logs & Reports (Study flavor) |  | [`lib/screens/logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart) | real |
 
 ## Components
 
@@ -46,4 +42,5 @@
   `design-reference/screens/` or `design-reference/components/`.
 - "Status" reflects whether the corresponding widget is a real implementation
   (all current entries are real) versus a placeholder or not-yet-started item.
-- This file is scaffolding only; populate it once Figma screens are exported.
+- Blank screenshot cells mean no Figma export is linked here; they do not mean
+  the screen or component is a placeholder.

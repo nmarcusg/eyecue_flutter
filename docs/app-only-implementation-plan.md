@@ -1,5 +1,7 @@
 # EyeCue — App-Only Implementation Plan
 
+> **Current reconciliation — 2026-11-16:** This is the original September 2026 task/acceptance record. Its “Custom fallback”, two-screen/isolate contracts and dual-engine gates are retired. Current source has one native engine, the campus 14-label detector, public/Study identities and entry points, retained release-signing support, build artifacts and optional Play-internal automation. Identity/signing/AAB implementation is no longer wholly pending; actual credentials, live distribution and current-device checks still require evidence. Use [project status](project-status.md), [roadmap](implementation-plan.md), [known issues](known-issues.md), and [release procedure](release-procedure.md) for current decisions. The old test totals and completion claims below stay tied to their recorded revision.
+
 > **Superseded for speech scheduling (2026-10-17):** any statements in this plan describing TTS as "cooldown + label de-duplication + urgent bypass", or implying that speech history is written when an announcement is requested, no longer describe the implementation. The current behaviour is a lifecycle-aware arbiter described in [`architecture.md`](architecture.md#speech-scheduling-workstream-1). The rest of this plan is a dated implementation record and is retained as historical evidence.
 
 > **Created:** 2026-09-01

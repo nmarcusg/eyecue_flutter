@@ -1,5 +1,8 @@
 # Custom Detector Priority and Distance Alert Policy — Implementation Plan
 
+> **Implementation status (2026-11-16):** The detector-aware alert policy is present in [`lib/services/alert_policy.dart`](../../lib/services/alert_policy.dart) and is called from the shared assistive controller. Active model identity/labels are supplied by [`lib/services/detector_model_service.dart`](../../lib/services/detector_model_service.dart); the built-in Campus class list currently contains 14 labels. Treat the following plan as implementation history, not an unstarted task.
+
+
 **Task type:** logic/alert-policy change; no intentional visual changes.
 
 **Required input:** [`custom-detector-priority-distance-alert-policy-analysis.md`](custom-detector-priority-distance-alert-policy-analysis.md).

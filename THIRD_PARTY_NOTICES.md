@@ -9,7 +9,8 @@ upstream licences say, and which questions only a lawyer (or the copyright holde
 can answer. Nothing here replaces the upstream licence texts, which are
 authoritative.
 
-Every fact below is inspectable in this tree; the evidence for the release build is
+Repository-derived facts below are inspectable in this tree; owner statements and
+unresolved licensing questions are labeled as such. Historical build evidence is
 in [`docs/release-procedure.md`](docs/release-procedure.md) §6 and
 [`docs/release-readiness-report.md`](docs/release-readiness-report.md).
 
@@ -25,13 +26,11 @@ Owner decision **D2** in [`docs/play-store-readiness.md`](docs/play-store-readin
 §8 is therefore **decided**: the application carries the same licence as the
 YOLO/Ultralytics components in §2 and §3.
 
-The consequence is that the AGPL-3.0 obligations now apply to the application's own
-code as well as to the vendored plugin and the bundled models. Every binary distributed
-from this tree must be accompanied by the complete corresponding source of the whole
-work, and source distribution is a duty for the app itself, not only for the plugin
-(§7). What those duties mean in practice — notice wording, "corresponding source" for
-weights, network use (§13), and app-store distribution terms — is listed as review
-items **R1–R7** in §6: **obligations identified, legal review not performed**.
+The application source is marked AGPL-3.0-only, and the vendored plugin and model
+metadata also identify AGPL-3.0. The practical obligations for the combined app,
+the weights and their training inputs—including source offers, notices, network use
+(§13), and app-store distribution terms—require qualified review. Items **R1–R7**
+in §6 identify these open questions; this document does not certify compliance.
 
 ## 2. Vendored plugin — `ultralytics_yolo` 0.6.13 (AGPL-3.0)
 
@@ -45,8 +44,9 @@ items **R1–R7** in §6: **obligations identified, legal review not performed**
 | Fork record | [`plugins/ultralytics_yolo/VENDORED.md`](plugins/ultralytics_yolo/VENDORED.md) — provenance, parity check, upgrade obligations |
 | Fork approval | owner decision **D4** (already approved) |
 
-The plugin's Dart and Kotlin sources are compiled into the app, so AGPL-3.0 §5
-(source of the work as distributed) applies to those files.
+The plugin's Dart and Kotlin sources are compiled into the app. The practical
+source-offer and distribution obligations for this combination require the
+qualified review recorded in R3 and R7; this notice does not certify compliance.
 
 ### 2.1 Local modifications (must be published with the source)
 
@@ -84,16 +84,24 @@ file; whether that satisfies "prominent notices" for each source file is review 
 
 ## 3. Bundled model assets (AGPL-3.0, Ultralytics)
 
-Both runtime models are compiled into the release bundle
-(`base/assets/flutter_assets/assets/…`; see
-[`docs/release-procedure.md`](docs/release-procedure.md) §6.1).
+Both model files are declared as Flutter assets and are intended to be bundled
+in both distribution flavors. The campus detector is used for built-in object
+detection. The `yolo26n-depth` asset is optional at runtime: its presence in the
+asset bundle does not mean depth inference is active. The historical bundle
+inspection in [`docs/release-procedure.md`](docs/release-procedure.md) §6.1
+predates the current flavor/model setup and is not packaging evidence for these
+files.
 
 | Asset | Size | SHA-256 | Provenance |
 | --- | --- | --- | --- |
 | `assets/yolo26n-depth_w8a32.tflite` | 5 474 749 B | `8c7f242c2a8c339c6721863e103e17e026cbd784c9a3d031a8e902660c364311` | official `yolo26n-depth_w8a32.tflite` from the pinned `yolo-flutter-app` release `v0.6.6`, copied unchanged; its own `metadata.json` declares `"license": "AGPL-3.0 License (https://ultralytics.com/license)"` |
-| `assets/eyecue_v8_campus_only_w8a32.tflite` | 3 452 275 B | `91c25102eb1d2f42a94f7a563118f93605ee0e9e3e8ba2a85157f25bb0a8e2a1` | User-supplied, campus-trained detection model; embedded Ultralytics metadata identifies version 8.4.197, task detect and AGPL-3.0. The owner states the team trained the model and has distribution rights for the weights and training data; the training pipeline and dataset provenance are not recorded here. |
+| `assets/eyecue_v8_campus_only_w8a32.tflite` | 3 452 275 B | `91c25102eb1d2f42a94f7a563118f93605ee0e9e3e8ba2a85157f25bb0a8e2a1` | Embedded metadata describes a campus-only detector, identifies Ultralytics version 8.4.197, task `detect`, quantization `w8a32`, and declares AGPL-3.0. `assets/labels.txt` supplies 14 classes in index order: `bench`, `bicycle`, `car`, `cat`, `chair`, `door`, `fan`, `hand-rails`, `person`, `pole`, `stairs`, `table`, `trash_bin`, `warning_marker`. The embedded metadata names a training-data path but does not establish dataset provenance, training rights, or distribution authorization; those remain unresolved. |
 
 Details and validation guarantees: [`docs/model-assets.md`](docs/model-assets.md).
+The campus detector's metadata contains an AGPL-3.0 license string. This record
+does not independently establish that the model, source dataset, or training
+pipeline is lawfully distributable; that question remains R2 for qualified
+review.
 
 Obligations that follow from shipping these weights:
 
@@ -170,26 +178,29 @@ reviewed by counsel, and nothing in this file states that AGPL compliance is ver
 | # | Question | Why it matters |
 | --- | --- | --- |
 | R1 | Do the bundled Ultralytics **weights** trigger AGPL-3.0 §5/§6, and if so what counts as their "corresponding source"? | the models are redistributed inside the app bundle; the training pipeline is not here |
-| R2 | Is the detection model's provenance (externally supplied base graph, no licence string in its metadata) sufficient? | the depth model names its licence; the detector's does not |
+| R2 | Is the detector's provenance and distribution authorization sufficient? | its metadata declares AGPL-3.0 and names a training-data path, but the dataset, training pipeline, and distribution rights are not established here |
 | R3 | Do the eight plugin deviations satisfy AGPL-3.0's "prominent notices … that you changed the files" requirement? | the plugin is a modified AGPL-3.0 work |
 | R4 | Are all 99 pub dependencies under terms compatible with distribution and with the app's eventual licence? | no licence audit has been performed here |
 | R5 | Do the native/AAR licences (AndroidX, LiteRT, Ultralytics native) require notices this repository does not currently produce? | redistributed binaries carry notice obligations |
 | R6 | AGPL-3.0 §13 (network use): does the optional research-telemetry upload, or the separate research dashboard, make the covered work "interacted with … remotely through a computer network"? | the dashboard is a separate repository and is not deployed |
 | R7 | Given §2–§5, what does the chosen `AGPL-3.0-only` (D2, decided) require in practice — notice wording, what counts as "source" for the weights, and how Play's distribution terms interact with it? | the licence choice is made; the practical duties are unanalysed by counsel |
 
-## 7. AGPL-3.0 source-distribution procedure
+## 7. Proposed AGPL-3.0 source-distribution procedure
 
-Every release artefact must be accompanied by the corresponding source of the
-AGPL-3.0 work — the application's own code, the modified vendored plugin and both
-model assets. This repository **is** that source: everything is committed, together
+For a release, this procedure archives the checked-in application source, modified
+vendored plugin, model files, notices and build instructions. Whether that archive
+is the legally required complete corresponding source for the weights, their
+training data, and the combined work is unresolved (R1, R2 and R7); this procedure
+does not answer that legal question. The repository contains these files, together
 with the build instructions for the modified plugin in
 [`VENDORED.md`](plugins/ultralytics_yolo/VENDORED.md) and
-[`docs/release-procedure.md`](docs/release-procedure.md) §4, so no separate download is
-needed to satisfy the "complete corresponding source" requirement.
+[`docs/release-procedure.md`](docs/release-procedure.md) §4. The archive is a
+reproducible repository snapshot, not a determination that all legally required
+corresponding source is included.
 
-### 7.1 Tag ↔ `versionCode` matching (mandatory)
+### 7.1 Tag ↔ `versionCode` matching (source tracking)
 
-1. `versionCode` / `versionName` come from [`pubspec.yaml`](pubspec.yaml:5) and are
+1. `versionCode` / `versionName` come from [`pubspec.yaml`](pubspec.yaml#L5) and are
    passed to Gradle unchanged ([`docs/release-procedure.md`](docs/release-procedure.md) §2).
 2. Before building a release, create an annotated tag on the exact commit that is
    built: `git tag -a v<versionName>+<versionCode> -m "EyeCue <versionName>+<versionCode> source"`
@@ -204,7 +215,7 @@ needed to satisfy the "complete corresponding source" requirement.
 
 ### 7.2 What is already in the repository
 
-| AGPL-covered item | Path | Checked in? |
+| Source/archive item | Path | Checked in? |
 | --- | --- | --- |
 | plugin Dart/Kotlin/CMake sources + upstream `LICENSE` | `plugins/ultralytics_yolo/**` | yes |
 | plugin fork record (deviations, upgrade obligations) | `plugins/ultralytics_yolo/VENDORED.md` | yes |
@@ -218,7 +229,7 @@ needed to satisfy the "complete corresponding source" requirement.
 
 ```sh
 # 1. from the tag, produce a source archive that provably matches the artefact
-cd /home/nico/repos/eyecue_flutter-playstore
+cd /path/to/eyecue_flutter
 TAG=v<versionName>+<versionCode>
 git archive --format=tar.gz --prefix="eyecue-${TAG}/" -o "eyecue-${TAG}-source.tar.gz" "${TAG}"
 sha256sum "eyecue-${TAG}-source.tar.gz"   # publish alongside the AAB sha256

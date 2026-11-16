@@ -6,6 +6,12 @@ path: /integrations/flutter/troubleshooting/
 
 # Troubleshooting Guide
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
 This guide focuses on the current plugin flow: metadata-first model resolution, official model IDs, and shared switching behavior across `YOLO`, `YOLOView`, and `YOLOViewController`.
 
 ## 🚨 Installation Problems

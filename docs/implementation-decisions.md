@@ -4,7 +4,12 @@
 
 This document records important engineering decisions made during the development of EyeCue. Each entry captures the decision, context, alternatives considered, and consequences.
 
-> **Historical scope:** Decisions 1–10 and the Custom-engine discussion describe the Dart/TFLite pipeline removed on 2026-10-21. They are retained as the rationale record for that work, not as current runtime documentation.
+> **Current baseline:** local `main` uses the campus detector asset and optional
+> `yolo26n-depth` through the native Ultralytics plugin. The older YOLOv8
+> artifact is not bundled. Decisions 1–10 below document the removed Dart/TFLite
+> pipeline and are retained as historical rationale, not current runtime
+> instructions. The later speech-scheduling decision describes the current app
+> policy; its dated test/device counts are historical evidence.
 
 ---
 
@@ -79,7 +84,7 @@ This document records important engineering decisions made during the developmen
   - Performance ceiling: no hardware acceleration
   - See [`known-issues.md`](known-issues.md) for current blocker status
   - Future: benchmark raw model latency, test NNAPI/GPU delegates
-- **Current status (2026-09-05):** This remains the v0.2.2 release decision, not proof that the historical crash is fixed. The committed but unreleased runtime artifact `yolov8n_int8_new_metadata.tflite` is generated from `yolov8n_int8_new.tflite`; it attempts explicit XNNPACK, retains the delegate for the interpreter lifetime, and retries on CPU after recoverable Dart-level setup or invocation failures. The exact APK installed and completed an initial short live run on the target phone; a native SIGSEGV remains uncatchable, so longer controlled stability validation is still required.
+- **Historical status (2026-09-05):** This was the v0.2.2 release decision. A later YOLOv8 NCHW candidate attempted XNNPACK and had a short device observation; it is no longer bundled. See [`benchmark-results.md`](benchmark-results.md). Those facts do not establish current-model stability.
 
 ## Decision 6: Stream-Based Results
 
@@ -111,7 +116,7 @@ This document records important engineering decisions made during the developmen
 
 ## Decision 9: Device-Independent Orientation (Input Rotation)
 
-- **Decision:** Rotate (and optionally X-mirror) the square input tensor to UPRIGHT before `interpreter.run()`, driven entirely by runtime metadata — `CameraDescription.sensorOrientation`, the current `controller.value.deviceOrientation`, and lens direction. [`BoxTransform`](../lib/models/box_transform.dart) remains the source of orientation metadata, while [`tensor_rotation.dart`](../lib/models/tensor_rotation.dart) applies the pixel transform to either NHWC interleaved or NCHW planar buffers. Parser/NMS are untouched; boxes after NMS are already in upright space.
+- **Decision:** Rotate (and optionally X-mirror) the square input tensor to UPRIGHT before `interpreter.run()`, driven entirely by runtime metadata — `CameraDescription.sensorOrientation`, the current `controller.value.deviceOrientation`, and lens direction. [`BoxTransform`](../lib/models/box_transform.dart) remains the source of orientation metadata, while the then-existing `tensor_rotation.dart` helper applied the pixel transform to NHWC interleaved or NCHW planar buffers (historical file, removed with the Dart inference path). Parser/NMS are untouched; boxes after NMS are already in upright space.
 - **Date:** 2026-08-01
 - **Reason:** On-device forensics (`docs/camera-path-forensics.md`) proved the last camera defect was missing rotation-to-device-orientation: this device delivers sensor-native 320×240 landscape frames (sensorOrientation 90°) that are never rotated, so a portrait hold feeds the model a 90°-rotated scene → ~0 detections, while landscape holds detect at 0.88. The design review (`docs/orientation-design-review.md`) had recommended **sensor-space inference + post-NMS box transform**, but on-device evidence showed that cannot work: when the model sees a rotated scene there are no boxes to transform. Input rotation is the only design satisfying "portrait detection quality must match landscape" (verified: portrait now 0.91, static-image regression byte-identical).
 - **Alternatives Considered:**
@@ -128,16 +133,16 @@ This document records important engineering decisions made during the developmen
   - Landscape physical-hold re-validation and front-camera device runs are still pending
   - See [`docs/orientation-implementation.md`](orientation-implementation.md) for full details
 
-## Decision 10: Unreleased NCHW/XNNPACK Candidate Must Not Replace Validation Evidence
+## Decision 10: Historical NCHW/XNNPACK candidate evidence boundary
 
-- **Decision:** Keep the metadata-enriched runtime artifact `yolov8n_int8_new_metadata.tflite`, generated from the byte-identical base graph `yolov8n_int8_new.tflite`, as the current unreleased model candidate and report it separately from the validated v0.2.2 CPU/NHWC baseline until controlled comparative, accuracy, and stability validation is complete.
+- **Decision (historical, superseded):** At the time, keep the metadata-enriched YOLOv8 NCHW candidate separate from the v0.2.2 CPU/NHWC baseline until validation was complete. Neither artifact is the current bundled detector.
 - **Date:** 2026-09-01
-- **Reason:** Direct flatbuffer/runtime inspection confirms a FLOAT32-I/O NCHW model with internally quantized tensors, and static tests validate layout conversion and rotation. The exact candidate APK now installs on the API 33 phone and a short run confirms startup metadata, explicit XNNPACK setup, and live frame completion. That observation is not sufficient for trustworthy comparative performance, accuracy, long-duration stability, or full-delegation conclusions.
+- **Reason (historical):** At that time, flatbuffer/runtime inspection and a short device run described the NCHW candidate. Those observations are retained as evidence for that artifact only. That observation is not sufficient for trustworthy comparative performance, accuracy, long-duration stability, or full-delegation conclusions.
 - **Consequences:**
-  - Documentation distinguishes release behavior from the current committed but unreleased candidate.
+  - Documentation at that time distinguished release behavior from the candidate.
   - No XNNPACK speedup, model-quality improvement, full graph delegation, or crash resolution is claimed.
-  - The candidate retains a CPU fallback for recoverable Dart-level failures, while native crash risk and long-duration device validation remain open. Bounded Custom-worker restart recovery is implemented and covered by deterministic lifecycle tests.
-  - **Current packaging (WS4, 2026-10-19):** `yolov8n_int8_new_metadata.tflite` is the sole Flutter-bundled runtime model, declared alongside `assets/labels.txt`. The base graph and v0.2.2 baseline remain tracked for tools, tests, and historical comparison but are not bundled.
+  - That candidate had a CPU fallback for recoverable Dart-level failures. The Custom-worker restart mechanism mentioned in the original record was removed with that engine.
+  - **Superseded packaging record (2026-10-19):** that artifact was then the sole bundled model. Current packaging is documented in [`model-assets.md`](model-assets.md).
 
 ## Decision 7: Flutter over React Native
 
@@ -172,6 +177,6 @@ This document records important engineering decisions made during the developmen
   - Exactly one in-flight utterance and one pending request; preemption only for imminent safety and for distinct approaching tracks at equal priority.
   - Wayfinding is advisory: idle-only acceptance, never queued behind Detection, separate confirmed-start anti-repeat state.
   - Parked decisions are revalidated semantically (`shouldSpeakPending`) so a newer accepted state discards them only when it already covers them; a genuine escalation is retained. Escalation covers risk tier, `stable/unknown` to `approaching`, proximity-band increase, centre entry, and size growth.
-  - The scheduler and policy tests run in the current suite (`flutter test --no-pub`: 527 passing, 1 known pre-existing failure).
-  - Alert-latency telemetry is implemented (bounded lifecycle records, cumulative scheduler counters, four Ultralytics interval summaries, schema-3 export); the Ultralytics interval is `app-side / post-inference` only, per-frame inference timing must not be presented as audible-warning latency, and the owning tests run in the current suite.
+  - The scheduler and policy have deterministic tests in the repository; no current suite result is claimed by this decision record.
+  - Alert-latency telemetry is implemented (bounded lifecycle records, cumulative scheduler counters, four Ultralytics interval summaries, schema-4 export); the Ultralytics interval is `app-side / post-inference` only, per-frame inference timing must not be presented as audible-warning latency, and tests for this behavior are present in the repository; no current suite run is asserted here.
   - Residual limitation: a sufficiently late native callback after the bounded quiet period cannot be distinguished without native utterance IDs. Device callback ordering, cancellation timing and audible-warning latency remain unverified, so EyeCue is **not** proven safe for independent navigation.

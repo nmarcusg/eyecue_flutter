@@ -32,6 +32,12 @@ Ultralytics YOLO Flutter 是官方 Flutter 插件，用于在 iOS 和 Android �
     <img src="https://raw.githubusercontent.com/ultralytics/assets/main/app/google-play.svg" width="15%" alt="Get it on Google Play"></a>
 </div>
 
+> **EyeCue 集成范围：** 本 README 介绍此 vendored 插件的一般 Android/iOS 能力。
+> 本仓库中的 EyeCue 应用仅支持 Android，内置校园训练检测模型和可选深度模型，
+> 并区分 public 与 Study 构建变体。EyeCue 的具体行为见仓库级
+> [架构说明](../../docs/architecture.md)、[模型资产](../../docs/model-assets.md)
+> 和[单目深度集成](../../docs/mde-integration.md)。
+
 ## ✨ 功能特性
 
 - Ultralytics 官方插件
@@ -64,7 +70,7 @@ Ultralytics YOLO Flutter 是官方 Flutter 插件，用于在 iOS 和 Android �
 
 ```yaml
 dependencies:
-  ultralytics_yolo: ^0.6.11
+  ultralytics_yolo: ^0.6.13
 ```
 
 ```bash
@@ -96,7 +102,7 @@ await yolo.loadModel();
 final results = await yolo.predict(imageBytes);
 ```
 
-**[▶️ 示例应用](./example)** | **[📖 安装指南](doc/install.md)** | **[⚡ 快速开始文档](doc/quickstart.md)**
+**▶️ 示例应用 (`example/`, omitted from this vendored copy)** | **[📖 安装指南](doc/install.md)** | **[⚡ 快速开始文档](doc/quickstart.md)**
 
 ## 📦 模型加载方式
 
@@ -116,9 +122,9 @@ final yolo = YOLO(modelPath: YOLO.defaultOfficialModel() ?? 'yolo26n');
 
 | 平台                | 运行时资产                    | Release                                                                                          |
 | ------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| Android             | LiteRT w8a32 `.tflite`        | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| Android NPU（可选） | QNN `*_v73/_v81_qnn.onnx`     | [yolo-flutter-app `v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
-| iOS                 | Core ML int8 `.mlpackage.zip` | [yolo-ios-app `v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
+| Android             | LiteRT w8a32 `.tflite`        | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| Android NPU（可选） | QNN `*_v73/_v81_qnn.onnx`     | [yolo-flutter-app [`v0.6.6`](https://github.com/ultralytics/yolo-flutter-app/releases/tag/v0.6.6) |
+| iOS                 | Core ML int8 `.mlpackage.zip` | [yolo-ios-app [`v8.3.0`](https://github.com/ultralytics/yolo-ios-app/releases/tag/v8.3.0)         |
 
 Flutter 解析器在 Android 上使用 TFLite release，在 Apple 平台上使用 Core ML release。这些 release 标签被刻意固定，以保证首次下载可复现。官方导出矩阵、URL 模式与模型属性详见[模型指南](doc/models.md)。
 

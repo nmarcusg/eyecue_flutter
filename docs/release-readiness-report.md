@@ -1,4 +1,12 @@
-# Release readiness report (L11)
+# Release readiness report (L11 historical snapshot)
+
+> **Historical evidence, not a current release-status report.** The measurements
+> and outcomes below belong to the 2026-10-25/26 worktree and commits identified
+> in §§1–4 and §16. They have not been rerun for current `main` (`aadf9e0`,
+> 2026-11-16). A source-only documentation audit on 2026-11-16 confirmed the
+> public/Study flavor setup and the privacy-link destination; it did not build,
+> test, install, publish, or inspect a Play listing. See the current-status note
+> in [`play-store-readiness.md`](play-store-readiness.md).
 
 Final statement for the `feat/play-store-readiness` programme: what was built,
 what was measured, what was **not** verified, and one classification.
@@ -43,7 +51,7 @@ Each was verified as an ancestor of `HEAD` in the L0 row:
 
 | Source | Commit |
 | --- | --- |
-| `feat/mde-integration` | `85b48ae` |
+| MDE integration history | `85b48ae` |
 | `feat/supabase-research-telemetry` | `12f568b` |
 | `feat/waste-reduction` (via merge) | `c325b11` |
 | `dev` | `94f74d8` |
@@ -244,9 +252,11 @@ field, so dashboard compatibility is unchanged by this run.
 4. Answer the Data Safety form (D3) — items P1–P5 in
    [`privacy-and-data-safety.md`](privacy-and-data-safety.md) §8.1: P3 (`https`
    enforcement) is **resolved in code**; P1 retention, P2 participant-code
-   interpretation, P4 processor-versus-third-party and P5 privacy-policy URL remain
-   owner decisions.
-5. Publish the privacy policy and fill the store listing
+   interpretation, and P4 processor-versus-third-party remain owner decisions.
+   The former P5 question is now a configured in-app URL; page content and
+   public availability still require owner verification.
+5. Verify the linked privacy policy's live content and availability, then fill
+   the store listing
    ([`play-store-checklist.md`](play-store-checklist.md) §1, §6–§10).
 6. Run the device gate (install, launch, camera path, TTS, model load).
 7. Stand up the Supabase project (or a local stack on a host with disk) and re-run
@@ -270,7 +280,7 @@ field, so dashboard compatibility is unchanged by this run.
 | 11 | The marking task now fails closed (§3), but that only catches a moved artefact at task-run time — a renamed *directory* is not detected at configuration time; a second `markTestSignedApk` run against an already-marked set also fails, because the task declares no outputs |
 | 12 | The AAB is discovered by globbing the release directory with a "first `.aab` wins" fallback, so a stale `-testsigned.aab` sitting beside a fresh plain one would be the file reported |
 | 13 | The two analyzer warnings are now described accurately (§3), but they are permanent fixtures of the "4 issues" count: a genuinely new warning is indistinguishable from them, so they must be fixed before that count is used as a regression gate |
-| 14 | Telemetry ingest is authenticated by the publishable key alone, and that key ships inside the APK: any holder of a build can insert sessions, and the `consent` field is self-asserted. No token, attestation or rate limit exists, so the study table is an open write target until the ingestion threat model lands |
+| 14 | The publishable key is client configuration and ships in Study builds. The current ingest code also requires a researcher-issued upload token, hashes/consumes it, and applies rate limits; these controls are documented in `privacy-and-data-safety.md` and `ingest-threat-model.md`. The migrations/function have not been executed or deployed per the historical evidence here, so deployed behavior and access controls remain unverified. |
 
 ## 13. Rollback
 
@@ -311,7 +321,7 @@ or published commit rewritten, no stash created or dropped, no external system
   The store-listing safety/accessibility statement (item K) **must mirror this
   wording**; no second in-app notice exists, and none is planned.
 
-## 15. Classification
+## 15. Historical classification (2026-10-26)
 
 **`CODE_READY_WITH_EXTERNAL_GATES`**
 
@@ -343,7 +353,7 @@ after the I/J/K store-material review. The only code commit in this pass is
 
 ### 16.1 The defect that was fixed
 
-`_applyLaunchPolicy()` in [`../lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart:186)
+`_applyLaunchPolicy()` in [`../lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart#L186)
 ran in `initState`, before the first-use disclosure was scheduled. On a fresh install
 `autoStartDetection` defaults to `true`, so the launch start intent, the
 camera-permission prompt, a medium haptic and the "Detection started" speech all fired
@@ -362,11 +372,11 @@ navigation cases keep one modal-free path.
 
 Also in `3eafed0`: the two stale "state-panel area" comments now state that the surface
 wraps the live viewport only (non-live panels and the depth notice are outside);
-[`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart:28) carries a
+[`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart#L28) carries a
 `shortcut:` note that any interactive child added inside the wrapped subtree
 re-introduces tap→pause classification, backed by a new case asserting the live subtree
 holds no button or tappable; and the second-pointer case in
-[`../test/services/gesture_controller_test.dart`](../test/services/gesture_controller_test.dart:185)
+[`../test/services/gesture_controller_test.dart`](../test/services/gesture_controller_test.dart#L185)
 now moves the second pointer in *after* a committing move, so it fails against the
 pre-fix controller instead of passing by accident.
 
@@ -498,14 +508,14 @@ carries this section:
 Two review nits were accepted as known non-issues and are recorded here so they are not
 re-litigated:
 
-* [`../lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart:219) still runs
+* [`../lib/navigation/app_shell.dart`](../lib/navigation/app_shell.dart#L219) still runs
   `if (mounted) setState(() {})` after the acknowledgement, which is redundant because
   the settings notifier already rebuilds. It is redundant, not wrong: retained as
   belt-and-braces.
 * The `the live subtree holds no button or tappable` predicate
-  ([`../test/screens/gesture_navigation_direction_test.dart`](../test/screens/gesture_navigation_direction_test.dart:219))
+  ([`../test/screens/gesture_navigation_direction_test.dart`](../test/screens/gesture_navigation_direction_test.dart#L219))
   covers the house `AccessibleButton` but not `Semantics(onTap:)`, `Switch` or `Slider`.
   The `// shortcut:` note in
-  [`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart:28) already
+  [`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart#L28) already
   states that adding interactive children inside the wrapped subtree re-introduces
   tap→pause classification, so the limit is documented where a future change starts.

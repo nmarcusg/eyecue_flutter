@@ -1,6 +1,10 @@
 # EyeCue — Benchmark Results
 
-> **No formal candidate benchmark has been collected yet** (the official TFLite benchmark tool has not been run on the target device). The informal values below are historical observations for the stable v0.2.2 CPU/NHWC baseline and must not be attributed to the current NCHW/XNNPACK candidate.
+> **Current source baseline:** the bundled detector is the campus-trained model
+> recorded in [`model-assets.md`](model-assets.md). No formal benchmark for it is
+> recorded here. All device measurements below are preserved as historical
+> observations for older YOLOv8 artifacts and must not be attributed to the
+> current detector.
 > See [`testing-plan.md`](testing-plan.md) for the benchmark plan, and [`research-notes.md`](research-notes.md) for metric definitions.
 
 ---
@@ -15,7 +19,7 @@ Captured live from the app's own telemetry during the v0.2.2 session on the Snap
 | Avg Inference Latency | ~606 ms |
 | Detections in session | 123 |
 
-These are **informal historical baseline** figures from the app's runtime telemetry (subject to the low-end CPU-only pipeline), not the formal TFLite-benchmark-tool results the thesis requires. They illustrate that the stable CPU-only throughput is far below the ≥15 FPS hypothesis target. An initial, non-formal observation of the current NCHW/XNNPACK candidate is recorded below; it is not a like-for-like benchmark or an accuracy comparison.
+These are **informal historical baseline** figures from the app's runtime telemetry (subject to the low-end CPU-only pipeline), not the formal TFLite-benchmark-tool results the thesis requires. They illustrate that the stable CPU-only throughput is far below the ≥15 FPS hypothesis target. An initial, non-formal observation of the then-current NCHW/XNNPACK candidate (historical; no longer bundled) is recorded below; it is not a like-for-like benchmark or an accuracy comparison.
 
 ---
 
@@ -125,4 +129,4 @@ Copy and fill out one table per test configuration.
 ## Historical Results
 
 - **v0.2.2 CPU/NHWC baseline:** informal application telemetry only — approximately 2.1 detection FPS, 606 ms average inference latency, and 123 detections on Android 13/API 33 Snapdragon 695. These values are not formal benchmark results.
-- **Current NCHW/XNNPACK candidate:** initial short device observation recorded above after successful installation — 65 XNNPACK-labelled completions, calculated mean latency 164.8 ms, and one separate live `tv` result at 67.9%/113.7 ms. No formal benchmark or accuracy/stability claim is attached to these observations.
+- **Historical NCHW/XNNPACK candidate (not bundled in current source):** initial short device observation recorded above after successful installation — 65 XNNPACK-labelled completions, calculated mean latency 164.8 ms, and one separate live `tv` result at 67.9%/113.7 ms. No formal benchmark or accuracy/stability claim is attached to these observations.

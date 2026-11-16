@@ -1,29 +1,32 @@
 # Logs & Reports Screen Design Specification
 
+> **Current status (2026-11-16, review base `main@aadf9e0`):** This design spec is historical. Public `main.dart` leaves study recording and the research Logs & Reports builder unset, while `main_study.dart` supplies those Study surfaces. The current screen is [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart); later chart and Logs refinements are in [`charts-logs-polish-plan.md`](charts-logs-polish-plan.md).
+
+
 **Task type:** visual-only, token-consistent restyle of the existing Logs & Reports route. This document is a design specification only. It does not authorize code changes, a new information architecture, a plan, or implementation of behavior.
 
 ## 1. Source boundary and design intent
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:5)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 The sole source of truth for the current screen, its composition, its files, and
-its behavior is [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:16).
+its behavior is [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md).
 The redesign applies the established light secondary-screen language already
 confirmed for Home, Help, and Settings, while retaining the current Logs &
 Reports structure and interaction boundaries.
 
 No current Logs & Reports target export exists. The legacy images listed by the
 analysis are contextual only and are not a target for this redesign
-([`logs_reports_screen.jpg`](../design-reference/old_screen/logs_reports_screen/logs_reports_screen.jpg),
-[`logs_reports_screen_charts.jpg`](../design-reference/old_screen/logs_reports_screen/logs_reports_screen_charts.jpg),
-and [`logs_reports_screen_logs.jpg`](../design-reference/old_screen/logs_reports_screen/logs_reports_screen_logs.jpg)). Exact pixel composition,
+([`logs_reports_screen.jpg`](../../design-reference/old_screen/logs_reports_screen/logs_reports_screen.jpg),
+[`logs_reports_screen_charts.jpg`](../../design-reference/old_screen/logs_reports_screen/logs_reports_screen_charts.jpg),
+and [`logs_reports_screen_logs.jpg`](../../design-reference/old_screen/logs_reports_screen/logs_reports_screen_logs.jpg)). Exact pixel composition,
 section-specific motif assignment, and screenshot-matched values are therefore
 **Needs Verification [design-verified]:** there is no current Logs & Reports
 export against which those details can be confirmed.
 
 ## 2. Scope, goals, and invariants
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:7)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 ### 2.1 In scope
 
@@ -63,20 +66,20 @@ The following are not redesign decisions and must remain unchanged:
 Adding filtering, sorting, date ranges, engine-selection state, pagination,
 chart gestures, legends, axis labels, row actions, new telemetry calculations,
 correction mutation, or a new export schema is out of scope. These boundaries
-are confirmed by the analysis of [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:16),
-[`app_shell.dart`](../lib/navigation/app_shell.dart:77),
-[`telemetry_service.dart`](../lib/services/telemetry_service.dart:305),
-[`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:236),
-and [`correction_service.dart`](../lib/services/correction_service.dart:215).
+are confirmed by the analysis of [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L16),
+[`app_shell.dart`](../../lib/navigation/app_shell.dart#L77),
+[`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L305),
+[`telemetry_export_service.dart`](../../lib/services/telemetry_export_service.dart#L236),
+and [`correction_service.dart`](../../lib/services/correction_service.dart).
 
 ## 3. Route shell and local light theme
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:132)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 ### 3.1 Route ownership
 
 Logs & Reports remains a pushed secondary route. The shell's existing
-[`openLogsReports()`](../lib/navigation/app_shell.dart:77) behavior, the
+[`openLogsReports()`](../../lib/navigation/app_shell.dart#L77) behavior, the
 underlying four-tab navigation bar, and back navigation remain unchanged. The
 redesign must not make Logs & Reports a bottom-navigation destination or alter
 the shell beneath the route.
@@ -84,8 +87,8 @@ the shell beneath the route.
 ### 3.2 Local theme treatment
 
 The route should use a locally scoped light theme at the root of
-[`LogsReportsScreen`](../lib/screens/logs_reports_screen.dart:23), sourced from
-the existing [`buildHomeTheme()`](../lib/theme/app_home_theme.dart:50). This is
+[`LogsReportsScreen`](../../lib/screens/logs_reports_screen.dart#L23), sourced from
+the existing [`buildHomeTheme()`](../../lib/theme/app_home_theme.dart#L50). This is
 local reuse of an established builder, not a generalization of theme ownership.
 The redesign must not rename or replace the Home theme, create a second light
 theme builder, or change the global theme arrangement.
@@ -122,11 +125,11 @@ confirms that motif assignment.
 
 ## 4. Typography and visual hierarchy
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:44)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 Use the existing IBM Plex Sans Regular, Medium, Semibold, and Bold roles from
-[`app_typography.dart`](../lib/theme/app_typography.dart:96), as consumed by
-[`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50). Do not add a new
+[`app_typography.dart`](../../lib/theme/app_typography.dart), as consumed by
+[`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50). Do not add a new
 font family or introduce ad hoc font sizes, weights, or letter spacing.
 
 The visual hierarchy should be more spacious and editorial than the historical
@@ -151,21 +154,21 @@ imitate Home or Settings.
 
 ## 5. Spacing, radii, and bounded layout
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:330)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 All changed spacing, radii, and typography must come from the existing token
-files [`app_spacing.dart`](../lib/theme/app_spacing.dart:95),
-[`app_radii.dart`](../lib/theme/app_radii.dart:94),
-[`app_colors.dart`](../lib/theme/app_colors.dart:79),
-[`app_typography.dart`](../lib/theme/app_typography.dart:96), and
-[`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50). Do not add raw
+files [`app_spacing.dart`](../../lib/theme/app_spacing.dart),
+[`app_radii.dart`](../../lib/theme/app_radii.dart),
+[`app_colors.dart`](../../lib/theme/app_colors.dart#L79),
+[`app_typography.dart`](../../lib/theme/app_typography.dart), and
+[`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50). Do not add raw
 layout literals to approximate an unavailable screenshot.
 
 ### 5.1 Spacing scale
 
 Use the authoritative extracted spacing scale **6 / 8 / 12 / 16 / 20 / 24** for
 new or revised relationships. The scale is confirmed by the analysis at
-[`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:94).
+[`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md).
 
 Preserve existing relationships when changing spacing would alter content
 behavior or established grouping. In particular, the existing 14 and 4 values
@@ -182,7 +185,7 @@ content density boundaries.
 ### 5.2 Radii and card treatment
 
 Use the existing radius roles **3 / 12 / 14 / 18 / 24** from
-[`app_radii.dart`](../lib/theme/app_radii.dart:94). Prefer rounded white grouped
+[`app_radii.dart`](../../lib/theme/app_radii.dart). Prefer rounded white grouped
 cards on the light base surface for readable sections and preserve any existing
 content grouping. Cards should have clear internal padding and enough separation
 to prevent metric, export, correction, unavailable-state, chart, and log content
@@ -208,7 +211,7 @@ Logs view remains independently scrollable where its existing list requires it.
 
 ## 6. Overview visual specification
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:176)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 Retain the existing Overview content and order: Real-Time Performance, Engine
 Comparison, Session Summary, Offline telemetry export, Correction reports, Model
@@ -297,7 +300,7 @@ and placement are **Needs Verification [design-verified]**.
 
 ## 7. Charts visual specification
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:254)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 Retain exactly three chart regions in the Charts tab, in the existing order:
 
@@ -316,7 +319,7 @@ current dynamic behavior:
   retained record and uses a data-driven maximum Y.
 
 The existing chart allocation remains **180 logical pixels** through the
-existing [`kChartHeight`](logs-reports-screen-analysis.md:267) value. Restyling
+existing [`kChartHeight`](logs-reports-screen-analysis.md) value. Restyling
 must keep drawing inside that allocation and must not change the data-driven
 scaling rules.
 
@@ -349,7 +352,7 @@ touch, axis, legend, filtering, or date-range interaction is available.
 
 ## 8. Logs visual specification
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](docs/logs-reports-screen-analysis.md:284)
+**Analysis cross-reference:** `logs-reports-screen-analysis.md`
 
 When there are no records, retain the centered empty state `No detections
 recorded yet.`. The empty state may use the light route surface, a readable
@@ -375,7 +378,7 @@ visual treatment must maintain legibility in both empty and populated states.
 
 ## 9. Responsive behavior and text scaling
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:357)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 Responsive behavior is constraint-based and follows the existing centered
 bounded secondary-screen precedent. The layout should:
@@ -404,7 +407,7 @@ not currently exist; its implementation and result are **Needs Verification
 
 ## 10. Accessibility and state presentation
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:271)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 The redesign preserves the current accessibility contracts rather than treating
 visual styling as a substitute for semantics:
@@ -432,7 +435,7 @@ must not be invented in this document.
 
 ## 11. Export, correction, and telemetry contract preservation
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:236)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 Visual changes must not alter the existing service contracts or data semantics:
 
@@ -458,7 +461,7 @@ confirmed existing strings and their visual hierarchy is **Needs Verification
 
 ## 12. Verification criteria for a later implementation
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:481)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 The later implementation should be considered visually conformant only when it
 demonstrates all of the following without changing the contracts above:
@@ -470,7 +473,7 @@ demonstrates all of the following without changing the contracts above:
 3. Overview preserves telemetry formatting, empty values, export states,
    correction ordering, unavailable metric reasons, and confidence labeling.
 4. Charts preserve all three regions, data binding, dynamic bounds, conditional
-   benchmark lines, the [`kChartHeight`](logs-reports-screen-analysis.md:267)
+   benchmark lines, the [`kChartHeight`](logs-reports-screen-analysis.md)
    allocation, empty text, and summary semantics.
 5. Logs preserves centered empty content, newest-first rows, all row fields,
    local timestamps, visible priority dots, and priority wording in semantics.
@@ -490,22 +493,22 @@ The analysis recommends a direct Logs screen-focused widget test covering real
 content, route-local theme scope, all tabs, exports, correction states,
 unavailable metrics, Logs states, priority semantics, and 200 percent text
 scale/no-overflow. Existing chart algorithm and bound coverage remains in
-[`charts_test.dart`](../test/widgets/charts_test.dart:1). Test creation and
+[`charts_test.dart`](../../test/widgets/charts_test.dart#L1). Test creation and
 execution are **Needs Verification [inferred-from-codebase]** and are not part
 of this document-only stage.
 
 ## 13. Out-of-scope decisions
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:507)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 This specification does not authorize:
 
-- changes to [`app_shell.dart`](../lib/navigation/app_shell.dart:77), route
+- changes to [`app_shell.dart`](../../lib/navigation/app_shell.dart#L77), route
   ownership, bottom navigation, or back navigation;
 - edits to model or service layers, including
-  [`telemetry_service.dart`](../lib/services/telemetry_service.dart:305),
-  [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:236),
-  [`correction_service.dart`](../lib/services/correction_service.dart:215), or
+  [`telemetry_service.dart`](../../lib/services/telemetry_service.dart#L305),
+  [`telemetry_export_service.dart`](../../lib/services/telemetry_export_service.dart#L236),
+  [`correction_service.dart`](../../lib/services/correction_service.dart), or
   the existing model contracts;
 - changes to inference engines, camera behavior, telemetry retention, sampling,
   aggregation, or data binding;
@@ -521,15 +524,15 @@ This specification does not authorize:
 - inventing a current target export or fixed screenshot-matched layout.
 
 The only screen-specific existing UI component identified for the composition is
-[`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:16). The
-analysis identifies [`charts.dart`](../lib/widgets/charts.dart:537) only as a
-possible chart-visual boundary and [`charts_test.dart`](../test/widgets/charts_test.dart:541)
+[`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L16). The
+analysis identifies [`charts.dart`](../../lib/widgets/charts.dart) only as a
+possible chart-visual boundary and [`charts_test.dart`](../../test/widgets/charts_test.dart)
 as retained chart-bound coverage. Their later use remains conditional on an
 approved visual change and is not an implementation instruction here.
 
 ## Open Questions / Needs Verification
 
-**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md:549)
+**Analysis cross-reference:** [`logs-reports-screen-analysis.md`](logs-reports-screen-analysis.md)
 
 - **Exact Logs composition — Needs Verification [design-verified]:** no current
   Logs & Reports target export exists. Confirm title treatment, section-specific
@@ -555,7 +558,7 @@ approved visual change and is not an implementation instruction here.
 - **Light chart treatment — Needs Verification [design-verified]:** confirm
   light chart card grouping, line/bar colors, grid contrast, benchmark-line
   contrast, heading treatment, and empty-state alignment. Preserve chart
-  algorithms, data binding, summaries, and the [`kChartHeight`](logs-reports-screen-analysis.md:267)
+  algorithms, data binding, summaries, and the [`kChartHeight`](logs-reports-screen-analysis.md)
   allocation regardless of the visual result.
 - **Logs row treatment — Needs Verification [design-verified]:** confirm card or
   divider use, metadata spacing, timestamp emphasis, and priority-dot token
@@ -567,12 +570,12 @@ approved visual change and is not an implementation instruction here.
 - **Large-text/no-overflow coverage — Needs Verification [inferred-from-codebase]:**
   create and run the direct Logs screen-focused widget test at 200 percent text
   scale; retain chart algorithm and bounds coverage in
-  [`charts_test.dart`](../test/widgets/charts_test.dart:1).
+  [`charts_test.dart`](../../test/widgets/charts_test.dart#L1).
 - **Physical-device verification — Needs Verification [inferred-from-codebase]:**
   run the required physical Android checks for route push/pop, light route
   styling, all tabs, exports, chart states, correction states, Logs states,
   large text, accessibility, RenderFlex overflow, and logcat exceptions.
 - **Static/test status — Needs Verification [inferred-from-codebase]:** this
-  document-only Design-Spec stage did not run [`flutter analyze`](../pubspec.yaml:1)
-  or [`flutter test`](../pubspec.yaml:1), and makes no claim about their later
+  document-only Design-Spec stage did not run [`flutter analyze`](../../pubspec.yaml#L1)
+  or [`flutter test`](../../pubspec.yaml#L1), and makes no claim about their later
   results.

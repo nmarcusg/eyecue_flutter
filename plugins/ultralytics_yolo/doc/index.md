@@ -6,6 +6,12 @@ path: /integrations/flutter/
 
 # Ultralytics YOLO Flutter Plugin
 
+> **EyeCue integration scope:** this page describes the vendored plugin's generic
+> API and capabilities. The EyeCue application uses the plugin on Android only;
+> its selected model, optional depth pipeline, and public/Study flavor behavior
+> are documented in the repository-level [architecture](../../../docs/architecture.md),
+> [model assets](../../../docs/model-assets.md), and [MDE integration](../../../docs/mde-integration.md) notes.
+
 Ultralytics YOLO Flutter is the official plugin for running YOLO models in Flutter apps on iOS and Android.
 
 It gives you two focused entry points:

@@ -2,9 +2,12 @@
 
 # Input Pipeline Investigation — Why max confidence ≈ 0.05
 
+> **Current status (2026-11-16):** The `[InputProbe]` and static-image procedures below were removed with the Custom EyeCue engine in [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9). The old `input_probe.dart` and `inference_isolate.dart` files do not exist in this checkout. Active inference uses the `ultralytics_yolo` plugin via [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart); this record explains an earlier failure only.
+
+
 > **Status:** Historical forensic investigation record. No pipeline behavior was
 > changed as part of this report.
-> **Temporary instrumentation:** [`lib/services/input_probe.dart`](../lib/services/input_probe.dart)
+> **Temporary instrumentation:** `lib/services/input_probe.dart`
 > (`[InputProbe]` prefix) + a test-image debug mode behind one boolean flag.
 > **Date:** 2026-08-01
 > **Related:** [`inference-pipeline-probe.md`](inference-pipeline-probe.md) (parser-side forensics).
@@ -54,7 +57,7 @@ This report instruments every stage between `CameraImage` and
 
 **How to run:** `flutter run` on the device. For the test-image mode, flip
 `InferenceService.useTestImage = true`
-([`inference_isolate.dart`](../lib/services/inference_isolate.dart)),
+(`inference_isolate.dart`),
 place a real photo of a COCO object at `assets/test_image.jpg`, add it to the
 `pubspec.yaml` assets list, and restart. The camera path still runs all other
 probes.
@@ -229,8 +232,8 @@ each item are the ones that confirm it.
 
 ## 7. How to Remove the Instrumentation
 
-1. Delete [`lib/services/input_probe.dart`](../lib/services/input_probe.dart).
-2. In [`inference_isolate.dart`](../lib/services/inference_isolate.dart) and
+1. Delete `lib/services/input_probe.dart`.
+2. In `inference_isolate.dart` and
    `camera_screen.dart` (the historical screen name): remove the
    `input_probe.dart` import, all `InputProbe.*` calls, the `useTestImage` /
    `testImageAsset` fields, `runTestImage()` / `_loadTestImageInput()`, the

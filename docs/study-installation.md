@@ -38,14 +38,15 @@ python3 tool/build_study_apk.py --build-number 1 --output-dir /your/output/folde
 ```
 
 For direct Flutter commands, include `--flavor study -t lib/main_study.dart`;
-builds without a flavor fail in Gradle. Pin a fixed participant build by recording
-the `BUILD.txt` commit, preserving `SHA256SUMS`, and mirroring the APK before its
-14-day Actions artifact expires. Use one version code per respondent study;
-version codes are independent per application ID. Nightly/frequent builds are
-opt-in manual dispatches only, not scheduled builds.
+builds without a flavor fail in Gradle. The local helper records the commit in
+`BUILD.json` and writes `SHA256SUMS`; the cloud workflow records provenance in
+`BUILD.txt` and retains its artifact for 14 days. Mirror a fixed build before
+that artifact expires. Increase the Study version code for each new release;
+version codes are independent of the public application ID. Nightly/frequent
+builds are opt-in manual dispatches only, not scheduled builds.
 
 The helper reads the protected signing config and verifies package, label,
-signature and checksum before copying a deliverable. It never generates a key.
+signature and APK hash before copying a deliverable. It never generates a key.
 `tool/verify_study_apk.py APK` can check a later study artifact independently.
 
 ## Cloud builds

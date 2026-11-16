@@ -1,119 +1,55 @@
 # EyeCue — Implementation Plan
 
-> See also: [`architecture.md`](architecture.md) (system design), [`project-status.md`](project-status.md) (current state), [`implementation-progress.md`](implementation-progress.md) (tracking), and [`app-only-implementation-plan.md`](app-only-implementation-plan.md) (the original 15 repository-owned application task areas and their acceptance criteria).
+Reviewed **2026-11-16** against local `main` at `aadf9e0`. The project can continue as a side project; the stages below are ordered work areas, not promised dates or completion percentages. See [project status](project-status.md), [progress history](implementation-progress.md), and [known issues](known-issues.md).
 
-> **Current status (2026-10-17):** Workstream 1 replaced the TTS scheduler with a
-> lifecycle-aware arbiter — one active utterance, one pending request,
-> confirmed-`onStart` history, paired-signal reconciliation, track-aware
-> suppression/escalation, controlled preemption, and idle-only wayfinding. See
-> [`architecture.md`](architecture.md#speech-scheduling-workstream-1). The
-> Workstream 1 feature branch has **not** been re-verified: no Flutter tests
-> or analyzer ran after relocation, and device validation, audible-latency
-> measurement, telemetry instrumentation, and Play-readiness documentation remain
-> pending.
->
-> **App-only status (2026-09-05 — historical):** Shared runtime/error handling,
-> dual-engine coordination, bounded Custom-worker recovery, accessibility,
-> corrections, sensitivity, telemetry/export, metadata packaging, tracking, and
-> scene summaries were implemented and covered by **127 passing tests at that
-> revision**. Android identity, production signing, release AAB generation, device
-> validation, formal benchmarking, and external licence/Play-release decisions
-> remain gated items.
+## Established implementation
 
-## Long-Term Roadmap
+The application has one native Ultralytics engine, the campus-trained 14-label detector, optional bundled depth, shared lifecycle coordination, audio guidance, gestures, TalkBack semantics, persisted settings, detector imports, and separate public/Study entry points. Study adds trial recording, charts, export, and optional manual upload. Build/signing and Play-internal automation exist; a workflow definition is not evidence that a release has been approved or distributed.
 
-EyeCue is a thesis project evaluating whether on-device object detection can serve as an assistive navigation aid for visually impaired users. The roadmap is structured around thesis milestones: from functional prototype through research data collection to defense readiness.
+The original 15-task [app-only plan](app-only-implementation-plan.md) and [thesis-product audit](thesis-product-status-audit.md) remain dated records. Their Custom-isolate recovery, dual-engine comparison, old COCO model, package-placeholder, and historical release gates must not be treated as current implementation instructions.
 
-## Milestones
+## 1. Resume development reliably
 
-### Milestone 1: "Audible MVP" (Target: ~2 weeks)
+- Recreate dependencies with a compatible Flutter SDK (CI: 3.44.2; Dart constraint: >=3.12.0 <4.0.0).
+- Select a matching flavor and entry point: public + `lib/main.dart`, or Study + `lib/main_study.dart` with retained Study signing credentials.
+- Keep settings, logs, credentials, and model data across development sessions unless a deliberate migration/reset is part of the task.
+- Validate affected behavior with the [testing plan](testing-plan.md). For docs-only maintenance, source/link checks are sufficient; do not regenerate large builds solely to update prose.
 
-**Definition of Done:**
-- TTS speaks detected object names aloud through serialized, lifecycle-aware arbitration (one active utterance, one pending request, risk- and priority-based preemption)
-- Bounding boxes rendered on camera preview via `CustomPainter`
-- Error handling in inference isolate (try/catch + typed error state propagation)
-- Permission-denied UI with explanation and settings redirect
-- Unused dependencies either wired or removed from `pubspec.yaml`
+Acceptance: a repeatable local development setup and recorded revision/toolchain for any new validation.
 
-**Feature Dependencies:**
-- TTS depends on: detection stream (already implemented)
-- Bounding boxes depend on: detection data (already available), `CustomPainter`
-- Error handling depends on: SendPort error protocol
+## 2. Validate the current native runtime
 
-### Milestone 2: "Research-Ready" (Target: ~4 weeks)
+- Exercise camera permissions, first-payload readiness, retry, auto-start ON/OFF, explicit Stop/Start, pause/resume, background/foreground, and teardown on physical Android devices.
+- Validate imported models through the real document picker, metadata checks, model identity transitions, and accelerator fallback.
+- Confirm TalkBack controls and speech ownership on the exact build being evaluated; preserve the scope of earlier verified UI checks.
+- Keep depth degradation explicit: stale/misaligned maps fall back to box-based distance, and bbox mode unloads/disables depth.
 
-**Definition of Done:**
-- ~~NMS (Non-Maximum Suppression) for clean multi-object detection~~ — ✅ Implemented 2026-08-01 (class-wise, IoU 0.45, pre-NMS conf 0.25)
-- Performance logging: FPS, inference latency, confidence scores, timestamps — ✅ done (5-second summaries + Info Panel metrics + Logs & Reports telemetry)
-- Pause/resume detection toggle with camera deactivation — ✅ done (v0.2.0 — single-tap pause/resume via [`gesture_controller.dart`](../lib/services/gesture_controller.dart) + visible controls)
-- `fl_chart` logging dashboard for real-time metrics visualization — ✅ done (v0.2.0 — Logs & Reports Overview/Charts/Logs, [`charts.dart`](../lib/widgets/charts.dart))
-- Unit tests for core pipeline (YUV→RGB, output parsing, dequantization, NMS) — ✅ release baseline had 59 passing across navigation, screens, widgets, services, charts and theme; the **2026-09-05 revision** had **127** including NHWC/NCHW tensor rotation, engine settings, per-engine telemetry, Ultralytics-result adaptation, lifecycle recovery, exports, tracking, summaries, and accessibility. That count is historical evidence for that revision, not a result for the current Workstream 1 branch.
-- Adaptive throttling based on measured inference time — 🟡 partial (v0.2.0 Low Power Mode applies a dispatch throttle; formal measured throttling remains)
+Acceptance: device/revision-specific results with logs and unresolved cases, not only a suite total.
 
-**Feature Dependencies:**
-- ~~NMS~~ — ✅ done; depends on detection list (available)
-- Performance logging depends on: NMS (done) + frame/confidence stats (in place)
-- Logging dashboard depends on: performance logging, fl_chart
-- Unit tests depend on: stable pipeline API
+## 3. Evaluate model and performance
 
-### Milestone 3: "Defense-Ready" (Target: ~6 weeks)
+- Use labelled data for the campus detector's 14 classes and report class distribution, protocol, and ground truth.
+- Measure sustained performance with the [benchmark procedure](benchmark-procedure.md): detector/depth cadence targets, heatmap settings, accelerators, low power, thermal state, memory/battery conditions, and model fingerprint.
+- Separate native inference, app-side alert intervals, and physical audible-warning latency. Configured Hz and confidence are not achieved FPS or accuracy.
+- Calibrate distance if a research question requires measured metres; current MDE values are estimates.
 
-**Definition of Done:**
-- Accessibility features: TalkBack/VoiceOver semantics, gesture controls — ✅ gesture controls and tested TalkBack/Semantics coverage implemented; device TalkBack validation remains manual
-- Priority-based TTS queue (person > vehicle > obstacle > other) — ✅ done (v0.2.0 — class-based priority tiers + urgent high-priority bypass in [`tts_service.dart`](../lib/services/tts_service.dart) / [`spatial_analysis_service.dart`](../lib/services/spatial_analysis_service.dart); the 2026-10-17 arbiter replaces the bypass and label de-duplication with track-aware priority, suppression and escalation in [`alert_policy.dart`](../lib/services/alert_policy.dart))
-- Adaptive throttling fully implemented — 🟡 partial (Low Power Mode dispatch throttle)
-- GPU/NNAPI delegate support (if XNNPACK resolved) with fallback to CPU — 🟡 explicit XNNPACK candidate, initial target-device evidence, and recoverable CPU fallback are present; extended native stability validation and NNAPI/GPU alternatives remain pending
-- Integration tests for end-to-end pipeline — 🟡 deterministic unit/widget/orchestration coverage is in place; physical-device and full camera-to-runtime integration remain manual
-- Package name finalised as `app.eyecue.mobile` (owner-approved, supersedes the earlier `com.eyecue` target) — ✅ `2d0d0cd`
-- `minSdkVersion` set explicitly to thesis-aligned API 29 — 🟡 (currently relies on Flutter default 24)
-- All documentation up to date — ⚠️ (the 2026-09-05 synchronization was accurate at that revision; as of 2026-10-17, device validation, audible-latency measurement, telemetry instrumentation, and Play-release readiness documentation remain pending)
+Acceptance: reproducible results for the current model and build, with limitations. The retired Custom/Ultralytics comparison is optional historical research, not a dependency for current development.
 
-**Feature Dependencies:**
-- Accessibility depends on: UI elements in place (bounding boxes, labels)
-- Speech arbitration depends on: TTS integration (M1), multi-object detection (M2); implemented as one pending request plus risk-based preemption, not a class-priority queue
-- GPU delegate depends on: XNNPACK investigation resolution
+## 4. Maintain Study data quality
 
-### Milestone 4: "Production Candidate" (Target: ~8 weeks)
+- Validate Start/Pause/Resume/Finish/Discard and recovery of interrupted paused drafts.
+- Record detector identities and model-change boundaries; never combine incompatible per-export model keys without resolving identities.
+- Verify schema-4 export and the configured ingest validator together. Recheck deployment/authentication and researcher access separately from local implementation.
+- Keep synthetic fixtures and real observations distinct in research records.
 
-**Definition of Done:**
-- Comprehensive error recovery (isolate restart, model reload)
-- Runtime model variant selection
-- `TransferableTypedData` optimization for isolate messaging
-- Bilinear interpolation for resize quality
-- Full test coverage (unit + widget + integration)
-- Play Store readiness (signing, privacy policy, content rating)
+Acceptance: reproducible exports and a documented live-service check when upload is required.
 
-## Feature Dependencies Map
+## 5. Prepare an intentional distribution
 
-```
-Camera Pipeline (done)
-    └── Detection Stream (done)
-        ├── TTS Audio (M1)
-        │   └── Alert Arbitration (M3 — done; serialized + risk-aware)
-        ├── Bounding Boxes (done — M1)
-        │   └── Accessibility (M3)
-        ├── NMS (done — M2)
-        │   └── Performance Logging (done — M2)
-        │       └── Logging Dashboard (M2)
-        ├── Error Handling (typed and bounded — M1)
-        │   └── Error Recovery (implemented app-only; native/device validation remains)
-        └── Pause/Resume (M2)
-            └── Adaptive Throttling (M3)
-```
+Use the [release procedure](release-procedure.md), [privacy/data-safety notes](privacy-and-data-safety.md), and [Play checklist](play-store-checklist.md). Confirm version codes, public/Study identities, retained signing keys, compiled permissions, matching source, model provenance, and current Console requirements. Public test-signed artifacts are test artifacts; Study signing is mandatory. A manually dispatched signed public workflow may upload to internal testing when enabled.
 
-## Current Priorities
+Acceptance: explicit evidence for the chosen artifact/track; no inference of production availability from local code or old build records.
 
-The implementation sequence and acceptance criteria for isolate recovery, engine
-fallback/default policy, accessibility, corrections, sensitivity, export, labels,
-Android release work, error UI, scene summaries, and movement tracking are defined
-in [`app-only-implementation-plan.md`](app-only-implementation-plan.md).
+## Out of the active roadmap
 
-1. ~~**TTS Audio Feedback**~~ — ✅ Done (v0.2.0). See [`tts_service.dart`](../lib/services/tts_service.dart).
-2. ~~**Bounding Box Overlay**~~ — ✅ Done. See [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart).
-3. ~~**NMS**~~ — ✅ Done (class-wise, IoU 0.45, conf 0.25). See [`inference_isolate.dart`](../lib/services/inference_isolate.dart).
-4. **On-device validation of the v0.2.x UI** — gestures, TTS, settings persistence, Logs & Reports on the Snapdragon 695 device
-5. ~~**Error Recovery**~~ — ✅ Bounded, generation-safe Custom-worker restart and terminal recovery state implemented; native crash/device validation remains
-6. ~~**Permission-Denied UI**~~ — ✅ Done (v0.2.0). See [`detection_screen.dart`](../lib/screens/detection_screen.dart).
-7. **Extend validation of the unreleased XNNPACK candidate** — collect longer stability/fallback evidence, then benchmark only verified results; exact APK installation and an initial short live run are complete
-8. **Orientation re-validation** — back landscape physical hold + front camera
-9. **Formal FPS/latency benchmark + accuracy evaluation** — research metrics
+The removed Dart inference isolate, `TransferableTypedData` frame transport, its resize implementation, and dual-engine fallback are no longer active application optimization tasks. Older milestone dates, completion percentages, and 40–70 hour estimates are retired. Reintroducing any such work requires a new scoped decision grounded in current evidence.

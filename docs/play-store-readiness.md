@@ -1,19 +1,31 @@
 # Play Store Readiness Ledger
 
-Baseline evidence and implementation ledger for the EyeCue Play Store submission
-programme. This document is the single source of truth for what is verified, what
-is still pending, and what is blocked outside this repository.
+Historical baseline evidence and implementation ledger for the EyeCue Play Store
+submission programme. The ledger below records its original dates and worktree;
+it is not evidence for the current source revision or external Play/Supabase state.
 
 ## 1. Purpose & scope
 
-This work consolidates the three histories that were developed separately — native
-MDE depth integration, granular inference cadence, and Supabase research telemetry —
-into one branch, `feat/play-store-readiness`, and then drives that consolidated line
-to a state that is **Play Store ready**. "Play Store ready" here means *technically
-and operationally prepared for submission*: signed, versioned, policy-compliant, and
-verified on a release build. It does **not** mean submitted — no upload to Play
-Console is performed by this work, and no production signing material is created
-here.
+This document preserves the evidence from the consolidation branch and the
+implementation ledger as a historical record. It does not certify the current
+checkout as Play-ready. “Play Store ready” describes the intended submission
+criteria, not a current status.
+
+## Current source audit (2026-11-16, `main@aadf9e0`)
+
+This is a source/documentation audit only; no build, test, device check, Play
+Console inspection, or deployment was performed for this note.
+
+| Topic | Current source-level finding |
+| --- | --- |
+| SDK | `pubspec.yaml` requires Dart `>=3.12.0 <4.0.0`; `.github/workflows/android-build.yml` pins Flutter `3.44.2` on stable. The workflow pin is not evidence of the locally installed SDK. |
+| Variants | Public: `app.eyecue.mobile`, `lib/main.dart`, no release `INTERNET` permission, public UI. Study: `app.eyecue.mobile.study`, `lib/main_study.dart`, `INTERNET`, research UI, manual dispatch only. The cloud workflow builds Study APKs and keeps Study out of Play uploads. |
+| Models | Both variants bundle the campus detector and `assets/labels.txt` plus the Ultralytics `yolo26n-depth` model. Depth is optional at runtime; asset bundling alone does not mean the depth model runs. The detector metadata identifies AGPL-3.0 and the 14 campus labels; provenance and dataset rights are not established by the repository. |
+| Privacy link | Public Help opens `https://nmarcusg.github.io/eyecue_flutter/` with the external browser. Study hides that button. The repository does not establish the hosted page's current contents or reachability. |
+| External/release state | No current Play upload/review, release signing, device verification, or Supabase deployment state is established by this audit. Consult the owner and Play Console before relying on external state. |
+
+The dated baseline and historical results below remain as recorded. They must not
+be presented as freshly verified for any later source revision.
 
 ## 2. Provenance / consolidation base
 
@@ -29,7 +41,7 @@ with `git merge-base --is-ancestor`):
 
 | Source | Commit | Subject |
 | --- | --- | --- |
-| `feat/mde-integration` | `85b48ae` | `fix(mde): correct depth-artifact docs, bound heatmap cost, deflake estimator test` |
+| MDE integration history | `85b48ae` | `fix(mde): correct depth-artifact docs, bound heatmap cost, deflake estimator test` |
 | `feat/supabase-research-telemetry` | `12f568b` | `feat(telemetry): add manual Supabase session upload` |
 | `feat/waste-reduction` (via merge) | `c325b11` | `docs: reconcile waste-reduction state` |
 | `dev` | `94f74d8` | `Merge pull request #7 from nmarcusg/feat/alert-latency-telemetry` |
@@ -45,7 +57,7 @@ The two feature histories are joined by merge commit `2722a7b`
 It is **not** merged into this history because an equivalent pin already exists here:
 commit `74d4649` (`fix(android): update WorkManager runtime`) is an ancestor of `HEAD`
 and already pins `androidx.work:work-runtime:2.11.2`
-([`android/app/build.gradle.kts`](../android/app/build.gradle.kts:11)).
+([`android/app/build.gradle.kts`](../android/app/build.gradle.kts#L11)).
 
 Verified equivalence: `git diff 74d4649 fc30945 -- android/app/build.gradle.kts android/build.gradle.kts`
 produces **no output** — the Gradle files are byte-identical between the two commits.
@@ -74,6 +86,7 @@ as evidence.
 
 All numbers below were measured in `/home/nico/repos/eyecue_flutter-playstore` at
 `adfbc5d`, after `flutter pub get` completed successfully (`Got dependencies!`).
+These are dated measurements of that historical baseline, not the current checkout.
 
 ### 4.1 Formatting
 
@@ -95,10 +108,10 @@ flutter analyze  =>  4 issues found. (ran in 15.4s)
 
 | Severity | Location | Rule |
 | --- | --- | --- |
-| warning | [`lib/services/alert_policy.dart`](../lib/services/alert_policy.dart:124) | `unused_field` — `_clock` is never used |
-| warning | [`lib/services/tts_service.dart`](../lib/services/tts_service.dart:671) | `invalid_return_type_for_catch_error` — `int` returned from `onError`, must be `FutureOr<Null>` |
-| info | [`test/services/assistive_detection_controller_test.dart`](../test/services/assistive_detection_controller_test.dart:9) | `unnecessary_import` — `package:flutter/foundation.dart` duplicated by `dart:ui` |
-| info | [`test/services/tts_service_test.dart`](../test/services/tts_service_test.dart:11) | `unnecessary_import` — `package:flutter/foundation.dart` duplicated by `dart:ui` |
+| warning | [`lib/services/alert_policy.dart`](../lib/services/alert_policy.dart#L124) | `unused_field` — `_clock` is never used |
+| warning | [`lib/services/tts_service.dart`](../lib/services/tts_service.dart#L671) | `invalid_return_type_for_catch_error` — `int` returned from `onError`, must be `FutureOr<Null>` |
+| info | [`test/services/assistive_detection_controller_test.dart`](../test/services/assistive_detection_controller_test.dart#L9) | `unnecessary_import` — `package:flutter/foundation.dart` duplicated by `dart:ui` |
+| info | [`test/services/tts_service_test.dart`](../test/services/tts_service_test.dart#L11) | `unnecessary_import` — `package:flutter/foundation.dart` duplicated by `dart:ui` |
 
 Zero errors. `CONFIRMED-BY-TEST`.
 
@@ -261,10 +274,10 @@ is no longer consulted or built.)
 
 ### 6.1 Analysis frame is JPEG-encoded and transferred on every detection result
 
-[`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:398)
+[`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart#L398)
 sets `includeOriginalImage: _mdeEnabled` when building the streaming config. The
 streaming configuration key is built by `streamingConfigKey`
-([`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:140),
+([`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart#L140),
 value assembly at `:143`), so enabling depth turns on per-result image transfer for the
 whole stream.
 
@@ -287,7 +300,7 @@ even though the depth path consumes only a small fraction of those frames.
 
 ### 6.2 Most of those encodes are already discarded by the estimator
 
-[`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart:156)
+[`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart#L156)
 (`submitFrame`) keeps a **single latest-frame slot**: the `_pendingJpeg` declaration at
 `:109` is overwritten wholesale at `:167`, and the queue depth is documented as "Never
 exceeds one by design" (`debugPendingFrames`, `:119`). Frames arriving while a depth
@@ -300,7 +313,7 @@ away before any inference runs. This is pure waste on the detection hot path.
 ### 6.3 The surviving JPEG is decoded again natively — Android → Dart → Android
 
 The surviving bytes travel back into native code through the method channel:
-[`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart:256)
+[`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart#L256)
 (`_run`) calls `yolo.predict(jpeg)`; the plugin's Dart side dispatches method
 `predictSingleImage` at
 `plugins/ultralytics_yolo/lib/core/yolo_inference.dart:56`–`:58`; and the
@@ -331,11 +344,11 @@ consume.
 
 ### 6.5 The heatmap is built unconditionally, even when hidden
 
-[`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:336)
+[`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart#L336)
 constructs `MonocularDepthEstimator()` with no `heatmapBuilder` argument. The estimator
 accepts an injected builder (`this.heatmapBuilder`, `:63`) but falls back to building
 the heatmap itself: `await (heatmapBuilder ?? _buildHeatmap)(depthMap)` at
-[`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart:202),
+[`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart#L202),
 with `_buildHeatmap` at `:390`.
 
 Consequence: colourisation, alpha baking and `ui.Image` allocation happen for every
@@ -345,7 +358,7 @@ depth frame regardless of whether the heatmap is visible, so the cheapest config
 ### 6.6 Lifecycle gap: turning MDE off does not release the model
 
 When the distance mode changes while MDE is disabled,
-[`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:572)
+[`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart#L572)
 runs the MDE-off block at `:572`–`:574` — `_depth.stop()`, `_depth.clearFrame()`, and
 `_depthSmoother.reset()` (`:574`).
 
@@ -354,7 +367,7 @@ runs the MDE-off block at `:572`–`:574` — `_depth.stop()`, `_depth.clearFram
 
 `stop()` halts the scheduler and `clearFrame()` drops the pending slot, but neither
 releases the loaded depth model/interpreter: `stop()` is itself documented "The model
-stays loaded" ([`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart:303)).
+stays loaded" ([`lib/services/monocular_depth_estimator.dart`](../lib/services/monocular_depth_estimator.dart#L303)).
 The release hook `_disposeModel()` (`:329`) is reachable only from `dispose()` (call
 site `:428`), never from the toggle path. Memory held by the model survives repeated
 enable/disable cycles.
@@ -367,10 +380,10 @@ model). The line citations above are the baseline ones and have moved since.
 
 ### 6.7 Lifecycle gap: release identity is still a template
 
-[`android/app/build.gradle.kts`](../android/app/build.gradle.kts:25) sets
+[`android/app/build.gradle.kts`](../android/app/build.gradle.kts#L25) sets
 `applicationId = "com.example.eyecue_flutter"`, and the release build type inherits
 `signingConfig = signingConfigs.getByName("debug")`
-([`android/app/build.gradle.kts`](../android/app/build.gradle.kts:34)). A release
+([`android/app/build.gradle.kts`](../android/app/build.gradle.kts#L34)). A release
 artefact produced from this tree cannot be published; both lines are L9 work.
 
 Closed by L9 in `2d0d0cd`: `applicationId`/`namespace` are now
@@ -379,7 +392,7 @@ type no longer inherits the debug signing config — it uses an owner-supplied `
 `signingConfig` when keystore material is present and otherwise falls back
 explicitly, with `versionNameSuffix = "-testsigned"` and a Gradle warning, so an
 unsigned-environment build cannot pass as a Play release
-([`android/app/build.gradle.kts`](../android/app/build.gradle.kts:80)). The
+([`android/app/build.gradle.kts`](../android/app/build.gradle.kts#L80)). The
 fallback was exercised by this item's build: the artefact reports
 `versionName='1.0.0-testsigned'` and verifies as `CN=Android Debug`. Publication
 is still `BLOCKED-EXTERNAL` (no keystore).
@@ -459,7 +472,7 @@ why the `DepthEstimator` cast is now reachable. That is a **compile-time** proof
 signature, not a runtime measurement: no device is attached, so the end-to-end
 `depthMaxDim` → grid effect is `CONFIRMED-BY-INSPECTION`.
 The key set, the failure marker and the payload *shape* are pinned by
-[`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart:133);
+[`test/services/depth_payload_parity_test.dart`](../test/services/depth_payload_parity_test.dart#L133);
 its primary grid fixture is the production 4:3 stream (640×480 → 96×72), with 16:9
 (640×360 → 96×54) kept as a secondary case. That test feeds the parser a hand-built event:
 it cannot catch a regression in `DepthEstimator.blockMeanGrid`, so the aspect guarantee
@@ -507,10 +520,10 @@ native latch. `loading`/`idle` transitions are untouched, and a successful frame
 still publishes `ready`.
 
 **Evidence.** `CONFIRMED-BY-TEST`: four new cases in
-[`test/services/monocular_depth_estimator_test.dart`](../test/services/monocular_depth_estimator_test.dart:270)
+[`test/services/monocular_depth_estimator_test.dart`](../test/services/monocular_depth_estimator_test.dart#L270)
 (builder count 0 while hidden with a valid grid; re-enable rebuilds; disable disposes and keeps
 the grid; the frame-in-flight/degrade interleaving) and three in
-[`test/screens/depth_overlay_state_test.dart`](../test/screens/depth_overlay_state_test.dart:81)
+[`test/screens/depth_overlay_state_test.dart`](../test/screens/depth_overlay_state_test.dart#L81)
 (the gate truth table, the key staying heatmap-agnostic, boxes/heatmap independence over all four
 combinations). Verification on `ca35e75`: `dart format` clean, `flutter analyze` 4 issues / 0
 errors (all pre-existing), `flutter test` 541 passing + the 1 known pre-existing TTS failure,
@@ -590,7 +603,7 @@ other than the author of the commit being reviewed.
 
 | `2d0d0cd`, `870c24e` | L8/L9 round 1 review — release verification + Play Store configuration | CHANGES_REQUIRED | 2 medium + 5 low. **MEDIUM-1** the permission attribution table was wrong, and it is the input the Data Safety answer depends on: `RECORD_AUDIO`/`WRITE_EXTERNAL_STORAGE` were credited to `flutter_tts` (whose manifest declares zero permissions) instead of `camera_android_camerax`, and `READ_EXTERNAL_STORAGE` was listed as a plugin declaration when the merger *implies* it from `WRITE_EXTERNAL_STORAGE`. **MEDIUM-2** a debug-signed artefact was indistinguishable from a production one by filename. **LOW-1** the `<queries>` `IMAGE_CAPTURE` removal in `2d0d0cd` was undisclosed. **LOW-2** `2d0d0cd` also touched `lib/` (four comment lines) although `lib/` was out of that commit's scope. **LOW-3** the device-gate wording implied microphone/storage prompts. **LOW-4** the ledger recorded truncated digests (`feaab199c7…`). **LOW-5** the `870c24e` message was reported to say "33 members" where the figure is 33 methods + 8 fields. All fixed or disclosed in the L10 commits below | reviewer |
 | L10 attribution + naming commit | Rebuild of the permission table from the merger blame/report, per-permission recommendation table, `-testsigned` artefact naming, `<queries>` disclosure, device-gate wording, full digests | PASS_WITH_NOTES (backlog review — new row in this section) | Implementation only; no self-approval. Table rebuilt from `manifest-merger-blame-release-report.txt` (element line + `-->[<dependency>]` line) and `manifest-merger-release-report.txt`; the `READ_EXTERNAL_STORAGE` row quotes the merger's own `IMPLIED from … reason: io.flutter.plugins.camerax requested WRITE_EXTERNAL_STORAGE` line. Naming: `bundleRelease`/`assembleRelease` `doLast` rename, active only when `hasUploadSigning` is false (AGP 9 removed the variant output-file-name property, so the rename cannot be expressed through the variant API); both fallback artefacts are now `app-release-testsigned.{aab,apk}` and no plain-named artefact remains, while a keystore keeps the normal names | implementer |
-| `2d0d0cd` (disclosure) | Out-of-scope `lib/` change | disclosed, not reverted | `2d0d0cd` added four comment lines to [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:250) — a `shortcut:` note on the truncated-body duplicate heuristic. It is a comment-only change with no behaviour, it is correct, and history is not rewritten; it is disclosed here because `lib/` was outside that commit's scope | implementer |
+| `2d0d0cd` (disclosure) | Out-of-scope `lib/` change | disclosed, not reverted | `2d0d0cd` added four comment lines to [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L250) — a `shortcut:` note on the truncated-body duplicate heuristic. It is a comment-only change with no behaviour, it is correct, and history is not rewritten; it is disclosed here because `lib/` was outside that commit's scope | implementer |
 | `870c24e` (disclosure) | "33 members" vs 33 methods + 8 fields | verified — premise not reproducible | The review reported the message saying "33 members". `git log -1 --format=%B 870c24e | grep -n "33"` matches **nothing**: the message states no member count at all. The figure lives only in §6.3 and this ledger ("33 methods"), which matches the method column of `apkanalyzer dex packages --defined-only` for this APK (`C d 33 33 2268 androidx.work.impl.WorkDatabase_Impl`). The review's "8 fields" is not reproducible from that row (its field column also reads 33), so neither number is restated as reviewed; the doc keeps "33 methods" because that column is unambiguous. No message rewrite | implementer |
 
 | `8766586` | L10 permission removal + artefact rebuild | PASS_WITH_NOTES (backlog review — new row in this section) | Implementation only; no self-approval. Three `tools:node="remove"` rules: `RECORD_AUDIO` and `WRITE_EXTERNAL_STORAGE` (both injected by `camera_android_camerax`) plus the merger-implied `READ_EXTERNAL_STORAGE`, which needs its own rule — measured by re-running `:app:processReleaseMainManifest` with only the first two rules, which still declared it. `aapt2` on the rebuilt APK lists 8 permissions (was 11). The test-signed APK is now marked by the `markTestSignedApk` task because renaming inside `assembleRelease` is a no-op (Flutter copies the APK after that task). Residual risk: camerax video-with-audio and shared-storage capture would fail; neither path is used, and the removal is unverified without a device | implementer |
@@ -609,7 +622,7 @@ other than the author of the commit being reviewed.
 | `5ad07bf`, `fc2e948`, `5c78769` | K — Play Store material: application ID, AGPL licence, generated icons | PASS | `package: name='app.eyecue.mobile'` in the rebuilt artefacts matches §8 D1; [`../LICENSE`](../LICENSE) carries the canonical AGPL-3.0 text and §8 D2 records the decision, so the L10 row that still listed D2 as `BLOCKED-EXTERNAL` was the stale statement, not the code. The icons are generated from the existing `assets/logo.png`: `mipmap/ic_launcher`, `ic_launcher_foreground`, `ic_launcher_monochrome` and `ic_launcher_round` at mdpi–xxxhdpi, an `anydpi-v26` adaptive XML with background/foreground/monochrome, and `android:roundIcon` bound to `ic_launcher_round` | reviewer |
 | `30d340f` | K — Play Store material package documents | PASS_WITH_NOTES | Content checked against the tree and the artefacts. The notes are the document inconsistencies that the docs commit after `3eafed0` closes: (1) the L10 row still read `DONE (owner decisions remain open)` and listed licence D2 as `BLOCKED-EXTERNAL` while §8 records D2 as decided; (2) [`testing-plan.md`](testing-plan.md) ticked the TalkBack checkbox while the physical read-through is still owed; (3) [`play-store-checklist.md`](play-store-checklist.md) §0 was titled "still open" but held two `DECIDED` rows; (4) [`play-store-listing.md`](play-store-listing.md) claimed "only the first upload per app run is stored" — a store-facing claim about server behaviour that has never been executed; (5) I/J/K had no ledger rows and these verdicts had no log rows | reviewer |
 
-| `3eafed0` | J remediation — keep detection idle until the disclosure is acknowledged | PASS | The launch policy now runs only once `safetyAcknowledged` is true: from `initState` when the flag is already persisted, otherwise from `onAcknowledge` after the acknowledgement is recorded, so a fresh install gets no start intent, no camera-permission prompt, no start haptic and no speech behind the modal. The new case `withholds the launch policy until the acknowledgement` drives a fresh `SettingsService` over the real pages (no `pagesOverride`) and fails at its first launch-policy assertion against the pre-fix build. The same commit adds the `shortcut:` note in [`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart:28) and the `the live subtree holds no button or tappable` case, the structural guard for item I | reviewer |
+| `3eafed0` | J remediation — keep detection idle until the disclosure is acknowledged | PASS | The launch policy now runs only once `safetyAcknowledged` is true: from `initState` when the flag is already persisted, otherwise from `onAcknowledge` after the acknowledgement is recorded, so a fresh install gets no start intent, no camera-permission prompt, no start haptic and no speech behind the modal. The new case `withholds the launch policy until the acknowledgement` drives a fresh `SettingsService` over the real pages (no `pagesOverride`) and fails at its first launch-policy assertion against the pre-fix build. The same commit adds the `shortcut:` note in [`../lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart#L28) and the `the live subtree holds no button or tappable` case, the structural guard for item I | reviewer |
 | `1cda344` | Document reconciliation of the final remediation pass (report §16) | PASS | The reconciliation matches the tree and the artefacts, with the three overstatements this commit corrects: [`release-procedure.md`](release-procedure.md) §6.8 read "16 KB aligned end to end" although the packaged APK ships two `armeabi-v7a` objects at `LOAD` align `0x1000` (now: the APK passes `zipalign -c -P 16` and every 64-bit library is aligned, the two 32-bit objects are not); the `842d38b` row in this section presented the licence decision as still open, so it read as a live gate (now: open at `842d38b`, decided in `fc2e948`); [`release-readiness-report.md`](release-readiness-report.md) §16.1 said the pre-fix build "fails its first assertion" (now: its first launch-policy assertion, since the dialog-present and not-acknowledged expectations pass) | reviewer |
 | `4a33839` | Final rebuild and the measured evidence for it at the final HEAD | PASS | Docs-only commit recording the rebuild. The build ran on the `3eafed0` tree, the only code commit after `30d340f`, and no digest moved: AAB `6425a1e5…` (78 762 272 B) and APK `4df0f2c8…` (91 345 913 B), both `-testsigned`. `zipalign -c -P 16 4` exits 0 and the per-library table records the two 32-bit exceptions instead of claiming them. The documents are not build inputs, so the digests still describe the current tree. Installed startup and the device feel stay unverified (report §16.7) | reviewer |
 

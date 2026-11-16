@@ -20,7 +20,7 @@ regenerate.
 | Mark colours | `#0A0A0A` (`kHomeInk`) and `#22C7F2` (`kHomeAccentCyan`) |
 
 Both mark colours are existing tokens in
-[`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart:82); the artwork is not
+[`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart#L82); the artwork is not
 recoloured.
 
 ## 2. Tooling
@@ -33,9 +33,8 @@ of the letterbox maths, the alpha channel and LANCZOS downscaling:
   writer emits extra chunks that make byte-for-byte reproducibility harder to
   argue).
 - `rsvg-convert` is not installed — not needed, the source is a PNG, not SVG.
-- The in-repo PNG encoder ([`lib/models/png_encoder.dart`](../lib/models/png_encoder.dart))
-  was the fallback if no image tool existed: it encodes but does not decode or
-  resample, so using it would have meant writing a downscaler too.
+- The former in-app PNG encoder was removed with the historical forensic
+  pipeline; icon generation is a host-side script and does not depend on it.
 
 Pillow is a **host tool, not a project dependency**: nothing is added to
 [`pubspec.yaml`](../pubspec.yaml) and the script installs nothing. If it is

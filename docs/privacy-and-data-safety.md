@@ -5,15 +5,21 @@ owner needs for the Play Console **Data safety** form. Every claim is either
 **answered from code (cited)** or marked **OWNER DECISION** where the code cannot
 answer it.
 
-No legal opinion is given. This is the input to gate **D3** in
-[`play-store-readiness.md`](play-store-readiness.md) §8.
+No legal opinion is given. The public app's Help button opens
+`https://nmarcusg.github.io/eyecue_flutter/` in an external browser; this
+repository does not establish that the hosted page is reachable or that its
+content matches this audit. EyeCue Study hides the button. This is input to gate
+**D3** in [`play-store-readiness.md`](play-store-readiness.md) §8.
+Backend behavior below describes the checked-in function and migrations; it does
+not prove that those migrations or the function are deployed to the configured
+Supabase project.
 
 ## 1. Summary
 
 | Data | Collected by the app? | Where it goes |
 | --- | --- | --- |
 | Camera frames | **No** — frames are consumed in-process by the on-device detector and never persisted or transmitted | device only |
-| Study upload token | **Not collected and not stored** — typed per upload, sent only in the `X-Eyecue-Upload-Token` header, hashed server-side and never written to a payload or a log (§4.2) | the study database stores only its SHA-256 |
+| Researcher-supplied study upload token | Entered in the Study UI and sent in the `X-Eyecue-Upload-Token` request header; code does not place the raw token in the payload or persist it on-device. The ingest implementation stores a hash, but its deployment is unverified (§4.2). | server-side token hash in the checked-in schema, if deployed; raw token is not specified as stored |
 | Detected objects / depth numbers | Yes, **in memory only** for the running session | device only until the user exports or uploads |
 | Telemetry metrics (latencies, FPS, counts, timings) | Yes, in memory only | device only; exported/sent only on explicit user action |
 | Participant code (researcher-entered string) | only inside an upload the user confirms | study database (Supabase), if configured |
@@ -29,24 +35,24 @@ No legal opinion is given. This is the input to gate **D3** in
   [`docs/mde-integration.md`](mde-integration.md)).
 * The export snapshot is explicitly image-free: it serialises records
   (`metadata`, `sample`, `detection`, `failure`, …) with numeric fields only — see
-  [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:130)
+  [`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart#L130)
   and the field list in
   [`telemetry-data-dictionary.md`](telemetry-data-dictionary.md).
 * The upload payload is the exported snapshot plus study metadata
-  ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:327)).
+  ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L327)).
   No image, frame, or bitmap is ever placed in either structure.
-* Public release requests `CAMERA` only. Study release adds `INTERNET` for
-  manual researcher upload. Debug/profile manifests also declare `INTERNET` for
+* Public release declares `CAMERA` and no app-level `INTERNET` permission. Study
+  release adds `INTERNET` for manual researcher upload. Debug/profile manifests also declare `INTERNET` for
   Flutter hot reload; the no-`INTERNET` guarantee applies only to release APKs.
 
 ## 3. Telemetry is local by default
 
 * `TelemetryService` is an in-memory `ChangeNotifier`
-  ([`telemetry_service.dart`](../lib/services/telemetry_service.dart:334)); nothing
+  ([`telemetry_service.dart`](../lib/services/telemetry_service.dart#L334)); nothing
   writes telemetry to disk during a session.
 * Export is a manual action from Logs & Reports and writes a JSON/CSV file into the
   **app's own documents directory**
-  ([`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart:424)),
+  ([`telemetry_export_service.dart`](../lib/services/telemetry_export_service.dart#L424)),
   not shared storage. (This is why the manifest removes
   `WRITE_EXTERNAL_STORAGE`; see §7.)
 * No background uploader, no scheduler-driven network call: the only HTTP client in
@@ -58,30 +64,32 @@ Two independent guards:
 
 1. **Configuration and transport** — the ingest URL and the publishable key are both
    supplied at build time (`--dart-define`), and the URL is validated before a socket
-   is opened: [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart:58)
+   is opened: [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart#L58)
    accepts `https` only, requires an absolute URI with a host, and rejects embedded
    credentials. Every other scheme (`http`, `ftp`, `javascript`, `file`, custom) is
    refused, and
-   [`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart:298)
+   [`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart#L298)
    returns that refusal instead of sending anything. "Encrypted in transit" is
    therefore enforced by **code**, not assumed from how the deployment is configured.
    The one exception is a debug build pointed at a loopback host
-   ([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart:98)); a release
-   build rejects even `http://localhost`. The release artefacts built here carry no
-   defines at all, so the upload is structurally impossible in them
-   ([`docs/release-procedure.md`](release-procedure.md) §6.5).
+   ([`_isDebugLoopback`](../lib/services/telemetry_upload_service.dart#L98)); a release
+   build rejects even `http://localhost`. The public cloud build passes no
+   telemetry defines; Study builds receive the URL and publishable key when the
+   repository variables are configured. Upload also requires a valid token and
+   explicit confirmation. These code/configuration facts do not establish that
+   the configured server is deployed or correctly configured.
 2. **A study upload token** — a credential issued by the researcher and typed into
    the same dialog. It is not shipped in the APK, not persisted on the device and
    not part of the payload; the server refuses a write without a valid one
    (§4.2).
 3. **Explicit user confirmation** — the upload button opens a dialog
-   ([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:228)) and only
+   ([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart#L228)) and only
    a confirmed dialog proceeds
-   ([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:112)).
+   ([`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart#L112)).
 
 The payload records that consent as
 `"consent": {"manualSessionUpload": true}`
-([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:330)).
+([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L330)).
 
 ### 4.1 Consent text (verbatim, as shown to the user)
 
@@ -95,20 +103,21 @@ The payload records that consent as
 >
 > Participant code … Study scenario … Study upload token … [Cancel] [Confirm upload]
 
-Source: [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:228).
+Source: [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart#L228).
 
 The participant-code field is validated against `^[A-Za-z0-9_-]{1,64}$`
-([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:152)),
+([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L152)),
 so a name with a space or an `@` is rejected — but the app cannot tell a code from a
 name that happens to match the pattern. That residual risk is stated in the copy
 ("never a name or email address") and is review item **P2** below.
 
-### 4.2 The study upload token is a credential, not personal data
+### 4.2 The study upload token is a credential
 
 The third field is a **study upload token**: 43–128 characters from
 `[A-Za-z0-9_-]`, issued by the researcher and typed or pasted for one upload.
-It identifies a *study grant*, not a person, and it carries no participant data.
-It is treated as a credential:
+It identifies a study grant in the current design. Whether a token is personal
+data under applicable law or a Play form is a classification decision beyond
+what the code establishes. The app treats it as a credential:
 
 * **never shipped in the APK** — unlike the ingest URL and the publishable key, it
   is not a build-time define;
@@ -116,11 +125,11 @@ It is treated as a credential:
   dialog and in memory for the request. No preference, file, export or telemetry
   field holds it; `ResearchSessionMetadata.toJson()` returns only participant code
   and study scenario, and `toString()` redacts it
-  ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:138),
-  and [`hasValidUploadToken`](../lib/services/telemetry_upload_service.dart:159)
+  ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L138),
+  and [`hasValidUploadToken`](../lib/services/telemetry_upload_service.dart#L159)
   checks the shape);
 * **never in the payload** — it travels in the `X-Eyecue-Upload-Token` header
-  ([`uploadTokenHeaderName`](../lib/services/telemetry_upload_service.dart:259));
+  ([`uploadTokenHeaderName`](../lib/services/telemetry_upload_service.dart#L259));
 * **never logged or shown** — no failure message interpolates it, and a test
   asserts the token appears nowhere on screen after submission;
 * **stored only as a hash** — the study database keeps `sha256(token)` in
@@ -128,14 +137,14 @@ It is treated as a credential:
   `uses` ceiling. It is RLS-protected with no client policy, so no client role can
   read it. See [`ingest-threat-model.md`](ingest-threat-model.md).
 
-The Play **Data safety** form therefore needs no new data type for the token: it
-is not collected from or about the user, and it is not retained on the device. The
-token is entered by a researcher, so it is shoulder-surfable while being typed —
-a residual risk recorded in the threat model, not a data-safety declaration.
+The owner must assess the token's classification for the Play **Data safety**
+form and applicable privacy policy. It is entered by a researcher, so it is
+shoulder-surfable while being typed — a residual risk recorded in the threat
+model.
 
 ## 5. What the study database stores
 
-Migration [`202610200001_create_research_telemetry.sql`](../supabase/migrations/202610200001_create_research_telemetry.sql:13):
+Migration [`202610200001_create_research_telemetry.sql`](../supabase/migrations/202610200001_create_research_telemetry.sql#L13):
 
 | Column | Content |
 | --- | --- |
@@ -150,14 +159,14 @@ Two different limits apply to that `payload`; they are not interchangeable:
 
 * **2 000 000 B — the wire cap.** The size of the JSON body the app sends. Refused on
   the client before the request is built
-  ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:255))
+  ([`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L255))
   and again by the ingest function (which checks the size *after* the token and
   rate-limit gates, so a caller without a well-formed token cannot make it read a
   2 MB body; a request with no declared `content-length` is refused rather than
   buffered whole).
 * **2 400 000 B — the table's storage bound.** The
   `telemetry_sessions_payload_size` check on the stored `jsonb`
-  ([`202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql:56)),
+  ([`202610250001_harden_research_telemetry.sql`](../supabase/migrations/202610250001_harden_research_telemetry.sql#L56)),
   deliberately above the wire cap so the client's limit is the one a researcher hits
   first. [`supabase-research-telemetry.md`](supabase-research-telemetry.md) documents
   the same pair under *Payload size*.
@@ -245,11 +254,11 @@ binding.
 
 | Play Data safety field | Answer | Basis |
 | --- | --- | --- |
-| Does your app collect or share any of the required user data types? | **Yes — only when the researcher uploads a session** (App activity / "Other in-app actions": numeric detection & performance records) | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:327), §4 |
-| Is all data encrypted in transit? | **Yes — enforced by code for the upload path** | [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart:58) accepts `https` only and reports `insecureScheme` for everything else, and [the service refuses to send](../lib/services/telemetry_upload_service.dart:298) on any non-`valid` status. TLS itself comes from the platform trust store via `dart:io`'s `HttpClient`; no certificate pinning is implemented. Proven by the transport unit/service/widget cases — see §4 |
+| Does your app collect or share any of the required user data types? | **Yes — only when the researcher uploads a session** (App activity / "Other in-app actions": numeric detection & performance records) | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L327), §4 |
+| Is all data encrypted in transit? | The upload code requires an `https` URL in release and delegates TLS to `dart:io` `HttpClient` and the platform trust store; no certificate pinning is implemented. Confirm the deployed endpoint and answer the Play form for the actual service. | [`validateTelemetryEndpoint`](../lib/services/telemetry_upload_service.dart#L58), [`TelemetryUploadService.upload`](../lib/services/telemetry_upload_service.dart#L298), §4 |
 | Is data collected ephemerally (in memory only)? | Operational buffers are memory-only; recorded trials, chosen exports and uploaded snapshots persist | §3, §5 |
 | Data type: **Location** | No | no location API anywhere in `lib/` |
-| Data type: **Personal info** (name, e-mail, phone, address, ID numbers) | No — the only identity field is a researcher code, validated to `^[A-Za-z0-9_-]{1,64}$`; the study upload token is a study credential, not an identifier of a person (§4.2) | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart:152) |
+| Data type: **Personal info** (name, e-mail, phone, address, ID numbers) | No dedicated name/e-mail/phone/address/ID fields exist. The participant code can still be a name that happens to meet the allowed pattern; assess the study protocol and Play classification. The token's classification is an owner/legal question (§4.2). | [`telemetry_upload_service.dart`](../lib/services/telemetry_upload_service.dart#L152) |
 | Data type: **Device or other IDs** | **No** — no `ANDROID_ID`, advertising id, install id or device fingerprint is read (`grep -rn 'ANDROID_ID\|deviceInfo\|installationId' lib/` → no matches) | §1 |
 | `deviceModel` / `androidVersion` specifically | **Not collected** (no column, no code path). If the owner wants them for research, the Data Safety answer and the privacy policy must change **before** the code does — **OWNER DECISION** | §5 |
 | Data type: **Photos and videos** | No — camera frames are never stored or transmitted | §2 |
@@ -269,7 +278,7 @@ binding.
 | --- | --- | --- |
 | P1 | Retention period and deletion SLA | §6 has none; a policy statement is required |
 | P2 | A participant code can be a disguised name | validation cannot distinguish; the study protocol must be the control |
-| P3 | ~~Ingest URL scheme is not enforced to be `https`~~ — **RESOLVED**: `https` is now the only accepted scheme and a non-`https` endpoint is refused before sending (§4) | was: "encrypted in transit" could not be declared from code. Now covered by [`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart:1002) (validator matrix, refusal, debug loopback both ways, and the `debugMode: false` case under a debug `flutter test` run) and the screen case at [`logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart:977) |
+| P3 | ~~Ingest URL scheme is not enforced to be `https`~~ — **RESOLVED**: `https` is now the only accepted scheme and a non-`https` endpoint is refused before sending (§4) | was: "encrypted in transit" could not be declared from code. Now covered by [`telemetry_upload_service_test.dart`](../test/services/telemetry_upload_service_test.dart#L1002) (validator matrix, refusal, debug loopback both ways, and the `debugMode: false` case under a debug `flutter test` run) and the screen case at [`logs_reports_screen_test.dart`](../test/screens/logs_reports_screen_test.dart#L977) |
 | P4 | Whether the Supabase project counts as a processor or a third-party share | depends on the deployment and the study's agreements |
-| P5 | Privacy-policy URL | does not exist yet; required by Play |
+| P5 | Privacy-policy destination | the public app links to `https://nmarcusg.github.io/eyecue_flutter/`; live availability and content need owner verification |
 | P6 | The study upload token is shoulder-surfable while it is typed | the app never stores, logs or re-shows it, but the field is on screen during entry. Operational control: short expiry, one token per participant/session, revoke after use ([`ingest-threat-model.md`](ingest-threat-model.md)) |

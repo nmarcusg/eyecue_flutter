@@ -1,5 +1,8 @@
 # Detection Alignment and Chart Readability — Implementation Plan
 
+> **Implementation status (2026-11-16):** The planned Detection alignment and chart/Logs polish shipped: the viewport gutter and heatmap geometry are in [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart) and [`lib/widgets/depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart); chart axes are in [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart), and Logs filter/subtitle layout is in [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart). Device verification was recorded in [`docs/project-status.md`](../project-status.md) and commit `62dfa21`. This file remains the dated analysis/spec/plan; its scope limits are not current work instructions.
+
+
 - **Date:** 2026-11-09
 - **Feature slug:** `detection-alignment-charts`
 - **Stage:** 3 of 4 (plan). Source-of-truth order for the implementation stage: **this file** → [`detection-alignment-charts-design-spec.md`](detection-alignment-charts-design-spec.md) → [`detection-alignment-charts-analysis.md`](detection-alignment-charts-analysis.md).
@@ -15,23 +18,23 @@
 
 | # | File | Folder | Why it is in scope |
 |---|---|---|---|
-| 1 | [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart:1) | `lib/widgets/` | Issues 4 and 5 (§3.4/§3.5 of the design-spec) |
-| 2 | [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart:1) | `lib/screens/` | Issue 4 title gap, Issue 5 FPS title literal |
-| 3 | [`lib/widgets/depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart:1) | `lib/widgets/` | Issue 2 |
-| 4 | [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart:1) | `lib/screens/` | Issue 1 (gutter) and Issue 3 (`_AudioPill`) |
-| 5 | [`test/widgets/charts_test.dart`](../../test/widgets/charts_test.dart:1) | `test/` | Assertions naming the deleted Y names |
-| 6 | [`test/screens/logs_reports_screen_test.dart`](../../test/screens/logs_reports_screen_test.dart:1) | `test/` | Assertions naming the deleted `(15 FPS target)` string |
-| 7 | [`test/widgets/depth_heatmap_view_test.dart`](../../test/widgets/depth_heatmap_view_test.dart:1) | `test/` | Assertions encode the replaced heatmap tree |
+| 1 | [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart#L1) | `lib/widgets/` | Issues 4 and 5 (§3.4/§3.5 of the design-spec) |
+| 2 | [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L1) | `lib/screens/` | Issue 4 title gap, Issue 5 FPS title literal |
+| 3 | [`lib/widgets/depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart#L1) | `lib/widgets/` | Issue 2 |
+| 4 | [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L1) | `lib/screens/` | Issue 1 (gutter) and Issue 3 (`_AudioPill`) |
+| 5 | [`test/widgets/charts_test.dart`](../../test/widgets/charts_test.dart#L1) | `test/` | Assertions naming the deleted Y names |
+| 6 | [`test/screens/logs_reports_screen_test.dart`](../../test/screens/logs_reports_screen_test.dart#L1) | `test/` | Assertions naming the deleted `(15 FPS target)` string |
+| 7 | [`test/widgets/depth_heatmap_view_test.dart`](../../test/widgets/depth_heatmap_view_test.dart#L1) | `test/` | Assertions encode the replaced heatmap tree |
 | 8 | **new** `test/screens/detection_screen_alignment_test.dart` | `test/` | No existing test asserts the gutter or the 64×56 target |
-| 9 | `docs/changelog.md`, `docs/session-log.md`, `docs/implementation-progress.md` | `docs/` | Mandatory per [`.roo/rules/rules-frontend/06-doc-update.md`](../../.roo/rules/rules-frontend/06-doc-update.md) |
+| 9 | `docs/changelog.md`, `docs/session-log.md`, `docs/implementation-progress.md` | `docs/` | Mandatory per `.roo/rules/rules-frontend/06-doc-update.md` |
 
-`test/` is **outside** the four UI-owned folders ([`.roo/rules/rules-frontend/01-scope.md`](../../.roo/rules/rules-frontend/01-scope.md)). Items 5–8 are the explicitly flagged, approved consequence recorded in design-spec §1.3/§5: the strings and structures those assertions name are being deleted, so the assertions cannot survive. [inferred-from-codebase]
+`test/` is **outside** the four UI-owned folders (`.roo/rules/rules-frontend/01-scope.md`). Items 5–8 are the explicitly flagged, approved consequence recorded in design-spec §1.3/§5: the strings and structures those assertions name are being deleted, so the assertions cannot survive. [inferred-from-codebase]
 
 ### 0.2 Forbidden — must not be touched by this feature
 
 `lib/widgets/bounding_box_painter.dart` · `lib/widgets/status_pill.dart` · `lib/widgets/detection_information_overlay.dart` · `lib/widgets/detection_action_controls.dart` · `lib/theme/*` (no token is added) · `lib/models/*` · `lib/services/*` · `lib/navigation/*` · `lib/main.dart` · `plugins/*` · `android/*` · `pubspec.yaml` · `.roo/**` · any other doc · the two upstream pipeline docs in this folder.
 
-Rationale per file: design-spec §1.2 (OQ3, OQ4, OQ12, and the inter-card `kSpace12` at [`detection_action_controls.dart:343`](../../lib/widgets/detection_action_controls.dart:343)).
+Rationale per file: design-spec §1.2 (OQ3, OQ4, OQ12, and the inter-card `kSpace12` at [`detection_action_controls.dart:343`](../../lib/widgets/detection_action_controls.dart#L343)).
 
 ---
 
@@ -41,19 +44,19 @@ These are the plan-stage validations; each one changes or constrains a step belo
 
 ### 1.1 `charts.dart` — per-axis configuration
 
-- Left axis ([`:284-300`](../../lib/widgets/charts.dart:284)): `axisNameWidget: RotatedBox(quarterTurns: 3, Text(yName))`, `axisNameSize: 24`, `sideTitles.reservedSize: 38`, tick text `Text(_formatAxisTick(value, yInterval), style: tickStyle())` with **no** `maxLines` / `softWrap`.
-- Bottom axis ([`:301-319`](../../lib/widgets/charts.dart:301)): `axisNameWidget: Text(xName)`, `axisNameSize: 22`, `sideTitles.reservedSize: 22`, tick text `minuteLabels ? '${value.round() + 1}' : _formatAxisTick(value, xInterval)`.
-- `tickStyle()` ([`:280`](../../lib/widgets/charts.dart:280)) is `const TextStyle(color: kHomeInkMuted, fontSize: 10)`, declared **inside** `_chartTitles` and therefore usable from both axes. There is no `BuildContext` in that function today — adding the theme lookup is a signature change on a private function with exactly three call sites, all in this file.
-- `_formatAxisTick` ([`:323-339`](../../lib/widgets/charts.dart:323)) is called by the **Y** axis at [:297](../../lib/widgets/charts.dart:297) and the **X** axis at [:314](../../lib/widgets/charts.dart:314); the minute labels bypass it. **A Y-only formatter therefore cannot touch X output.** Confirmed: the X tick positions are driven by `interval: xInterval` (unchanged) and the X *strings* stay `_formatAxisTick` verbatim, so `0.5` and `1.5` in [`charts_test.dart:148`](../../test/widgets/charts_test.dart:148) and [:183](../../test/widgets/charts_test.dart:183) are preserved by construction.
-- Benchmark symbols: `_fpsBenchmark` occurs only at [:18](../../lib/widgets/charts.dart:18) (declaration) and inside `FpsChart` at [:146](../../lib/widgets/charts.dart:146), [:180](../../lib/widgets/charts.dart:180). `_latencyBenchmarkMs` occurs only at [:17](../../lib/widgets/charts.dart:17) and inside `LatencyChart` at [:56](../../lib/widgets/charts.dart:56), [:90](../../lib/widgets/charts.dart:90). **`showBenchmark` is a separate local in each chart class** (Latency [:56](../../lib/widgets/charts.dart:56), FPS [:146](../../lib/widgets/charts.dart:146)) — deleting the FPS one cannot affect the 300 ms line. Verified by a whole-repo grep: 9 hits, all in `charts.dart`, all accounted for above.
-- `_axisColor` ([`:10`](../../lib/widgets/charts.dart:10)) is used in exactly three `Border`s: [:76-77](../../lib/widgets/charts.dart:76), [:166-167](../../lib/widgets/charts.dart:166), [:253-254](../../lib/widgets/charts.dart:253).
-- `app_colors.dart` is already imported ([:7](../../lib/widgets/charts.dart:7)), so `kHomeInkMuted` needs no new import.
+- Left axis ([`:284-300`](../../lib/widgets/charts.dart#L284)): `axisNameWidget: RotatedBox(quarterTurns: 3, Text(yName))`, `axisNameSize: 24`, `sideTitles.reservedSize: 38`, tick text `Text(_formatAxisTick(value, yInterval), style: tickStyle())` with **no** `maxLines` / `softWrap`.
+- Bottom axis ([`:301-319`](../../lib/widgets/charts.dart#L301)): `axisNameWidget: Text(xName)`, `axisNameSize: 22`, `sideTitles.reservedSize: 22`, tick text `minuteLabels ? '${value.round() + 1}' : _formatAxisTick(value, xInterval)`.
+- `tickStyle()` ([`:280`](../../lib/widgets/charts.dart#L280)) is `const TextStyle(color: kHomeInkMuted, fontSize: 10)`, declared **inside** `_chartTitles` and therefore usable from both axes. There is no `BuildContext` in that function today — adding the theme lookup is a signature change on a private function with exactly three call sites, all in this file.
+- `_formatAxisTick` ([`:323-339`](../../lib/widgets/charts.dart#L323)) is called by the **Y** axis at [:297](../../lib/widgets/charts.dart#L297) and the **X** axis at [:314](../../lib/widgets/charts.dart#L314); the minute labels bypass it. **A Y-only formatter therefore cannot touch X output.** Confirmed: the X tick positions are driven by `interval: xInterval` (unchanged) and the X *strings* stay `_formatAxisTick` verbatim, so `0.5` and `1.5` in [`charts_test.dart:148`](../../test/widgets/charts_test.dart#L148) and [:183](../../test/widgets/charts_test.dart#L183) are preserved by construction.
+- Benchmark symbols: `_fpsBenchmark` occurs only at [:18](../../lib/widgets/charts.dart#L18) (declaration) and inside `FpsChart` at [:146](../../lib/widgets/charts.dart#L146), [:180](../../lib/widgets/charts.dart#L180). `_latencyBenchmarkMs` occurs only at [:17](../../lib/widgets/charts.dart#L17) and inside `LatencyChart` at [:56](../../lib/widgets/charts.dart#L56), [:90](../../lib/widgets/charts.dart#L90). **`showBenchmark` is a separate local in each chart class** (Latency [:56](../../lib/widgets/charts.dart#L56), FPS [:146](../../lib/widgets/charts.dart#L146)) — deleting the FPS one cannot affect the 300 ms line. Verified by a whole-repo grep: 9 hits, all in `charts.dart`, all accounted for above.
+- `_axisColor` ([`:10`](../../lib/widgets/charts.dart#L10)) is used in exactly three `Border`s: [:76-77](../../lib/widgets/charts.dart#L76), [:166-167](../../lib/widgets/charts.dart#L166), [:253-254](../../lib/widgets/charts.dart#L253).
+- `app_colors.dart` is already imported ([:7](../../lib/widgets/charts.dart#L7)), so `kHomeInkMuted` needs no new import.
 
 ### 1.2 `buildHomeTheme()` — `labelSmall` is 14 sp (design-spec §3.4.1 is correct; analysis §4 was wrong)
 
-[`app_home_theme.dart:89-93`](../../lib/theme/app_home_theme.dart:89) overrides `labelSmall` to `IBM Plex Sans, fontSize: 14, fontWeight: w500, color: kHomeInk`. `titleSmall` is genuinely not overridden.
+[`app_home_theme.dart:89-93`](../../lib/theme/app_home_theme.dart#L89) overrides `labelSmall` to `IBM Plex Sans, fontSize: 14, fontWeight: w500, color: kHomeInk`. `titleSmall` is genuinely not overridden.
 
-**New finding the design-spec did not record:** the charts are reached under that theme in the app ([`logs_reports_screen.dart:95-96`](../../lib/screens/logs_reports_screen.dart:95) wraps `Theme(data: buildHomeTheme())`), but [`charts_test.dart`'s `wrap()` helper](../../test/widgets/charts_test.dart:22) uses a bare `MaterialApp` with **no theme**, so `labelSmall` there resolves to the Material default (not 14 sp). Consequence: the width-260 / 200 %-scale assertions at [:130-198](../../test/widgets/charts_test.dart:130) do **not** exercise the 14 sp tick, and the Logs & Reports 200 %-overflow test ([`logs_reports_screen_test.dart:1314`](../../test/screens/logs_reports_screen_test.dart:1314)) only asserts that no *exception* is thrown — fl_chart clips a too-wide tick silently instead of throwing. A themed fit assertion is therefore **added** (§3.1, new test **C1e**). [inferred-from-codebase]
+**New finding the design-spec did not record:** the charts are reached under that theme in the app ([`logs_reports_screen.dart:95-96`](../../lib/screens/logs_reports_screen.dart#L95) wraps `Theme(data: buildHomeTheme())`), but [`charts_test.dart`'s `wrap()` helper](../../test/widgets/charts_test.dart#L22) uses a bare `MaterialApp` with **no theme**, so `labelSmall` there resolves to the Material default (not 14 sp). Consequence: the width-260 / 200 %-scale assertions at [:130-198](../../test/widgets/charts_test.dart#L130) do **not** exercise the 14 sp tick, and the Logs & Reports 200 %-overflow test ([`logs_reports_screen_test.dart:1314`](../../test/screens/logs_reports_screen_test.dart#L1314)) only asserts that no *exception* is thrown — fl_chart clips a too-wide tick silently instead of throwing. A themed fit assertion is therefore **added** (§3.1, new test **C1e**). [inferred-from-codebase]
 
 ### 1.3 `reservedSize: 56` in the design-spec is under-provisioned, not over-provisioned
 
@@ -61,17 +64,17 @@ Full arithmetic is in §5.1. Summary: wrapping is made structurally impossible b
 
 ### 1.4 `depth_heatmap_view.dart` — exact current structure
 
-[`:24-53`](../../lib/widgets/depth_heatmap_view.dart:24) is `IgnorePointer → ExcludeSemantics → ClipRect → FittedBox(fit: cover, clipBehavior: hardEdge) → SizedBox(uprightW × uprightH) → Transform.rotate(angle) → SizedBox(sensorW × sensorH) → RawImage(fit: fill)`, with `uprightWidth/uprightHeight` computed at [:28-30](../../lib/widgets/depth_heatmap_view.dart:28) and `import 'dart:math' as math;` at [:1](../../lib/widgets/depth_heatmap_view.dart:1) used **only** for `math.pi` at [:42](../../lib/widgets/depth_heatmap_view.dart:42). Removing `Transform.rotate` therefore makes that import unused — it must be deleted in the same step or `flutter analyze` is not clean.
+[`:24-53`](../../lib/widgets/depth_heatmap_view.dart#L24) is `IgnorePointer → ExcludeSemantics → ClipRect → FittedBox(fit: cover, clipBehavior: hardEdge) → SizedBox(uprightW × uprightH) → Transform.rotate(angle) → SizedBox(sensorW × sensorH) → RawImage(fit: fill)`, with `uprightWidth/uprightHeight` computed at [:28-30](../../lib/widgets/depth_heatmap_view.dart#L28) and `import 'dart:math' as math;` at [:1](../../lib/widgets/depth_heatmap_view.dart#L1) used **only** for `math.pi` at [:42](../../lib/widgets/depth_heatmap_view.dart#L42). Removing `Transform.rotate` therefore makes that import unused — it must be deleted in the same step or `flutter analyze` is not clean.
 
-Current test assertions ([`depth_heatmap_view_test.dart:23-47`](../../test/widgets/depth_heatmap_view_test.dart:23)): `FittedBox.fit == BoxFit.cover` and *"the first `SizedBox` descendant of the `FittedBox` is `20 × 40` for a `40 × 20` image at 90°"* — that second assertion encodes the buggy upright-sizing and must be replaced. The harness is `Center` in `Scaffold.body` ([`:8-12`](../../test/widgets/depth_heatmap_view_test.dart:8)) with **loose** constraints, so `FittedBox` currently sizes to its child and nothing is scaled; any new cover/centring assertion must pump inside an explicitly sized box (§3.3).
+Current test assertions ([`depth_heatmap_view_test.dart:23-47`](../../test/widgets/depth_heatmap_view_test.dart#L23)): `FittedBox.fit == BoxFit.cover` and *"the first `SizedBox` descendant of the `FittedBox` is `20 × 40` for a `40 × 20` image at 90°"* — that second assertion encodes the buggy upright-sizing and must be replaced. The harness is `Center` in `Scaffold.body` ([`:8-12`](../../test/widgets/depth_heatmap_view_test.dart#L8)) with **loose** constraints, so `FittedBox` currently sizes to its child and nothing is scaled; any new cover/centring assertion must pump inside an explicitly sized box (§3.3).
 
 ### 1.5 `_AudioPill` — exact current structure and the paths that must survive
 
-[`:1904-1970`](../../lib/screens/ultralytics_detection_screen.dart:1904): `Semantics(container: true, excludeSemantics: true, button: true, enabled: true, label: 'Audio guidance, …', onTap: onPressed)` → `Tooltip(message: tooltip)` → `ConstrainedBox(minWidth: kMinTouchWidth, minHeight: kMinTouchHeight)` → `Material(color: kHomeSurfaceCard, elevation: 0, borderRadius: kRadius20)` → `InkWell(onTap: onPressed, borderRadius: kRadius20)` → `Container(padding 12/6, decoration: radius + kHomeShadowSoft)` → `Row(dot 8 dp, gap 8 dp, ExcludeSemantics(Text('AUDIO ON'/'AUDIO OFF')))`.
+[`:1904-1970`](../../lib/screens/ultralytics_detection_screen.dart#L1904): `Semantics(container: true, excludeSemantics: true, button: true, enabled: true, label: 'Audio guidance, …', onTap: onPressed)` → `Tooltip(message: tooltip)` → `ConstrainedBox(minWidth: kMinTouchWidth, minHeight: kMinTouchHeight)` → `Material(color: kHomeSurfaceCard, elevation: 0, borderRadius: kRadius20)` → `InkWell(onTap: onPressed, borderRadius: kRadius20)` → `Container(padding 12/6, decoration: radius + kHomeShadowSoft)` → `Row(dot 8 dp, gap 8 dp, ExcludeSemantics(Text('AUDIO ON'/'AUDIO OFF')))`.
 
-Constraint surface: [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart:434) requires one node, `isButton == true`, a `tap` action, zero custom actions, and `labelledCustomActions(tester) == ['Repeat last alert']`; [:564-576](../../test/screens/gesture_navigation_direction_test.dart:564) drives the *semantics* tap action twice and expects `Audio on` speech. [`detection_redesign_parity_test.dart:69,94`](../../test/screens/detection_redesign_parity_test.dart:69) renders its **own** `Text('AUDIO ON')` in a hand-built header, so it does not import the pill at all and cannot break.
+Constraint surface: [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart#L434) requires one node, `isButton == true`, a `tap` action, zero custom actions, and `labelledCustomActions(tester) == ['Repeat last alert']`; [:564-576](../../test/screens/gesture_navigation_direction_test.dart#L564) drives the *semantics* tap action twice and expects `Audio on` speech. [`detection_redesign_parity_test.dart:69,94`](../../test/screens/detection_redesign_parity_test.dart#L69) renders its **own** `Text('AUDIO ON')` in a hand-built header, so it does not import the pill at all and cannot break.
 
-`_toggleAudio` ([`:1339-1344`](../../lib/screens/ultralytics_detection_screen.dart:1339)) flips `settings.audioEnabled`, mirrors it to TTS, and speaks `Audio on` when enabling. It emits **no haptic**, so a "not a gesture" assertion can safely require an empty haptic list.
+`_toggleAudio` ([`:1339-1344`](../../lib/screens/ultralytics_detection_screen.dart#L1339)) flips `settings.audioEnabled`, mirrors it to TTS, and speaks `Audio on` when enabling. It emits **no haptic**, so a "not a gesture" assertion can safely require an empty haptic list.
 
 ### 1.6 `ValueKey('detection-viewport')` is new, and adding it is safe
 
@@ -79,7 +82,7 @@ A whole-repo grep for `detection-viewport`, `audio-pill-target`, `audio-pill-cap
 
 ### 1.7 Gesture region and semantics wrapper — why the gutter goes where it does
 
-`GestureSurface` ([`gesture_surface.dart:32-42`](../../lib/widgets/gesture_surface.dart:32)) is a `Listener` with `HitTestBehavior.translucent` that forwards `e.localPosition`. Padding **inside** it changes neither the `Listener`'s own box nor the coordinate space it reports, so [`gesture_navigation_direction_test.dart:266`](../../test/screens/gesture_navigation_direction_test.dart:266) (`surface.width == 390`) and the swipe-position tests keep their geometry. Inserting `Padding` between `Semantics` and the viewport `Container` likewise leaves the `Camera view` node's bounds unchanged.
+`GestureSurface` ([`gesture_surface.dart:32-42`](../../lib/widgets/gesture_surface.dart#L32)) is a `Listener` with `HitTestBehavior.translucent` that forwards `e.localPosition`. Padding **inside** it changes neither the `Listener`'s own box nor the coordinate space it reports, so [`gesture_navigation_direction_test.dart:266`](../../test/screens/gesture_navigation_direction_test.dart#L266) (`surface.width == 390`) and the swipe-position tests keep their geometry. Inserting `Padding` between `Semantics` and the viewport `Container` likewise leaves the `Camera view` node's bounds unchanged.
 
 ### 1.8 Contradictions found — resolved here, not silently
 
@@ -123,11 +126,11 @@ flowchart LR
 
 ### C1 — `charts.dart`: axis colour token, theme tick style, no Y name, Y formatter, no-wrap flags
 
-**File:** [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart:1)
+**File:** [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart#L1)
 **Trace:** design-spec §3.4.2 (OQ6/OQ7/OQ8/OQ9), analysis §2 Issue 4. **Acceptance:** design-spec §3.4.6 items 1–6.
 **Proves:** C4 (edited + new tests).
 
-**C1.1 Delete the axis colour constant.** Current ([`:9-11`](../../lib/widgets/charts.dart:9)):
+**C1.1 Delete the axis colour constant.** Current ([`:9-11`](../../lib/widgets/charts.dart#L9)):
 
 ```dart
 /// Shared chart styling so all charts stay high-contrast and consistent.
@@ -146,7 +149,7 @@ Replace with:
 const Color _lineColor = Color(0xFFFFC107);
 ```
 
-**C1.2 Point both borders at the token — three identical sites.** Current, at [:75-78](../../lib/widgets/charts.dart:75), [:165-168](../../lib/widgets/charts.dart:165), [:252-255](../../lib/widgets/charts.dart:252):
+**C1.2 Point both borders at the token — three identical sites.** Current, at [:75-78](../../lib/widgets/charts.dart#L75), [:165-168](../../lib/widgets/charts.dart#L165), [:252-255](../../lib/widgets/charts.dart#L252):
 
 ```dart
               border: const Border(
@@ -166,7 +169,7 @@ Replace each of the three with:
 
 (`kHomeInkMuted` is a `const Color`, so the `const Border` stays valid.)
 
-**C1.3 Update the three `_chartTitles` call sites — add `context`, drop `yName`.** Latency ([`:80-85`](../../lib/widgets/charts.dart:80)):
+**C1.3 Update the three `_chartTitles` call sites — add `context`, drop `yName`.** Latency ([`:80-85`](../../lib/widgets/charts.dart#L80)):
 
 ```dart
             titlesData: _chartTitles(
@@ -188,10 +191,10 @@ Replace each of the three with:
             ),
 ```
 
-FPS ([`:170-175`](../../lib/widgets/charts.dart:170)): same shape, deleting `yName: 'FPS',`.
-Detection frequency ([`:257-263`](../../lib/widgets/charts.dart:257)): same shape, deleting `yName: 'Detections',` and keeping `minuteLabels: true`.
+FPS ([`:170-175`](../../lib/widgets/charts.dart#L170)): same shape, deleting `yName: 'FPS',`.
+Detection frequency ([`:257-263`](../../lib/widgets/charts.dart#L257)): same shape, deleting `yName: 'Detections',` and keeping `minuteLabels: true`.
 
-**C1.4 Replace the `_chartTitles` signature and tick style.** Current ([`:273-280`](../../lib/widgets/charts.dart:273)):
+**C1.4 Replace the `_chartTitles` signature and tick style.** Current ([`:273-280`](../../lib/widgets/charts.dart#L273)):
 
 ```dart
 FlTitlesData _chartTitles({
@@ -228,7 +231,7 @@ FlTitlesData _chartTitles({
       );
 ```
 
-**C1.5 Replace the left axis.** Current ([`:284-300`](../../lib/widgets/charts.dart:284)):
+**C1.5 Replace the left axis.** Current ([`:284-300`](../../lib/widgets/charts.dart#L284)):
 
 ```dart
     leftTitles: AxisTitles(
@@ -279,9 +282,9 @@ Replace with:
     ),
 ```
 
-**C1.6 Bottom axis — only the style reference changes, plus the same no-wrap flags.** In the current bottom block ([`:301-319`](../../lib/widgets/charts.dart:301)): change `style: tickStyle()` in `axisNameWidget` to `style: tickStyle`, and `style: tickStyle()` in the tick `Text` to `style: tickStyle, maxLines: 1, softWrap: false`. **Keep** `xName`, `axisNameSize: 22`, `interval: xInterval`, `reservedSize: 22`, `space: 4`, and the `minuteLabels ? … : _formatAxisTick(value, xInterval)` expression byte-identical.
+**C1.6 Bottom axis — only the style reference changes, plus the same no-wrap flags.** In the current bottom block ([`:301-319`](../../lib/widgets/charts.dart#L301)): change `style: tickStyle()` in `axisNameWidget` to `style: tickStyle`, and `style: tickStyle()` in the tick `Text` to `style: tickStyle, maxLines: 1, softWrap: false`. **Keep** `xName`, `axisNameSize: 22`, `interval: xInterval`, `reservedSize: 22`, `space: 4`, and the `minuteLabels ? … : _formatAxisTick(value, xInterval)` expression byte-identical.
 
-**C1.7 Add the Y formatter** immediately after `_formatAxisTick` (which ends at [:339](../../lib/widgets/charts.dart:339)):
+**C1.7 Add the Y formatter** immediately after `_formatAxisTick` (which ends at [:339](../../lib/widgets/charts.dart#L339)):
 
 ```dart
 /// Y ticks read at most one decimal.
@@ -302,12 +305,12 @@ String _formatYAxisTick(double value, double interval) {
 
 ### C2 — `charts.dart`: remove the 15 FPS benchmark, keep the 300 ms one
 
-**File:** [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart:1)
+**File:** [`lib/widgets/charts.dart`](../../lib/widgets/charts.dart#L1)
 **Trace:** design-spec §3.5 (settled decision 5), analysis §2 Issue 5. **Acceptance:** design-spec §3.5 items 1–6.
 
-**C2.1** Delete [:18](../../lib/widgets/charts.dart:18) `const double _fpsBenchmark = 15.0;`. **Leave** [:17](../../lib/widgets/charts.dart:17) `const double _latencyBenchmarkMs = 300.0;` and its doc comment [:13-16](../../lib/widgets/charts.dart:13) untouched.
+**C2.1** Delete [:18](../../lib/widgets/charts.dart#L18) `const double _fpsBenchmark = 15.0;`. **Leave** [:17](../../lib/widgets/charts.dart#L17) `const double _latencyBenchmarkMs = 300.0;` and its doc comment [:13-16](../../lib/widgets/charts.dart#L13) untouched.
 
-**C2.2** Replace the `FpsChart` doc comment ([`:115-116`](../../lib/widgets/charts.dart:115)):
+**C2.2** Replace the `FpsChart` doc comment ([`:115-116`](../../lib/widgets/charts.dart#L115)):
 
 ```dart
 /// Effective inference FPS over time. Same dynamic-scaling approach; the
@@ -323,13 +326,13 @@ String _formatYAxisTick(double value, double interval) {
 /// property of this build's measured throughput.
 ```
 
-**C2.3** Inside `FpsChart.build`, delete the local at [:146](../../lib/widgets/charts.dart:146):
+**C2.3** Inside `FpsChart.build`, delete the local at [:146](../../lib/widgets/charts.dart#L146):
 
 ```dart
     final showBenchmark = maxY >= _fpsBenchmark;
 ```
 
-and delete the whole `extraLinesData` argument at [:176-187](../../lib/widgets/charts.dart:176):
+and delete the whole `extraLinesData` argument at [:176-187](../../lib/widgets/charts.dart#L176):
 
 ```dart
             extraLinesData: ExtraLinesData(
@@ -346,15 +349,15 @@ and delete the whole `extraLinesData` argument at [:176-187](../../lib/widgets/c
             ),
 ```
 
-`LineChartData.extraLinesData` is optional, so no replacement is needed. **Do not** touch `LatencyChart`'s `showBenchmark` ([:56](../../lib/widgets/charts.dart:56)) or its `extraLinesData` ([:86-97](../../lib/widgets/charts.dart:86)).
+`LineChartData.extraLinesData` is optional, so no replacement is needed. **Do not** touch `LatencyChart`'s `showBenchmark` ([:56](../../lib/widgets/charts.dart#L56)) or its `extraLinesData` ([:86-97](../../lib/widgets/charts.dart#L86)).
 
 ### C3 — `logs_reports_screen.dart`: chart-card gap and FPS title
 
-**File:** [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart:1)
+**File:** [`lib/screens/logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L1)
 **Trace:** design-spec §3.4.5 (OQ10) and §3.5 item 1. **Acceptance:** §3.4.6 item 7, §3.5 items 1–2.
 **Proves:** C5.
 
-**C3.1 Title-to-chart gap.** Current `_ChartCard.build` ([`:1795-1802`](../../lib/screens/logs_reports_screen.dart:1795)):
+**C3.1 Title-to-chart gap.** Current `_ChartCard.build` ([`:1795-1802`](../../lib/screens/logs_reports_screen.dart#L1795)):
 
 ```dart
           Text(
@@ -382,9 +385,9 @@ and delete the whole `extraLinesData` argument at [:176-187](../../lib/widgets/c
           SizedBox(height: kChartHeight, child: child),
 ```
 
-Anchor on all five lines above, not the bare `const SizedBox(height: kSpace8),` line — other `kSpace8` gaps exist in this file. Leave the class doc comment at [:1779-1781](../../lib/screens/logs_reports_screen.dart:1779) unchanged (its "benchmark lines" phrasing remains true for the latency chart).
+Anchor on all five lines above, not the bare `const SizedBox(height: kSpace8),` line — other `kSpace8` gaps exist in this file. Leave the class doc comment at [:1779-1781](../../lib/screens/logs_reports_screen.dart#L1779) unchanged (its "benchmark lines" phrasing remains true for the latency chart).
 
-**C3.2 FPS card title.** Current ([`:1305`](../../lib/screens/logs_reports_screen.dart:1305)):
+**C3.2 FPS card title.** Current ([`:1305`](../../lib/screens/logs_reports_screen.dart#L1305)):
 
 ```dart
               title: 'Frames Per Second$claim (15 FPS target)',
@@ -396,25 +399,25 @@ Anchor on all five lines above, not the bare `const SizedBox(height: kSpace8),` 
               title: 'Frames Per Second$claim',
 ```
 
-`$claim` stays so the model-filtered title still names the model. **Do not** touch [:1300](../../lib/screens/logs_reports_screen.dart:1300) (`Inference Latency$claim (300 ms benchmark)`) or [:1313](../../lib/screens/logs_reports_screen.dart:1313) (`Detection Frequency$claim`).
+`$claim` stays so the model-filtered title still names the model. **Do not** touch [:1300](../../lib/screens/logs_reports_screen.dart#L1300) (`Inference Latency$claim (300 ms benchmark)`) or [:1313](../../lib/screens/logs_reports_screen.dart#L1313) (`Detection Frequency$claim`).
 
 ### C4 — `test/widgets/charts_test.dart`: changed and new assertions
 
-**File:** [`test/widgets/charts_test.dart`](../../test/widgets/charts_test.dart:1) — full detail in §3.1.
+**File:** [`test/widgets/charts_test.dart`](../../test/widgets/charts_test.dart#L1) — full detail in §3.1.
 
 ### C5 — `test/screens/logs_reports_screen_test.dart`: two FPS title strings
 
-**File:** [`test/screens/logs_reports_screen_test.dart`](../../test/screens/logs_reports_screen_test.dart:1) — full detail in §3.2.
+**File:** [`test/screens/logs_reports_screen_test.dart`](../../test/screens/logs_reports_screen_test.dart#L1) — full detail in §3.2.
 
 ### C6 — `depth_heatmap_view.dart`: layout-aware rotation + cover geometry
 
-**File:** [`lib/widgets/depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart:1)
+**File:** [`lib/widgets/depth_heatmap_view.dart`](../../lib/widgets/depth_heatmap_view.dart#L1)
 **Trace:** design-spec §3.2 (OQ4 = Option C, OQ5 = no signature change), analysis §2 Issue 2 and §5.3. **Acceptance:** design-spec §3.2.5 items 1–9.
 **Proves:** C7.
 
-**C6.1** Delete the now-unused import at [:1](../../lib/widgets/depth_heatmap_view.dart:1): `import 'dart:math' as math;`.
+**C6.1** Delete the now-unused import at [:1](../../lib/widgets/depth_heatmap_view.dart#L1): `import 'dart:math' as math;`.
 
-**C6.2** Replace [:27-53](../../lib/widgets/depth_heatmap_view.dart:27) (from `final rotation = …` through the closing `);` of the `IgnorePointer`). Current:
+**C6.2** Replace [:27-53](../../lib/widgets/depth_heatmap_view.dart#L27) (from `final rotation = …` through the closing `);` of the `IgnorePointer`). Current:
 
 ```dart
     final rotation = ((rotationDegrees % 360) + 360) % 360;
@@ -482,19 +485,19 @@ Replace with:
     );
 ```
 
-`IgnorePointer` and `ExcludeSemantics` are kept verbatim (design-spec §3.2.6; [`depth_heatmap_view_test.dart:49-57`](../../test/widgets/depth_heatmap_view_test.dart:49) and [`depth_overlay_state_test.dart:188-189`](../../test/screens/depth_overlay_state_test.dart:188) depend on them).
+`IgnorePointer` and `ExcludeSemantics` are kept verbatim (design-spec §3.2.6; [`depth_heatmap_view_test.dart:49-57`](../../test/widgets/depth_heatmap_view_test.dart#L49) and [`depth_overlay_state_test.dart:188-189`](../../test/screens/depth_overlay_state_test.dart#L188) depend on them).
 
 ### C7 — `test/widgets/depth_heatmap_view_test.dart`: rewrite + geometry invariants
 
-**File:** [`test/widgets/depth_heatmap_view_test.dart`](../../test/widgets/depth_heatmap_view_test.dart:1) — full detail in §3.3. **Must land in the same commit as C6.**
+**File:** [`test/widgets/depth_heatmap_view_test.dart`](../../test/widgets/depth_heatmap_view_test.dart#L1) — full detail in §3.3. **Must land in the same commit as C6.**
 
 ### C8 — `ultralytics_detection_screen.dart`: one 16 dp horizontal gutter
 
-**File:** [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart:1)
+**File:** [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L1)
 **Trace:** design-spec §3.1 (settled decision 1; OQ1/OQ2/OQ3 close the adjacent questions), analysis §2 Issue 1. **Acceptance:** design-spec §3.1 criteria 1–7.
-**Proves:** C10 case A1; invariants at [`gesture_navigation_direction_test.dart:266`](../../test/screens/gesture_navigation_direction_test.dart:266).
+**Proves:** C10 case A1; invariants at [`gesture_navigation_direction_test.dart:266`](../../test/screens/gesture_navigation_direction_test.dart#L266).
 
-**C8.1 Action-row horizontal inset 12 → 16.** Current ([`:1861-1867`](../../lib/screens/ultralytics_detection_screen.dart:1861)):
+**C8.1 Action-row horizontal inset 12 → 16.** Current ([`:1861-1867`](../../lib/screens/ultralytics_detection_screen.dart#L1861)):
 
 ```dart
           padding: const EdgeInsets.fromLTRB(
@@ -519,7 +522,7 @@ Replace with:
           ),
 ```
 
-**C8.2 Give the viewport a stable key.** Current ([`:1655-1657`](../../lib/screens/ultralytics_detection_screen.dart:1655)):
+**C8.2 Give the viewport a stable key.** Current ([`:1655-1657`](../../lib/screens/ultralytics_detection_screen.dart#L1655)):
 
 ```dart
     final viewport = Container(
@@ -535,7 +538,7 @@ Replace with:
       decoration: BoxDecoration(
 ```
 
-**C8.3** Wrap the viewport in the gutter **inside** the `Semantics` node. Current ([`:1764-1778`](../../lib/screens/ultralytics_detection_screen.dart:1764)):
+**C8.3** Wrap the viewport in the gutter **inside** the `Semantics` node. Current ([`:1764-1778`](../../lib/screens/ultralytics_detection_screen.dart#L1764)):
 
 ```dart
     return GestureSurface(
@@ -582,15 +585,15 @@ Replace with:
     );
 ```
 
-**Do not** pad the `Expanded` at [:1531](../../lib/screens/ultralytics_detection_screen.dart:1531) — that would shrink the gesture region and break `surface.width == 390`. **Do not** touch the non-live panels' `EdgeInsets.all(24)` ([:1785](../../lib/screens/ultralytics_detection_screen.dart:1785), [:1821](../../lib/screens/ultralytics_detection_screen.dart:1821)) — OQ1 puts them out of scope.
+**Do not** pad the `Expanded` at [:1531](../../lib/screens/ultralytics_detection_screen.dart#L1531) — that would shrink the gesture region and break `surface.width == 390`. **Do not** touch the non-live panels' `EdgeInsets.all(24)` ([:1785](../../lib/screens/ultralytics_detection_screen.dart#L1785), [:1821](../../lib/screens/ultralytics_detection_screen.dart#L1821)) — OQ1 puts them out of scope.
 
 ### C9 — `ultralytics_detection_screen.dart`: `_AudioPill` target/capsule separation
 
-**File:** [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart:1)
+**File:** [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L1)
 **Trace:** design-spec §3.3 (settled decision 3; OQ12 defers the `StatusPill` token clean-up), analysis §2 Issue 3. **Acceptance:** design-spec §3.3.4 items 1–10.
-**Proves:** C10 cases A2/A3; must not disturb [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart:434) or [:564-576](../../test/screens/gesture_navigation_direction_test.dart:564).
+**Proves:** C10 cases A2/A3; must not disturb [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart#L434) or [:564-576](../../test/screens/gesture_navigation_direction_test.dart#L564).
 
-Replace the `Tooltip` subtree at [:1916-1968](../../lib/screens/ultralytics_detection_screen.dart:1916). Current:
+Replace the `Tooltip` subtree at [:1916-1968](../../lib/screens/ultralytics_detection_screen.dart#L1916). Current:
 
 ```dart
       child: Tooltip(
@@ -681,11 +684,11 @@ Target shape (the `Row` body — 8 dp dot, `kSpace8` gap, `Text('AUDIO ON'/'AUDI
       ),
 ```
 
-The outer `Semantics` ([:1906-1915](../../lib/screens/ultralytics_detection_screen.dart:1906)) is **unchanged**: `container: true, excludeSemantics: true, button: true, enabled: true, label: 'Audio guidance, …', onTap: onPressed`. The tooltip strings at the call site ([:1586-1588](../../lib/screens/ultralytics_detection_screen.dart:1586)) are unchanged. No `hint`, no `customSemanticsActions`, no `onLongPress` is added.
+The outer `Semantics` ([:1906-1915](../../lib/screens/ultralytics_detection_screen.dart#L1906)) is **unchanged**: `container: true, excludeSemantics: true, button: true, enabled: true, label: 'Audio guidance, …', onTap: onPressed`. The tooltip strings at the call site ([:1586-1588](../../lib/screens/ultralytics_detection_screen.dart#L1586)) are unchanged. No `hint`, no `customSemanticsActions`, no `onLongPress` is added.
 
 ### C10 — new `test/screens/detection_screen_alignment_test.dart`
 
-Full case list in §3.4. Harness: replicate the pumping setup from [`gesture_navigation_direction_test.dart:26-232`](../../test/screens/gesture_navigation_direction_test.dart:26) (the private `_FakeTtsEngine`, `mockPlatformChannels`, `pumpScreen`, `startSession`). Duplication is required because those helpers are file-private; do **not** edit the existing file to share them.
+Full case list in §3.4. Harness: replicate the pumping setup from [`gesture_navigation_direction_test.dart:26-232`](../../test/screens/gesture_navigation_direction_test.dart#L26) (the private `_FakeTtsEngine`, `mockPlatformChannels`, `pumpScreen`, `startSession`). Duplication is required because those helpers are file-private; do **not** edit the existing file to share them.
 
 ### C11 — documentation
 
@@ -701,12 +704,12 @@ Full checklist in §6.
 
 | Line | Current (quoted) | Required |
 |---|---|---|
-| [:90](../../test/widgets/charts_test.dart:90) | `expect(find.text('Latency (ms)'), findsOneWidget);` | `expect(find.text('Latency (ms)'), findsNothing);` |
-| [:95](../../test/widgets/charts_test.dart:95) | `expect(find.text('FPS'), findsOneWidget);` | `expect(find.text('FPS'), findsNothing);` |
-| [:100](../../test/widgets/charts_test.dart:100) | `expect(find.text('Detections'), findsOneWidget);` | `expect(find.text('Detections'), findsNothing);` |
-| [:203-221](../../test/widgets/charts_test.dart:203) | tuple list `(chart, xAxis, yAxis)` then `expect(find.text(yAxis), findsOneWidget);` at [:219](../../test/widgets/charts_test.dart:219) | Drop the third tuple element and the `yAxis` expectation; keep `expect(find.text(xAxis), findsOneWidget);` and `expect(tester.takeException(), isNull);`. Rename the test to `X axis names fit at narrow width and 200% text scale` (there is no Y name left to fit). |
+| [:90](../../test/widgets/charts_test.dart#L90) | `expect(find.text('Latency (ms)'), findsOneWidget);` | `expect(find.text('Latency (ms)'), findsNothing);` |
+| [:95](../../test/widgets/charts_test.dart#L95) | `expect(find.text('FPS'), findsOneWidget);` | `expect(find.text('FPS'), findsNothing);` |
+| [:100](../../test/widgets/charts_test.dart#L100) | `expect(find.text('Detections'), findsOneWidget);` | `expect(find.text('Detections'), findsNothing);` |
+| [:203-221](../../test/widgets/charts_test.dart#L203) | tuple list `(chart, xAxis, yAxis)` then `expect(find.text(yAxis), findsOneWidget);` at [:219](../../test/widgets/charts_test.dart#L219) | Drop the third tuple element and the `yAxis` expectation; keep `expect(find.text(xAxis), findsOneWidget);` and `expect(tester.takeException(), isNull);`. Rename the test to `X axis names fit at narrow width and 200% text scale` (there is no Y name left to fit). |
 
-Keep [:89](../../test/widgets/charts_test.dart:89), [:94](../../test/widgets/charts_test.dart:94), [:99](../../test/widgets/charts_test.dart:99) (the X names) untouched.
+Keep [:89](../../test/widgets/charts_test.dart#L89), [:94](../../test/widgets/charts_test.dart#L94), [:99](../../test/widgets/charts_test.dart#L99) (the X names) untouched.
 
 #### New assertions
 
@@ -746,16 +749,16 @@ New imports: `package:eyecue_flutter/theme/app_home_theme.dart`, `package:eyecue
 
 | Line | Current (quoted) | Required |
 |---|---|---|
-| [:373](../../test/screens/logs_reports_screen_test.dart:373) | `expect(find.text('Frames Per Second (15 FPS target)'), findsOneWidget);` | `expect(find.text('Frames Per Second'), findsOneWidget);` |
-| [:1584](../../test/screens/logs_reports_screen_test.dart:1584) | `expect(find.text('Frames Per Second — Obstacle Detector v2 (15 FPS target)'), findsOneWidget);` | `expect(find.text('Frames Per Second — Obstacle Detector v2'), findsOneWidget);` |
+| [:373](../../test/screens/logs_reports_screen_test.dart#L373) | `expect(find.text('Frames Per Second (15 FPS target)'), findsOneWidget);` | `expect(find.text('Frames Per Second'), findsOneWidget);` |
+| [:1584](../../test/screens/logs_reports_screen_test.dart#L1584) | `expect(find.text('Frames Per Second — Obstacle Detector v2 (15 FPS target)'), findsOneWidget);` | `expect(find.text('Frames Per Second — Obstacle Detector v2'), findsOneWidget);` |
 
-Unchanged and load-bearing: [:372](../../test/screens/logs_reports_screen_test.dart:372) (`Inference Latency (300 ms benchmark)`), [:374](../../test/screens/logs_reports_screen_test.dart:374) (`Detection Frequency`), [:1314-1326](../../test/screens/logs_reports_screen_test.dart:1314) (200 % Charts, no exception), [:1558-1591](../../test/screens/logs_reports_screen_test.dart:1558) (latency model claims). The `find.textContaining('frames —')` guards at [:1556](../../test/screens/logs_reports_screen_test.dart:1556) / [:1604](../../test/screens/logs_reports_screen_test.dart:1604) are unaffected by the FPS title change.
+Unchanged and load-bearing: [:372](../../test/screens/logs_reports_screen_test.dart#L372) (`Inference Latency (300 ms benchmark)`), [:374](../../test/screens/logs_reports_screen_test.dart#L374) (`Detection Frequency`), [:1314-1326](../../test/screens/logs_reports_screen_test.dart#L1314) (200 % Charts, no exception), [:1558-1591](../../test/screens/logs_reports_screen_test.dart#L1558) (latency model claims). The `find.textContaining('frames —')` guards at [:1556](../../test/screens/logs_reports_screen_test.dart#L1556) / [:1604](../../test/screens/logs_reports_screen_test.dart#L1604) are unaffected by the FPS title change.
 
 Optional (not required by any acceptance criterion, add only if cheap): a `findsNothing` guard for `find.textContaining('15 FPS')` on the Charts tab, which is the direct expression of settled decision 5.
 
 ### 3.3 `test/widgets/depth_heatmap_view_test.dart`
 
-#### Replace [:23-47](../../test/widgets/depth_heatmap_view_test.dart:23)
+#### Replace [:23-47](../../test/widgets/depth_heatmap_view_test.dart#L23)
 
 Current second half that must go:
 
@@ -801,7 +804,7 @@ Required shape of the rewritten test (name unchanged, `rotates and centre-crops 
 
 #### New test — `cover fit centres the rotated image and crops the overflow`
 
-The current harness ([`:8-12`](../../test/widgets/depth_heatmap_view_test.dart:8)) centres under loose constraints, so `FittedBox` sizes to its child and nothing is scaled. This test therefore pumps inside a fixed box with a non-matching aspect:
+The current harness ([`:8-12`](../../test/widgets/depth_heatmap_view_test.dart#L8)) centres under loose constraints, so `FittedBox` sizes to its child and nothing is scaled. This test therefore pumps inside a fixed box with a non-matching aspect:
 
 ```dart
 testWidgets('cover fit centres the rotated image and crops the overflow', (tester) async {
@@ -845,11 +848,11 @@ Pump `rotationDegrees` of `0, 90, 180, 270, -90` and assert `tester.widget<Rotat
 
 #### Keep unchanged
 
-[:14-21](../../test/widgets/depth_heatmap_view_test.dart:14) (`renders nothing without a depth image`) and [:49-57](../../test/widgets/depth_heatmap_view_test.dart:49) (`is excluded from semantics`).
+[:14-21](../../test/widgets/depth_heatmap_view_test.dart#L14) (`renders nothing without a depth image`) and [:49-57](../../test/widgets/depth_heatmap_view_test.dart#L49) (`is excluded from semantics`).
 
 ### 3.4 New `test/screens/detection_screen_alignment_test.dart`
 
-Harness (copied from the gesture suite, which is the only existing file that pumps the real screen): `_FakeTtsEngine`, `mockPlatformChannels`, `pumpScreen` (390 × 844 @ 3.0, `tester.view.physicalSize = Size(390*3, 844*3)`), `startSession`. Group setup mirrors [`gesture_navigation_direction_test.dart:141-156`](../../test/screens/gesture_navigation_direction_test.dart:141): `SettingsService(store: InMemorySettingsStore())`, `TtsService(engine: fake)`, `HapticsService` recording `light/medium/heavy`, `EngineCoordinator(preferredEngine: InferenceEngine.ultralytics)`, `directions` list for `onNavigateRelative`.
+Harness (copied from the gesture suite, which is the only existing file that pumps the real screen): `_FakeTtsEngine`, `mockPlatformChannels`, `pumpScreen` (390 × 844 @ 3.0, `tester.view.physicalSize = Size(390*3, 844*3)`), `startSession`. Group setup mirrors [`gesture_navigation_direction_test.dart:141-156`](../../test/screens/gesture_navigation_direction_test.dart#L141): `SettingsService(store: InMemorySettingsStore())`, `TtsService(engine: fake)`, `HapticsService` recording `light/medium/heavy`, `EngineCoordinator(preferredEngine: InferenceEngine.ultralytics)`, `directions` list for `onNavigateRelative`.
 
 | ID | Test name | Assertions |
 |---|---|---|
@@ -857,29 +860,29 @@ Harness (copied from the gesture suite, which is the only existing file that pum
 | **A2** | `the audio pill keeps a 64 by 56 target with a content-sized capsule` | `tester.getSize(find.byKey(const ValueKey('audio-pill-target')))` has `height == 56` and `width >= 64`; `capsule = tester.getSize(find.byKey(const ValueKey('audio-pill-capsule')))`; `capsule.height < 56`; with `pill = tester.getSize(find.byType(StatusPill))`, `(capsule.height - pill.height).abs() <= 2`; `tester.takeException()` is null. |
 | **A3** | `a tap in the target margin toggles mute exactly once and is not a gesture` | `settings.audioEnabled` is `true` initially. Compute `capsuleRect` and `targetRect`; assert `targetRect.bottom - capsuleRect.bottom >= 2` (the margin exists by construction), then `tester.tapAt(Offset(capsuleRect.center.dx, capsuleRect.bottom + 4))`; pump; `settings.audioEnabled` is `false`; `directions` is empty; `hapticCalls` is empty (a `singleTap` classification would have produced a wayfinding haptic and/or a pause). Then `tester.tapAt(capsuleRect.center)`; pump; `settings.audioEnabled` is `true` and `ttsEngine.spoken` contains `'Audio on'` — proving the capsule tap also toggles exactly once (no double toggle). |
 
-Deliberately **not** duplicated here: "the audio pill is one mute node with no custom action". It already exists at [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart:434) and exercises the same tree; duplicating it would double-maintain one contract. A2/A3 cover only what it does not: the target/capsule geometry and the target-margin tap.
+Deliberately **not** duplicated here: "the audio pill is one mute node with no custom action". It already exists at [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart#L434) and exercises the same tree; duplicating it would double-maintain one contract. A2/A3 cover only what it does not: the target/capsule geometry and the target-margin tap.
 
 ### 3.5 Invariant tests that must keep passing unchanged, and why each fix cannot break them
 
 | Test | Why it constrains | Why these changes are safe |
 |---|---|---|
-| [`charts_test.dart:130-163`](../../test/widgets/charts_test.dart:130) — X labels `0`, `0.5`, `1` at 200 %, width 260 | Forbids blanket precision reduction | X keeps `_formatAxisTick` and `interval: xInterval` verbatim; only the Y formatter and Y reserve change. X tick *strings* are byte-identical. |
-| [`charts_test.dart:165-198`](../../test/widgets/charts_test.dart:165) — `0`, `1.5`, `3` | Same | Same. |
-| [`charts_test.dart:104-128`](../../test/widgets/charts_test.dart:104) — `minX 0`, `maxX 9`, spots `[0,2,9]` | Plot domain | No data binding, `maxX`, `maxY` formula or spot construction is edited. |
-| [`charts_test.dart:38-83`](../../test/widgets/charts_test.dart:38) — empty/high/constant/single datasets | No throw; `'No data available yet'` | `_NoData` and the empty branches are untouched. `softWrap: false` cannot throw. |
-| [`charts_test.dart:224-280`](../../test/widgets/charts_test.dart:224) — `mixed-model data`, latest-name identity | Semantics must not change | `_sampleSummary` / `_engineSummary` are untouched; only `titlesData` and tick text change. |
-| [`semantics_test.dart:342-401`](../../test/accessibility/semantics_test.dart:342) — exact chart summary prefixes incl. `Latest 50.0 milliseconds` | Semantics byte-identical | Those values come from `_sampleSummary`'s `toStringAsFixed(1)`, not from the axis formatter. |
-| [`logs_reports_screen_test.dart:1314-1326`](../../test/screens/logs_reports_screen_test.dart:1314) — Charts at 390 × 844, 200 % | No exception/overflow | A wider left reserve narrows the plot inside a fixed `kChartHeight`; `+8 dp` of title gap grows a card inside a scrollable list. Neither introduces an unbounded axis. Must be re-run, not assumed. |
-| [`logs_reports_screen_test.dart:366-375`](../../test/screens/logs_reports_screen_test.dart:366) — three chart regions, 300 ms title | Latency benchmark preserved | The latency title and the 300 ms line are untouched. |
-| [`logs_reports_screen_test.dart:1558-1591`](../../test/screens/logs_reports_screen_test.dart:1558) — latency model claims | Latency titles unchanged | Only the FPS literal changed. |
-| [`gesture_navigation_direction_test.dart:250-268`](../../test/screens/gesture_navigation_direction_test.dart:250) — `surface.width == 390`, region vs control row | Direct guard against padding the `Expanded` | The gutter is inserted **inside** `GestureSurface`/`Semantics`, so the `Listener`'s box is untouched. |
-| [`gesture_navigation_direction_test.dart:270-292`](../../test/screens/gesture_navigation_direction_test.dart:270) — no button/tappable inside the live subtree | Gesture region stays inert | `Padding` is not interactive; nothing new is added inside the surface. |
-| [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart:434) and [:564-576](../../test/screens/gesture_navigation_direction_test.dart:564) — one mute node, button, tap action, zero custom actions, `Audio on` speech | Pill semantics contract | The outer `Semantics` is copied verbatim; `excludeSemantics: true` still suppresses the `InkWell`/`Center`/`Container` nodes; no custom action is added. |
-| [`gesture_navigation_direction_test.dart:463-480`](../../test/screens/gesture_navigation_direction_test.dart:463) — one `Detection` header node | Header identity | `_buildTopBar`'s padding and `Semantics` are untouched. |
-| [`detection_redesign_parity_test.dart:69,94`](../../test/screens/detection_redesign_parity_test.dart:69) — `AUDIO ON` from a hand-built header | Header contract | That test renders its own `Text`, not the pill. |
-| [`depth_heatmap_view_test.dart:14-21,49-57`](../../test/widgets/depth_heatmap_view_test.dart:14), [`depth_overlay_state_test.dart:188-189`](../../test/screens/depth_overlay_state_test.dart:188) — null renders nothing; pointer-inert and semantics-free | Decorative posture | `IgnorePointer` + `ExcludeSemantics` are kept verbatim. |
+| [`charts_test.dart:130-163`](../../test/widgets/charts_test.dart#L130) — X labels `0`, `0.5`, `1` at 200 %, width 260 | Forbids blanket precision reduction | X keeps `_formatAxisTick` and `interval: xInterval` verbatim; only the Y formatter and Y reserve change. X tick *strings* are byte-identical. |
+| [`charts_test.dart:165-198`](../../test/widgets/charts_test.dart#L165) — `0`, `1.5`, `3` | Same | Same. |
+| [`charts_test.dart:104-128`](../../test/widgets/charts_test.dart#L104) — `minX 0`, `maxX 9`, spots `[0,2,9]` | Plot domain | No data binding, `maxX`, `maxY` formula or spot construction is edited. |
+| [`charts_test.dart:38-83`](../../test/widgets/charts_test.dart#L38) — empty/high/constant/single datasets | No throw; `'No data available yet'` | `_NoData` and the empty branches are untouched. `softWrap: false` cannot throw. |
+| [`charts_test.dart:224-280`](../../test/widgets/charts_test.dart#L224) — `mixed-model data`, latest-name identity | Semantics must not change | `_sampleSummary` / `_engineSummary` are untouched; only `titlesData` and tick text change. |
+| [`semantics_test.dart:342-401`](../../test/accessibility/semantics_test.dart#L342) — exact chart summary prefixes incl. `Latest 50.0 milliseconds` | Semantics byte-identical | Those values come from `_sampleSummary`'s `toStringAsFixed(1)`, not from the axis formatter. |
+| [`logs_reports_screen_test.dart:1314-1326`](../../test/screens/logs_reports_screen_test.dart#L1314) — Charts at 390 × 844, 200 % | No exception/overflow | A wider left reserve narrows the plot inside a fixed `kChartHeight`; `+8 dp` of title gap grows a card inside a scrollable list. Neither introduces an unbounded axis. Must be re-run, not assumed. |
+| [`logs_reports_screen_test.dart:366-375`](../../test/screens/logs_reports_screen_test.dart#L366) — three chart regions, 300 ms title | Latency benchmark preserved | The latency title and the 300 ms line are untouched. |
+| [`logs_reports_screen_test.dart:1558-1591`](../../test/screens/logs_reports_screen_test.dart#L1558) — latency model claims | Latency titles unchanged | Only the FPS literal changed. |
+| [`gesture_navigation_direction_test.dart:250-268`](../../test/screens/gesture_navigation_direction_test.dart#L250) — `surface.width == 390`, region vs control row | Direct guard against padding the `Expanded` | The gutter is inserted **inside** `GestureSurface`/`Semantics`, so the `Listener`'s box is untouched. |
+| [`gesture_navigation_direction_test.dart:270-292`](../../test/screens/gesture_navigation_direction_test.dart#L270) — no button/tappable inside the live subtree | Gesture region stays inert | `Padding` is not interactive; nothing new is added inside the surface. |
+| [`gesture_navigation_direction_test.dart:434-461`](../../test/screens/gesture_navigation_direction_test.dart#L434) and [:564-576](../../test/screens/gesture_navigation_direction_test.dart#L564) — one mute node, button, tap action, zero custom actions, `Audio on` speech | Pill semantics contract | The outer `Semantics` is copied verbatim; `excludeSemantics: true` still suppresses the `InkWell`/`Center`/`Container` nodes; no custom action is added. |
+| [`gesture_navigation_direction_test.dart:463-480`](../../test/screens/gesture_navigation_direction_test.dart#L463) — one `Detection` header node | Header identity | `_buildTopBar`'s padding and `Semantics` are untouched. |
+| [`detection_redesign_parity_test.dart:69,94`](../../test/screens/detection_redesign_parity_test.dart#L69) — `AUDIO ON` from a hand-built header | Header contract | That test renders its own `Text`, not the pill. |
+| [`depth_heatmap_view_test.dart:14-21,49-57`](../../test/widgets/depth_heatmap_view_test.dart#L14), [`depth_overlay_state_test.dart:188-189`](../../test/screens/depth_overlay_state_test.dart#L188) — null renders nothing; pointer-inert and semantics-free | Decorative posture | `IgnorePointer` + `ExcludeSemantics` are kept verbatim. |
 | [`talkback_no_gesture_hints_test.dart`](../../test/architecture/talkback_no_gesture_hints_test.dart) — no gesture-teaching `hint`/`value` | Source guard | No `hint`, `onTapHint`, `onLongPressHint` or gesture wording is introduced anywhere. |
-| [`no_custom_engine_test.dart:11-21`](../../test/architecture/no_custom_engine_test.dart:11) — removed Custom-engine symbols | Source guard | Nothing removed-engine-related is reintroduced. |
+| [`no_custom_engine_test.dart:11-21`](../../test/architecture/no_custom_engine_test.dart#L11) — removed Custom-engine symbols | Source guard | Nothing removed-engine-related is reintroduced. |
 
 ---
 
@@ -894,7 +897,7 @@ flutter analyze --no-pub
 flutter test --no-pub
 ```
 
-Record the pass/fail totals and any pre-existing failures so a post-change delta is attributable. The last recorded state in the docs is `flutter analyze` 0 issues and `flutter test` 865 passing / 0 failing ([`docs/implementation-progress.md:31`](../implementation-progress.md:31)) — treat that as a historical reference, **not** as a substitute for the fresh baseline.
+Record the pass/fail totals and any pre-existing failures so a post-change delta is attributable. The last recorded state in the docs is `flutter analyze` 0 issues and `flutter test` 865 passing / 0 failing ([`docs/implementation-progress.md:31`](../implementation-progress.md)) — treat that as a historical reference, **not** as a substitute for the fresh baseline.
 
 ### 4.2 After each step
 
@@ -957,7 +960,7 @@ Answering the review question directly: **the smallest `reservedSize` that preve
 - **56 (design-spec): rejected** — ~6 dp short for the 4-character case at 200 %; it would clip `43.5` for a user at 200 % text scale, which is exactly the population this fix serves.
 - **48: rejected** — fits only 3-character ticks; the spec's examples are 4.
 
-Plot-width cost, using the verified paddings (`_BoundedScrollView` horizontal `kSpace16` at [`logs_reports_screen.dart:1684-1685`](../../lib/screens/logs_reports_screen.dart:1684) and `_LightCard` `EdgeInsets.all(kSpace16)` at [:1706-1708](../../lib/screens/logs_reports_screen.dart:1706)):
+Plot-width cost, using the verified paddings (`_BoundedScrollView` horizontal `kSpace16` at [`logs_reports_screen.dart:1684-1685`](../../lib/screens/logs_reports_screen.dart#L1684) and `_LightCard` `EdgeInsets.all(kSpace16)` at [:1706-1708](../../lib/screens/logs_reports_screen.dart#L1706)):
 
 | Screen width | Chart card width | Left gutter today (`24 + 38`) | Plot today | Left gutter at 64 | Plot at 64 | Δ |
 |---|---|---|---|---|---|---|
@@ -973,7 +976,7 @@ So the plot is 2 dp narrower than today, while the rotated Y name (24 dp of vert
 
 | Change | Risk | Likelihood / impact | Mitigation | Rollback |
 |---|---|---|---|---|
-| C6/C7 heatmap (highest) | `RotatedBox` under `RenderFittedBox`'s unbounded child constraints mis-sizes at 90°/270° | Low likelihood (documented behaviour, untested here) / stretched or offset heatmap | C7's geometry test pins layout size, painted rect, centring and aspect **before** any device claim | Revert the two files as a unit; fallback shape = duplicate the 8-line `applyBoxFit` math from [`bounding_box_painter.dart:89-106`](../../lib/widgets/bounding_box_painter.dart:89) into the heatmap behind a `LayoutBuilder` (analysis §5.2 option B) — still one file, painter untouched |
+| C6/C7 heatmap (highest) | `RotatedBox` under `RenderFittedBox`'s unbounded child constraints mis-sizes at 90°/270° | Low likelihood (documented behaviour, untested here) / stretched or offset heatmap | C7's geometry test pins layout size, painted rect, centring and aspect **before** any device claim | Revert the two files as a unit; fallback shape = duplicate the 8-line `applyBoxFit` math from [`bounding_box_painter.dart:89-106`](../../lib/widgets/bounding_box_painter.dart#L89) into the heatmap behind a `LayoutBuilder` (analysis §5.2 option B) — still one file, painter untouched |
 | C6/C7 | Heatmap stops matching the native preview on hardware | Medium likelihood / decorative-layer visual defect | NV2 device check with MDE on | Same single-file revert |
 | C6 | Unused `dart:math` import left behind → `flutter analyze` not clean | Certain if forgotten / zero visual impact | C6.1 explicitly deletes it | — |
 | C1 | A themed 14 sp tick makes an existing 200 % assertion fail | Low / red suite | X ticks are untouched (`_formatAxisTick` verbatim); C1e measures rather than assumes | Revert `tickStyle` to `const TextStyle(color: kHomeInkMuted, fontSize: 10)` and record the reason (design-spec §7.1 approved fallback) |
@@ -991,16 +994,16 @@ So the plot is 2 dp narrower than today, while the rotated Y name (24 dp of vert
 
 ## 6. Doc-update checklist
 
-Per [`.roo/rules/rules-frontend/06-doc-update.md`](../../.roo/rules/rules-frontend/06-doc-update.md): *"Any UI behavior change → `docs/changelog.md`; `docs/session-log.md`; `docs/implementation-progress.md`"*. No token, screen or reusable component is added (design-spec §4.2), so the theme/widget table obligation is not triggered.
+Per `.roo/rules/rules-frontend/06-doc-update.md`: *"Any UI behavior change → `docs/changelog.md`; `docs/session-log.md`; `docs/implementation-progress.md`"*. No token, screen or reusable component is added (design-spec §4.2), so the theme/widget table obligation is not triggered.
 
 | Doc | Action | Exact place |
 |---|---|---|
-| [`docs/changelog.md`](../changelog.md:1) | **Add** one `## Unreleased — Detection alignment and chart readability (2026-11-09)` section directly under the `---` at line 6, above the existing TalkBack entry, with `### Changed` bullets: 16 dp Detection gutter; heatmap `RotatedBox` + cover; `AUDIO ON` content-sized capsule with a preserved 64 × 56 target; chart Y name removed, Y ticks at most one decimal and single-line, axis/tick contrast unified on `kHomeInkMuted`, tick type now `labelSmall`, `reservedSize` 38 → 64, title gap `kSpace8` → `kSpace16`; FPS `(15 FPS target)` wording **and** its dashed line removed while the 300 ms latency benchmark is retained. State explicitly: no new token. | top of file |
-| [`docs/session-log.md`](../session-log.md:1) | **Add** a dated entry at the top (after the `---` at line 6) with Context, Objective, Changed, Verification (the exact commands run and their results), and a `Needs physical-device verification` list naming NV1/NV2/NV3/NV7 verbatim. | top of file |
-| [`docs/implementation-progress.md`](../implementation-progress.md:1) | **Add** a `## Current Unreleased Candidate (2026-11-09) — Detection Alignment and Chart Readability` section above the existing `## Implemented (2026-11-09) — TalkBack …` block (line 23), with one `- ✅` bullet per issue and one `- ✅ Current validation:` bullet carrying the real command output. Do **not** restate or edit historical totals. | above line 23 |
-| [`docs/architecture.md`](../architecture.md:1) | **No change required.** Verified: there is no chart component row and no `depth_heatmap_view.dart` row in the component table ([:334-374](../architecture.md:334)); the folder tree's single mention ([:313](../architecture.md:313)) — `charts.dart # fl_chart latency/FPS/frequency charts` — stays accurate; no token is added, so the theme/design section is untouched. | — |
+| [`docs/changelog.md`](../changelog.md) | **Add** one `## Unreleased — Detection alignment and chart readability (2026-11-09)` section directly under the `---` at line 6, above the existing TalkBack entry, with `### Changed` bullets: 16 dp Detection gutter; heatmap `RotatedBox` + cover; `AUDIO ON` content-sized capsule with a preserved 64 × 56 target; chart Y name removed, Y ticks at most one decimal and single-line, axis/tick contrast unified on `kHomeInkMuted`, tick type now `labelSmall`, `reservedSize` 38 → 64, title gap `kSpace8` → `kSpace16`; FPS `(15 FPS target)` wording **and** its dashed line removed while the 300 ms latency benchmark is retained. State explicitly: no new token. | top of file |
+| [`docs/session-log.md`](../session-log.md) | **Add** a dated entry at the top (after the `---` at line 6) with Context, Objective, Changed, Verification (the exact commands run and their results), and a `Needs physical-device verification` list naming NV1/NV2/NV3/NV7 verbatim. | top of file |
+| [`docs/implementation-progress.md`](../implementation-progress.md) | **Add** a `## Current Unreleased Candidate (2026-11-09) — Detection Alignment and Chart Readability` section above the existing `## Implemented (2026-11-09) — TalkBack …` block (line 23), with one `- ✅` bullet per issue and one `- ✅ Current validation:` bullet carrying the real command output. Do **not** restate or edit historical totals. | above line 23 |
+| [`docs/architecture.md`](../architecture.md) | **No change required.** Verified: there is no chart component row and no `depth_heatmap_view.dart` row in the component table ([:334-374](../architecture.md)); the folder tree's single mention ([:313](../architecture.md)) — `charts.dart # fl_chart latency/FPS/frequency charts` — stays accurate; no token is added, so the theme/design section is untouched. | — |
 | `.roo/rules/docs/**` | **No re-copy required**, because no allow-listed mirror source changes (`.roo/rules/docs/architecture.md` mirrors `architecture.md`, which is not edited). Editing `.roo/rules` is forbidden by this stage's scope. | — |
-| [`docs/project-status.md`](../project-status.md:1), [`docs/known-issues.md`](../known-issues.md:1), [`docs/testing-plan.md`](../testing-plan.md:1), [`docs/component-inventory.md`](../component-inventory.md:1), [`docs/ui-conventions.md`](../ui-conventions.md:1) | **Must not be touched.** Not required by the doc-update rule for a UI behaviour change, and `project-status.md`/`known-issues.md` are allow-listed mirrors — editing them would force a `.roo/rules/docs/` re-copy that this stage forbids. The pre-existing `detection_screen.dart` drift recorded in analysis §6 is **not** authorised by this feature. | — |
+| [`docs/project-status.md`](../project-status.md), [`docs/known-issues.md`](../known-issues.md), [`docs/testing-plan.md`](../testing-plan.md), [`docs/component-inventory.md`](../component-inventory.md), [`docs/ui-conventions.md`](../ui-conventions.md) | **Must not be touched.** Not required by the doc-update rule for a UI behaviour change, and `project-status.md`/`known-issues.md` are allow-listed mirrors — editing them would force a `.roo/rules/docs/` re-copy that this stage forbids. The pre-existing `detection_screen.dart` drift recorded in analysis §6 is **not** authorised by this feature. | — |
 | The two upstream pipeline docs | **Must not be touched** (source of truth, read-only for this stage). | — |
 
 ---
@@ -1036,11 +1039,11 @@ states the line is gone). NV8 stays an open recorded note.
 
 | File | Why it looks necessary | Why it is out of scope |
 |---|---|---|
-| [`lib/widgets/detection_information_overlay.dart`](../../lib/widgets/detection_information_overlay.dart:70) | After the gutter its card sits 32 dp from the screen edge while the action cards sit at 16 dp | OQ3 **accepted** the 32 dp relationship: the overlay is a card *inside* the dark viewport and must keep a gap from the viewport's rounded clip. Changing it is not authorised and no test pins its margin. |
-| [`lib/widgets/status_pill.dart`](../../lib/widgets/status_pill.dart:1) | The audio capsule is matched against it and it holds `fontSize: 13`, `width: 1.5`, `Colors.white` literals | OQ12 defers the token clean-up. If A2's ±2 dp tolerance fails, the answer is to **record** the delta, not to restyle the pill — restyling would change a device-verified status pill for a cosmetic tolerance. |
-| [`lib/widgets/bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart:89) | Its `applyBoxFit` + centring math is the geometry the heatmap must match | OQ4 = Option C: reuse the *behaviour* via `FittedBox(cover)`, not the code. The painter is the reference, not a change site. |
-| [`lib/theme/app_home_theme.dart`](../../lib/theme/app_home_theme.dart:89) | Chart ticks now come from `labelSmall` (14 sp) | Reading a theme role is not editing a theme. No token is added or changed; `labelSmall` is consumed as-is. |
-| [`lib/theme/app_spacing.dart`](../../lib/theme/app_spacing.dart:1) | A "shared gutter" token (`kScreenHorizontalInset`) is tempting | Design-spec §3.1 rejects the alias: `kSpace16` is already documented as the screen/card padding token, and two names for one value with one consumer is worse. |
-| `lib/screens/detection_screen.dart` | Historically the Detection screen | **It does not exist.** The only Detection screen is [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart:231); [`no_custom_engine_test.dart`](../../test/architecture/no_custom_engine_test.dart:11) fails the suite if the Custom engine returns. The stale `architecture.md` row is pre-existing drift (analysis §6) and is not authorised here. |
+| [`lib/widgets/detection_information_overlay.dart`](../../lib/widgets/detection_information_overlay.dart#L70) | After the gutter its card sits 32 dp from the screen edge while the action cards sit at 16 dp | OQ3 **accepted** the 32 dp relationship: the overlay is a card *inside* the dark viewport and must keep a gap from the viewport's rounded clip. Changing it is not authorised and no test pins its margin. |
+| [`lib/widgets/status_pill.dart`](../../lib/widgets/status_pill.dart#L1) | The audio capsule is matched against it and it holds `fontSize: 13`, `width: 1.5`, `Colors.white` literals | OQ12 defers the token clean-up. If A2's ±2 dp tolerance fails, the answer is to **record** the delta, not to restyle the pill — restyling would change a device-verified status pill for a cosmetic tolerance. |
+| [`lib/widgets/bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L89) | Its `applyBoxFit` + centring math is the geometry the heatmap must match | OQ4 = Option C: reuse the *behaviour* via `FittedBox(cover)`, not the code. The painter is the reference, not a change site. |
+| [`lib/theme/app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L89) | Chart ticks now come from `labelSmall` (14 sp) | Reading a theme role is not editing a theme. No token is added or changed; `labelSmall` is consumed as-is. |
+| [`lib/theme/app_spacing.dart`](../../lib/theme/app_spacing.dart#L1) | A "shared gutter" token (`kScreenHorizontalInset`) is tempting | Design-spec §3.1 rejects the alias: `kSpace16` is already documented as the screen/card padding token, and two names for one value with one consumer is worse. |
+| `lib/screens/detection_screen.dart` | Historically the Detection screen | **It does not exist.** The only Detection screen is [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L231); [`no_custom_engine_test.dart`](../../test/architecture/no_custom_engine_test.dart#L11) fails the suite if the Custom engine returns. The stale `architecture.md` row is pre-existing drift (analysis §6) and is not authorised here. |
 | `test/screens/gesture_navigation_direction_test.dart` | It asserts the audio pill and the gesture region | Its assertions must **keep passing unchanged**; it is not a change site. The new file covers only the geometry it does not. |
-| [`test/screens/detection_redesign_parity_test.dart`](../../test/screens/detection_redesign_parity_test.dart:69) | It mentions `AUDIO ON` | It renders its own `Text`; it does not import `_AudioPill` (private) and cannot be affected. |
+| [`test/screens/detection_redesign_parity_test.dart`](../../test/screens/detection_redesign_parity_test.dart#L69) | It mentions `AUDIO ON` | It renders its own `Text`; it does not import `_AudioPill` (private) and cannot be affected. |

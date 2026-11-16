@@ -1,5 +1,8 @@
 # EyeCue — Detection Screen Visual Redesign: Analysis
 
+> **Current status (2026-11-16):** This staged redesign record describes the earlier two-engine screen set. Detection is now hosted by [`EngineDetectionScreen`](../../lib/screens/engine_detection_screen.dart) and rendered by [`UltralyticsDetectionScreen`](../../lib/screens/ultralytics_detection_screen.dart); the Custom `detection_screen.dart` was removed in commit [`aba93e5`](https://github.com/nmarcusg/eyecue_flutter/commit/aba93e513ac9a54af733b6c3c9ec15c92e665db9). Keep the visual decisions as historical context and use [`visual-redesign.md`](visual-redesign.md) plus [`detection-alignment-charts-plan.md`](detection-alignment-charts-plan.md) for shipped refinements.
+
+
 > **Stage:** Analysis (read-only). No application code, tests, assets,
 > `pubspec.yaml`, or other project files were modified to produce this document.
 > **Date:** 2026-09-10
@@ -44,22 +47,22 @@ boxes, labels, warning banner, gesture hint) must be preserved. See §7.
 
 ### 2.1 Screen ownership and construction
 
-The Detect tab is built by [`EngineDetectionScreen`](../lib/screens/engine_detection_screen.dart:15),
-which owns an [`EngineCoordinator`](../lib/services/engine_coordinator.dart:14)
+The Detect tab is built by [`EngineDetectionScreen`](../../lib/screens/engine_detection_screen.dart#L15),
+which owns an [`EngineCoordinator`](../../lib/services/engine_coordinator.dart#L14)
 and switches between two child screens by active engine:
 
 | Active engine | Child screen | File |
 |---|---|---|
-| `InferenceEngine.custom` | [`DetectionScreen`](../lib/screens/detection_screen.dart:48) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:48) |
-| `InferenceEngine.ultralytics` | [`UltralyticsDetectionScreen`](../lib/screens/ultralytics_detection_screen.dart:26) | [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:26) |
+| `InferenceEngine.custom` | `DetectionScreen` | `detection_screen.dart` |
+| `InferenceEngine.ultralytics` | [`UltralyticsDetectionScreen`](../../lib/screens/ultralytics_detection_screen.dart#L26) | [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L26) |
 
-[`EngineDetectionScreen`](../lib/screens/engine_detection_screen.dart:98) wraps the
+[`EngineDetectionScreen`](../../lib/screens/engine_detection_screen.dart#L98) wraps the
 active child in a `Stack` and overlays a temporary-fallback notice
-([`_buildFallbackNotice`](../lib/screens/engine_detection_screen.dart:144)) when
+([`_buildFallbackNotice`](../../lib/screens/engine_detection_screen.dart)) when
 the coordinator reports a one-shot fallback. The Detect tab is constructed by
-[`AppShellState._buildPage`](../lib/navigation/app_shell.dart:100) as tab index 1
+[`AppShellState._buildPage`](../../lib/navigation/app_shell.dart#L100) as tab index 1
 inside the shell's `IndexedStack`, and inherits the shell's `Scaffold` and
-persistent four-tab [`NavigationBar`](../lib/navigation/app_shell.dart:139).
+persistent four-tab [`NavigationBar`](../../lib/navigation/app_shell.dart#L139).
 
 **Both child screens share the same visual composition** (top bar → main area →
 fixed-height controls panel) and the same widget vocabulary. The redesign must
@@ -69,19 +72,19 @@ cover **both** so the two engines remain visually consistent.
 
 | Behavior | Location | Preservation requirement |
 |---|---|---|
-| Camera lifecycle (permission, `availableCameras`, `CameraController`, YUV420 image stream) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:192) | Unchanged. |
-| Frame-dropping busy gate (`_isInferring`) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:643) | Unchanged. |
-| Pause / low-power dispatch throttle | [`detection_screen.dart`](../lib/screens/detection_screen.dart:637) | Unchanged. |
-| Orientation math (`BoxTransform`) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:663) | Unchanged. |
-| Bounding-box overlay math (`applyBoxFit` + `FittedBox`) | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:89) | Unchanged. |
-| Thesis gestures (single tap, two-finger double-tap, three-finger tap, swipe-down) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:432), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:365) | Unchanged. |
-| TTS announcements (start/stop, detections, scan, repeat, mute) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:294) | Unchanged. |
-| Haptics (light/medium/heavy ticks) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:295) | Unchanged. |
-| Telemetry recording (samples, recovery, failures) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:455) | Unchanged. |
-| Correction flow (`showDetectionCorrectionSheet` + snackbar + TTS) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:374) | Unchanged. |
-| Runtime-state reporting to the coordinator | [`detection_screen.dart`](../lib/screens/detection_screen.dart:547) | Unchanged. |
-| Engine fallback notice | [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart:144) | Unchanged. |
-| Navigation (shell tabs, Logs & Reports pushed route) | [`app_shell.dart`](../lib/navigation/app_shell.dart:126) | Unchanged. |
+| Camera lifecycle (permission, `availableCameras`, `CameraController`, YUV420 image stream) | `detection_screen.dart` | Unchanged. |
+| Frame-dropping busy gate (`_isInferring`) | `detection_screen.dart` | Unchanged. |
+| Pause / low-power dispatch throttle | `detection_screen.dart` | Unchanged. |
+| Orientation math (`BoxTransform`) | `detection_screen.dart` | Unchanged. |
+| Bounding-box overlay math (`applyBoxFit` + `FittedBox`) | [`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L89) | Unchanged. |
+| Thesis gestures (single tap, two-finger double-tap, three-finger tap, swipe-down) | `detection_screen.dart`, [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L365) | Unchanged. |
+| TTS announcements (start/stop, detections, scan, repeat, mute) | `detection_screen.dart` | Unchanged. |
+| Haptics (light/medium/heavy ticks) | `detection_screen.dart` | Unchanged. |
+| Telemetry recording (samples, recovery, failures) | `detection_screen.dart` | Unchanged. |
+| Correction flow (`showDetectionCorrectionSheet` + snackbar + TTS) | `detection_screen.dart` | Unchanged. |
+| Runtime-state reporting to the coordinator | `detection_screen.dart` | Unchanged. |
+| Engine fallback notice | [`engine_detection_screen.dart`](../../lib/screens/engine_detection_screen.dart) | Unchanged. |
+| Navigation (shell tabs, Logs & Reports pushed route) | [`app_shell.dart`](../../lib/navigation/app_shell.dart#L126) | Unchanged. |
 
 ### 2.3 Current structure (both child screens)
 
@@ -96,7 +99,7 @@ Scaffold
                 └── _buildControlsPanel() // warning banner + detection list + button Wrap + gesture hint
 ```
 
-The camera viewport ([`_buildViewport`](../lib/screens/detection_screen.dart:957))
+The camera viewport (`_buildViewport`)
 is a `Stack` of: `FittedBox`(camera preview) → `CustomPaint`(bounding boxes) →
 `_GestureHint` → `GestureSurface`(transparent gesture capture).
 
@@ -104,16 +107,16 @@ is a `Stack` of: `FittedBox`(camera preview) → `CustomPaint`(bounding boxes) �
 
 | Element | Current value | Location |
 |---|---|---|
-| Status pill colors | `#455A64` stopped, `#F57F17` paused, `#1B5E20` detecting, `#0D47A1` loading | [`detection_screen.dart`](../lib/screens/detection_screen.dart:815), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:418) |
-| Controls panel background | `theme.colorScheme.surfaceContainerHigh` | [`detection_screen.dart`](../lib/screens/detection_screen.dart:1034) |
-| Gesture hint | `Color(0xCC000000)`, radius 20, `Colors.white24` border | [`detection_screen.dart`](../lib/screens/detection_screen.dart:1143) |
-| Warning banner | `#B71C1C`, radius 12, white 2px border | [`warning_banner.dart`](../lib/widgets/warning_banner.dart:20) |
-| Priority badge | `#B71C1C`/`#F9A825`/`#1B5E20`, radius 6 | [`priority_badge.dart`](../lib/widgets/priority_badge.dart:18) |
-| Detection card | `theme.colorScheme.surface`, radius 12 | [`detection_card.dart`](../lib/widgets/detection_card.dart:33) |
-| Bounding-box palette | 8-color cycle | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:65) |
+| Status pill colors | `#455A64` stopped, `#F57F17` paused, `#1B5E20` detecting, `#0D47A1` loading | `detection_screen.dart`, [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L418) |
+| Controls panel background | `theme.colorScheme.surfaceContainerHigh` | `detection_screen.dart` |
+| Gesture hint | `Color(0xCC000000)`, radius 20, `Colors.white24` border | `detection_screen.dart` |
+| Warning banner | `#B71C1C`, radius 12, white 2px border | [`warning_banner.dart`](../../lib/widgets/warning_banner.dart#L20) |
+| Priority badge | `#B71C1C`/`#F9A825`/`#1B5E20`, radius 6 | [`priority_badge.dart`](../../lib/widgets/priority_badge.dart#L18) |
+| Detection card | `theme.colorScheme.surface`, radius 12 | [`detection_card.dart`](../../lib/widgets/detection_card.dart#L33) |
+| Bounding-box palette | 8-color cycle | [`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L65) |
 
 Note: several of these values **already exist as tokens** in
-[`app_colors.dart`](../lib/theme/app_colors.dart:1) (`kStatusBlueGrey`,
+[`app_colors.dart`](../../lib/theme/app_colors.dart#L1) (`kStatusBlueGrey`,
 `kStatusAmber`, `kStatusGreen`, `kStatusBlue`, `kWarningRed`, `kMediumAmber`,
 `kLowGreen`, `kOverlayBlack`, `kDetectionPalette`) but the widgets currently
 hardcode the literals instead of referencing the tokens. This is a
@@ -128,16 +131,16 @@ token-consistency gap the redesign should close (see §6).
 | Material | `package:flutter/material.dart` | `Scaffold`, `SafeArea`, `LayoutBuilder`, `Column`, `Stack`, `FittedBox`, `CustomPaint`, `IconButton`, `Wrap`, `ListView`, `Card`, `SnackBar` |
 | Camera | [`camera`](https://pub.dev/packages/camera) | `CameraController`, `CameraPreview`, `CameraImage` |
 | Ultralytics | [`ultralytics_yolo`](https://pub.dev/packages/ultralytics_yolo) | `YOLOView`, `YOLOViewController` |
-| Detection model | [`detection.dart`](../lib/models/detection.dart:1) | `Detection` (classId, label, confidence, box) |
-| Detection info | [`detection_info.dart`](../lib/models/detection_info.dart:1) | `DetectionInfo`, `ObjectPriority`, `semanticLabel` |
-| Runtime state | [`detection_runtime_state.dart`](../lib/models/detection_runtime_state.dart:1) | `DetectionRuntimeState`, `DetectionFailure` |
-| Assistive controller | [`assistive_detection_controller.dart`](../lib/services/assistive_detection_controller.dart:1) | Shared post-detection behavior |
-| Gesture controller | [`gesture_controller.dart`](../lib/services/gesture_controller.dart:1) | `EyeCueGesture` state machine |
-| Theme (global) | [`app_theme.dart`](../lib/theme/app_theme.dart:13) | Dark `buildEyeCueTheme()` currently inherited by Detection |
-| Light-theme pattern | [`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50) | `buildHomeTheme()` — established light `ThemeData` + IBM Plex Sans + shadow tokens |
-| Tokens | [`app_colors.dart`](../lib/theme/app_colors.dart:1), [`app_spacing.dart`](../lib/theme/app_spacing.dart:1), [`app_radii.dart`](../lib/theme/app_radii.dart:1), [`app_typography.dart`](../lib/theme/app_typography.dart:1) | Semantic color/spacing/radius/type tokens |
-| Reference implementations | [`home_screen.dart`](../lib/screens/home_screen.dart:22), [`help_screen.dart`](../lib/screens/help_screen.dart:17), [`settings_screen.dart`](../lib/screens/settings_screen.dart:22) | Light-theme, responsive, accessibility pattern to follow |
-| Widgets | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:26), [`gesture_surface.dart`](../lib/widgets/gesture_surface.dart:11), [`detection_card.dart`](../lib/widgets/detection_card.dart:11), [`priority_badge.dart`](../lib/widgets/priority_badge.dart:9), [`warning_banner.dart`](../lib/widgets/warning_banner.dart:4), [`status_pill.dart`](../lib/widgets/status_pill.dart:5), [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart:12), [`detection_correction_sheet.dart`](../lib/widgets/detection_correction_sheet.dart:8), [`accessible_button.dart`](../lib/widgets/accessible_button.dart:8) | Detection UI vocabulary |
+| Detection model | [`detection.dart`](../../lib/models/detection.dart#L1) | `Detection` (classId, label, confidence, box) |
+| Detection info | [`detection_info.dart`](../../lib/models/detection_info.dart#L1) | `DetectionInfo`, `ObjectPriority`, `semanticLabel` |
+| Runtime state | [`detection_runtime_state.dart`](../../lib/models/detection_runtime_state.dart#L1) | `DetectionRuntimeState`, `DetectionFailure` |
+| Assistive controller | [`assistive_detection_controller.dart`](../../lib/services/assistive_detection_controller.dart#L1) | Shared post-detection behavior |
+| Gesture controller | [`gesture_controller.dart`](../../lib/services/gesture_controller.dart#L1) | `EyeCueGesture` state machine |
+| Theme (global) | [`app_theme.dart`](../../lib/theme/app_theme.dart#L13) | Dark `buildEyeCueTheme()` currently inherited by Detection |
+| Light-theme pattern | [`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50) | `buildHomeTheme()` — established light `ThemeData` + IBM Plex Sans + shadow tokens |
+| Tokens | [`app_colors.dart`](../../lib/theme/app_colors.dart#L1), [`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1), [`app_radii.dart`](../../lib/theme/app_radii.dart#L1), [`app_typography.dart`](../../lib/theme/app_typography.dart#L1) | Semantic color/spacing/radius/type tokens |
+| Reference implementations | [`home_screen.dart`](../../lib/screens/home_screen.dart#L22), [`help_screen.dart`](../../lib/screens/help_screen.dart#L17), [`settings_screen.dart`](../../lib/screens/settings_screen.dart#L22) | Light-theme, responsive, accessibility pattern to follow |
+| Widgets | [`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L26), [`gesture_surface.dart`](../../lib/widgets/gesture_surface.dart#L11), [`detection_card.dart`](../../lib/widgets/detection_card.dart#L11), [`priority_badge.dart`](../../lib/widgets/priority_badge.dart#L9), [`warning_banner.dart`](../../lib/widgets/warning_banner.dart#L4), [`status_pill.dart`](../../lib/widgets/status_pill.dart#L5), [`detection_state_panel.dart`](../../lib/widgets/detection_state_panel.dart#L12), [`detection_correction_sheet.dart`](../../lib/widgets/detection_correction_sheet.dart#L8), [`accessible_button.dart`](../../lib/widgets/accessible_button.dart#L8) | Detection UI vocabulary |
 
 No unrelated routes or services were inspected. No repository-wide audit was
 performed.
@@ -187,7 +190,7 @@ rounded-card** composition:
 ### 4.2 Authoritative overrides (from the extracted token/spec markdown)
 
 The extracted token/spec document
-([`extracted-design-tokens-screenshot.md`](../design-reference/tokens/extracted-design-tokens-screenshot.md:117))
+([`extracted-design-tokens-screenshot.md`](../../design-reference/tokens/extracted-design-tokens-screenshot.md))
 **contains a Detection Screen section** (Section 3.B) and is authoritative over
 the target screenshot. It states:
 
@@ -210,7 +213,7 @@ the target screenshot. It states:
 
 ### 4.3 Legacy Detection references (`design-reference/old_screen/`)
 
-**ON state** ([`detection_screen.jpg`](../design-reference/old_screen/detection_screen.jpg)):
+**ON state** ([`detection_screen.jpg`](../../design-reference/old_screen/detection_screen.jpg)):
 dark charcoal background; bold white `Detection Mode` title; green-outlined
 `Detecting` status pill; dark circular mute button; live camera feed with a
 semi-transparent gesture pill (`Gestures active · Ultralytics engine`); a
@@ -218,7 +221,7 @@ performance line (`Ultralytics GPU→CPU · 19.0 FPS · 56.8 ms infer / 62.3 ms
 native total`); a red high-priority warning card; `Stop` and `Pause` capsule
 buttons; a yellow/black overflow banner; and the dark 4-tab bottom nav.
 
-**OFF state** ([`detection_screen_off.jpg`](../design-reference/old_screen/detection_screen_off.jpg)):
+**OFF state** ([`detection_screen_off.jpg`](../../design-reference/old_screen/detection_screen_off.jpg)):
 dark background; `Detection Mode` title; `Stopped` status pill; mute button;
 blacked-out preview with `Detection is off.` and a yellow `Start Detection`
 capsule; a lower control deck (`Start`, `Pause`, `Repeat`, `Correct last
@@ -235,9 +238,9 @@ fixed-height controls region was introduced to fix.
 The Home and Settings references establish the light palette, strong black
 typography, muted secondary text, cyan accent, generous whitespace, and rounded
 surfaces that the Detection redesign should reuse. The completed Home, Help, and
-Settings implementations ([`home_screen.dart`](../lib/screens/home_screen.dart:22),
-[`help_screen.dart`](../lib/screens/help_screen.dart:17),
-[`settings_screen.dart`](../lib/screens/settings_screen.dart:22)) are the
+Settings implementations ([`home_screen.dart`](../../lib/screens/home_screen.dart#L22),
+[`help_screen.dart`](../../lib/screens/help_screen.dart#L17),
+[`settings_screen.dart`](../../lib/screens/settings_screen.dart#L22)) are the
 concrete reference for how that language is applied in code.
 
 ### 4.5 Design-token PNG (`design-reference/tokens/design-tokens.png`)
@@ -312,8 +315,8 @@ light, card-based composition, following the Home/Help/Settings pattern:
 ## 7. Theme reuse vs. generalization (RESOLVED — reuse `buildHomeTheme()` as-is, scoped)
 
 The existing light tokens are **Home-scoped**: `kHome*` in
-[`app_colors.dart`](../lib/theme/app_colors.dart:114) and `buildHomeTheme()` in
-[`app_home_theme.dart`](../lib/theme/app_home_theme.dart:50). The completed Help
+[`app_colors.dart`](../../lib/theme/app_colors.dart) and `buildHomeTheme()` in
+[`app_home_theme.dart`](../../lib/theme/app_home_theme.dart#L50). The completed Help
 and Settings features already established the precedent of **reusing
 `buildHomeTheme()` and the `kHome*` tokens as-is** for a non-Home screen, scoped
 to that screen's subtree only.
@@ -335,7 +338,7 @@ real-time dark surface. The recommended treatment:
 - **The light theme applies to the screen chrome** (background, header, cards,
   controls panel), **not to the camera viewport**. The viewport keeps a dark
   surface (`surface-dark` `#0A0A0A`, which is the existing
-  [`kHomeInk`](../lib/theme/app_colors.dart:124) token) so the live feed and the
+  [`kHomeInk`](../../lib/theme/app_colors.dart) token) so the live feed and the
   overlay remain legible.
 - **The viewport is a rounded dark card** (radius `kRadius24`) sitting on the
   light background, matching the target's `surface-dark` viewport.
@@ -346,14 +349,14 @@ real-time dark surface. The recommended treatment:
 ### 7.2 Overlay legibility
 
 - **Bounding boxes and labels** are drawn by
-  [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart:26) on the dark
+  [`BoundingBoxPainter`](../../lib/widgets/bounding_box_painter.dart#L26) on the dark
   camera surface. The painter's palette and white label text are already
   high-contrast on dark; the redesign must **not** move the overlay onto a light
   surface.
-- **The warning banner** ([`warning_banner.dart`](../lib/widgets/warning_banner.dart:4))
+- **The warning banner** ([`warning_banner.dart`](../../lib/widgets/warning_banner.dart#L4))
   is a high-contrast red surface with white text; it must remain high-contrast
   regardless of the surrounding light chrome.
-- **The gesture hint** ([`_GestureHint`](../lib/screens/detection_screen.dart:1135))
+- **The gesture hint** (`_GestureHint`)
   is a semi-transparent black pill with white text over the viewport; it must
   remain legible on the dark viewport.
 - **The transcript bar** (target) is a dark charcoal surface with white text
@@ -378,7 +381,7 @@ the core composition.
 
 **New-token decision (RESOLVED — no new tokens):** the target's amber
 detection-box color (`#F59E0B`) and the transcript-bar charcoal (`#202022`) are
-**not** added to [`app_colors.dart`](../lib/theme/app_colors.dart:1). The
+**not** added to [`app_colors.dart`](../../lib/theme/app_colors.dart#L1). The
 existing token set already covers both needs:
 
 - The amber box treatment is **not adopted** — the painter keeps its existing
@@ -399,7 +402,7 @@ value is actually used by UI code).
 
 ## 8. Accessibility considerations (including the no-live-region rule)
 
-Per [`ui-conventions.md`](ui-conventions.md) and the accessibility rule:
+Per `ui-conventions.md` and the accessibility rule:
 
 - Every interactive control (status pill, mute button, Start/Stop, Pause/Resume,
   Repeat, Scan, Correct, Report detection, correction sheet controls) must keep a
@@ -423,11 +426,11 @@ Current live regions on Detection:
 
 | Widget | Live region? | Rationale |
 |---|---|---|
-| [`StatusPill`](../lib/widgets/status_pill.dart:13) | **Yes** (`liveRegion: true`) | Deliberate status change (Detecting/Paused/Stopped). |
-| [`WarningBanner`](../lib/widgets/warning_banner.dart:11) | **Yes** (`liveRegion: true`) | Deliberate high-priority warning. |
-| [`DetectionStatePanel`](../lib/widgets/detection_state_panel.dart:38) | **Yes** (`liveRegion: true`) | Deliberate runtime/recovery/failure state. |
-| [`DetectionCard`](../lib/widgets/detection_card.dart:26) | **No** | Per-frame detection content — correctly not a live region. |
-| [`EngineDetectionScreen`](../lib/screens/engine_detection_screen.dart:152) fallback notice | **Yes** (`liveRegion: true`) | Deliberate fallback change. |
+| [`StatusPill`](../../lib/widgets/status_pill.dart#L13) | **Yes** (`liveRegion: true`) | Deliberate status change (Detecting/Paused/Stopped). |
+| [`WarningBanner`](../../lib/widgets/warning_banner.dart#L11) | **Yes** (`liveRegion: true`) | Deliberate high-priority warning. |
+| [`DetectionStatePanel`](../../lib/widgets/detection_state_panel.dart#L38) | **Yes** (`liveRegion: true`) | Deliberate runtime/recovery/failure state. |
+| [`DetectionCard`](../../lib/widgets/detection_card.dart#L26) | **No** | Per-frame detection content — correctly not a live region. |
+| [`EngineDetectionScreen`](../../lib/screens/engine_detection_screen.dart) fallback notice | **Yes** (`liveRegion: true`) | Deliberate fallback change. |
 
 **Decision (recommended):** the redesign must **preserve this exact split**. The
 restyle must not:
@@ -437,7 +440,7 @@ restyle must not:
   `DetectionStatePanel`, or the fallback notice.
 
 The existing semantics tests
-([`semantics_test.dart`](../test/accessibility/semantics_test.dart:156)) assert
+([`semantics_test.dart`](../../test/accessibility/semantics_test.dart#L156)) assert
 the live-region flags for `StatusPill` and `WarningBanner`; the redesign must
 keep those tests passing.
 
@@ -449,19 +452,19 @@ The design source states: *"Only render Pause and Quick Scan as visible action
 cards. Do not render Start, Stop, or Repeat buttons."* However, the current task
 explicitly requires **preserving existing behavior**, and the current
 implementation renders Start/Stop, Pause/Resume, Repeat, Correct, and Scan as
-visible `AccessibleButton`s ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1047)).
+visible `AccessibleButton`s (`detection_screen.dart`).
 
 **Codebase confirmation:** both child screens render the same five-button
-`Wrap` — `Stop`/`Start` ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1052),
-[`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:640)),
-`Resume`/`Pause` ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1059),
-[`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:647)),
-`Repeat` ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1064),
-[`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:652)),
-`Correct last announcement` ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1074),
-[`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:662)),
-and `Scan` ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1083),
-[`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:671)).
+`Wrap` — `Stop`/`Start` (`detection_screen.dart`,
+[`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L640)),
+`Resume`/`Pause` (`detection_screen.dart`,
+[`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L647)),
+`Repeat` (`detection_screen.dart`,
+[`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L652)),
+`Correct last announcement` (`detection_screen.dart`,
+[`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L662)),
+and `Scan` (`detection_screen.dart`,
+[`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L671)).
 
 **Decision (RESOLVED — preserve all controls, restyle visually):** **Preserve the
 existing controls.** The design source's "Pause + Quick Scan only" constraint is a
@@ -473,7 +476,7 @@ must **not remove** Start/Stop, Repeat, or Correct, because:
 
 - Start/Stop is the accessible non-gesture fallback for the two-finger
   double-tap gesture. The accessibility rule
-  ([`.roo/rules/rules-frontend/04-accessibility.md`](../.roo/rules/rules-frontend/04-accessibility.md:1))
+  (`.roo/rules/rules-frontend/04-accessibility.md`)
   requires every interactive control to be usable through TalkBack without
   relying on sight, and the gesture contract must never be the sole interaction —
   removing the visible Start/Stop button would leave the two-finger double-tap as
@@ -495,7 +498,7 @@ target's visual treatment to them. The design source's constraint is recorded as
 |---|---|
 | `design-tokens.png` (visual summary) | `8, 16, 24, 32, 48, 64` |
 | `extracted-design-tokens-screenshot.md` (authoritative) | `6, 8, 12, 16, 20, 24` |
-| [`app_spacing.dart`](../lib/theme/app_spacing.dart:1) | `1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 32` |
+| [`app_spacing.dart`](../../lib/theme/app_spacing.dart#L1) | `1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 32` |
 
 **Decision (recommended):** the extracted Markdown is authoritative over the PNG
 (established Home/Settings precedent). Detection uses the existing `kSpace*`
@@ -536,26 +539,26 @@ Flutter pixel literals. Follow the Home/Help/Settings responsive pattern
 
 | File | Likely role |
 |---|---|
-| [`lib/screens/detection_screen.dart`](../lib/screens/detection_screen.dart:48) | Primary redesign target (Custom engine): light `Theme` wrapper, header, dark rounded viewport, restyled controls panel |
-| [`lib/screens/ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:26) | Primary redesign target (Ultralytics engine): same composition for visual consistency |
-| [`lib/screens/engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart:15) | Fallback-notice restyle only (if needed for light-surface consistency) |
-| [`lib/widgets/status_pill.dart`](../lib/widgets/status_pill.dart:5) | Token-consistent restyle (preserve live region) |
-| [`lib/widgets/warning_banner.dart`](../lib/widgets/warning_banner.dart:4) | Token-consistent restyle (preserve live region) |
-| [`lib/widgets/detection_card.dart`](../lib/widgets/detection_card.dart:11) | Token-consistent restyle (preserve semantics; no live region) |
-| [`lib/widgets/priority_badge.dart`](../lib/widgets/priority_badge.dart:9) | Token-consistent restyle |
-| [`lib/widgets/accessible_button.dart`](../lib/widgets/accessible_button.dart:8) | Only if a shared-button change is proven necessary; otherwise leave unchanged and use the existing API |
-| [`lib/widgets/detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart:12) | Token-consistent restyle (preserve live region) |
-| [`lib/widgets/detection_correction_sheet.dart`](../lib/widgets/detection_correction_sheet.dart:8) | Token-consistent restyle (preserve semantics) |
-| [`lib/widgets/bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:26) | **Overlay math must not change**; palette sourcing may be reconciled to `kDetectionPalette` (identical 8 colors — see §14 item 2 / §16). The amber box treatment is **not** adopted, so the rendered colors are unchanged. |
-| [`lib/widgets/gesture_surface.dart`](../lib/widgets/gesture_surface.dart:11) | **No change** — transparent capture layer |
-| [`lib/theme/app_colors.dart`](../lib/theme/app_colors.dart:1) | **No new token** — the amber box (`#F59E0B`) and transcript charcoal (`#202022`) are not adopted (see §7.4 / §14 items 2–3, 7). Existing tokens suffice. |
-| [`test/widget_test.dart`](../test/widget_test.dart:12) | Extend with Detection visual/state regression assertions (no new file) |
-| [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:119) | Add Detection semantics + 200% text-scale coverage (no new file) |
-| [`test/widgets/widgets_test.dart`](../test/widgets/widgets_test.dart:11) | Extend widget-level assertions if a widget's visual contract changes |
-| [`docs/architecture.md`](../docs/architecture.md:1) | Doc update (Detection component row / theme section) if a token/theme change lands |
-| [`docs/changelog.md`](../docs/changelog.md:1) | Doc update |
-| [`docs/implementation-progress.md`](../docs/implementation-progress.md:1) | Doc update |
-| [`docs/session-log.md`](../docs/session-log.md:1) | Doc update |
+| `lib/screens/detection_screen.dart` | Primary redesign target (Custom engine): light `Theme` wrapper, header, dark rounded viewport, restyled controls panel |
+| [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L26) | Primary redesign target (Ultralytics engine): same composition for visual consistency |
+| [`lib/screens/engine_detection_screen.dart`](../../lib/screens/engine_detection_screen.dart#L15) | Fallback-notice restyle only (if needed for light-surface consistency) |
+| [`lib/widgets/status_pill.dart`](../../lib/widgets/status_pill.dart#L5) | Token-consistent restyle (preserve live region) |
+| [`lib/widgets/warning_banner.dart`](../../lib/widgets/warning_banner.dart#L4) | Token-consistent restyle (preserve live region) |
+| [`lib/widgets/detection_card.dart`](../../lib/widgets/detection_card.dart#L11) | Token-consistent restyle (preserve semantics; no live region) |
+| [`lib/widgets/priority_badge.dart`](../../lib/widgets/priority_badge.dart#L9) | Token-consistent restyle |
+| [`lib/widgets/accessible_button.dart`](../../lib/widgets/accessible_button.dart#L8) | Only if a shared-button change is proven necessary; otherwise leave unchanged and use the existing API |
+| [`lib/widgets/detection_state_panel.dart`](../../lib/widgets/detection_state_panel.dart#L12) | Token-consistent restyle (preserve live region) |
+| [`lib/widgets/detection_correction_sheet.dart`](../../lib/widgets/detection_correction_sheet.dart#L8) | Token-consistent restyle (preserve semantics) |
+| [`lib/widgets/bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L26) | **Overlay math must not change**; palette sourcing may be reconciled to `kDetectionPalette` (identical 8 colors — see §14 item 2 / §16). The amber box treatment is **not** adopted, so the rendered colors are unchanged. |
+| [`lib/widgets/gesture_surface.dart`](../../lib/widgets/gesture_surface.dart#L11) | **No change** — transparent capture layer |
+| [`lib/theme/app_colors.dart`](../../lib/theme/app_colors.dart#L1) | **No new token** — the amber box (`#F59E0B`) and transcript charcoal (`#202022`) are not adopted (see §7.4 / §14 items 2–3, 7). Existing tokens suffice. |
+| [`test/widget_test.dart`](../../test/widget_test.dart#L12) | Extend with Detection visual/state regression assertions (no new file) |
+| [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L119) | Add Detection semantics + 200% text-scale coverage (no new file) |
+| [`test/widgets/widgets_test.dart`](../../test/widgets/widgets_test.dart#L11) | Extend widget-level assertions if a widget's visual contract changes |
+| [`docs/architecture.md`](../architecture.md) | Doc update (Detection component row / theme section) if a token/theme change lands |
+| [`docs/changelog.md`](../changelog.md) | Doc update |
+| [`docs/implementation-progress.md`](../implementation-progress.md) | Doc update |
+| [`docs/session-log.md`](../session-log.md) | Doc update |
 | `.roo/rules/docs/` mirror | Re-copy of root `/docs` after any doc change (per doc-update rule) |
 
 ### Files that must remain untouched
@@ -583,8 +586,8 @@ Flutter pixel literals. Follow the Home/Help/Settings responsive pattern
   **behavioral contract** and must not change. If the Design-Spec wants the
   target's amber box color, that is a palette/token sourcing change only, and it
   must be flagged explicitly in the Plan. The painter currently hardcodes its own
-  `_palette` ([`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:65))
-  that duplicates [`kDetectionPalette`](../lib/theme/app_colors.dart:69); unifying
+  `_palette` ([`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L65))
+  that duplicates [`kDetectionPalette`](../../lib/theme/app_colors.dart#L69); unifying
   them is a token-consistency change, not a visual redesign, and must not alter
   the rendered colors.
 
@@ -617,11 +620,11 @@ exact files/lines each item was confirmed against are consolidated in §16.
 1. **Start/Stop/Repeat controls — RESOLVED: preserve all controls, restyle
    visually.** Confirmed: both child screens render the same five-button `Wrap` —
    `Stop`/`Start`, `Resume`/`Pause`, `Repeat`, `Correct last announcement`, and
-   `Scan` ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1052),
-   [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:640)).
+   `Scan` (`detection_screen.dart`,
+   [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L640)).
    **Decision:** keep every control; apply the target's card treatment visually.
    **Rationale:** the accessibility rule
-   ([`.roo/rules/rules-frontend/04-accessibility.md`](../.roo/rules/rules-frontend/04-accessibility.md:1))
+   (`.roo/rules/rules-frontend/04-accessibility.md`)
    requires every interactive control to be TalkBack-usable and forbids gestures
    being the sole interaction — Start/Stop is the non-gesture fallback for the
    two-finger double-tap and Repeat is the fallback for swipe-down. The design
@@ -629,16 +632,16 @@ exact files/lines each item was confirmed against are consolidated in §16.
    preservation requirement (source-of-truth order). See §9.
 
 2. **Amber detection-box color (`#F59E0B`) — RESOLVED: keep the existing
-   per-class palette cycle (option a).** Confirmed: [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart:26)
+   per-class palette cycle (option a).** Confirmed: [`BoundingBoxPainter`](../../lib/widgets/bounding_box_painter.dart#L26)
    draws boxes with a per-class palette cycle via `_colorForClass(classId)`
-   ([`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:76))
+   ([`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L76))
    over a hardcoded 8-color `_palette`
-   ([`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:65)).
+   ([`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L65)).
    The painter's input is `List<Detection>`
-   ([`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:27)),
-   and [`Detection`](../lib/models/detection.dart:1) carries only
+   ([`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L27)),
+   and [`Detection`](../../lib/models/detection.dart#L1) carries only
    `classId`/`label`/`confidence`/`box` — **no priority field**. Priority lives on
-   [`DetectionInfo`](../lib/models/detection_info.dart:30) (`ObjectPriority`),
+   [`DetectionInfo`](../../lib/models/detection_info.dart#L30) (`ObjectPriority`),
    which the painter never receives. **Decision:** keep the palette cycle; do
    **not** adopt a priority-based amber/cyan treatment. **Rationale:** a
    priority-based treatment would require the painter to receive priority data
@@ -649,15 +652,15 @@ exact files/lines each item was confirmed against are consolidated in §16.
    design-source detail, not a required behavior.
 
 3. **Transcript bar (`Person ahead · 2.1 m`) — RESOLVED: do not add it.**
-   Confirmed: [`DetectionInfo`](../lib/models/detection_info.dart:27) exposes
+   Confirmed: [`DetectionInfo`](../../lib/models/detection_info.dart#L27) exposes
    `label`, `confidence`, `positionLabel` ("left"/"center"/"right"),
    `proximityLabel` ("near"/"ahead"/"far"), `priority`, and `semanticLabel`
-   ([`detection_info.dart`](../lib/models/detection_info.dart:40)) — so the data
-   *could* be assembled. [`TtsService`](../lib/services/tts_service.dart:90) does
+   ([`detection_info.dart`](../../lib/models/detection_info.dart#L40)) — so the data
+   *could* be assembled. [`TtsService`](../../lib/services/tts_service.dart#L90) does
    expose `lastAnnouncedDetection` (and `lastAnnouncedEngine`), and both screens
    already read it for the correction flow
-   ([`detection_screen.dart`](../lib/screens/detection_screen.dart:422),
-   [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:322)).
+   (`detection_screen.dart`,
+   [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L322)).
    **Decision:** do **not** add a transcript bar in this redesign. **Rationale:**
    the existing `DetectionCard` list below the viewport already presents the same
    label/position/proximity information accessibly, and a per-frame transcript
@@ -669,9 +672,9 @@ exact files/lines each item was confirmed against are consolidated in §16.
 4. **`LIVE CAMERA` viewport label — RESOLVED: keep the existing `_GestureHint`
    only; do not add the label.** Confirmed: the Custom screen's `_GestureHint`
    shows `Gestures active on this screen`
-   ([`detection_screen.dart`](../lib/screens/detection_screen.dart:1149)) and the
+   (`detection_screen.dart`) and the
    Ultralytics screen's shows `Gestures active · Ultralytics engine`
-   ([`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:727)).
+   ([`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L727)).
    **Decision:** keep `_GestureHint` (restyled to tokens) and do **not** add a
    separate `LIVE CAMERA` label. **Rationale:** the gesture hint already occupies
    the viewport's inset label position and conveys actionable information; a
@@ -683,14 +686,14 @@ exact files/lines each item was confirmed against are consolidated in §16.
    `Detection Mode` title; do not adopt the two-line `DETECTION MODE` + `LIVE`
    treatment.** Confirmed: both screens currently render a single `Detection Mode`
    title
-   ([`detection_screen.dart`](../lib/screens/detection_screen.dart:830),
-   [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:434))
+   (`detection_screen.dart`,
+   [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L434))
    with a `StatusPill` below it
-   ([`detection_screen.dart`](../lib/screens/detection_screen.dart:836),
-   [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:445)).
+   (`detection_screen.dart`,
+   [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L445)).
    The `StatusPill` is a **live region** (`liveRegion: true`,
-   [`status_pill.dart`](../lib/widgets/status_pill.dart:15)) and is asserted by
-   the semantics tests ([`semantics_test.dart`](../test/accessibility/semantics_test.dart:156)).
+   [`status_pill.dart`](../../lib/widgets/status_pill.dart#L15)) and is asserted by
+   the semantics tests ([`semantics_test.dart`](../../test/accessibility/semantics_test.dart#L156)).
    **Decision (`[product-decision]` resolved by the project owner):** keep the
    existing single `Detection Mode` title (restyled to the light language) and
    **do not adopt** the target's two-line `DETECTION MODE` + `LIVE` treatment.
@@ -704,8 +707,8 @@ exact files/lines each item was confirmed against are consolidated in §16.
 6. **Audio control treatment — RESOLVED: restyle into the target's pill
    treatment, preserving semantics and toggle behavior.** Confirmed: both screens
    use a circular `IconButton` with a tooltip and a 56×56 minimum size
-   ([`detection_screen.dart`](../lib/screens/detection_screen.dart:844),
-   [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:476)),
+   (`detection_screen.dart`,
+   [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L476)),
    toggling `_settings.audioEnabled` via `_toggleAudio`. **Decision:** restyle the
    control into the target's white `AUDIO ON` pill (cyan dot + uppercase label),
    **preserving** the toggle behavior, the tooltip, the enabled/disabled state,
@@ -716,12 +719,12 @@ exact files/lines each item was confirmed against are consolidated in §16.
 
 7. **New tokens — RESOLVED: add no new tokens.** Confirmed: the existing token
    set already covers the adopted composition. `kMediumAmber` is `#F9A825`
-   ([`app_colors.dart`](../lib/theme/app_colors.dart:33)), `kHomeWarningAmber` is
-   `#F5B942` ([`app_colors.dart`](../lib/theme/app_colors.dart:142)), and
-   `kHomeInk` is `#0A0A0A` ([`app_colors.dart`](../lib/theme/app_colors.dart:124))
+   ([`app_colors.dart`](../../lib/theme/app_colors.dart#L33)), `kHomeWarningAmber` is
+   `#F5B942` ([`app_colors.dart`](../../lib/theme/app_colors.dart)), and
+   `kHomeInk` is `#0A0A0A` ([`app_colors.dart`](../../lib/theme/app_colors.dart))
    — **none equals** the target's amber box `#F59E0B` or transcript charcoal
    `#202022`. **Decision:** do **not** add `#F59E0B` or `#202022` to
-   [`app_colors.dart`](../lib/theme/app_colors.dart:1). **Rationale:** the amber
+   [`app_colors.dart`](../../lib/theme/app_colors.dart#L1). **Rationale:** the amber
    box treatment is not adopted (item 2) and the transcript bar is not added
    (item 3), so neither value is used by any adopted UI element. The token rule
    says to add a token only when a value is actually used by UI code; inventing
@@ -729,11 +732,11 @@ exact files/lines each item was confirmed against are consolidated in §16.
 
 8. **Physical-device verification — RESOLVED: a Code-stage step, not an
    Analysis/Design-Spec deliverable.** Confirmed: the verification policy
-   ([`.roo/rules/rules-frontend/07-verification.md`](../.roo/rules/rules-frontend/07-verification.md:1))
+   (`.roo/rules/rules-frontend/07-verification.md`)
    requires UI changes to be verified on a **physical Android device** (not an
    emulator or web target), with `flutter analyze` (0 issues) and `flutter test`
    after each change, and no RenderFlex overflows/exceptions in logcat. The
-   development workflow ([`docs/development-workflow.md`](development-workflow.md:1))
+   development workflow ([`docs/development-workflow.md`](../development-workflow.md))
    places device verification in the implementation/verification phase.
    **Decision:** device verification is performed at the **Code stage**; the
    Analysis and Design-Spec stages do not require a device. **Rationale:** the
@@ -774,14 +777,14 @@ inventory and the test-coverage gap.
 
 | Item | Confirmed against |
 |---|---|
-| 1. Controls preserved | [`detection_screen.dart`](../lib/screens/detection_screen.dart:1052) (Stop/Start), [`:1059`](../lib/screens/detection_screen.dart:1059) (Resume/Pause), [`:1064`](../lib/screens/detection_screen.dart:1064) (Repeat), [`:1074`](../lib/screens/detection_screen.dart:1074) (Correct), [`:1083`](../lib/screens/detection_screen.dart:1083) (Scan); [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:640) (same five); accessibility rule [`.roo/rules/rules-frontend/04-accessibility.md`](../.roo/rules/rules-frontend/04-accessibility.md:1) |
-| 2. Palette cycle kept | [`bounding_box_painter.dart`](../lib/widgets/bounding_box_painter.dart:65) (`_palette`), [`:76`](../lib/widgets/bounding_box_painter.dart:76) (`_colorForClass`), [`:27`](../lib/widgets/bounding_box_painter.dart:27) (`List<Detection>` input); [`detection.dart`](../lib/models/detection.dart:1) (no priority field); [`detection_info.dart`](../lib/models/detection_info.dart:30) (`ObjectPriority` on `DetectionInfo` only) |
-| 3. No transcript bar | [`detection_info.dart`](../lib/models/detection_info.dart:40) (`label`/`confidence`/`positionLabel`/`proximityLabel`/`priority`/`semanticLabel`); [`tts_service.dart`](../lib/services/tts_service.dart:90) (`lastAnnouncedDetection`); [`detection_screen.dart`](../lib/screens/detection_screen.dart:422) and [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:322) (existing reads) |
-| 4. Keep `_GestureHint` | [`detection_screen.dart`](../lib/screens/detection_screen.dart:1149) (`Gestures active on this screen`); [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:727) (`Gestures active · Ultralytics engine`) |
-| 5. Single `Detection Mode` title + pill (owner override) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:830) (title) / [`:836`](../lib/screens/detection_screen.dart:836) (pill); [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:434) (title) / [`:445`](../lib/screens/ultralytics_detection_screen.dart:445) (pill); [`status_pill.dart`](../lib/widgets/status_pill.dart:15) (`liveRegion: true`); [`semantics_test.dart`](../test/accessibility/semantics_test.dart:156) (live-region assertion). **Owner override:** the target's two-line `DETECTION MODE` + `LIVE` header is **not adopted** — the existing single `Detection Mode` title is kept for cross-screen consistency (Home/Help/Settings use a single screen title). The status pill is preserved as its own live-region element. |
-| 6. Audio pill restyle | [`detection_screen.dart`](../lib/screens/detection_screen.dart:844) (`IconButton`, tooltip, 56×56); [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:476) (same) |
-| 7. No new tokens | [`app_colors.dart`](../lib/theme/app_colors.dart:33) (`kMediumAmber` `#F9A825`), [`:142`](../lib/theme/app_colors.dart:142) (`kHomeWarningAmber` `#F5B942`), [`:124`](../lib/theme/app_colors.dart:124) (`kHomeInk` `#0A0A0A`) — none equals `#F59E0B`/`#202022` |
-| 8. Device verification at Code stage | [`.roo/rules/rules-frontend/07-verification.md`](../.roo/rules/rules-frontend/07-verification.md:1); [`docs/development-workflow.md`](development-workflow.md:1) |
+| 1. Controls preserved | `detection_screen.dart` (Stop/Start), `:1059` (Resume/Pause), `:1064` (Repeat), `:1074` (Correct), `:1083` (Scan); [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L640) (same five); accessibility rule `.roo/rules/rules-frontend/04-accessibility.md` |
+| 2. Palette cycle kept | [`bounding_box_painter.dart`](../../lib/widgets/bounding_box_painter.dart#L65) (`_palette`), [`:76`](../../lib/widgets/bounding_box_painter.dart#L76) (`_colorForClass`), [`:27`](../../lib/widgets/bounding_box_painter.dart#L27) (`List<Detection>` input); [`detection.dart`](../../lib/models/detection.dart#L1) (no priority field); [`detection_info.dart`](../../lib/models/detection_info.dart#L30) (`ObjectPriority` on `DetectionInfo` only) |
+| 3. No transcript bar | [`detection_info.dart`](../../lib/models/detection_info.dart#L40) (`label`/`confidence`/`positionLabel`/`proximityLabel`/`priority`/`semanticLabel`); [`tts_service.dart`](../../lib/services/tts_service.dart#L90) (`lastAnnouncedDetection`); `detection_screen.dart` and [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L322) (existing reads) |
+| 4. Keep `_GestureHint` | `detection_screen.dart` (`Gestures active on this screen`); [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L727) (`Gestures active · Ultralytics engine`) |
+| 5. Single `Detection Mode` title + pill (owner override) | `detection_screen.dart` (title) / `:836` (pill); [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L434) (title) / [`:445`](../../lib/screens/ultralytics_detection_screen.dart#L445) (pill); [`status_pill.dart`](../../lib/widgets/status_pill.dart#L15) (`liveRegion: true`); [`semantics_test.dart`](../../test/accessibility/semantics_test.dart#L156) (live-region assertion). **Owner override:** the target's two-line `DETECTION MODE` + `LIVE` header is **not adopted** — the existing single `Detection Mode` title is kept for cross-screen consistency (Home/Help/Settings use a single screen title). The status pill is preserved as its own live-region element. |
+| 6. Audio pill restyle | `detection_screen.dart` (`IconButton`, tooltip, 56×56); [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L476) (same) |
+| 7. No new tokens | [`app_colors.dart`](../../lib/theme/app_colors.dart#L33) (`kMediumAmber` `#F9A825`), [`:142`](../../lib/theme/app_colors.dart) (`kHomeWarningAmber` `#F5B942`), [`:124`](../../lib/theme/app_colors.dart) (`kHomeInk` `#0A0A0A`) — none equals `#F59E0B`/`#202022` |
+| 8. Device verification at Code stage | `.roo/rules/rules-frontend/07-verification.md`; [`docs/development-workflow.md`](../development-workflow.md) |
 
 ### 16.2 Shared-widget usage inventory (regression risk)
 
@@ -791,14 +794,14 @@ regressions on other screens.
 
 | Widget | Usage sites | Other-screen risk |
 |---|---|---|
-| [`StatusPill`](../lib/widgets/status_pill.dart:5) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:836), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:445) | **Detection-only** — no other screen uses it. |
-| [`WarningBanner`](../lib/widgets/warning_banner.dart:4) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:1043), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:632) | **Detection-only.** |
-| [`DetectionCard`](../lib/widgets/detection_card.dart:11) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:1124), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:702) | **Detection-only.** |
-| [`PriorityBadge`](../lib/widgets/priority_badge.dart:9) | [`detection_card.dart`](../lib/widgets/detection_card.dart:71) (inside `DetectionCard`) | **Detection-only** (reached only via `DetectionCard`). |
-| [`AccessibleButton`](../lib/widgets/accessible_button.dart:8) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:903) (permission), [`:910`](../lib/screens/detection_screen.dart:910) (retry), [`:945`](../lib/screens/detection_screen.dart:945) (start), [`:1052`](../lib/screens/detection_screen.dart:1052) (controls); [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:570), [`:577`](../lib/screens/ultralytics_detection_screen.dart:577), [`:609`](../lib/screens/ultralytics_detection_screen.dart:609), [`:640`](../lib/screens/ultralytics_detection_screen.dart:640); [`engine_detection_screen.dart`](../lib/screens/engine_detection_screen.dart:185) (fallback notice); [`detection_state_panel.dart`](../lib/widgets/detection_state_panel.dart:72) (panel actions); [`detection_correction_sheet.dart`](../lib/widgets/detection_correction_sheet.dart:80) (sheet actions); [`home_screen.dart`](../lib/screens/home_screen.dart:243) (Home CTA); [`logs_reports_screen.dart`](../lib/screens/logs_reports_screen.dart:285) (export buttons) | **SHARED — used by Home and Logs & Reports too.** Changing its defaults risks regressions on those screens; prefer additive/token-consistent changes or leave its API unchanged. |
-| [`DetectionStatePanel`](../lib/widgets/detection_state_panel.dart:12) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:863), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:497) | **Detection-only.** |
-| [`DetectionCorrectionSheet`](../lib/widgets/detection_correction_sheet.dart:8) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:377) (via `showDetectionCorrectionSheet`), [`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:277) (via `showDetectionCorrectionSheet`) | **Detection-only.** |
-| [`BoundingBoxPainter`](../lib/widgets/bounding_box_painter.dart:26) | [`detection_screen.dart`](../lib/screens/detection_screen.dart:992) only | **Detection-only** (Custom engine). The Ultralytics screen uses the native overlay, not this painter. |
+| [`StatusPill`](../../lib/widgets/status_pill.dart#L5) | `detection_screen.dart`, [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L445) | **Detection-only** — no other screen uses it. |
+| [`WarningBanner`](../../lib/widgets/warning_banner.dart#L4) | `detection_screen.dart`, [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L632) | **Detection-only.** |
+| [`DetectionCard`](../../lib/widgets/detection_card.dart#L11) | `detection_screen.dart`, [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L702) | **Detection-only.** |
+| [`PriorityBadge`](../../lib/widgets/priority_badge.dart#L9) | [`detection_card.dart`](../../lib/widgets/detection_card.dart#L71) (inside `DetectionCard`) | **Detection-only** (reached only via `DetectionCard`). |
+| [`AccessibleButton`](../../lib/widgets/accessible_button.dart#L8) | `detection_screen.dart` (permission), `:910` (retry), `:945` (start), `:1052` (controls); [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L570), [`:577`](../../lib/screens/ultralytics_detection_screen.dart#L577), [`:609`](../../lib/screens/ultralytics_detection_screen.dart#L609), [`:640`](../../lib/screens/ultralytics_detection_screen.dart#L640); [`engine_detection_screen.dart`](../../lib/screens/engine_detection_screen.dart) (fallback notice); [`detection_state_panel.dart`](../../lib/widgets/detection_state_panel.dart#L72) (panel actions); [`detection_correction_sheet.dart`](../../lib/widgets/detection_correction_sheet.dart#L80) (sheet actions); [`home_screen.dart`](../../lib/screens/home_screen.dart#L243) (Home CTA); [`logs_reports_screen.dart`](../../lib/screens/logs_reports_screen.dart#L285) (export buttons) | **SHARED — used by Home and Logs & Reports too.** Changing its defaults risks regressions on those screens; prefer additive/token-consistent changes or leave its API unchanged. |
+| [`DetectionStatePanel`](../../lib/widgets/detection_state_panel.dart#L12) | `detection_screen.dart`, [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L497) | **Detection-only.** |
+| [`DetectionCorrectionSheet`](../../lib/widgets/detection_correction_sheet.dart#L8) | `detection_screen.dart` (via `showDetectionCorrectionSheet`), [`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L277) (via `showDetectionCorrectionSheet`) | **Detection-only.** |
+| [`BoundingBoxPainter`](../../lib/widgets/bounding_box_painter.dart#L26) | `detection_screen.dart` only | **Detection-only** (Custom engine). The Ultralytics screen uses the native overlay, not this painter. |
 
 **Key finding:** `AccessibleButton` is the only Detection widget shared with
 non-Detection screens (Home, Logs & Reports, and the engine-fallback notice).
@@ -809,8 +812,8 @@ and Logs & Reports.
 
 ### 16.3 Painter palette duplication (confirmed)
 
-[`BoundingBoxPainter._palette`](../lib/widgets/bounding_box_painter.dart:65) and
-[`kDetectionPalette`](../lib/theme/app_colors.dart:69) are **byte-identical** —
+[`BoundingBoxPainter._palette`](../../lib/widgets/bounding_box_painter.dart#L65) and
+[`kDetectionPalette`](../../lib/theme/app_colors.dart#L69) are **byte-identical** —
 the same eight colors in the same order:
 
 | # | Painter `_palette` | `kDetectionPalette` |
@@ -824,7 +827,7 @@ the same eight colors in the same order:
 | 6 | `0xFF76FF03` lime | `0xFF76FF03` lime |
 | 7 | `0xFF00E5FF` cyan | `0xFF00E5FF` cyan |
 
-The painter is used **only** in [`detection_screen.dart`](../lib/screens/detection_screen.dart:992)
+The painter is used **only** in `detection_screen.dart`
 (the Custom engine). Unifying the painter's `_palette` with `kDetectionPalette`
 is a token-consistency change that renders identical colors; it must not alter
 the coordinate math.
@@ -833,10 +836,10 @@ the coordinate math.
 
 | Test file | Detection coverage |
 |---|---|
-| [`test/widget_test.dart`](../test/widget_test.dart:12) | Home/Settings/Help screen smoke tests only — **no Detection screen test**. |
-| [`test/accessibility/semantics_test.dart`](../test/accessibility/semantics_test.dart:119) | Widget-level semantics for `AccessibleButton`, `StatusPill`, `WarningBanner`, and detection cards — **not** the Detection screen. |
-| [`test/widgets/widgets_test.dart`](../test/widgets/widgets_test.dart:11) | `PriorityBadge`, `DetectionCard`, `WarningBanner`, `AccessibleButton` in isolation — **not** the Detection screen. |
-| [`test/widgets/detection_correction_sheet_test.dart`](../test/widgets/detection_correction_sheet_test.dart:1) | The correction sheet in isolation — **not** the Detection screen. |
+| [`test/widget_test.dart`](../../test/widget_test.dart#L12) | Home/Settings/Help screen smoke tests only — **no Detection screen test**. |
+| [`test/accessibility/semantics_test.dart`](../../test/accessibility/semantics_test.dart#L119) | Widget-level semantics for `AccessibleButton`, `StatusPill`, `WarningBanner`, and detection cards — **not** the Detection screen. |
+| [`test/widgets/widgets_test.dart`](../../test/widgets/widgets_test.dart#L11) | `PriorityBadge`, `DetectionCard`, `WarningBanner`, `AccessibleButton` in isolation — **not** the Detection screen. |
+| [`test/widgets/detection_correction_sheet_test.dart`](../../test/widgets/detection_correction_sheet_test.dart#L1) | The correction sheet in isolation — **not** the Detection screen. |
 
 **Confirmed gap:** there is **no Detection screen widget test** — a codebase
 search for `DetectionScreen`/`UltralyticsDetectionScreen`/`EngineDetectionScreen`
@@ -846,7 +849,7 @@ file) and Detection semantics + 200% text-scale coverage, per §12.
 
 ### 16.5 `DetectionInfo` fields (confirmed)
 
-[`DetectionInfo`](../lib/models/detection_info.dart:27) exposes exactly:
+[`DetectionInfo`](../../lib/models/detection_info.dart#L27) exposes exactly:
 
 | Member | Type | Source |
 |---|---|---|
@@ -869,8 +872,8 @@ available from `DetectionInfo` without a new service — but the bar is not adde
 ## Analysis conclusion
 
 The Detection redesign is feasible as a focused UI change in
-[`detection_screen.dart`](../lib/screens/detection_screen.dart:48) and
-[`ultralytics_detection_screen.dart`](../lib/screens/ultralytics_detection_screen.dart:26),
+`detection_screen.dart` and
+[`ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart#L26),
 with token-consistent restyling of the shared Detection widgets and possible
 additions to the UI token layer. The existing camera/inference architecture,
 gestures, TTS, haptics, telemetry, correction flow, runtime-state reporting,

@@ -1,5 +1,8 @@
 ### 1. Finalized UI/UX Decisions
 
+> **Historical reference (2026-11-16):** The decisions below are from an abandoned screenshot-driven proposal and are not the current product contract. In particular, they conflict with the retained four-tab navigation, the shell-owned lifecycle controls, and the existing swipe navigation. The shipped visual redesign decisions and closeout are in [`docs/frontend-workflow/visual-redesign.md`](../../docs/frontend-workflow/visual-redesign.md); current navigation implementation is [`lib/navigation/app_shell.dart`](../../lib/navigation/app_shell.dart).
+
+
 **Navigation & Gestures**
 
 * **Global Navigation:** The persistent 4-tab bottom navigation bar is entirely removed. Tab navigation is now handled exclusively via a **two-finger swipe left/right** gesture.

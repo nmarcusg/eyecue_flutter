@@ -1,5 +1,8 @@
 # Fresh Detection Speech Revalidation — Plan
 
+> **Implementation status (2026-11-16):** Fresh detector-result revalidation is implemented in [`lib/screens/ultralytics_detection_screen.dart`](../../lib/screens/ultralytics_detection_screen.dart) and reconciled with shared tracking/speech in [`lib/services/assistive_detection_controller.dart`](../../lib/services/assistive_detection_controller.dart) and [`lib/services/tts_service.dart`](../../lib/services/tts_service.dart). Commit `6b28eff` records the fix; this analysis/plan is retained as its rationale and acceptance history.
+
+
 **Task type:** behavior/logic change; no visual changes expected. The information overlay may clear or update in response to accepted detector results, but its visual design is not in scope.
 
 ## Source of truth and scope
